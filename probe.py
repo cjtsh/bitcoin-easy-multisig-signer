@@ -41,7 +41,7 @@ def _network_for_address(address: str) -> str:
     if address.startswith("bc1"):
         return "main"
     if address.startswith("tb1"):
-        return "signet"  # testnet and Signet share the tb1 address prefix.
+        return "test"  # Testnet4, legacy testnet, and Signet all share tb1.
     if address.startswith("bcrt1"):
         return "regtest"
     raise ProbeError("Only bc1, tb1, and bcrt1 reference addresses are supported.")
@@ -110,6 +110,10 @@ def load_bsms(path: Path) -> WalletRecord:
         raise ProbeError("Every signer needs a public xpub and key origin.")
     if len({key.fingerprint for key in keys}) != len(keys):
         raise ProbeError("Duplicate signer fingerprints are ambiguous in this proof.")
+    if network == "test" and any(
+        key.derivation[:2] != [0x80000030, 0x80000001] for key in keys
+    ):
+        raise ProbeError("Test wallet signers must use BIP48 coin type 1'.")
 
     return WalletRecord(
         descriptor=descriptor,
@@ -220,7 +224,10 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
             if not isinstance(response, dict) or not isinstance(response.get("xpub"), str):
                 statuses.append(f"{model}: signer {index} could not be verified.")
             elif _same_xpub(key, response["xpub"]):
-                statuses.append(f"{model}: signer {index} of {len(record.keys)} verified.")
+                statuses.append(
+                    f"{model}: signer {index} of {len(record.keys)} public xpub matched "
+                    "(not a signing test)."
+                )
             else:
                 statuses.append(f"{model}: fingerprint matched, but xpub DID NOT MATCH.")
         except ProbeError:
@@ -228,9 +235,38 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
     return statuses
 
 
+def _validate_chain(record: WalletRecord, chain: str) -> None:
+    if record.network == "main":
+        raise ProbeError("This test-only release will not probe or fund a mainnet wallet.")
+    if record.network == "test" and chain in ("testnet4", "signet", "test"):
+        return
+    if record.network == "regtest" and chain == "regtest":
+        return
+    raise ProbeError("Selected HWI chain conflicts with the BSMS address encoding.")
+
+
+def funding_address(record: WalletRecord, chain: str) -> str:
+    """Return an address only when the test descriptor and reference agree."""
+    _validate_chain(record, chain)
+    if record.network != "test" or chain not in ("testnet4", "signet"):
+        raise ProbeError("Funding-address output supports Testnet4 or Signet only.")
+    if record.reference_status != "verified":
+        raise ProbeError(
+            "Reference address is not verified against the literal descriptor; "
+            "no funding address will be shown."
+        )
+    return record.descriptor.derive(0).address(NETWORKS["test"])
+
+
 def _print_wallet(record: WalletRecord) -> None:
     print(f"BSMS policy: {record.threshold} of {len(record.keys)} native-SegWit multisig")
-    print(f"Address network: {record.network}")
+    if record.network == "test":
+        print(
+            "Address encoding: tb1 (shared by Testnet4, Signet, and legacy testnet; "
+            "the file does not establish which chain holds coins)."
+        )
+    else:
+        print(f"Address network: {record.network}")
     if record.reference_status == "verified":
         print("Reference address: VERIFIED against the literal descriptor.")
     elif record.reference_status == "receive-branch-only":
@@ -250,22 +286,39 @@ def main(argv: list[str] | None = None) -> int:
     inspect_cmd.add_argument("bsms", type=Path)
     devices_cmd = commands.add_parser("devices", help="Find matching USB signers via HWI.")
     devices_cmd.add_argument("bsms", type=Path)
-    devices_cmd.add_argument("--hwi", default="hwi", help="Path to official HWI executable.")
-    devices_cmd.add_argument("--chain", choices=["main", "test", "signet", "regtest"])
+    devices_cmd.add_argument(
+        "--hwi", default="hwi", help="Path to HWI or a compatible emulator adapter."
+    )
+    devices_cmd.add_argument(
+        "--chain", choices=["testnet4", "signet", "test", "regtest"], required=True,
+        help="Select the actual chain; HWI 3.2.0 supports testnet4.",
+    )
+    funding_cmd = commands.add_parser(
+        "funding-address", help="Show first verified test-wallet address for a faucet."
+    )
+    funding_cmd.add_argument("bsms", type=Path)
+    funding_cmd.add_argument("--chain", choices=["testnet4", "signet"], required=True)
     args = parser.parse_args(argv)
     try:
         record = load_bsms(args.bsms)
         _print_wallet(record)
         if args.command == "devices":
-            chain = args.chain or record.network
-            if (record.network == "main") != (chain == "main"):
-                raise ProbeError("HWI chain conflicts with the BSMS address network.")
+            _validate_chain(record, args.chain)
+            print(f"Selected HWI chain: {args.chain} (explicit; not inferred from tb1).")
             print("Checking USB devices (read-only)...")
-            statuses = probe_devices(record, args.hwi, chain)
+            statuses = probe_devices(record, args.hwi, args.chain)
             if not statuses:
                 print("No devices found. Connect and unlock a test device.")
             for status in statuses:
                 print(status)
+        elif args.command == "funding-address":
+            address = funding_address(record, args.chain)
+            print(f"Selected chain: {args.chain} (explicit; not inferred from tb1).")
+            print(f"First verified test-wallet address: {address}")
+            print(
+                "Confirm this address independently on your test signers and "
+                "confirm they can sign before requesting test sats."
+            )
         return 0
     except ProbeError as exc:
         print(f"Stopped: {exc}", file=sys.stderr)

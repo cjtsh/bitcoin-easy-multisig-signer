@@ -51,23 +51,78 @@ parsing in [embit][embit]; it contains no USB driver or signing code.
    [HWI releases][releases]. Follow its release verification instructions;
    do not download a wallet tool from an untrusted mirror. You may instead
    use an existing `hwi` command on your PATH. HWI is separate from this
-   Python environment.
-3. Use a **nonproduction test BSMS file** created from the test devices:
+   Python environment. HWI 3.2.0 adds an explicit `testnet4` chain option.
+3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.
+   Its origins must use BIP48 coin type `1'`, and its reference address
+   must match the descriptor's first address. Run:
 
    ```sh
    python probe.py inspect /path/to/test-wallet.bsms
-   python probe.py devices /path/to/test-wallet.bsms --hwi /path/to/hwi
+   python probe.py devices /path/to/test-wallet.bsms --chain testnet4 --hwi /path/to/hwi
    ```
 
-   For a `tb1` test wallet, the device command defaults to HWI's `signet`
-   chain; you can use `--chain test` instead. A `bc1` file uses `main`, but
-   this probe remains strictly read-only. If a device is locked, unlock it
-   using its own normal procedure. This app never requests a PIN or seed.
+   Use `--chain signet` only if your wallet and faucet are actually on
+   Signet. **A `tb1` address cannot distinguish Testnet4, legacy testnet,
+   and Signet.** The device command requires an explicit chain and refuses
+   mainnet. The offline `inspect` command may still inspect a `bc1` file
+   without contacting devices or a network. If a device is locked, unlock
+   it using its normal procedure. This app never requests a PIN or seed.
 
-The program displays only a policy summary, validation status, and signer
-match results. It does not display extended public keys, fingerprints, or
-the reference address. Do **not** commit any actual BSMS file or PSBT:
+The device command displays only a policy summary and *public identity*
+matching status—not proof that a device can sign. It never displays extended
+public keys or fingerprints. Do **not** commit any actual BSMS file or PSBT:
 wallet exports contain privacy-sensitive public keys and addresses.
+
+## Get a few Testnet4 sats for testing
+
+First get a BSMS export from your **test** signers. With an export whose
+reference address validates against its literal descriptor, run:
+
+```sh
+python probe.py funding-address /path/to/test-wallet.bsms --chain testnet4
+```
+
+This deliberately prints the first test-wallet `tb1` address so you can
+paste it into a faucet. **Before funding it, verify the same address in
+an independent test wallet or on your test signers, and confirm the
+emulators can eventually sign for that wallet.** This probe cannot prove
+signing or check a balance; an emulator that only returns an xpub may leave
+test sats unspendable. If the reference address differs from the literal
+descriptor, the command stops rather than guessing a receive path.
+
+- [Testnet4.dev faucet](https://faucet.testnet4.dev/) accepts a Testnet4
+  address without a login, subject to availability and limits.
+- [Mempool.space Testnet4 faucet](https://mempool.space/testnet4/faucet)
+  is another option; it may require an account.
+- [Mempool.space Testnet4 explorer](https://mempool.space/testnet4)
+  can show whether a faucet payment arrived on **Testnet4**, not Signet.
+
+Use only a test address. Testnet coins are for testing, not real Bitcoin;
+do not buy test sats or submit seeds, private keys, or production wallet
+files to a faucet. Faucet availability and limits can change.
+
+## Emulator handoff
+
+`--hwi` can point to an executable adapter for your fake hardware signers,
+not just the real HWI binary. The adapter must accept these two HWI-style
+read-only calls and return JSON on stdout:
+
+```text
+--chain testnet4 enumerate
+  -> [{"type":"emulator","model":"Test signer","path":"emulator-1",
+       "fingerprint":"8hexchars"}]
+
+--chain testnet4 --device-type emulator --device-path emulator-1
+  getxpub m/48h/1h/0h/2h
+  -> {"xpub":"the public extended key at exactly that origin path"}
+```
+
+The adapter must exit successfully on valid responses; never output private
+keys, seed words, or passphrases. The `fingerprint` and xpub must belong
+to the same test signer that contributed a key to the BSMS file. A program
+can imitate these **public** responses without holding any private keys,
+so a match is not proof it can sign. Later PSBT signing tests must establish
+that separately. No vendor USB drivers or cryptography are implemented here.
 
 The uploaded example that motivated this proof has a reference address
 that matches a common `/0/0` receive-branch convention but **not** the
@@ -87,6 +142,8 @@ python -m unittest discover -s tests -v
 - A local reference-address comparison for native-SegWit multisig.
 - HWI device enumeration and full public-key matching at the key-origin
   path, not a vendor-name-only or fingerprint-only match.
+- Explicit Testnet4 selection and a guarded test-wallet funding address;
+  no assumption that `tb1` identifies a blockchain.
 - No balance scanning, transaction construction, signing, or broadcasting.
   Those need separate, tested off-the-shelf components and a guided UI.
 

@@ -1,7 +1,9 @@
 """Synthetic test keys only. Never use these deterministic seeds for funds."""
 
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,7 +12,10 @@ from embit.descriptor import Descriptor
 from embit.descriptor.checksum import checksum
 from embit.networks import NETWORKS
 
-from probe import ProbeError, _same_xpub, load_bsms, probe_devices
+from probe import (
+    ProbeError, _same_xpub, _validate_chain, funding_address,
+    invoke_hwi, load_bsms, main, probe_devices,
+)
 
 
 def test_record(short_path: bool = False) -> tuple[str, list[bip32.HDKey]]:
@@ -25,7 +30,7 @@ def test_record(short_path: bool = False) -> tuple[str, list[bip32.HDKey]]:
     descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
     full_descriptor = descriptor + "#" + checksum(descriptor)
     canonical = descriptor.replace("/*", "/0/*") if short_path else descriptor
-    reference = Descriptor.from_string(canonical).derive(0).address(NETWORKS["signet"])
+    reference = Descriptor.from_string(canonical).derive(0).address(NETWORKS["test"])
     return (
         f"BSMS 1.0\n{full_descriptor}\nNo path restrictions\n{reference}\n",
         roots,
@@ -47,7 +52,7 @@ class ProbeTests(unittest.TestCase):
         wallet = self.write(record)
         self.assertEqual((wallet.threshold, len(wallet.keys)), (2, 3))
         self.assertEqual(wallet.reference_status, "verified")
-        self.assertEqual(wallet.network, "signet")
+        self.assertEqual(wallet.network, "test")
 
     def test_receive_branch_diagnostic_never_counts_as_verified(self):
         record, _ = test_record(short_path=True)
@@ -59,6 +64,14 @@ class ProbeTests(unittest.TestCase):
         record = record.replace("#", "#x", 1)
         with self.assertRaisesRegex(ProbeError, "checksum"):
             self.write(record)
+
+    def test_testnet_wallet_rejects_wrong_coin_type(self):
+        text, _ = test_record()
+        lines = text.splitlines()
+        descriptor = lines[1].split("#")[0].replace("/48h/1h/", "/48h/0h/")
+        lines[1] = descriptor + "#" + checksum(descriptor)
+        with self.assertRaisesRegex(ProbeError, "coin type"):
+            self.write("\n".join(lines) + "\n")
 
     def test_exact_xpub_matching(self):
         record, roots = test_record()
@@ -74,15 +87,18 @@ class ProbeTests(unittest.TestCase):
         fp = roots[0].my_fingerprint.hex()
         correct = roots[0].derive("m/48h/1h/0h/2h").to_public().to_base58()
 
-        def fake_hwi(_executable, _chain, *args):
+        def fake_hwi(_executable, chain, *args):
+            self.assertEqual(chain, "testnet4")
             if args == ("enumerate",):
                 return [{"type": "jade", "model": "Jade", "path": "test-port", "fingerprint": fp}]
             self.assertEqual(args[-2:], ("getxpub", "m/48h/1h/0h/2h"))
             return {"xpub": correct}
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
-            result = probe_devices(wallet, "hwi", "signet")
-        self.assertEqual(result, ["Jade: signer 1 of 3 verified."])
+            result = probe_devices(wallet, "hwi", "testnet4")
+        self.assertEqual(
+            result, ["Jade: signer 1 of 3 public xpub matched (not a signing test)."]
+        )
 
     def test_hwi_fingerprint_match_with_wrong_xpub_stops_short_of_claiming_match(self):
         record, roots = test_record()
@@ -96,8 +112,50 @@ class ProbeTests(unittest.TestCase):
             return {"xpub": wrong}
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
-            result = probe_devices(wallet, "hwi", "signet")
+            result = probe_devices(wallet, "hwi", "testnet4")
         self.assertEqual(result, ["ledger: fingerprint matched, but xpub DID NOT MATCH."])
+
+    def test_explicit_testnet4_chain_and_guarded_funding_address(self):
+        text, _ = test_record()
+        wallet = self.write(text)
+        _validate_chain(wallet, "testnet4")
+        self.assertEqual(funding_address(wallet, "testnet4"), text.splitlines()[3])
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(
+                main(["funding-address", str(self.path), "--chain", "testnet4"]), 0
+            )
+        self.assertIn(text.splitlines()[3], output.getvalue())
+        self.assertIn("not inferred from tb1", output.getvalue())
+        with self.assertRaisesRegex(ProbeError, "conflicts"):
+            _validate_chain(wallet, "regtest")
+        with self.assertRaisesRegex(ProbeError, "test-only"):
+            _validate_chain(
+                wallet.__class__(
+                    wallet.descriptor, wallet.threshold, "main",
+                    wallet.restrictions, wallet.reference_status,
+                ),
+                "testnet4",
+            )
+
+    def test_mismatched_reference_cannot_be_used_as_funding_address(self):
+        text, _ = test_record(short_path=True)
+        wallet = self.write(text)
+        with self.assertRaisesRegex(ProbeError, "no funding address"):
+            funding_address(wallet, "testnet4")
+
+    def test_hwi_invoked_with_explicit_testnet4_flag(self):
+        from subprocess import CompletedProcess
+
+        with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
+            "probe.subprocess.run",
+            return_value=CompletedProcess([], 0, "[]", ""),
+        ) as run:
+            self.assertEqual(invoke_hwi("fake", "testnet4", "enumerate"), [])
+        self.assertEqual(
+            run.call_args.args[0],
+            ["/fake/hwi", "--chain", "testnet4", "enumerate"],
+        )
 
 
 if __name__ == "__main__":
