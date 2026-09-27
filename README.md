@@ -1,7 +1,32 @@
 # Easy Bitcoin Multisig Signer — read-only hardware proof
 
-**Experimental. Do not use with production funds.** This first commit is a
-command-line proof for inspecting a BSMS 1.0 wallet export and identifying
+## Disclaimer — experimental software; use at your own risk
+
+**This is experimental, unaudited software. It is not a production-ready
+Bitcoin recovery tool. Bugs, incorrect information, or hardware incompatibility
+could lead to irreversible loss of funds. Do not use this proof with production
+funds.**
+
+**THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTIES OR
+GUARANTEES OF ANY KIND, EXPRESS OR IMPLIED, TO THE MAXIMUM EXTENT PERMITTED BY
+LAW.** The authors and contributors make no promises about its correctness,
+security, fitness for a particular purpose, continued maintenance, or whether
+any transaction will succeed.
+
+**TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE AUTHORS AND CONTRIBUTORS ARE NOT
+LIABLE FOR LOST OR MISDIRECTED BITCOIN OR OTHER FUNDS, LOST DATA, OR OTHER
+DAMAGES ARISING FROM USE OF THIS SOFTWARE.** Nothing here excludes liability
+or legal rights that cannot lawfully be excluded.
+
+**Before approving any transaction, independently verify the full destination
+address, amount, network, fee, and change output, including what each hardware
+signer displays. If anything is unclear or inconsistent, stop.** Never enter
+seed words or private keys into this software. Read the full
+[risk and liability disclaimer](DISCLAIMER.md). This notice is not legal advice
+or a guarantee of enforceable protection; obtain qualified legal and security
+review before using software to handle real funds.
+
+This prototype is a command-line proof for inspecting a BSMS 1.0 wallet export and identifying
 matching USB hardware signers. It cannot sign, create, or broadcast a
 transaction. It is not yet the recovery app.
 
