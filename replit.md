@@ -8,3 +8,4 @@
 - Do not include BSMS files, wallet addresses, PSBTs, settings, or secrets in artifacts. Do not query real mainnet wallet addresses without fresh permission.
 - A user-requested test release may be published after automated Mac build checks; label it experimental and unsigned, and never claim the real Mac window or native file flows were manually tested. A production-ready release requires real Mac testing and separate approval.
 - Keep the app concise: place small, accessible ? pop-outs beside unfamiliar terms or consequential actions. Explain PSBT in context as an unsigned transaction file for signers; use plain English in buttons and errors, not an always-visible glossary.
+- Public development and test releases are expected. Do not repeat the standard experimental/public-development disclaimers in routine updates to the user; mention only new risks or decisions that require attention.

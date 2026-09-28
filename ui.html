@@ -75,7 +75,7 @@
     .notice { border-left:4px solid #d59a32; padding:12px 15px; border-radius:8px; background:var(--warn); margin:15px 0; }
     .error { background:#ffeae8; color:var(--red); border-left:4px solid var(--red); padding:13px 15px; border-radius:9px; margin:14px 0; }
     .success { background:var(--mint); padding:11px 14px; border-radius:9px; color:var(--green); margin:12px 0; }
-    .balance-primary { display:block; }
+    .balance-primary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; align-items:start; }
     .balance-primary > div { min-width:0; }
     .technical-details { margin:15px 0; }
     .technical-details > summary { cursor:pointer; color:var(--green); font-weight:650; }
@@ -202,14 +202,13 @@
           <p class="balance-label">Bitcoin balance</p>
           <div class="amount"><span id="observed-btc">—</span> <small>BTC</small></div>
           <p id="balance-usd" class="equivalent"></p>
-          <label for="confirmed-btc">Confirmed BTC found by scan (before any network fee)</label>
-          <input id="confirmed-btc" type="text" readonly value="" aria-label="Confirmed Bitcoin found by scan">
-          <button id="copy-balance" type="button" class="secondary">Copy confirmed BTC found</button>
+        </div>
+        <div>
+          <p id="balance-unit" class="balance-label">Satoshi balance</p>
+          <div class="amount"><span id="observed">—</span> <small>sats</small></div>
         </div>
       </div>
       <details class="technical-details"><summary>More balance details</summary>
-        <p id="balance-unit" class="balance-label">Testnet4 sats observed</p>
-        <div id="observed" class="amount">—</div>
         <div class="metrics">
           <div class="metric"><b id="confirmed">—</b><span>confirmed sats</span></div>
           <div class="metric"><b id="pending">—</b><span>pending change (sats)</span></div>
@@ -335,7 +334,7 @@
         "I understand a public explorer will see derived addresses from my real mainnet wallet." :
         "I understand a public explorer will see derived addresses from my Testnet4 wallet.");
       setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
-      setText("balance-unit", main ? "Sats observed" : "Testnet4 sats observed");
+      setText("balance-unit", main ? "Satoshi balance" : "Testnet4 satoshi balance");
       setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
       $("destination").placeholder = main ? "bc1…" : "tb1…";
       setText("send-price-note", main ?
@@ -591,7 +590,6 @@
       updateSendMode();
       invalidateReview();
       setText("observed-btc", btc(data.observed_sats));
-      $("confirmed-btc").value = btc(data.confirmed_sats);
       setText("observed", fmt(data.observed_sats));
       setText("confirmed", fmt(data.confirmed_sats));
       setText("pending", fmt(data.pending_delta_sats));
@@ -674,17 +672,6 @@
     $("amount").addEventListener("input", () => { invalidateReview(); updateSendEquivalent(); });
     $("destination").addEventListener("input", invalidateReview);
     $("send-all").addEventListener("change", () => { invalidateReview(); updateSendMode(); });
-    $("copy-balance").addEventListener("click", async () => {
-      if (!lastScan) { msg("message", "Refresh the balance first.", true); return; }
-      try {
-        await navigator.clipboard.writeText(btc(lastScan.confirmed_sats));
-        msg("message", "Confirmed BTC found by the scan copied. To deduct the fee automatically, keep Send all selected. Verify wallet coverage independently.");
-      } catch (_) {
-        $("confirmed-btc").focus();
-        $("confirmed-btc").select();
-        msg("message", "Automatic copy is unavailable. The confirmed BTC amount is selected above; press Command+C to copy it.", true);
-      }
-    });
     $("fee-rate").addEventListener("input", () => {
       feeRateCustomized = true; invalidateReview(); renderFeeGuidance();
     });
