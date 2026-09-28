@@ -62,7 +62,7 @@ Each test release attaches **two matching-version files**:
   filter, so custom `.bsms` files remain selectable. Only `.bsms` or `.txt`
   wallet definitions are accepted after selection; the desktop wrapper uses
   a native save dialog for unsigned PSBTs.
-- `easy-bitcoin-multisig-signer-vX.Y.Z.tar.gz`: the source code, tests, older
+- `bitcoin-easy-multisig-signer-vX.Y.Z.tar.gz`: the source code, tests, older
   command launcher, and build scripts. This is also usable on Linux, but
   source users need Python 3 and `pip install -r requirements.txt`.
   It is **not** a self-contained Linux desktop binary.
