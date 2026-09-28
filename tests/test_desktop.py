@@ -131,18 +131,26 @@ class DesktopTests(unittest.TestCase):
         self.assertNotIn("__DESKTOP_MODE__", fake.page)
 
     def test_the_bundle_ships_a_real_icon(self):
-        """PyInstaller's stock icon shipped for weeks; it must not come back."""
+        """PyInstaller's stock icon shipped for weeks; it must not come back.
+
+        The build passes flags straight to PyInstaller and keeps no spec in the
+        repository (*.spec is ignored), so the icon has to be asserted here, in the
+        build script, or it silently reverts to the default.
+        """
         root = Path(__file__).resolve().parents[1]
-        spec = (root / "Bitcoin Easy Signer.spec").read_text(encoding="utf-8")
-        self.assertNotIn("icon=None", spec, "the bundle is back to the default icon")
-        self.assertIn("assets/AppIcon.icns", spec)
+        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
+        self.assertIn('--icon "assets/AppIcon.icns"', build)
         icns = root / "assets" / "AppIcon.icns"
-        self.assertTrue(icns.is_file(), "the icon referenced by the spec is missing")
+        self.assertTrue(icns.is_file(), "the icon the build references is missing")
         data = icns.read_bytes()
         self.assertEqual(data[:4], b"icns", "not a valid .icns container")
         self.assertGreater(len(data), 20_000, "the icon looks suspiciously empty")
         # The master artwork travels with the compiled icon so it can be rebuilt.
         self.assertTrue((root / "assets" / "icon.svg").is_file())
+        # And the source archive must carry both, or a rebuild from it loses them.
+        source = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
+        self.assertIn("assets/AppIcon.icns", source)
+        self.assertIn("assets/icon.svg", source)
 
     def test_bundled_ui_is_resolved_inside_app(self):
         ui = Path(self.temp.name) / "ui.html"

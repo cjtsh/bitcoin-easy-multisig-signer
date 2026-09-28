@@ -21,7 +21,6 @@ cp README.md DISCLAIMER.md replit.md requirements.txt requirements-desktop.txt v
   gui.py desktop.py network_config.py network_settings.py probe.py \
   wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
 cp tests/test_*.py "$stage/$root/tests/"
-cp "Bitcoin Easy Signer.spec" "$stage/$root/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
 cp scripts/build-source.sh scripts/build-macos.sh scripts/hwi_entry.py \

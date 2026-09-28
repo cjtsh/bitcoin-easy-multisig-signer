@@ -84,6 +84,12 @@ jobs:
           test -f "$app/Contents/Info.plist"
           test -x "$app/Contents/MacOS/hwi"
           "$app/Contents/MacOS/hwi" --help >/dev/null
+          # The bundle must carry the icon, not PyInstaller's stock one.
+          icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")"
+          test -n "$icon_name"
+          icon_path="$(find "$app/Contents/Resources" -maxdepth 1 -name '*.icns' | head -1)"
+          test -n "$icon_path"
+          test "$(head -c 4 "$icon_path")" = "icns"
           codesign --verify --strict "$app"
           "$exe" --check-bundle
           "$exe" --check-save
