@@ -130,6 +130,20 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("const desktopMode = true", fake.page)
         self.assertNotIn("__DESKTOP_MODE__", fake.page)
 
+    def test_the_bundle_ships_a_real_icon(self):
+        """PyInstaller's stock icon shipped for weeks; it must not come back."""
+        root = Path(__file__).resolve().parents[1]
+        spec = (root / "Bitcoin Easy Signer.spec").read_text(encoding="utf-8")
+        self.assertNotIn("icon=None", spec, "the bundle is back to the default icon")
+        self.assertIn("assets/AppIcon.icns", spec)
+        icns = root / "assets" / "AppIcon.icns"
+        self.assertTrue(icns.is_file(), "the icon referenced by the spec is missing")
+        data = icns.read_bytes()
+        self.assertEqual(data[:4], b"icns", "not a valid .icns container")
+        self.assertGreater(len(data), 20_000, "the icon looks suspiciously empty")
+        # The master artwork travels with the compiled icon so it can be rebuilt.
+        self.assertTrue((root / "assets" / "icon.svg").is_file())
+
     def test_bundled_ui_is_resolved_inside_app(self):
         ui = Path(self.temp.name) / "ui.html"
         ui.write_text("<html>__APP_VERSION__ location.hash __DESKTOP_MODE__</html>")

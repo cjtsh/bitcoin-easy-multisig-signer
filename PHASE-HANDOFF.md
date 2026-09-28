@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.15
+# Project status and handoff — v0.1.16
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.15`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.16`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.15-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.16-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Where this stands
