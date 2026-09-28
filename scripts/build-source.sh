@@ -22,6 +22,14 @@ cp README.md DISCLAIMER.md replit.md requirements.txt requirements-desktop.txt v
   wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
 cp tests/test_*.py "$stage/$root/tests/"
 cp scripts/build-source.sh scripts/build-macos.sh "$stage/$root/scripts/"
-cp ci/build-candidate.yml "$stage/$root/ci/"
+if [[ -f ci/build-candidate.yml ]]; then
+  workflow=ci/build-candidate.yml
+elif [[ -f .github/workflows/build-candidate.yml ]]; then
+  workflow=.github/workflows/build-candidate.yml
+else
+  echo "Candidate build recipe is missing." >&2
+  exit 1
+fi
+cp "$workflow" "$stage/$root/ci/build-candidate.yml"
 tar -C "$stage" -czf "dist/$root.tar.gz" "$root"
 echo "Created dist/$root.tar.gz (source only; Python required to run it)."

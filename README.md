@@ -69,6 +69,8 @@ authorized maintainer installs that workflow, pushing
 `candidate-v0.1.0-macos` can build an unsigned **Apple Silicon** test DMG on a
 macOS runner plus the source archive. The recipe never publishes a release
 or makes the app trusted by Gatekeeper, and it has not been run yet.
+The source packaging script accepts the recipe in either its staged `ci/`
+location or the active `.github/workflows/` location.
 Intel compatibility or a universal
 Mac build must be verified separately rather than assumed.
 
