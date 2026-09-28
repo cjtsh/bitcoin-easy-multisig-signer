@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 import safe_http
 from support import real_ca_bundle
-from desktop import (DesktopBridge, check_bundle_resources, check_psbt_save,
-                     configure_packaged_tls, main, run_desktop)
+from desktop import (DesktopBridge, check_bundle_resources, check_device_bridge,
+                     check_psbt_save, configure_packaged_tls, main, run_desktop)
+from probe import ProbeError
 from gui import LocalApp, ui_path
 
 
@@ -175,6 +176,22 @@ class DesktopTests(unittest.TestCase):
                              "<html>__APP_VERSION__ location.hash __DESKTOP_MODE__</html>")
             configure_packaged_tls()
             check_bundle_resources()
+
+    def test_device_bridge_check_exercises_the_bundled_tool(self):
+        """It must prove the tool ran, and fail loudly with HWI's reason when it
+        could not -- this is the check that catches a broken bundled libusb."""
+        with patch("desktop.invoke_hwi", return_value=[]) as call:
+            check_device_bridge()
+        self.assertEqual(call.call_args[0][1], "testnet4")
+        with patch("desktop.invoke_hwi", return_value=[{"model": "Trezor"}]):
+            check_device_bridge()
+        with patch("desktop.invoke_hwi", side_effect=ProbeError("Device not found")):
+            with self.assertRaises(RuntimeError) as err:
+                check_device_bridge()
+            self.assertIn("Device not found", str(err.exception))
+        with patch("desktop.invoke_hwi", return_value={"not": "a list"}):
+            with self.assertRaises(RuntimeError):
+                check_device_bridge()
 
     def test_bundle_check_rejects_an_unconfigured_trust_store(self):
         """The check must fail when the app would fall back to ambient trust."""

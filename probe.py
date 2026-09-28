@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -178,8 +179,29 @@ def _hwi_path(executable: str) -> str:
     return found
 
 
+_PATH_LIKE = re.compile(r"(/\S+|[A-Za-z]:\\\S+)")
+
+
+def _hwi_reason(text: str) -> str:
+    """The first useful line of HWI output, made safe to show.
+
+    HWI says things like "Device not found" or "Please open the Bitcoin app",
+    which is exactly what a person needs to hear when a device will not connect.
+    It never carries keys, but it can carry paths, so collapse anything that
+    looks like a path, drop control characters and cap the length.
+    """
+    for line in (text or "").splitlines():
+        line = " ".join(line.split())
+        if not line:
+            continue
+        line = _PATH_LIKE.sub("<path>", line)
+        line = "".join(char for char in line if char.isprintable())
+        return line[:160]
+    return ""
+
+
 def invoke_hwi(executable: str, chain: str, *arguments: str) -> Any:
-    """Run HWI without a shell; never include raw HWI output in errors."""
+    """Run HWI without a shell, and keep its own reason for a failure."""
     try:
         result = subprocess.run(
             [_hwi_path(executable), "--chain", chain, *arguments],
@@ -189,10 +211,16 @@ def invoke_hwi(executable: str, chain: str, *arguments: str) -> Any:
             check=False,
         )
         if result.returncode != 0:
-            raise ProbeError("HWI could not complete the request; check the device.")
+            reason = _hwi_reason(result.stderr) or _hwi_reason(result.stdout)
+            raise ProbeError("HWI could not complete the request: " + reason
+                             if reason else
+                             "HWI could not complete the request; check the device.")
         data = json.loads(result.stdout)
         if isinstance(data, dict) and "error" in data:
-            raise ProbeError("HWI reported a device error; check its unlock state.")
+            reason = _hwi_reason(str(data.get("error")))
+            raise ProbeError("HWI reported a device error: " + reason
+                             if reason else
+                             "HWI reported a device error; check its unlock state.")
         return data
     except subprocess.TimeoutExpired as exc:
         raise ProbeError("HWI timed out; reconnect or unlock the device.") from exc
@@ -277,8 +305,9 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
                 )
             else:
                 statuses.append(f"{model}: fingerprint matched, but xpub DID NOT MATCH.")
-        except ProbeError:
-            statuses.append(f"{model}: signer {index} could not be verified (device error).")
+        except ProbeError as exc:
+            reason = _hwi_reason(str(exc)) or "device error"
+            statuses.append(f"{model}: signer {index} could not be verified ({reason}).")
     return statuses
 
 

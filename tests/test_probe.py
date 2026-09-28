@@ -176,6 +176,20 @@ class ProbeTests(unittest.TestCase):
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
         )
 
+    def test_hwi_failure_keeps_hwis_own_reason(self):
+        """When a device will not connect, the app must say what HWI said. A
+        generic "check the device" is useless to the person holding it."""
+        from probe import _hwi_reason
+        self.assertEqual(_hwi_reason("Device not found"), "Device not found")
+        self.assertEqual(_hwi_reason(""), "")
+        # Paths must not travel into the interface.
+        self.assertEqual(_hwi_reason("cannot open /usr/local/lib/libusb-1.0.0.dylib"),
+                         "cannot open <path>")
+        self.assertNotIn("/dev/", _hwi_reason("Could not connect to /dev/hidraw3"))
+        # Long output is capped and control characters are dropped.
+        self.assertLessEqual(len(_hwi_reason("x" * 400)), 160)
+        self.assertNotIn("\x07", _hwi_reason("bell\x07here"))
+
 
 if __name__ == "__main__":
     unittest.main()

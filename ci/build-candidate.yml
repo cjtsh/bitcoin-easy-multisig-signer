@@ -94,6 +94,9 @@ jobs:
           "$exe" --check-bundle
           "$exe" --check-save
           "$exe" --check-network
+          # Proves the frozen app finds its bundled HWI, loads the bundled
+          # libusb and parses its JSON -- the part no test can cover unbuilt.
+          "$exe" --check-devices
           # Prove the app trusts the CA store it SHIPS, not the build machine's.
           # With the ambient trust paths removed, only the bundled store can make
           # this succeed. Without this, a build that ignores its bundle still

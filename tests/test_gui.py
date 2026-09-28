@@ -164,6 +164,20 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("async function runSignerCheck", page)
         self.assertEqual(page.count("runSignerCheck("), 3)  # definition + two callers
 
+    def test_step_three_helps_when_no_device_appears(self):
+        """The most likely first outcome is nothing being detected; the app must
+        give the owner something to try rather than an empty list."""
+        page = self.get_page()
+        self.assertIn('id="preflight-help"', page)
+        for hint in ("Unlock the device with its PIN",
+                     "A Ledger needs it open",
+                     "Some cables only carry power",
+                     "Close any other wallet software"):
+            self.assertIn(hint, page, f"missing troubleshooting hint: {hint}")
+        # It stays hidden until a check actually finds nothing.
+        self.assertIn('$(helpId).hidden = result.devices.length > 0', page)
+        self.assertIn('helpId', page)
+
     def test_slow_work_shows_a_spinner(self):
         """Reported bug: a slow scan looked like the app had done nothing."""
         page = self.get_page()

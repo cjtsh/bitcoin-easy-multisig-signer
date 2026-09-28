@@ -12,6 +12,7 @@ from pathlib import Path
 
 import safe_http
 from gui import LocalApp, launch_url, save_prepared_psbt, ui_path
+from probe import ProbeError, invoke_hwi
 from wallet_service import WalletError
 
 
@@ -161,6 +162,29 @@ def check_psbt_save() -> None:
     print("Bundled unsigned-PSBT save check passed.")
 
 
+def check_device_bridge() -> None:
+    """Prove the bundled hardware-wallet tool runs, with no device attached.
+
+    This exercises the layer that cannot be tested any other way: finding the HWI
+    executable inside the .app, loading the bundled libusb, running it as a
+    subprocess and parsing its JSON. Every one of those can break in a frozen
+    build while working perfectly from source, and the first person to find out
+    would be someone holding a hardware wallet and wondering why nothing happens.
+    No device is required or implied.
+    """
+    try:
+        devices = invoke_hwi("hwi", "testnet4", "enumerate")
+    except ProbeError as exc:
+        raise RuntimeError(f"The bundled hardware-wallet tool could not run: {exc}") from exc
+    if not isinstance(devices, list):
+        raise RuntimeError("The bundled hardware-wallet tool returned an unexpected response.")
+    for device in devices:
+        if not isinstance(device, dict):
+            raise RuntimeError("The bundled hardware-wallet tool returned a malformed device.")
+    print(f"Bundled HWI responded: {len(devices)} device(s) attached right now.")
+    print("The device bridge works; plugging in a signer is what remains untested.")
+
+
 def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
     state = LocalApp(desktop=True)
@@ -193,6 +217,9 @@ def main() -> None:
         return
     if "--check-save" in sys.argv[1:]:
         check_psbt_save()
+        return
+    if "--check-devices" in sys.argv[1:]:
+        check_device_bridge()
         return
     if sys.platform != "darwin":
         raise SystemExit("The desktop window bundle is for macOS; Linux can use gui.py.")

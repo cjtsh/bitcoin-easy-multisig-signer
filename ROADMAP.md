@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**Current build:** **v0.1.16**, 28 September 2026, on the `phase2-transaction-builder`
+**Current build:** **v0.1.17**, 28 September 2026, on the `phase2-transaction-builder`
 branch. It prepares and reviews an **unsigned** transaction and performs read-only
 hardware signer recognition. **It does not sign, and it does not broadcast.**
 

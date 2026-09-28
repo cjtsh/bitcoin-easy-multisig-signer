@@ -270,6 +270,16 @@
       <button id="check-signers-now" type="button">Look for my hardware wallets</button>
       <div id="preflight-message" role="status" aria-live="polite"></div>
       <ul id="preflight-results"></ul>
+      <div id="preflight-help" class="notice" hidden>
+        <p><strong>If no device appears, check these in order:</strong></p>
+        <ul class="small">
+          <li>Unlock the device with its PIN <strong>on the device itself</strong>, then look again.</li>
+          <li>Open the device's Bitcoin app, if it has one. A Ledger needs it open.</li>
+          <li>Use a data cable. Some cables only carry power.</li>
+          <li>Close any other wallet software — it can hold the device open.</li>
+          <li>Try another USB port, without a hub between the device and the Mac.</li>
+        </ul>
+      </div>
       <p class="small muted">This reads each device's public identity only. Nothing is signed, nothing is sent, and any PIN is entered on the device itself — never here.</p>
     </section>
 
@@ -762,6 +772,7 @@
       setText("signer-policy", data.policy_short);
       $("preflight-message").textContent = "";
       $("preflight-results").replaceChildren();
+      $("preflight-help").hidden = true;
       $("refresh-top").hidden = false;
       setText("policy", data.policy_short + " · " + data.chain_short);
       setText("policy-detail", data.policy + " · " + data.chain);
@@ -1041,7 +1052,7 @@
       $("signer-results").replaceChildren();
       setText("signer-message", "Connect and unlock a hardware wallet, then choose Check connected devices.");
     });
-    async function runSignerCheck(button, messageId, resultsId, preparationId) {
+    async function runSignerCheck(button, messageId, resultsId, preparationId, helpId) {
       button.disabled = true;
       setBusy("Looking for connected signing devices…");
       setText(messageId, "Checking connected devices. This is read-only…");
@@ -1056,13 +1067,16 @@
         }
         setText(messageId, result.devices.length ? result.message :
           "No compatible device was found. Connect a supported hardware wallet, unlock it on the device itself, then check again.");
+        // Show the troubleshooting list only when it is actually needed.
+        if (helpId) $(helpId).hidden = result.devices.length > 0;
       } catch (e) {
         setText(messageId, e.message || "Hardware wallet recognition is unavailable.");
       } finally { button.disabled = false; setBusy(""); }
     }
     // Step 3: a rehearsal, with no transaction involved.
     $("check-signers-now").addEventListener("click", () =>
-      runSignerCheck($("check-signers-now"), "preflight-message", "preflight-results", null));
+      runSignerCheck($("check-signers-now"), "preflight-message", "preflight-results", null,
+        "preflight-help"));
     // At the end of a payment: the same check, tied to the review on screen.
     $("check-signers").addEventListener("click", () =>
       runSignerCheck($("check-signers"), "signer-message", "signer-results", preparationId));
