@@ -1,8 +1,8 @@
-# Easy Bitcoin Multisig Signer — experimental mainnet and Testnet4 GUI
+# Bitcoin Easy Signer — experimental mainnet and Testnet4 GUI
 
 ## Latest test release: v0.1.7
 
-Download the [unsigned Apple Silicon Mac DMG](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/download/v0.1.7/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg) or the [source archive for Linux and other platforms](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/download/v0.1.7/easy-bitcoin-multisig-signer-v0.1.7.tar.gz). See the [v0.1.7 release notes](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/tag/v0.1.7). This is an unsigned, experimental test release from the `phase2-transaction-builder` candidate branch; it is not merged into `main`. It prepares unsigned transactions and does not sign or broadcast them.
+Download the [unsigned Apple Silicon Mac DMG](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.1.7/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg) or the [source archive for Linux and other platforms](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.1.7/easy-bitcoin-multisig-signer-v0.1.7.tar.gz). See the [v0.1.7 release notes](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.7). This is an unsigned, experimental test release from the `phase2-transaction-builder` candidate branch; it is not merged into `main`. It prepares unsigned transactions and does not sign or broadcast them.
 
 
 ## Disclaimer — experimental software; use at your own risk
