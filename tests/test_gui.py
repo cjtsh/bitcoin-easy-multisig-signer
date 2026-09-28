@@ -77,7 +77,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('id="balance-send-status"', page)
         self.assertIn("No confirmed Bitcoin was found", page)
         self.assertIn("Explorer UTXOs and confirmed balance disagree", page)
-        self.assertIn("The scan did not finish the supported address range", page)
+        self.assertIn("The scan reached the 100-address limit", page)
         self.assertIn("Other wallet addresses beyond the scan gap may still hold funds.", page)
         self.assertIn("sats at this address", page)
         self.assertIn('value="testnet4"', page)

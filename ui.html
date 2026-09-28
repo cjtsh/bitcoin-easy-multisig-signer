@@ -579,7 +579,7 @@
       } else if (data.utxo_consistent === false) {
         sendBlockReason = "Explorer UTXOs and confirmed balance disagree. Refresh the balance; if the mismatch remains, verify with your own node before preparing a transaction.";
       } else if (data.coverage_limited) {
-        sendBlockReason = "The scan did not finish the supported address range. Refresh later or verify the wallet with your own node; this version will not prepare a transaction from a partial scan.";
+        sendBlockReason = "The scan reached the 100-address limit before finding the required unused gap. Do not prepare a transaction from this partial scan; verify wallet coverage with your own node.";
       } else if (data.confirmed_sats <= 0 || data.utxo_count <= 0) {
         sendBlockReason = data.pending_delta_sats > 0 ?
           "No confirmed Bitcoin was found. Pending Bitcoin cannot be spent yet. Refresh after a confirmation." :
