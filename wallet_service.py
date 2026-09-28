@@ -19,12 +19,12 @@ from embit import psbt, script, transaction
 from embit.descriptor import Descriptor
 from embit.networks import NETWORKS
 
+from network_config import NETWORKS as CHAIN_CONFIGS, for_record_network
+from network_settings import validate_esplora_url
+from version import APP_VERSION
 from probe import ProbeError, WalletRecord
 
-EXPLORERS = {
-    "main": "https://mempool.space/api",
-    "testnet4": "https://mempool.space/testnet4/api",
-}
+EXPLORERS = {chain: config.explorer_url for chain, config in CHAIN_CONFIGS.items()}
 GAP_LIMIT = 20
 MAX_INDEX = 100
 SATOSHI_DUST_FLOOR = 546
@@ -50,16 +50,17 @@ def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
     return ""
 
 
-def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4"):
+def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
+                 base_url: str | None = None):
     """Bounded Esplora GET on an explicit network; never send xpubs."""
     if chain not in EXPLORERS:
         raise WalletError("Unsupported explorer network.")
     if not path.startswith("/") or ".." in path or "?" in path:
         raise WalletError("Invalid explorer path.")
-    request = Request(
-        EXPLORERS[chain] + path,
-        headers={"User-Agent": "EasyMultisig/0.0.6", "Accept": "application/json"},
-    )
+    base = validate_esplora_url(base_url) if base_url is not None else EXPLORERS[chain]
+    request = Request(base + path, headers={
+        "User-Agent": f"EasyMultisig/{APP_VERSION}", "Accept": "application/json",
+    })
     try:
         with urlopen(request, timeout=12) as response:
             if response.length is not None and response.length > 2_000_000:
@@ -76,15 +77,15 @@ def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4"):
 
 
 def _chain(record: WalletRecord) -> str:
-    if record.network == "main":
-        return "main"
-    if record.network == "test":
-        return "testnet4"
-    raise WalletError("Only mainnet and Testnet4 wallets are supported.")
+    try:
+        return for_record_network(record.network).chain
+    except ValueError as exc:
+        raise WalletError(str(exc)) from exc
 
 
-def _query_for(record: WalletRecord, get: Callable) -> Callable:
-    return partial(explorer_get, chain=_chain(record)) if get is explorer_get else get
+def _query_for(record: WalletRecord, get: Callable, base_url: str | None) -> Callable:
+    return (partial(explorer_get, chain=_chain(record), base_url=base_url)
+            if get is explorer_get else get)
 
 
 @dataclass(frozen=True)
@@ -97,9 +98,8 @@ class Layout:
 
 def wallet_layout(record: WalletRecord) -> Layout:
     """Resolve paths only when the BSMS reference address anchors receive /0."""
-    chain = _chain(record)
-    prefix = "bc1" if chain == "main" else "tb1"
-    if not record.reference_address.startswith(prefix):
+    config = CHAIN_CONFIGS[_chain(record)]
+    if not record.reference_address.startswith(config.address_prefix):
         raise WalletError("Wallet reference address does not match its network.")
     if record.reference_status == "mismatch":
         raise WalletError(
@@ -115,28 +115,18 @@ def wallet_layout(record: WalletRecord) -> Layout:
         verified = True
     elif suffixes and all(s == "/0/*" for s in suffixes):
         receive = desc
-        change = (None if chain == "main"
-                  else Descriptor.from_string(text.replace("/0/*", "/1/*")))
-        warning = (
-            "Mainnet change is not declared; balance may be incomplete and "
-            "transaction preparation is disabled."
-            if chain == "main" else
-            "Change branch /1/* is inferred from the BIP48 convention, not declared in the BSMS file."
-        )
+        change = None
+        warning = ("Change is not declared in this BSMS file. The receive-side balance "
+                   "may be incomplete and transaction preparation is disabled.")
         verified = False
     elif suffixes and all(s == "/*" for s in suffixes):
         if record.reference_status == "receive-branch-only":
             receive = Descriptor.from_string(text.replace("/*", "/0/*"))
-            change = (None if chain == "main"
-                      else Descriptor.from_string(text.replace("/*", "/1/*")))
+            change = None
             warning = (
-                "The mainnet /* descriptor does not literally match the reference. "
+                "The /* descriptor does not literally match the reference. "
                 "Only the matching /0/* receive path is scanned; change is not guessed. "
                 "Balance is partial and transaction preparation is disabled."
-                if chain == "main" else
-                "The file's /* descriptor does not literally produce its reference address. "
-                "Receive /0/* matches that address; change /1/* is inferred. "
-                "Treat the displayed total as provisional until the wallet's paths are confirmed."
             )
             verified = False
         else:
@@ -158,16 +148,14 @@ def wallet_layout(record: WalletRecord) -> Layout:
 
 def wallet_summary(record: WalletRecord) -> dict:
     layout = wallet_layout(record)
-    chain = _chain(record)
+    config = CHAIN_CONFIGS[_chain(record)]
     network = NETWORKS[record.network]
     return {
         "policy": f"{record.threshold}-of-{len(record.keys)} native-SegWit multisig",
-        "chain": ("Bitcoin mainnet" if chain == "main" else
-                  "Testnet4 (selected in this app; tb1 alone cannot identify a chain)"),
-        "network": chain,
-        "can_prepare": (bool(layout.change_verified and layout.change
-                             and record.threshold == 2 and len(record.keys) == 3)
-                        if chain == "main" else bool(layout.change)),
+        "chain": config.label,
+        "network": config.chain,
+        "can_prepare": bool(layout.change_verified and layout.change
+                            and record.threshold == 2 and len(record.keys) == 3),
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
         "receive_address": layout.receive.derive(0).address(network),
@@ -205,7 +193,8 @@ def _address_stats(address: str, get: Callable) -> dict:
         raise WalletError("Explorer returned malformed address statistics.") from exc
 
 
-def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
+def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
+                *, base_url: str | None = None) -> dict:
     """Scan both branches until 20 unused addresses after the last used (max 100).
 
     The wallet file remains in local process memory. Only derived addresses and
@@ -213,7 +202,7 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
     """
     layout = wallet_layout(record)
     chain = _chain(record)
-    query = _query_for(record, get)
+    query = _query_for(record, get, base_url)
     addresses = []
     coverage_limited = False
     for name, branch in (("receive", layout.receive), ("change", layout.change)):
@@ -285,32 +274,35 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
         "coverage_limited": coverage_limited or layout.change is None,
         "path_warning": layout.warning,
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "source": EXPLORERS[chain],
+        "source": base_url or EXPLORERS[chain],
     }
 
 
 def build_unsigned_psbt(
     record: WalletRecord, scan: dict, recipient: str, amount: int,
     fee_rate: int = 2, get: Callable = explorer_get,
+    *, base_url: str | None = None,
 ) -> dict:
     """Create an unsigned PSBT with previous transactions; never sign/broadcast."""
     layout = wallet_layout(record)
     chain = _chain(record)
-    query = _query_for(record, get)
-    if scan.get("network", chain) != chain:
+    query = _query_for(record, get, base_url)
+    if scan.get("network") != chain:
         raise WalletError("Wallet and scanned network differ; no PSBT built.")
-    if chain == "main":
-        if not layout.change_verified or record.threshold != 2 or len(record.keys) != 3:
-            raise WalletError("Mainnet PSBTs require an explicit 2-of-3 receive/change descriptor.")
-        if not scan.get("utxo_consistent", False):
-            raise WalletError(
-                "Mainnet UTXOs and confirmed balance disagree; refresh or verify with your own node."
-            )
+    if not layout.change_verified or record.threshold != 2 or len(record.keys) != 3:
+        raise WalletError("PSBTs require an explicit 2-of-3 receive/change descriptor.")
+    if scan.get("source") != (base_url or EXPLORERS[chain]):
+        raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
+    if not scan.get("utxo_consistent", False):
+        raise WalletError(
+            "UTXOs and confirmed balance disagree; refresh or verify with your own node."
+        )
     if layout.change is None or scan.get("coverage_limited"):
         raise WalletError("Change path or scan coverage is incomplete; no PSBT will be built.")
-    prefix = "bc1" if chain == "main" else "tb1"
+    config = CHAIN_CONFIGS[chain]
+    prefix = config.address_prefix
     if not isinstance(recipient, str) or not recipient.startswith(prefix):
-        raise WalletError(f"{'Mainnet' if chain == 'main' else 'Testnet4'} send requires a {prefix} destination address.")
+        raise WalletError(f"{config.label} send requires a {prefix} destination address.")
     try:
         destination = script.address_to_scriptpubkey(recipient)
         if destination.address(NETWORKS[record.network]) != recipient.lower():

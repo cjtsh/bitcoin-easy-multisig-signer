@@ -17,6 +17,8 @@ from embit.descriptor.checksum import checksum as descriptor_checksum
 from embit.descriptor.miniscript import Multi
 from embit.networks import NETWORKS
 
+from network_config import NETWORKS as CHAIN_CONFIGS, for_record_network
+
 MAX_BSMS_BYTES = 65_536
 
 
@@ -40,10 +42,9 @@ class WalletRecord:
 
 
 def _network_for_address(address: str) -> str:
-    if address.startswith("bc1"):
-        return "main"
-    if address.startswith("tb1"):
-        return "test"  # Testnet4, legacy testnet, and Signet all share tb1.
+    for config in CHAIN_CONFIGS.values():
+        if address.startswith(config.address_prefix):
+            return config.record_network  # tb1 is ambiguous; GUI selects Testnet4.
     if address.startswith("bcrt1"):
         return "regtest"
     raise ProbeError("Only bc1, tb1, and bcrt1 reference addresses are supported.")
@@ -119,14 +120,14 @@ def parse_bsms(text: str) -> WalletRecord:
         raise ProbeError("Every signer needs a public xpub and key origin.")
     if len({key.fingerprint for key in keys}) != len(keys):
         raise ProbeError("Duplicate signer fingerprints are ambiguous in this proof.")
-    if network == "test" and any(
-        key.derivation[:2] != [0x80000030, 0x80000001] for key in keys
-    ):
-        raise ProbeError("Test wallet signers must use BIP48 coin type 1'.")
-    if network == "main" and any(
-        key.derivation[:2] != [0x80000030, 0x80000000] for key in keys
-    ):
-        raise ProbeError("Mainnet wallet signers must use BIP48 coin type 0'.")
+    if network in ("test", "main"):
+        config = for_record_network(network)
+        if any(key.derivation[:2] != [0x80000030, config.bip48_coin_type]
+               for key in keys):
+            raise ProbeError(
+                f"{config.label} signers must use BIP48 coin type "
+                f"{config.bip48_coin_type & 0x7FFFFFFF}'."
+            )
 
     return WalletRecord(
         descriptor=descriptor,

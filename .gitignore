@@ -1,5 +1,9 @@
 .DS_Store
 .venv/
+.build-venv/
+build/
+dist/
+*.spec
 __pycache__/
 *.py[cod]
 .pytest_cache/

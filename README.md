@@ -26,11 +26,11 @@ seed words or private keys into this software. Read the full
 or a guarantee of enforceable protection; obtain qualified legal and security
 review before using software to handle real funds.
 
-Version 0.0.6 includes a local browser GUI for opening a BSMS 1.0
-wallet definition, checking public mainnet or Testnet4 balances, and preparing
+The local browser GUI opens a BSMS 1.0
+wallet definition, checks public mainnet or Testnet4 balances, and prepares
 an **unsigned** PSBT only where the supported receive/change paths are verified.
 It cannot sign or broadcast a transaction. It is not yet
-a finished Mac application, and no physical signer has been tested. The
+a finished, Mac-tested application, and no physical signer has been tested. The
 previous command-line proof remains available in `probe.py`.
 
 The intended Mac app will eventually give a family member a short guided
@@ -39,14 +39,61 @@ wallet, generate keys, or ask for recovery words. This proof keeps hardware
 communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
 and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
+## Distribution plan (local development; not yet a public DMG)
+
+Each future release should attach **two matching-version files**:
+
+- `Easy-Bitcoin-Multisig-vX.Y.Z-macOS.dmg`: the Mac `.app`, containing its
+  Python runtime, dependencies, existing wallet engine, and a small native
+  WebKit window. A user opens the app without installing Python or using
+  Terminal. The desktop wrapper uses a native save dialog for unsigned PSBTs.
+- `easy-bitcoin-multisig-signer-vX.Y.Z.tar.gz`: the source code, tests, older
+  command launcher, and build scripts. This is also usable on Linux, but
+  source users need Python 3 and `pip install -r requirements.txt`.
+  It is **not** a self-contained Linux desktop binary.
+
+Generate the source archive with `bash scripts/build-source.sh X.Y.Z`. On a
+Mac, build an **unsigned test** `.app` and DMG with
+`bash scripts/build-macos.sh X.Y.Z`. Public Mac distribution needs Apple
+Developer ID signing and notarization; the build script requires both
+`MAC_SIGN_IDENTITY` and `MAC_NOTARY_PROFILE` (an already configured macOS
+keychain profile) when run with `RELEASE=1`. Keep credentials out of this
+repository. Build/test on the Mac architecture(s) being supported. In
+particular, verify first launch, BSMS file picking, refresh, and native PSBT
+saving before releasing. A Linux build environment cannot validate or
+notarize the Mac app. No Mac DMG has been built or published yet.
+The candidate GitHub Actions recipe is staged as `ci/build-candidate.yml`.
+**It is not active**: this repository connection cannot write GitHub's
+protected `.github/workflows/` path with its present permission. Once an
+authorized maintainer installs that workflow, pushing
+`candidate-v0.1.0-macos` can build an unsigned **Apple Silicon** test DMG on a
+macOS runner plus the source archive. The recipe never publishes a release
+or makes the app trusted by Gatekeeper, and it has not been run yet.
+Intel compatibility or a universal
+Mac build must be verified separately rather than assumed.
+
+GitHub may additionally display its automatically generated source archives;
+the two files above are the intended **attached release artifacts**. Do not
+publish either as v0.1.0 until the Mac build is validated and release approval
+is given.
+
 ## Point-and-click Testnet4 practice or mainnet viewing on a Mac
 
-1. Download the project's ZIP, unzip it, and double-click
-   **Start Easy Multisig.command**. The launcher needs Python 3 installed and
-   prepares a local environment on first launch; Terminal will be visible,
-   but you do not need to type commands or file paths. macOS may warn about
-   an unsigned downloaded launcher. Do not bypass a warning for software
-   whose origin you cannot independently verify.
+This is **one application and one wallet/PSBT engine**, with a selected
+network configuration for BIP48 coin type, address prefix and the public
+Esplora backend. Switching networks changes that routing and the visible
+theme, not the wallet or fee-safety rules. Each network requires its own
+matching BSMS definition; the switch never converts keys or balances.
+Mainnet BTC/USD and sat/vB quotes remain explicitly labelled *references*
+in both modes, as chosen for this app; Testnet4 confirmation conditions may
+differ.
+
+1. For the **current source preview**, unpack the `.tar.gz` and double-click
+   **Start Easy Multisig.command** on a Mac. That older launcher needs Python 3,
+   prepares a local environment on first launch, and shows Terminal. The
+   future tested/signed DMG will instead open a self-contained app window.
+   macOS may warn about unsigned downloaded software; do not bypass a warning
+   for software whose origin you cannot independently verify.
 2. A browser window opens on **127.0.0.1** on your Mac (not a hosted website).
    Start with **TESTNET4** and choose a nonproduction BSMS 1.0 definition
    with the file picker. To use **LIVE MAINNET**, switch networks and choose a
@@ -56,9 +103,10 @@ and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
    the reference address, and the first receiving and change addresses.
    The file remains in process memory; it is not stored by the app.
 3. The balance check derives public addresses and sends **those addresses**
-   to the public mempool.space explorer for the selected network. Neither BSMS
-   nor xpubs are sent. Before a mainnet import, you must explicitly acknowledge
-   that this discloses real wallet addresses/activity to a third party.
+   to the selected explorer (mempool.space by default). Neither BSMS
+   nor xpubs are sent. Before importing either network, you must explicitly
+   acknowledge disclosure to the selected explorer operator. On mainnet those
+   addresses can reveal real wallet activity.
    The wallet definition and last scan stay only in process memory until
    you quit the local app; reloading the browser restores them. Use the
    prominent **Refresh wallet balance** button after new deposits—no file
@@ -68,7 +116,9 @@ and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
    explorer observation, not a proof of a complete wallet balance.** The
    interface shows when it last scanned and warns on incomplete coverage or
    inferred descriptor branches. If the explorer fails, it does *not* claim
-   the wallet is empty. Each address with activity shows its own confirmed,
+   the wallet is empty. An undeclared change branch is **never inferred on
+   either network**, so a receive-only balance is partial. Each address with
+   activity shows its own confirmed,
    pending and observed net balance; the wallet total sums scanned addresses.
    For a size reference, the interface also fetches a public mainnet BTC/USD spot
    rate from mempool.space and displays approximate USD equivalents beside
@@ -80,12 +130,13 @@ and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
    unavailable; satoshi amounts still display without a rate. No wallet
    information is included in the price request.
 4. Enter a destination on the **selected network**, a whole-sat amount and fee
-   rate to prepare a PSBT from confirmed outputs. Mainnet PSBT preparation
-   requires a 2-of-3 multisig descriptor with explicit receive/change branches
+   rate to prepare a PSBT from confirmed outputs. PSBT preparation on either
+   network requires a 2-of-3 multisig descriptor with explicit receive/change branches
    matching its reference address; inferred change or incomplete scans are
    view-only. Public explorer UTXOs must agree with the confirmed balance.
-   The fee rate is limited to 1–25 sat/vB; mainnet preparation also requires a
-   fresh live fee reference, refuses rates below its economy estimate, and
+   The fee rate is limited to 1–25 sat/vB; preparation on either network
+   requires a fresh mainnet fee reference, refuses rates below its economy
+   estimate, and
    warns with extra acknowledgement below its standard estimate. An estimated
    fee above 10,000 sats is refused, and unusually high estimates require an
    extra acknowledgement before download. Review destination, selected
@@ -95,13 +146,28 @@ and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
    of confirmation or a substitute for checking a final signed transaction.
    The "connect signers" step is not implemented in this version.
 
+**Optional server selection:** Open **Advanced network settings** to select
+an Esplora HTTP API base for each network's explorer and a separate Esplora
+broadcast server URL. Defaults for both are mempool.space; you can restore them
+with one button. Mainnet can use, for example,
+`https://explorer.btc21.cc/api` as an optional explorer. A custom URL is
+checked against the selected network's genesis hash when saved and before
+wallet data is requested. That check prevents an accidental wrong-network
+selection, **not** inaccurate or malicious explorer results. The chosen URLs
+are saved locally in your user configuration directory; wallet files, xpubs,
+addresses, scans and PSBTs are not saved there. If a chosen server is offline,
+the app does **not** silently fall back to a public explorer. Only HTTPS
+servers or loopback HTTP are accepted. Electrum TLS servers (including port
+50002) speak a different protocol and are **not** supported by these Esplora
+fields. **The broadcaster URL is a future-use setting only:** this version
+cannot sign or broadcast, and no transaction is sent to that endpoint.
+
 The Testnet4 sample export described below uses `/*` in the descriptor, but its
 reference address matches `/0/0`. The GUI uses that address to identify
-the receive branch, marks the `/1/*` change branch as **inferred**, and asks
-you to verify change independently before any future signing. It must never
-be treated as proof that hardware owns that branch. On **mainnet**, the GUI
-does not infer change: a file without declared change can show only a partial
-read-only balance. If the reference address cannot be matched, the GUI stops
+the receive branch, but does **not** infer a `/1/*` change branch.
+The same rule applies on mainnet. Both files are view-only until an explicit,
+reference-matched receive/change definition is available. If the reference
+address cannot be matched, the GUI stops
 rather than inventing a wallet balance. There is no hidden hosted server
 upload, wallet creation or seed entry.
 

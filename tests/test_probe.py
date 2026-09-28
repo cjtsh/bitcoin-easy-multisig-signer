@@ -18,10 +18,10 @@ from probe import (
 )
 
 
-def test_record(short_path: bool = False) -> tuple[str, list[bip32.HDKey]]:
+def test_record(short_path: bool = False, dual_branch: bool = False) -> tuple[str, list[bip32.HDKey]]:
     roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
     path = "m/48h/1h/0h/2h"
-    suffix = "/*" if short_path else "/0/*"
+    suffix = "/<0;1>/*" if dual_branch else "/*" if short_path else "/0/*"
     keys = [
         f"[{root.my_fingerprint.hex()}/48h/1h/0h/2h]"
         f"{root.derive(path).to_public().to_base58()}{suffix}"
@@ -29,7 +29,8 @@ def test_record(short_path: bool = False) -> tuple[str, list[bip32.HDKey]]:
     ]
     descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
     full_descriptor = descriptor + "#" + checksum(descriptor)
-    canonical = descriptor.replace("/*", "/0/*") if short_path else descriptor
+    canonical = (descriptor.replace("/<0;1>/*", "/0/*") if dual_branch else
+                 descriptor.replace("/*", "/0/*") if short_path else descriptor)
     reference = Descriptor.from_string(canonical).derive(0).address(NETWORKS["test"])
     return (
         f"BSMS 1.0\n{full_descriptor}\nNo path restrictions\n{reference}\n",

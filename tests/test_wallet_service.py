@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from embit import bip32, psbt, transaction
 from embit.descriptor import Descriptor
@@ -10,9 +11,10 @@ from embit.descriptor.checksum import checksum
 from embit.networks import NETWORKS
 
 from probe import ProbeError, load_bsms, parse_bsms
+from network_config import NETWORKS as CHAIN_CONFIGS
 from test_probe import test_record
 from wallet_service import (
-    WalletError, build_unsigned_psbt, check_fee_safety, scan_wallet, wallet_layout,
+    WalletError, build_unsigned_psbt, check_fee_safety, explorer_get, scan_wallet, wallet_layout,
     wallet_summary,
 )
 
@@ -33,7 +35,7 @@ def mainnet_record(suffix="/<0;1>/*"):
 
 class WalletServiceTests(unittest.TestCase):
     def setUp(self):
-        self.text, _ = test_record(short_path=True)
+        self.text, _ = test_record(dual_branch=True)
         self.wallet = parse_bsms(self.text)
         self.layout = wallet_layout(self.wallet)
         from embit.networks import NETWORKS
@@ -73,7 +75,8 @@ class WalletServiceTests(unittest.TestCase):
         self.assertEqual(len(view["keys"]), 3)
         self.assertEqual(view["receive_address"], self.receive)
         self.assertEqual(view["change_address"], self.change)
-        self.assertIn("inferred", view["warning"])
+        self.assertEqual(view["warning"], "")
+        self.assertTrue(view["can_prepare"])
         self.assertTrue(all(key["public_key"].startswith("tpub") for key in view["keys"]))
 
     def test_scan_finds_synthetic_balance_on_receive_branch(self):
@@ -106,6 +109,28 @@ class WalletServiceTests(unittest.TestCase):
         self.assertEqual(len(packet.inputs[0].bip32_derivations), 3)
         self.assertEqual(len(packet.outputs[1].bip32_derivations), 3)
         self.assertEqual(packet.inputs[0].partial_sigs, {})
+        with self.assertRaisesRegex(WalletError, "network differ"):
+            build_unsigned_psbt(self.wallet, {**data, "network": None},
+                                recipient, 1000, 2, self.fake_get)
+        with self.assertRaisesRegex(WalletError, "disagree"):
+            build_unsigned_psbt(self.wallet, {**data, "utxo_consistent": False},
+                                recipient, 1000, 2, self.fake_get)
+
+    def test_one_explorer_client_routes_by_selected_network(self):
+        class Response:
+            length = 2
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                pass
+            def read(self, *_args):
+                return b"{}"
+        with patch("wallet_service.urlopen", return_value=Response()) as fetch:
+            for chain, config in CHAIN_CONFIGS.items():
+                self.assertEqual(explorer_get("/blocks/tip", chain=chain), {})
+                self.assertEqual(fetch.call_args.args[0].full_url,
+                                 config.explorer_url + "/blocks/tip")
+        self.assertEqual(fetch.call_count, len(CHAIN_CONFIGS))
 
     def test_rejects_mainnet_destination_and_insufficient_funds(self):
         data = scan_wallet(self.wallet, self.fake_get)
@@ -138,6 +163,19 @@ class WalletServiceTests(unittest.TestCase):
         lines[3] = self.change
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
+
+    def test_both_networks_leave_undeclared_change_view_only(self):
+        for short in (False, True):
+            with self.subTest(short=short):
+                record = parse_bsms(test_record(short_path=short)[0])
+                layout = wallet_layout(record)
+                self.assertIsNone(layout.change)
+                self.assertFalse(wallet_summary(record)["can_prepare"])
+                scan = scan_wallet(record, self.fake_get)
+                self.assertEqual(scan["network"], "testnet4")
+                self.assertTrue(scan["coverage_limited"])
+                with self.assertRaisesRegex(WalletError, "explicit 2-of-3"):
+                    build_unsigned_psbt(record, scan, record.reference_address, 1000)
 
     def test_mainnet_explicit_branches_build_only_unsigned_psbt(self):
         record = parse_bsms(mainnet_record())

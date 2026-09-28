@@ -2,10 +2,12 @@
 
 import json
 import io
+import tempfile
 import threading
 import unittest
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
@@ -18,6 +20,12 @@ from test_wallet_service import mainnet_record
 
 class LocalGuiTests(unittest.TestCase):
     def setUp(self):
+        self.settings_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.settings_dir.cleanup)
+        self.settings_patch = patch("network_settings.settings_path",
+                                    return_value=Path(self.settings_dir.name) / "settings.json")
+        self.settings_patch.start()
+        self.addCleanup(self.settings_patch.stop)
         self.app = LocalApp()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.app.handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -53,8 +61,11 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("LIVE BITCOIN NETWORK · REAL FUNDS", page)
         self.assertIn("body.live-mode", page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
+        self.assertIn("v0.1.0", page)
+        self.assertNotIn("__APP_VERSION__", page)
         text, _ = test_record(short_path=True)
-        result = self.post("/api/import", {"chain": "testnet4", "text": text})
+        result = self.post("/api/import", {"chain": "testnet4", "text": text,
+                                           "consent_explorer": True})
         self.assertEqual(len(result["keys"]), 3)
         self.assertTrue(result["receive_address"].startswith("tb1"))
         self.assertIsNotNone(self.app.record)
@@ -62,6 +73,9 @@ class LocalGuiTests(unittest.TestCase):
 
     def test_import_rejects_bad_chain_and_cross_origin_post(self):
         text, _ = test_record()
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/import", {"chain": "testnet4", "text": text})
+        self.assertEqual(err.exception.code, 400)
         with self.assertRaises(HTTPError) as err:
             self.post("/api/import", {"chain": "test", "text": text})
         self.assertEqual(err.exception.code, 400)
@@ -76,8 +90,10 @@ class LocalGuiTests(unittest.TestCase):
 
     def test_gui_scan_returns_balance_and_does_not_store_file_on_disk(self):
         text, _ = test_record()
-        self.post("/api/import", {"chain": "testnet4", "text": text})
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
         fake = {
+            "network": "testnet4", "utxo_consistent": True,
             "confirmed_sats": 6000, "pending_delta_sats": 0, "observed_sats": 6000,
             "addresses": [], "utxos": [], "scanned": 40, "coverage_limited": False,
             "path_warning": "", "scanned_at": "2026-09-27T00:00:00+00:00",
@@ -91,7 +107,8 @@ class LocalGuiTests(unittest.TestCase):
 
     def test_refresh_twice_uses_same_in_memory_wallet_definition(self):
         text, _ = test_record()
-        self.post("/api/import", {"chain": "testnet4", "text": text})
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
         record = self.app.record
         base = {
             "network": "testnet4", "utxo_consistent": True,
@@ -138,7 +155,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertTrue(balance["utxo_consistent"])
         restored = self.post("/api/status", {})
         self.assertEqual(restored["chain"], "main")
-        self.assertTrue(restored["mainnet_consent"])
+        self.assertTrue(restored["explorer_consent"])
         self.assertEqual(restored["wallet"]["reference_address"], result["reference_address"])
         self.assertEqual(restored["balance"]["observed_sats"], 100_000)
         self.assertNotIn("utxos", restored["balance"])
@@ -146,6 +163,43 @@ class LocalGuiTests(unittest.TestCase):
             self.post("/api/prepare", {"chain": "testnet4", "recipient": "tb1wrong",
                                         "amount_sats": 1000})
         self.assertEqual(err.exception.code, 400)
+
+    def test_custom_esplora_server_is_saved_per_network_and_scan_uses_it(self):
+        main_url = "https://explorer.btc21.cc/api"
+        broadcast_url = "https://relay.example.org/api"
+        with patch("gui.verify_esplora") as verify:
+            settings = self.post("/api/settings", {
+                "chain": "main", "action": "save",
+                "explorer_url": main_url, "broadcaster_url": broadcast_url,
+            })
+        self.assertEqual(settings["explorer_url"], main_url)
+        self.assertFalse(settings["broadcasting_available"])
+        self.assertEqual(verify.call_count, 2)
+        self.assertEqual(self.post("/api/settings", {
+            "chain": "testnet4", "action": "read",
+        })["explorer_url"], "https://mempool.space/testnet4/api")
+        self.assertEqual(LocalApp().servers["main"]["explorer"], main_url)
+        self.assertNotIn("bsms", (Path(self.settings_dir.name) / "settings.json").read_text())
+
+        text = mainnet_record()
+        self.post("/api/import", {
+            "chain": "main", "text": text, "consent_explorer": True,
+        })
+        fake = {
+            "network": "main", "utxo_consistent": True,
+            "confirmed_sats": 0, "pending_delta_sats": 0, "observed_sats": 0,
+            "addresses": [], "utxos": [], "scanned": 40, "coverage_limited": False,
+            "path_warning": "", "scanned_at": "2026-09-27T00:00:00+00:00",
+            "source": main_url,
+        }
+        with patch("gui.verify_esplora"), patch("gui.scan_wallet", return_value=fake) as scan:
+            self.post("/api/scan", {"chain": "main"})
+        self.assertEqual(scan.call_args.kwargs["base_url"], main_url)
+        self.post("/api/settings", {"chain": "main", "action": "reset"})
+        self.assertIsNone(self.app.scan)
+        self.assertEqual(self.post("/api/settings", {
+            "chain": "main", "action": "read",
+        })["explorer_url"], "https://mempool.space/api")
 
     def test_mainnet_fee_reference_is_public_and_cached(self):
         quote = {"network": "main", "fastest": 4, "standard": 3, "hour": 2,
@@ -210,13 +264,57 @@ class LocalGuiTests(unittest.TestCase):
         builder.assert_not_called()
         self.app.fees = None
         with patch("gui.fetch_fee_rates", return_value={
-            "standard": 12, "economy": 1, "checked_at": "2026-09-28T00:00:00Z"
+            "standard": 12, "economy": 1, "network": "main",
+            "checked_at": "2026-09-28T00:00:00Z"
         }), patch("gui.build_unsigned_psbt", return_value={
-            "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540
+            "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
+            "psbt_base64": "cHNidP8=",
         }):
             result = self.post("/api/prepare", request)
         self.assertIn("below the current mainnet standard", result["fee_warning"])
         self.assertEqual(result["fee_reference"]["standard"], 12)
+
+    def test_testnet4_prepare_uses_identical_fee_guards_and_mainnet_reference(self):
+        text, _ = test_record(dual_branch=True)
+        wallet = self.post("/api/import", {
+            "chain": "testnet4", "text": text, "consent_explorer": True,
+        })
+        self.assertTrue(wallet["can_prepare"])
+        fake = {
+            "network": "testnet4", "utxo_consistent": True,
+            "confirmed_sats": 6000, "pending_delta_sats": 0,
+            "observed_sats": 6000, "addresses": [], "utxos": [],
+            "scanned": 50, "coverage_limited": False, "path_warning": "",
+            "scanned_at": "2026-09-27T00:00:00+00:00",
+            "source": "https://mempool.space/testnet4/api",
+        }
+        with patch("gui.scan_wallet", return_value=fake):
+            self.post("/api/scan", {"chain": "testnet4"})
+        request = {"chain": "testnet4", "recipient": wallet["receive_address"],
+                   "amount_sats": 1000, "fee_rate": 2}
+        with patch("gui.fetch_fee_rates", side_effect=WalletError("offline")):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        with patch("gui.fetch_fee_rates", return_value={
+            "standard": 12, "economy": 3, "network": "main",
+            "checked_at": "2026-09-28T00:00:00Z"
+        }), patch("gui.build_unsigned_psbt") as builder:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        builder.assert_not_called()
+        self.app.fees = None
+        with patch("gui.fetch_fee_rates", return_value={
+            "standard": 12, "economy": 1, "network": "main",
+            "checked_at": "2026-09-28T00:00:00Z"
+        }), patch("gui.build_unsigned_psbt", return_value={
+            "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
+            "psbt_base64": "cHNidP8=",
+        }):
+            result = self.post("/api/prepare", request)
+        self.assertIn("below the current mainnet standard", result["fee_warning"])
+        self.assertEqual(result["fee_reference"]["network"], "main")
 
     def test_public_price_endpoint_is_cached_and_independent_of_wallet(self):
         quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",

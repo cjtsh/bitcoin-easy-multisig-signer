@@ -86,7 +86,7 @@
 </head>
 <body>
   <header class="top">
-    <small>Easy Bitcoin Multisig Signer · experimental 0.0.6</small>
+    <small>Easy Bitcoin Multisig Signer · v__APP_VERSION__ · experimental</small>
     <h1>Your wallet, before the keys.</h1>
     <p>Open an existing multisig wallet, check its balance, and review an unsigned send.</p>
     <div id="network-badge" class="network">● TESTNET4 · NO REAL BITCOIN</div>
@@ -110,13 +110,36 @@
           <input id="wallet-file" type="file" accept=".bsms,.txt,text/plain"></div>
       </div>
       <p class="small muted">Your file stays in this app on your Mac. To check its balance, the app sends derived
-        <strong>public addresses</strong> (not xpubs or the file) to mempool.space's explorer for the selected network.
-        On mainnet, that discloses real wallet activity to a third party.</p>
+        <strong>public addresses</strong> (not xpubs or the file) to the selected explorer
+        (mempool.space by default). On mainnet, this can disclose real wallet activity
+        to the explorer operator.</p>
       <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
-        <span>I understand a public explorer will see derived addresses from my real mainnet wallet.</span></label>
+        <span id="explorer-consent-text">I understand a public explorer will see derived addresses from my Testnet4 wallet.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
       <div id="message" role="status" aria-live="polite"></div>
     </section>
+
+    <details id="server-settings" class="card">
+      <summary>Advanced network settings · optional</summary>
+      <p class="muted small">Defaults work without changing anything. These settings apply only to
+        <strong id="settings-network">Testnet4</strong>; each network has its own URLs.
+        Only URLs are saved on this Mac, never wallet files or addresses.</p>
+      <label for="explorer-url">Explorer · Esplora HTTP API base</label>
+      <input id="explorer-url" type="text" inputmode="url" autocomplete="off"
+        spellcheck="false" placeholder="https://example.com/api">
+      <p class="small muted">Used for address balances, confirmed outputs and transaction data.
+        Custom servers are checked against this network's genesis block before use.
+        A server can still return inaccurate data; verify independently.</p>
+      <label for="broadcaster-url">Broadcast server · Esplora HTTP API base</label>
+      <input id="broadcaster-url" type="text" inputmode="url" autocomplete="off"
+        spellcheck="false" placeholder="https://example.com/api">
+      <p class="small muted"><strong>Saved for future use only.</strong> Broadcasting is not implemented.
+        This app does not submit signed transactions. Electrum TLS servers use a
+        different protocol and cannot be entered in these Esplora fields.</p>
+      <button id="save-servers" class="action">Save these server URLs</button>
+      <button id="reset-servers" class="secondary">Restore mempool.space defaults</button>
+      <div id="settings-message" role="status" aria-live="polite"></div>
+    </details>
 
     <section id="wallet-card" class="card" hidden>
       <h2>Wallet definition</h2>
@@ -125,7 +148,7 @@
         <div>
           <div class="kv"><b>Reference address</b><code id="reference" class="mono"></code></div>
           <div class="kv"><b>First receive address</b><code id="receive" class="mono"></code></div>
-          <div class="kv"><b>First inferred/declared change address</b><code id="change" class="mono"></code></div>
+          <div class="kv"><b>First declared change address</b><code id="change" class="mono"></code></div>
         </div>
         <div><h3>Three public cosigners</h3><p class="muted small">These xpubs identify the wallet; they cannot sign. Keep them private for wallet privacy.</p>
           <div id="keys"></div></div>
@@ -198,7 +221,7 @@
     <footer>Experimental, unaudited software. Mainnet mode handles real BTC; independently verify every
       output and fee on a trusted signer before signing elsewhere. Never enter seed words or private keys.
       <a href="https://github.com/cjtsh/easy-bitcoin-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Read the full disclaimer</a>.
-      <p><button id="quit" class="secondary">Quit local app</button></p></footer>
+       <p><button id="quit" class="secondary" __DESKTOP_HIDE_QUIT__>Quit local app</button></p></footer>
   </main>
   <script>
     const token = "__LOCAL_TOKEN__";
@@ -215,7 +238,9 @@
       $("network-badge").classList.toggle("live", main);
       document.body.classList.toggle("live-mode", main);
       $("live-banner").hidden = !main;
-      $("explorer-consent-row").hidden = !main;
+      setText("explorer-consent-text", main ?
+        "I understand a public explorer will see derived addresses from my real mainnet wallet." :
+        "I understand a public explorer will see derived addresses from my Testnet4 wallet.");
       setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
       setText("balance-unit", main ? "sats observed" : "test sats observed");
       setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
@@ -223,6 +248,7 @@
       setText("send-price-note", main ?
         "BTC/USD and fee suggestions are mainnet references, not guarantees." :
         "BTC/USD and fee suggestions use mainnet as a reference. Testnet4 coins have no cash value.");
+      setText("settings-network", main ? "mainnet" : "Testnet4");
       renderPrice();
       renderFeeGuidance();
     }
@@ -237,6 +263,44 @@
       if (!response.ok) throw new Error(result.error || "Operation failed.");
       return result;
     }
+    async function loadServerSettings() {
+      const chain = selectedChain();
+      try {
+        const settings = await post("/api/settings", {chain, action:"read"});
+        if (chain !== selectedChain()) return;
+        $("explorer-url").value = settings.explorer_url;
+        $("broadcaster-url").value = settings.broadcaster_url;
+        msg("settings-message", settings.settings_error || "", Boolean(settings.settings_error));
+      } catch (e) {
+        if (chain === selectedChain()) msg("settings-message", e.message, true);
+      }
+    }
+    async function changeServerSettings(action) {
+      const chain = selectedChain();
+      $("save-servers").disabled = true; $("reset-servers").disabled = true;
+      msg("settings-message", "Checking server network and saving locally…");
+      try {
+        const settings = await post("/api/settings", {
+          chain, action, explorer_url:$("explorer-url").value,
+          broadcaster_url:$("broadcaster-url").value
+        });
+        if (chain !== selectedChain()) return;
+        $("explorer-url").value = settings.explorer_url;
+        $("broadcaster-url").value = settings.broadcaster_url;
+        lastScan = null; currentPsbt = null;
+        $("balance-card").hidden = true; $("send-card").hidden = true;
+        msg("settings-message", "Server URLs saved on this Mac. Broadcasting remains unavailable.");
+        if (!$("wallet-card").hidden) {
+          msg("message", "Explorer settings changed. Refresh the wallet balance before preparing a PSBT.");
+        }
+      } catch (e) {
+        if (chain === selectedChain()) msg("settings-message", e.message, true);
+      } finally {
+        $("save-servers").disabled = false; $("reset-servers").disabled = false;
+      }
+    }
+    $("save-servers").addEventListener("click", () => changeServerSettings("save"));
+    $("reset-servers").addEventListener("click", () => changeServerSettings("reset"));
     function fmt(num) { return Number(num).toLocaleString("en-US"); }
     function usdReference(sats) {
       if (!rate) return "USD reference unavailable";
@@ -327,10 +391,10 @@
         "Enter a whole-number fee rate in sat/vB.");
       const warn = !Number.isInteger(value) || value < 1 || value > 25 ?
         "Fee rate must be a whole number from 1 to 25 sat/vB. Values such as 500 are blocked." :
-        feeQuote && selectedChain() === "main" && value < feeQuote.economy ?
+        feeQuote && value < feeQuote.economy ?
         "Below the live mainnet economy estimate of " + feeQuote.economy +
-        " sat/vB. Mainnet transaction preparation is blocked at this rate." :
-        feeQuote && selectedChain() === "main" && value < feeQuote.standard ?
+        " sat/vB. Transaction preparation is blocked at this rate." :
+        feeQuote && value < feeQuote.standard ?
         "Below the live mainnet standard estimate of " + feeQuote.standard +
         " sat/vB. Confirmation may be slower; review this rate carefully." :
         feeTooHighForNetwork(value) ?
@@ -362,7 +426,7 @@
       setText("path-warning", data.warning);
       $("send-unavailable").hidden = walletCanPrepare;
       setText("send-unavailable", walletCanPrepare ? "" :
-        "View-only for this wallet definition. Mainnet PSBTs require an explicitly declared, " +
+        "View-only for this wallet definition. PSBTs on either network require an explicitly declared, " +
         "reference-matched 2-of-3 receive/change descriptor. No change path will be guessed.");
       $("keys").replaceChildren();
       for (const key of data.keys) {
@@ -379,8 +443,7 @@
     }
     function showBalance(data) {
       $("balance-card").hidden = false;
-      const allowSend = walletCanPrepare && !data.coverage_limited &&
-        (selectedChain() !== "main" || data.utxo_consistent);
+      const allowSend = walletCanPrepare && !data.coverage_limited && data.utxo_consistent;
       $("send-card").hidden = !allowSend;
       if (walletCanPrepare && !allowSend) {
         $("send-unavailable").hidden = false;
@@ -422,8 +485,8 @@
       const file = $("wallet-file").files[0];
       if (!file) { msg("message", "Choose a BSMS wallet definition first.", true); return; }
       if (file.size > 65536) { msg("message", "BSMS file is unexpectedly large.", true); return; }
-      if (selectedChain() === "main" && !$("explorer-consent").checked) {
-        msg("message", "Confirm that the public explorer may see your derived mainnet addresses.", true);
+      if (!$("explorer-consent").checked) {
+        msg("message", "Confirm that the public explorer may see your derived wallet addresses.", true);
         return;
       }
       $("open").disabled = true; $("wallet-card").hidden = true;
@@ -447,6 +510,7 @@
     $("chain").addEventListener("change", () => {
       walletActionId++;
       walletCanPrepare = false; lastScan = null;
+      $("explorer-consent").checked = false;
       currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
       $("fee-rate").value = 2; $("download").disabled = true;
@@ -454,6 +518,7 @@
       $("send-card").hidden = true; $("refresh-top").hidden = true;
       msg("message", "Choose a BSMS definition for the selected network to continue.");
       updateNetworkUI();
+      loadServerSettings();
     });
     $("amount").addEventListener("input", updateSendEquivalent);
     $("fee-rate").addEventListener("input", renderFeeGuidance);
@@ -504,8 +569,20 @@
     }
     $("confirm-review").addEventListener("change", updateDownload);
     $("confirm-fee").addEventListener("change", updateDownload);
-    $("download").addEventListener("click", () => {
+    $("download").addEventListener("click", async () => {
       if (!currentPsbt || $("download").disabled) return;
+      if (window.pywebview && window.pywebview.api &&
+          window.pywebview.api.save_psbt) {
+        $("download").disabled = true;
+        try {
+          const result = await window.pywebview.api.save_psbt(currentPsbt, selectedChain());
+          if (result.saved) msg("send-message", "Unsigned PSBT saved. Nothing was signed or sent.");
+          else msg("send-message", "Save canceled. Your unsigned PSBT is still ready.");
+        } catch (e) {
+          msg("send-message", e.message || "Could not save the unsigned PSBT.", true);
+        } finally { updateDownload(); }
+        return;
+      }
       const raw = atob(currentPsbt);
       const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], {type:"application/octet-stream"}));
@@ -530,13 +607,14 @@
         const saved = await post("/api/status", {});
         if (started !== walletActionId || !saved.wallet) return;
         $("chain").value = saved.chain;
-        if (saved.chain === "main" && saved.mainnet_consent) {
+        if (saved.explorer_consent) {
           $("explorer-consent").checked = true;
         }
         showWallet(saved.wallet);
         if (saved.balance) showBalance(saved.balance);
         msg("message", "Wallet still open in this local app. Use Refresh balance for new transactions.");
       } catch (_) { /* A newly started or stopped app has no wallet to restore. */ }
+      finally { loadServerSettings(); }
     }
     restoreWallet();
   </script>
