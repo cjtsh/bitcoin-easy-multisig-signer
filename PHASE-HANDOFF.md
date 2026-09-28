@@ -1,7 +1,7 @@
-# Phase 2/3 handoff — current build v0.1.12
+# Phase 2/3 handoff — current build v0.1.13
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (branch `phase2-transaction-builder`)
-**Version:** `0.1.12` (`version.py`). The work described below landed across v0.1.9-v0.1.12; earlier fixes were published under 0.1.11, whose release assets were replaced repeatedly (see the versioning rule in `ROADMAP.md`).
+**Version:** `0.1.13` (`version.py`). The work described below landed across v0.1.9-v0.1.13. The v0.1.11 and v0.1.12 release assets were rebuilt in place during development; the versioning rule in `ROADMAP.md` now forbids that.
 **Status:** code complete and verified with synthetic data and a real loopback HTTP
 server. **The Apple Silicon DMG has not yet been built through GitHub Actions** —
 this session has no GitHub authentication, and that workflow requires it. A local
@@ -35,14 +35,14 @@ is why it read as missing functionality.
   so a redundant confirmation can never break a valid wallet.
 - `wallet_service.can_declare_change()` gates the offer to 2-of-3 wallets whose
   receive path is already anchored.
-- The UI shows **"Use the standard change branch"** only in that situation, does
-  nothing until the box is ticked and the button pressed, marks the change address
-  as owner-declared, adds its own review acknowledgement, and reports how many
-  previously used change addresses the scan found on that branch — so the branch
-  you confirmed is either supported by the wallet's own history or the app says
-  plainly that it is not.
+- **Superseded in v0.1.13.** That control asked the owner to assert a derivation
+  detail they had no way to check, and a lawyer or a spouse could not answer it.
+  The app now *resolves* the wallet's usual change addresses itself, reports
+  whether the wallet's own history supports them, keeps the change address visible
+  in the review, and recommends a test payment when it is unconfirmed. No checkbox.
 
-The app still never guesses a change path. It asks, and it shows you the result.
+The app still never silently guesses: it states plainly what it has assumed, shows
+the resulting address, and tells you what would confirm it.
 
 ## 2. Fee preview now matches the transaction that is built
 

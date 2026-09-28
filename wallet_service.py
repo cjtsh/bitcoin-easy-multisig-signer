@@ -7,6 +7,7 @@ Address queries disclose the queried addresses to the configured public explorer
 from __future__ import annotations
 
 import json
+import re
 import ssl
 import time
 from functools import partial
@@ -21,6 +22,7 @@ from safe_http import open_url as urlopen  # TLS-verified, never follows a redir
 
 from embit import psbt, script, transaction
 from embit.descriptor import Descriptor
+from embit.descriptor.miniscript import Multi
 from embit.networks import NETWORKS
 
 from network_config import NETWORKS as CHAIN_CONFIGS, for_record_network
@@ -123,6 +125,7 @@ class Layout:
     warning: str
     change_verified: bool
     change_declared: bool = False
+    change_assumed: bool = False
 
 
 def wallet_layout(record: WalletRecord) -> Layout:
@@ -138,108 +141,126 @@ def wallet_layout(record: WalletRecord) -> Layout:
     desc = record.descriptor
     text = record.descriptor_text
     suffixes = [key.suffix for key in record.keys]
+    assumed = False
     if record.change_descriptor is not None:
-        # Either BSMS restrictions explicitly declared and verified separate
-        # receive and change descriptors during import, or the owner explicitly
-        # declared the conventional change branch for a receive-only file.
+        # The wallet file itself declares separate receive and change descriptors.
         receive, change = desc, record.change_descriptor
+        warning = ""
         verified = True
-        if record.change_declared:
-            warning = (
-                "Your wallet file declares no change path. The usual /1/* change branch "
-                "was enabled by your own confirmation, not read from the file, so check "
-                "the change address on every signer and confirm your wallet lists it."
-            )
-        else:
-            warning = ""
     elif desc.num_branches == 2:
         receive, change = desc.branch(0), desc.branch(1)
         warning = ""
         verified = True
-    elif suffixes and all(s == "/0/*" for s in suffixes):
-        receive = desc
-        change = None
-        warning = ("Change is not declared in this BSMS file. The receive-side balance "
-                   "may be incomplete and transaction preparation is disabled.")
-        verified = False
-    elif suffixes and all(s == "/*" for s in suffixes):
-        if record.reference_status == "receive-branch-only":
-            receive = Descriptor.from_string(text.replace("/*", "/0/*"))
-            change = None
-            warning = (
-                "The /* descriptor does not literally match the reference. "
-                "Only the matching /0/* receive path is scanned; change is not guessed. "
-                "Balance is partial and transaction preparation is disabled."
-            )
-            verified = False
-        else:
-            receive, change = desc, None
-            warning = (
-                "Only the literal /* branch can be checked. No change branch is defined; "
-                "the displayed amount may not be the wallet's full balance."
-            )
-            verified = False
     else:
-        raise WalletError("Unsupported address branches; no balance will be guessed.")
+        if suffixes and all(s == "/0/*" for s in suffixes):
+            receive, receive_text = desc, text
+        elif suffixes and all(s == "/*" for s in suffixes):
+            if record.reference_status == "receive-branch-only":
+                receive_text = text.replace("/*", "/0/*")
+                receive = Descriptor.from_string(receive_text)
+            else:
+                receive, receive_text = desc, text
+        else:
+            raise WalletError("Unsupported address branches; no balance will be guessed.")
+        # The file names only the receiving addresses. Resolve the wallet's usual
+        # change addresses instead of asking the owner to assert something they
+        # have no way to check: this is the standard BIP48 arrangement, the scan
+        # then looks for on-chain evidence of it, and the review shows the
+        # resulting change address for checking on the signing device.
+        change = _conventional_change(receive_text, record)
+        verified = False
+        assumed = change is not None
+        warning = ""
     network = NETWORKS[record.network]
     if receive.derive(0).address(network) != record.reference_address:
         raise WalletError("Reference address does not match the chosen receive path.")
     if change and change.derive(0).address(network) == record.reference_address:
         raise WalletError("Receive and change paths unexpectedly overlap.")
-    return Layout(receive, change, warning, verified, record.change_declared)
+    return Layout(receive, change, warning, verified, False, assumed)
 
 
-def can_declare_change(record: WalletRecord) -> bool:
-    """True when the owner could explicitly declare the conventional /1/* branch.
+_ZERO_BRANCH = re.compile(r"/0/\*")
+_BARE_WILDCARD = re.compile(r"(?<!/\d)/\*")
 
-    Only for a receive-only `/*` export whose receive path is already anchored
-    by the reference address (either literally, or through the /0/* convention
-    this app already scans), and only for the 2-of-3 policy it prepares.
-    The app never applies this itself; the owner must confirm it.
+
+def _conventional_change(receive_text: str, record: WalletRecord) -> Descriptor | None:
+    """Derive this wallet's usual change addresses from its receiving addresses.
+
+    BIP48 multisig wallets receive at .../0/* and give change at .../1/*. A
+    receive-only export does not state that, so it is treated as an assumption
+    that is shown to the owner, backed by scanning for evidence, and verified
+    visually in the review -- never as a fact read from the file. Returns None
+    when no single, matching change descriptor can be derived.
     """
-    suffixes = [key.suffix for key in record.keys]
-    return bool(
-        record.change_descriptor is None
-        and record.restrictions == "No path restrictions"
-        and record.reference_status in ("verified", "receive-branch-only")
-        and record.threshold == 2 and len(record.keys) == 3
-        and suffixes and all(suffix == "/*" for suffix in suffixes)
-    )
+    if "/**" in receive_text or "<0;1>" in receive_text:
+        return None
+    try:
+        if _ZERO_BRANCH.search(receive_text):
+            change_text = _ZERO_BRANCH.sub("/1/*", receive_text)
+        elif "/*" in receive_text:
+            change_text = _BARE_WILDCARD.sub("/1/*", receive_text)
+        else:
+            return None
+        candidate = Descriptor.from_string(change_text)
+        if (not candidate.wsh or candidate.sh
+                or not isinstance(candidate.miniscript, Multi)
+                or candidate.miniscript.args[0].num != record.threshold
+                or len(candidate.keys) != len(record.keys)
+                or sorted(k.key.to_base58() for k in candidate.keys)
+                   != sorted(k.key.to_base58() for k in record.keys)):
+            return None
+    except Exception:
+        return None
+    return candidate
 
 
 def wallet_summary(record: WalletRecord) -> dict:
     layout = wallet_layout(record)
     config = CHAIN_CONFIGS[_chain(record)]
     network = NETWORKS[record.network]
-    can_prepare = bool(layout.change_verified and layout.change
-                       and record.threshold == 2 and len(record.keys) == 3)
-    declarable = can_declare_change(record)
+    can_prepare = bool(layout.change and record.threshold == 2
+                       and len(record.keys) == 3)
     if record.threshold != 2 or len(record.keys) != 3:
         prepare_reason = (
-            "This version prepares transactions only for a 2-of-3 multisig wallet. "
-            "This wallet can still be viewed."
+            "This app prepares transactions only for a 2-of-3 multisig wallet. "
+            "You can still view this wallet's balance."
         )
-    elif not layout.change_verified or layout.change is None:
-        prepare_reason = layout.warning or (
-            "This wallet file does not verify both receiving and change paths. "
-            "Use a BSMS export that declares both paths; the app will not guess them."
+    elif layout.change is None:
+        prepare_reason = (
+            "This wallet file does not show how change is addressed and the app could "
+            "not work it out, so it will not build a transaction. Export a wallet file "
+            "that includes the change addresses."
         )
-        if declarable:
-            prepare_reason += (
-                " This wallet file does not list the addresses this wallet uses for change, "
-                "so the app will not build a transaction yet. If your signing devices use the "
-                "usual receive/change arrangement, confirm the standard change branch below "
-                "instead of exporting a new wallet file."
-            )
     else:
         prepare_reason = ""
+    if layout.change_assumed:
+        change_note = (
+            "Your wallet file lists the addresses that receive payments, but not the ones "
+            "used for change. Almost every multisig wallet uses the same standard change "
+            "addresses, so the app will use those. The change address is shown in the "
+            "review — check it on your signing device before you approve."
+        )
+        change_detail = (
+            "Change addresses are not in your wallet file. The app is using this wallet's "
+            "standard change addresses (the .../1/* branch), which is the usual arrangement "
+            "for BIP48 multisig."
+        )
+    elif layout.change is not None:
+        change_note = ""
+        change_detail = "Change addresses are declared in your wallet file."
+    else:
+        change_note = ""
+        change_detail = "No change addresses could be resolved for this wallet."
     return {
         "policy": f"{record.threshold}-of-{len(record.keys)} native-SegWit multisig",
+        "policy_short": f"{record.threshold}-of-{len(record.keys)} multisig wallet",
         "chain": config.label,
+        "chain_short": config.short_label,
         "network": config.chain,
         "can_prepare": can_prepare,
-        "can_declare_change": bool(declarable and not can_prepare),
-        "change_declared": layout.change_declared,
+        "change_assumed": layout.change_assumed,
+        "change_note": change_note,
+        "change_detail": change_detail,
         "prepare_reason": prepare_reason,
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
@@ -438,8 +459,11 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
     conservative upper bound.
     """
     layout = wallet_layout(record)
-    if not layout.change_verified or layout.change is None:
-        raise WalletError("Verified receive and change paths are required for a fee estimate.")
+    if layout.change is None:
+        raise WalletError(
+            "This wallet's change addresses could not be resolved, so no fee can be "
+            "estimated for a transaction."
+        )
     if not scan.get("utxo_consistent") or scan.get("coverage_limited"):
         raise WalletError("Refresh a complete, consistent balance before estimating a transaction.")
     if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
@@ -505,8 +529,11 @@ def build_unsigned_psbt(
     query = _query_for(record, get, base_url)
     if scan.get("network") != chain:
         raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
-    if not layout.change_verified or record.threshold != 2 or len(record.keys) != 3:
-        raise WalletError("Preparing a transaction requires verified 2-of-3 receiving and change paths.")
+    if layout.change is None or record.threshold != 2 or len(record.keys) != 3:
+        raise WalletError(
+            "Preparing a transaction requires a 2-of-3 wallet with resolvable "
+            "receiving and change addresses."
+        )
     if scan.get("source") != (base_url or EXPLORERS[chain]):
         raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
     if not scan.get("utxo_consistent", False):
@@ -626,14 +653,16 @@ def build_unsigned_psbt(
         "fee_rate_estimate": fee_rate,
         "change_sats": change_sats,
         "change_address": change_address,
-        "change_declared": layout.change_declared,
+        "change_assumed": layout.change_assumed,
         "inputs": len(chosen),
         "change_warning": (
             "All confirmed outputs found by this scan are used, with no change output. "
             "An address beyond the scan gap or range may still hold Bitcoin. "
             "Verify wallet coverage, recipient amount and fee independently on each signer."
-            if send_all else layout.warning or (
-                "Unsigned only. Verify destination, amount, fee, and change on each signer."
-            )
+            if send_all else
+            ("The change address comes from this wallet's standard change addresses, which "
+             "are not listed in your wallet file. Verify it on every signing device. "
+             if layout.change_assumed else "")
+            + "Unsigned only. Verify destination, amount, fee, and change on each signer."
         ),
     }

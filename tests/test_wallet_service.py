@@ -276,20 +276,22 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
 
-    def test_both_networks_leave_undeclared_change_view_only(self):
+    def test_receive_only_export_gets_its_usual_change_addresses(self):
+        """Naming only receiving addresses must not block a non-technical user."""
         for short in (False, True):
             with self.subTest(short=short):
                 record = parse_bsms(test_record(short_path=short)[0])
                 layout = wallet_layout(record)
-                self.assertIsNone(layout.change)
+                self.assertIsNotNone(layout.change)
+                self.assertTrue(layout.change_assumed)
                 summary = wallet_summary(record)
-                self.assertFalse(summary["can_prepare"])
-                self.assertIn("change", summary["prepare_reason"].lower())
+                self.assertTrue(summary["can_prepare"])
+                self.assertEqual(summary["prepare_reason"], "")
+                self.assertTrue(summary["change_note"])
+                self.assertEqual(layout.change.derive(0).address(NETWORKS["test"]),
+                                 summary["change_address"])
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
-                self.assertTrue(scan["coverage_limited"])
-                with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
-                    build_unsigned_psbt(record, scan, record.reference_address, 1000)
 
     def test_mainnet_explicit_branches_build_only_unsigned_psbt(self):
         record = parse_bsms(mainnet_record())
@@ -347,18 +349,16 @@ class WalletServiceTests(unittest.TestCase):
             build_unsigned_psbt(record, {**data, "utxo_consistent": False},
                                 recipient, 10_000, 2, fake_get)
 
-    def test_mainnet_receive_only_and_inferred_branches_cannot_prepare(self):
+    def test_mainnet_receive_only_export_also_gets_usual_change_addresses(self):
         for suffix in ("/0/*", "/*"):
             with self.subTest(suffix=suffix):
                 record = parse_bsms(mainnet_record(suffix))
                 layout = wallet_layout(record)
-                self.assertIsNone(layout.change)
+                self.assertIsNotNone(layout.change)
                 summary = wallet_summary(record)
-                self.assertFalse(summary["can_prepare"])
-                self.assertTrue(summary["prepare_reason"])
-                with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
-                    build_unsigned_psbt(record, {"network": "main", "utxo_consistent": True},
-                                        record.reference_address, 1000)
+                self.assertTrue(summary["can_prepare"])
+                self.assertTrue(summary["change_assumed"])
+                self.assertIn("change", summary["change_note"].lower())
         lines = mainnet_record().splitlines()
         other = parse_bsms(mainnet_record("/0/*"))
         lines[3] = other.descriptor.derive(1).address(NETWORKS["main"])

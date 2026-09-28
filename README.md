@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer — experimental mainnet and Testnet4 GUI
 
-The latest published build is [v0.1.12](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.12): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, and then identifies connected hardware signers. **It does not sign or broadcast.** A receive-only `/*` wallet export can reach the send form once you confirm the wallet's usual change addresses. A v0.1.11 release also exists, but its assets were replaced several times during development; prefer v0.1.12.
+The latest published build is [v0.1.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.13): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, and then identifies connected hardware signers. **It does not sign or broadcast.** A receive-only `/*` wallet export resolves the wallet's usual change addresses itself and shows the owner exactly what it did. Older v0.1.10-v0.1.12 releases exist; their assets were replaced several times during development, so prefer the newest.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -219,21 +219,17 @@ fields. **The broadcaster URL is a future-use setting only:** this version
 cannot sign or broadcast, and no transaction is sent to that endpoint.
 
 The older Testnet4 sample export described below uses `/*` in the descriptor,
-but its reference address matches `/0/0`. Such a file proves a receiving path
-but not a change path, so by itself it stays view-only: the GUI never infers a
-`/1/*` change branch on its own. For transaction preparation you have two
-options. (1) Export a BSMS descriptor template that explicitly declares both
-`/0/*` and `/1/*` restrictions, or use an explicit `<0;1>/*` multipath
-descriptor; the app then derives both paths itself. (2) For that receive-only
-export only, the app offers a **Use the standard change branch** control: it
-explains that the file declares no change path, and asks you to confirm that
-your signing devices use the conventional BIP48 `/1/*` branch. Nothing is
-applied unless you tick that box and press the button, and the resulting change
-address is shown in the review and must be checked on every signer. The scan
-also reports how many previously used change addresses it found on that branch,
-so you can see whether the branch you confirmed is supported by the wallet's own
-history; if none were found it says so plainly. The reference address must match
-the receive path. The same rule applies on mainnet. If the reference address cannot be matched, the GUI stops rather than
+but its reference address matches `/0/0`. Such a file proves a receiving path but
+not a change path. The app resolves the wallet's usual change addresses itself —
+the standard BIP48 `/1/*` branch, derived from the same cosigner keys — rather
+than asking the owner to confirm a technical detail they have no way to check.
+It then looks for evidence: if the wallet has spent before, the scan finds its
+used change addresses and says so; if it has never spent, the app says plainly
+that change addresses are unconfirmed and recommends a small test payment. The
+resulting change address is shown in the review and must be checked on the
+signing device. A BSMS descriptor template that declares both `/0/*` and `/1/*`
+restrictions, or an explicit `<0;1>/*` multipath descriptor, is still used
+exactly as given. The reference address must match the receive path. The same rule applies on mainnet. If the reference address cannot be matched, the GUI stops rather than
 inventing a wallet balance. There is no hidden hosted server upload, wallet
 creation or seed entry.
 
@@ -247,7 +243,7 @@ creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. HWI 3.2.0 is bundled in the v0.1.12 Mac app. The command-line proof below
+2. HWI 3.2.0 is bundled in the v0.1.13 Mac app. The command-line proof below
    still uses an HWI 3.2.0 installation on your PATH. Use only the official
    [HWI release][releases]. It adds an explicit `testnet4` chain option.
 3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.

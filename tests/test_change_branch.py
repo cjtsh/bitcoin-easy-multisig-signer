@@ -1,4 +1,4 @@
-"""Declared change-branch support and fee-preview/builder agreement.
+"""The wallet change branch: derived from convention, never demanded.
 
 Synthetic keys only; no wallet export is ever checked in.
 """
@@ -6,6 +6,7 @@ Synthetic keys only; no wallet export is ever checked in.
 import unittest
 
 from embit import psbt
+from embit.descriptor import Descriptor
 from embit.descriptor.checksum import checksum
 from embit.networks import NETWORKS
 
@@ -13,75 +14,70 @@ from fake_explorer import three_output_wallet
 from probe import ProbeError, parse_bsms
 from test_probe import test_record
 from wallet_service import (
-    WalletError, build_unsigned_psbt, can_declare_change, estimate_fee_preview,
-    scan_wallet, wallet_layout, wallet_summary,
+    WalletError, build_unsigned_psbt, estimate_fee_preview, scan_wallet,
+    wallet_layout, wallet_summary,
 )
 
 
-class DeclaredChangeTests(unittest.TestCase):
-    def setUp(self):
-        self.text, _ = test_record(short_path=True)  # bare /* + No path restrictions
-        self.plain = parse_bsms(self.text)
+class ChangeBranchTests(unittest.TestCase):
+    """A receive-only export must not demand a technical assertion from the owner."""
 
-    def test_receive_only_wallet_is_view_only_and_offers_the_option(self):
-        summary = wallet_summary(self.plain)
-        self.assertFalse(summary["can_prepare"])
-        self.assertTrue(summary["can_declare_change"])
-        self.assertFalse(summary["change_declared"])
-        self.assertIsNone(wallet_layout(self.plain).change)
-        self.assertIn("change", summary["prepare_reason"].lower())
-        self.assertIn("change branch below", summary["prepare_reason"])
-
-    def test_confirmed_change_branch_is_derived_from_the_same_keys(self):
-        record = parse_bsms(self.text, declared_change=True)
+    def test_receive_only_wallet_prepares_and_explains_itself(self):
+        record = parse_bsms(test_record(short_path=True)[0])  # bare /* export
         layout = wallet_layout(record)
         summary = wallet_summary(record)
         self.assertTrue(summary["can_prepare"])
-        self.assertTrue(summary["change_declared"])
-        self.assertFalse(summary["can_declare_change"])
+        self.assertTrue(summary["change_assumed"])
+        self.assertEqual(summary["prepare_reason"], "")
         self.assertIsNotNone(layout.change)
-        # Receive path is still anchored by the reference address.
-        self.assertEqual(layout.receive.derive(0).address(NETWORKS["test"]),
-                         record.reference_address)
-        self.assertNotEqual(layout.change.derive(0).address(NETWORKS["test"]),
-                            record.reference_address)
-        # Both paths must use exactly the same multisig cosigners.
-        self.assertEqual(sorted(k.key.to_base58() for k in layout.change.keys),
-                         sorted(k.key.to_base58() for k in layout.receive.keys))
-        # The user is told this came from their confirmation, not the file.
-        self.assertIn("your own confirmation", layout.warning)
+        # The change branch is this wallet's own /1/0 address, and the summary
+        # reports exactly that address for the owner to check.
+        self.assertEqual(layout.change.derive(0).address(NETWORKS["test"]),
+                         summary["change_address"])
+        self.assertNotEqual(summary["change_address"], summary["receive_address"])
+        # The owner is told, in plain words, not asked a question.
+        self.assertIn("change", summary["change_note"].lower())
+        self.assertIn("review", summary["change_note"].lower())
+        self.assertNotIn("descriptor", summary["change_note"].lower())
+        self.assertNotIn("BIP48", summary["change_note"])
+        self.assertIn("1/*", summary["change_detail"])
 
-    def test_declaration_is_ignored_when_paths_are_already_declared(self):
+    def test_path_qualified_wallet_also_gets_its_usual_change_addresses(self):
+        record = parse_bsms(test_record()[0])  # /0/* only
+        summary = wallet_summary(record)
+        self.assertTrue(summary["can_prepare"])
+        self.assertTrue(summary["change_assumed"])
+        self.assertIsNotNone(wallet_layout(record).change)
+
+    def test_declared_paths_are_trusted_and_not_called_an_assumption(self):
         for label, kwargs in (("multipath", {"dual_branch": True}),
                               ("bsms_template", {"bsms_template": True})):
             with self.subTest(shape=label):
-                text, _ = test_record(**kwargs)
-                record = parse_bsms(text, declared_change=True)
-                self.assertFalse(record.change_declared)
-                self.assertTrue(wallet_summary(record)["can_prepare"])
+                summary = wallet_summary(parse_bsms(test_record(**kwargs)[0]))
+                self.assertTrue(summary["can_prepare"])
+                self.assertFalse(summary["change_assumed"])
+                self.assertEqual(summary["change_note"], "")
+                self.assertIn("declared", summary["change_detail"])
 
-    def test_path_qualified_descriptor_cannot_be_declared(self):
-        text, _ = test_record()  # /0/* already qualified
-        self.assertFalse(can_declare_change(parse_bsms(text)))
-        record = parse_bsms(text, declared_change=True)
-        self.assertFalse(record.change_declared)
-        self.assertFalse(wallet_summary(record)["can_prepare"])
+    def test_derived_change_branch_uses_the_same_keys(self):
+        record = parse_bsms(test_record(short_path=True)[0])
+        layout = wallet_layout(record)
+        self.assertEqual(sorted(k.key.to_base58() for k in layout.change.keys),
+                         sorted(k.key.to_base58() for k in layout.receive.keys))
+        self.assertNotEqual(layout.change.derive(0).address(NETWORKS["test"]),
+                            record.reference_address)
 
-    def test_declaration_is_limited_to_the_2_of_3_policy(self):
+    def test_a_wallet_that_is_not_2_of_3_is_not_prepared(self):
         text, _ = test_record(short_path=True)
-        three_of_three = text.replace("sortedmulti(2,", "sortedmulti(3,")
-        descriptor = three_of_three.splitlines()[1].split("#")[0]
-        lines = three_of_three.splitlines()
+        lines = text.splitlines()
+        descriptor = lines[1].split("#")[0].replace("sortedmulti(2,", "sortedmulti(3,")
         lines[1] = f"{descriptor}#{checksum(descriptor)}"
-        record = parse_bsms("\n".join(lines) + "\n")
-        self.assertFalse(can_declare_change(record))
-
-    def test_declaration_helper_rejects_unsupported_descriptors(self):
-        from probe import declare_change_branch
-        with self.assertRaisesRegex(ProbeError, "already declares"):
-            declare_change_branch("wsh(sortedmulti(2,A/**))")
-        with self.assertRaisesRegex(ProbeError, "plain /\\*"):
-            declare_change_branch("wsh(sortedmulti(2,A/0/*))")
+        # A consistent reference address for the changed policy.
+        canonical = Descriptor.from_string(descriptor.replace("/*", "/0/*"))
+        lines[3] = canonical.derive(0).address(NETWORKS["test"])
+        summary = wallet_summary(parse_bsms("\n".join(lines) + "\n"))
+        self.assertFalse(summary["can_prepare"])
+        self.assertIn("2-of-3", summary["prepare_reason"])
 
 
 class FeePreviewTests(unittest.TestCase):

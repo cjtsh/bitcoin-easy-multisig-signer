@@ -64,7 +64,7 @@ class ApiTestCase(unittest.TestCase):
         self.base = f"http://127.0.0.1:{self.port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self._stop)
-        self.record = parse_bsms(self.text, declared_change=True)
+        self.record = parse_bsms(self.text)
         self.layout = wallet_layout(self.record)
         self.explorer = three_output_wallet(self.layout, NETWORKS[self.record.network])
         self._patch()
@@ -114,10 +114,9 @@ class ApiTestCase(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/", timeout=15) as response:
             return response.status, response.read().decode()
 
-    def import_wallet(self, declared_change=False, chain="testnet4"):
+    def import_wallet(self, chain="testnet4"):
         return self.post("/api/import", {
             "chain": chain, "consent_explorer": True, "text": self.text,
-            "declared_change": declared_change,
         })
 
 
@@ -153,22 +152,22 @@ class LocalServerAccessTests(ApiTestCase):
 
 
 class TransactionJourneyTests(ApiTestCase):
-    def test_undeclared_change_wallet_explains_and_is_declarable(self):
-        status, summary = self.import_wallet(declared_change=False)
-        self.assertEqual(status, 200)
-        self.assertFalse(summary["can_prepare"])
-        self.assertTrue(summary["can_declare_change"])
-        self.assertFalse(summary["change_declared"])
-        # The reason is shown to the user and points at the available action.
-        self.assertIn("change", summary["prepare_reason"].lower())
-        self.assertIn("change branch below", summary["prepare_reason"])
-
-    def test_declared_change_wallet_reaches_a_reviewable_psbt(self):
-        status, summary = self.import_wallet(declared_change=True)
+    def test_receive_only_wallet_reaches_the_send_form_with_a_plain_note(self):
+        """No checkbox, no jargon: the app resolves the change branch itself."""
+        status, summary = self.import_wallet()
         self.assertEqual(status, 200)
         self.assertTrue(summary["can_prepare"])
-        self.assertTrue(summary["change_declared"])
-        self.assertFalse(summary["can_declare_change"])
+        self.assertTrue(summary["change_assumed"])
+        self.assertEqual(summary["prepare_reason"], "")
+        self.assertIn("change", summary["change_note"].lower())
+        self.assertNotIn("descriptor", summary["change_note"].lower())
+        self.assertNotIn("/0/*", summary["change_note"])
+
+    def test_wallet_reaches_a_reviewable_psbt(self):
+        status, summary = self.import_wallet()
+        self.assertEqual(status, 200)
+        self.assertTrue(summary["can_prepare"])
+        self.assertTrue(summary["change_assumed"])
 
         status, scan = self.post("/api/scan", {"chain": "testnet4"})
         self.assertEqual(status, 200)
@@ -194,8 +193,8 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertEqual(preview["input_count"], prepared["inputs"])
         self.assertEqual(prepared["fee_sats"], prepared["estimated_signed_vbytes"] * 5)
         self.assertEqual(prepared["amount_sats"], amount)
-        self.assertTrue(prepared["change_declared"])
-        self.assertIn("enabled by your own confirmation", prepared["change_warning"])
+        self.assertTrue(prepared["change_assumed"])
+        self.assertIn("standard change addresses", prepared["change_warning"])
         self.assertTrue(prepared["preparation_id"])
 
         packet = psbt.PSBT.from_base64(prepared["psbt_base64"])
@@ -210,7 +209,7 @@ class TransactionJourneyTests(ApiTestCase):
         )
 
     def test_send_all_deducts_the_fee_through_the_api(self):
-        self.import_wallet(declared_change=True)
+        self.import_wallet()
         self.post("/api/scan", {"chain": "testnet4"})
         recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
         status, sweep = self.post("/api/prepare", {
@@ -229,7 +228,7 @@ class TransactionJourneyTests(ApiTestCase):
     def test_saving_writes_the_prepared_psbt_where_the_user_can_find_it(self):
         """The save the user clicks must produce a real file, over the same API
         every other action uses (the pywebview bridge is not always available)."""
-        self.import_wallet(declared_change=True)
+        self.import_wallet()
         self.post("/api/scan", {"chain": "testnet4"})
         recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
         status, prepared = self.post("/api/prepare", {
@@ -264,7 +263,7 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertIn("Prepare and review", body["error"])
 
     def test_prepare_is_refused_before_a_scan(self):
-        self.import_wallet(declared_change=True)
+        self.import_wallet()
         status, body = self.post("/api/prepare", {
             "chain": "testnet4", "recipient": self.layout.receive.derive(5).address(NETWORKS["test"]),
             "amount_sats": 1_000, "send_all": False, "fee_rate": 5,
@@ -273,7 +272,7 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertIn("refresh", body["error"].lower())
 
     def test_stale_explorer_settings_invalidate_a_review(self):
-        self.import_wallet(declared_change=True)
+        self.import_wallet()
         self.post("/api/scan", {"chain": "testnet4"})
         status, _ = self.post("/api/prepare", {
             "chain": "testnet4", "recipient": self.layout.receive.derive(5).address(NETWORKS["test"]),
@@ -306,7 +305,7 @@ class LargeAmountGateTests(ApiTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-        status, summary = self.import_wallet(declared_change=True, chain="main")
+        status, summary = self.import_wallet(chain="main")
         self.assertEqual(status, 200)
         self.assertTrue(summary["can_prepare"])
         status, scan = self.post("/api/scan", {"chain": "main"})
@@ -326,7 +325,7 @@ class LargeAmountGateTests(ApiTestCase):
         self.assertEqual(prepared["amount_sats"], 20_000_000)
 
     def test_below_the_floor_does_not_require_the_extra_confirmation(self):
-        self.import_wallet(declared_change=True, chain="main")
+        self.import_wallet(chain="main")
         self.post("/api/scan", {"chain": "main"})
         status, body = self.post("/api/prepare", {
             "chain": "main", "recipient": self.layout.receive.derive(1).address(NETWORKS["main"]),

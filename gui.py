@@ -354,9 +354,7 @@ class LocalApp:
                     state.revision += 1
                     state.scan_generation += 1
                     revision = state.revision
-                record = parse_bsms(
-                    data["text"], declared_change=data.get("declared_change") is True
-                )
+                record = parse_bsms(data["text"])
                 if record.network != CHAIN_CONFIGS[chain].record_network:
                     raise WalletError("BSMS wallet address does not match the selected network.")
                 summary = wallet_summary(record)

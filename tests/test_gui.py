@@ -130,6 +130,30 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(page.count('class="details-button"'), 2)
         self.assertIn('id="close-details"', panel)
 
+    def test_the_main_screen_asks_nothing_technical_of_the_user(self):
+        """A lawyer or a spouse must not be asked to assert wallet internals.
+
+        The app resolves the change branch itself and tells the user what it did.
+        It must never ask them to confirm a derivation detail they cannot check,
+        and the main screen must not expose descriptor jargon.
+        """
+        page = self.get_page()
+        # No confirmation checkbox or button about change paths.
+        for removed in ('id="declare-change"', 'id="confirm-change-branch"',
+                        'id="declare-change-button"', 'id="declared-change-ack-row"',
+                        'id="path-warning"'):
+            self.assertNotIn(removed, page)
+        # Instead: one plain note, filled from the server's own wording.
+        self.assertIn('id="change-note"', page)
+        self.assertIn("setText(\"change-note\"", page)
+        self.assertIn('id="change-detail"', page)
+        # The wallet card itself carries no descriptor jargon.
+        card = page.split('id="wallet-card"', 1)[1].split("</section>", 1)[0]
+        for jargon in ("descriptor", "/0/*", "/1/*", "xpub", "derivation",
+                       "Reference address", "BIP48", "native-SegWit",
+                       "tb1 alone cannot identify"):
+            self.assertNotIn(jargon, card, f"{jargon} should not be on the main screen")
+
     def test_send_flow_recommends_a_test_and_links_to_the_explorer(self):
         page = self.get_page()
         self.assertIn("Recommended: send a small test amount first.", page)
