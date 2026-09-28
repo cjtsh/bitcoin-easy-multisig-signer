@@ -406,14 +406,23 @@ class LocalApp:
                     record, chain, preparation_id = state.record, state.chain, state.prepared_id
                 if record is None or chain is None:
                     raise WalletError("Open a wallet before checking for signers.")
-                if not preparation_id or data.get("preparation_id") != preparation_id:
+                # Two legitimate uses. A pre-flight check needs only an open wallet
+                # and no transaction: nothing can be mistaken for approval, and the
+                # response says so. The check inside a send must belong to the review
+                # on screen, so a supplied preparation id must still match. Any
+                # future signing endpoint must require the review, not merely allow it.
+                supplied = data.get("preparation_id")
+                if supplied and supplied != preparation_id:
                     raise WalletError("Review a transaction before continuing to signer recognition.")
                 hwi_chain = "main" if chain == "main" else "testnet4"
                 statuses = probe_devices(record, "hwi", hwi_chain)
                 self._send(200, {
                     "devices": statuses,
                     "message": ("No compatible hardware signer detected." if not statuses
-                                else "Device check complete. This check does not sign or send."),
+                                else ("Device check complete. This check does not sign or send."
+                                      if supplied else
+                                      "Device check complete. This reads public identities only; "
+                                      "no transaction was involved.")),
                 })
 
             def _save(self, data):

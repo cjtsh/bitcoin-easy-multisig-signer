@@ -145,6 +145,25 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('selectedTier = "custom"', page)
         self.assertIn('selectedTier = "medium"', page)
 
+    def test_signer_preflight_is_step_three_of_the_flow(self):
+        """A non-technical owner must meet device checking before the payment,
+        and understand why, without it being a second competing flow."""
+        page = self.get_page()
+        self.assertIn('id="signers-card"', page)
+        self.assertIn("3. Check your hardware wallets", page)
+        self.assertIn("4. Prepare a send", page)
+        self.assertIn('id="check-signers-now"', page)
+        self.assertIn('id="preflight-message"', page)
+        self.assertIn('id="preflight-results"', page)
+        # The reason it is here, in plain words.
+        self.assertIn("before you build a payment", page)
+        # And what it does not do, so nobody fears it.
+        self.assertIn("any PIN is entered on the device itself", page)
+        self.assertIn("none of your keys are in this app", page)
+        # One shared routine serves both places, so they cannot drift apart.
+        self.assertIn("async function runSignerCheck", page)
+        self.assertEqual(page.count("runSignerCheck("), 3)  # definition + two callers
+
     def test_slow_work_shows_a_spinner(self):
         """Reported bug: a slow scan looked like the app had done nothing."""
         page = self.get_page()
@@ -224,6 +243,18 @@ class LocalGuiTests(unittest.TestCase):
             result = self.post("/api/devices", {"preparation_id": "prepared-test"})
         self.assertIn("does not sign or send", result["message"])
         self.assertIn("not a signing test", result["devices"][0])
+        # A pre-flight check is legitimate with no transaction at all: the open
+        # wallet is enough, and the reply must say that no transaction was involved
+        # so a device check can never be read as approval of a payment.
+        with patch("gui.probe_devices", return_value=["Coldcard: not a signer in this BSMS file."]):
+            preflight = self.post("/api/devices", {})
+        self.assertIn("no transaction was involved", preflight["message"])
+        self.assertEqual(preflight["devices"], ["Coldcard: not a signer in this BSMS file."])
+
+    def test_signer_check_without_an_open_wallet_is_refused(self):
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/devices", {})
+        self.assertEqual(err.exception.code, 400)
 
     def test_mainnet_high_value_transaction_needs_explicit_confirmation(self):
         self.app.price = {"usd_per_btc": 50_000}

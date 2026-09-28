@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.14
+# Project status and handoff — v0.1.15
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.14`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.15`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.14-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.15-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Where this stands
@@ -20,6 +20,7 @@ wallet, never asks for seed words or a PIN, and cannot sign or send.
 | --- | --- |
 | Open the wallet file and check the balance | Works |
 | Explain what the app assumed about change addresses, in plain words, without a checkbox | Works |
+| Check the hardware wallets *before* building a payment (step 3) | Works — reads public identities only, no transaction |
 | Reach "Prepare a send"; enter a destination and amount, or Send All | Works |
 | Live slow/medium/fast fee tiers, with the chosen one visibly marked | Works |
 | Review: destination, amount, fee, total, change, final transaction id, explorer link | Works |

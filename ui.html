@@ -261,8 +261,20 @@
       </div>
     </dialog>
 
+    <section id="signers-card" class="card" hidden>
+      <div class="with-help"><h2>3. Check your hardware wallets</h2>
+        <details class="context-help"><summary aria-label="Why check the devices before preparing a payment?">?</summary>
+          <div class="help-popout"><strong>Why check them first?</strong><p>This wallet needs more than one device before any Bitcoin can move, and none of your keys are in this app. Checking the devices here means a missing or mismatched one is found calmly, now, instead of at the last step of a payment.</p></div>
+        </details></div>
+      <p class="muted">Your wallet is a <strong id="signer-policy"></strong>. Spending needs more than one of those devices, so check now that they are here and that they belong to this wallet — before you build a payment.</p>
+      <button id="check-signers-now" type="button">Look for my hardware wallets</button>
+      <div id="preflight-message" role="status" aria-live="polite"></div>
+      <ul id="preflight-results"></ul>
+      <p class="small muted">This reads each device's public identity only. Nothing is signed, nothing is sent, and any PIN is entered on the device itself — never here.</p>
+    </section>
+
     <section id="send-card" class="card" hidden>
-      <div class="with-help"><h2>3. Prepare a send</h2>
+      <div class="with-help"><h2>4. Prepare a send</h2>
         <details class="context-help"><summary aria-label="What is an unsigned transaction file or PSBT?">?</summary>
           <div class="help-popout"><strong>What is a PSBT?</strong><p>PSBT means Partially Signed Bitcoin Transaction. Here, it is an unsigned file describing a proposed payment for your signers to review and approve. Preparing it does not move Bitcoin.</p></div>
         </details></div>
@@ -746,6 +758,10 @@
       updateNetworkUI();
       walletCanPrepare = data.can_prepare;
       $("wallet-card").hidden = false;
+      $("signers-card").hidden = false;
+      setText("signer-policy", data.policy_short);
+      $("preflight-message").textContent = "";
+      $("preflight-results").replaceChildren();
       $("refresh-top").hidden = false;
       setText("policy", data.policy_short + " · " + data.chain_short);
       setText("policy-detail", data.policy + " · " + data.chain);
@@ -863,7 +879,7 @@
         return false;
       }
       $("open").disabled = true;
-      $("wallet-card").hidden = true;
+      $("wallet-card").hidden = true; $("signers-card").hidden = true;
       $("balance-card").hidden = true; $("send-card").hidden = true;
       $("refresh-top").hidden = true;
       lastScan = null; currentPsbt = null;
@@ -911,7 +927,8 @@
       invalidateReview();
       updateSendMode();
       $("wallet-card").hidden = true; $("balance-card").hidden = true;
-      $("send-card").hidden = true; $("refresh-top").hidden = true;
+      $("signers-card").hidden = true; $("send-card").hidden = true;
+      $("refresh-top").hidden = true;
       msg("message", "Choose a BSMS definition for the selected network to continue.");
       updateNetworkUI();
       loadServerSettings();
@@ -1024,24 +1041,31 @@
       $("signer-results").replaceChildren();
       setText("signer-message", "Connect and unlock a hardware wallet, then choose Check connected devices.");
     });
-    $("check-signers").addEventListener("click", async () => {
-      $("check-signers").disabled = true;
+    async function runSignerCheck(button, messageId, resultsId, preparationId) {
+      button.disabled = true;
       setBusy("Looking for connected signing devices…");
-      setText("signer-message", "Checking connected devices. This is read-only…");
-      $("signer-results").replaceChildren();
+      setText(messageId, "Checking connected devices. This is read-only…");
+      $(resultsId).replaceChildren();
       try {
-        const result = await post("/api/devices", {preparation_id:preparationId});
+        const result = await post("/api/devices",
+          preparationId ? {preparation_id: preparationId} : {});
         for (const status of result.devices) {
           const item = document.createElement("li");
           item.textContent = status;
-          $("signer-results").append(item);
+          $(resultsId).append(item);
         }
-        setText("signer-message", result.devices.length ? result.message :
-          "No compatible device was found. Connect a supported signer, unlock it on the device, then check again.");
+        setText(messageId, result.devices.length ? result.message :
+          "No compatible device was found. Connect a supported hardware wallet, unlock it on the device itself, then check again.");
       } catch (e) {
-        setText("signer-message", e.message || "Hardware wallet recognition is unavailable.");
-      } finally { $("check-signers").disabled = false; setBusy(""); }
-    });
+        setText(messageId, e.message || "Hardware wallet recognition is unavailable.");
+      } finally { button.disabled = false; setBusy(""); }
+    }
+    // Step 3: a rehearsal, with no transaction involved.
+    $("check-signers-now").addEventListener("click", () =>
+      runSignerCheck($("check-signers-now"), "preflight-message", "preflight-results", null));
+    // At the end of a payment: the same check, tied to the review on screen.
+    $("check-signers").addEventListener("click", () =>
+      runSignerCheck($("check-signers"), "signer-message", "signer-results", preparationId));
     $("download").addEventListener("click", async () => {
       if (!currentPsbt || $("download").disabled) return;
       $("download").disabled = true;

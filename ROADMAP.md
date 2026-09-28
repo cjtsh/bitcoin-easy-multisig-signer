@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**Current build:** **v0.1.14**, 28 September 2026, on the `phase2-transaction-builder`
+**Current build:** **v0.1.15**, 28 September 2026, on the `phase2-transaction-builder`
 branch. It prepares and reviews an **unsigned** transaction and performs read-only
 hardware signer recognition. **It does not sign, and it does not broadcast.**
 
@@ -21,7 +21,9 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   in the review; the final transaction id and a public explorer link; a
   small-test-payment recommendation; and the `.psbt` saved to the Downloads folder.
   Two usability bugs found in live use — no confirmation of the chosen fee tier,
-  and no sign of progress during a slow scan — were fixed in v0.1.14.
+  and no sign of progress during a slow scan — were fixed in v0.1.14. Step 3, a
+  pre-flight check of the hardware wallets, was added in v0.1.15 so a missing or
+  mismatched device is discovered before a payment is built.
   **Independently verified** (see the verification record below). **Still not
   evidenced:** recognition of a physical hardware signer.
 - [ ] **Phase 4 — signing and broadcast.** **Not started and not authorised.** The
@@ -37,7 +39,7 @@ nothing; and a slow scan looked like a dead app. Each is fixed and covered by te
 Redirect following was removed from outbound HTTP, the local access token is no
 longer disclosed in an unauthenticated response, and the high-value confirmation no
 longer depends on a remote price feed.
-**How to hand this to another agent:** Say “Implement Phase 2 of `ROADMAP.md`,” then Phase 3, then Phase 4. Read the repository's `README.md`, `replit.md`, and this document first. Each phase has a goal, affected areas, constraints, acceptance checks, and a handoff record. Do not treat the next phase as approved just because the previous one is done. Complete phases in order: the balance view must lead to a clearly explained send-eligibility state before transaction preparation can be completed; an independently checked unsigned transaction is needed before a signer or broadcaster can be connected.
+**How to hand this to another agent:** Say “Implement Phase 2 of `ROADMAP.md`,” then Phase 3, then Phase 4. Read the repository's `README.md`, `replit.md`, and this document first. Each phase has a goal, affected areas, constraints, acceptance checks, and a handoff record. Do not treat the next phase as approved just because the previous one is done. Complete phases in order: the balance view must lead to a clearly explained send-eligibility state before transaction preparation can be completed; an independently checked unsigned transaction is needed before a signer or broadcaster can be connected. The app now walks the user through four numbered steps — open the wallet, see the balance, **check the hardware wallets**, prepare the send — so a device problem is found before a payment is built, not at its last step.
 
 ## Phase 1 — Current checkpoint: framework and balance view
 
@@ -205,6 +207,11 @@ its first step is an owner decision, not code.
 - **Documentation-only pushes must not republish.** The workflow ignores changes that
   touch only Markdown, and a docs-only commit can carry `[skip ci]`, so a released
   version keeps exactly the artifacts it was verified with.
+- **A device check with no transaction is legitimate; a check inside a send must
+  belong to the review.** Step 3 lets an owner confirm their signers work before
+  building anything, which needs no transaction and says so in its reply. The check
+  at the end of a send must still match the review on screen, and any future signing
+  endpoint must *require* that review rather than merely allow it.
 - **One version per published build.** Never rebuild a released tag in place: v0.1.11's assets were replaced five times, so a filename and a tag no longer identified their contents. Bump `version.py` for every build that is published; it is the single place the version lives, and the workflow derives the tag, the artifact names and the release title from it.
 - Make one phase's scoped changes at a time. Before editing, compare this roadmap with the actual code and the latest release; the document can become stale. State any assumptions or blocker rather than inventing wallet paths, policy, or a successful click flow.
 - Add focused tests for each fixed failure and run `python -m unittest discover -s tests -q`; validate inline JavaScript syntax and inspect runtime errors when changing `ui.html`. For Mac changes, build on Apple Silicon and perform a **manual native-window** walkthrough. Record which checks used synthetic data and which used real Testnet4 services/devices.
