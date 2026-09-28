@@ -12,7 +12,7 @@ app_version="$(python3 -c 'from version import APP_VERSION; print(APP_VERSION)')
   echo "Archive version $version does not match app version $app_version." >&2
   exit 1
 }
-root="easy-bitcoin-multisig-signer-v${version}"
+root="bitcoin-easy-multisig-signer-v${version}"
 mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT

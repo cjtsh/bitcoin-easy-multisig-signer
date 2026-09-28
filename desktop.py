@@ -112,7 +112,7 @@ def run_desktop(webview_module) -> None:
         thread.start()
         bridge = DesktopBridge(state, webview_module, url)
         bridge.window = webview_module.create_window(
-            "Easy Bitcoin Multisig", url, js_api=bridge,
+            "Bitcoin Easy Signer", url, js_api=bridge,
             width=1100, height=820, min_size=(780, 600),
         )
         webview_module.start(gui="cocoa")

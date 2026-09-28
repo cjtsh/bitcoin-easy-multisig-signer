@@ -1,4 +1,4 @@
-# Easy Bitcoin Multisig Signer
+# Bitcoin Easy Signer Signer
 
 - Keep one existing wallet/PSBT engine and one HTML UI for Testnet4 and mainnet; the switch changes network configuration and selected Esplora backend, not functionality. Never infer an undeclared change branch.
 - No wallet creation, signing, or broadcasting. The broadcaster URL is only a stored future setting; do not imply transactions can be submitted.

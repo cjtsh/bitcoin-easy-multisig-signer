@@ -488,7 +488,7 @@ def main():
     state = LocalApp()
     server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
     url = f"http://127.0.0.1:{server.server_address[1]}/"
-    print("Easy Bitcoin Multisig Signer — local mainnet/Testnet4 GUI")
+    print("Bitcoin Easy Signer Signer — local mainnet/Testnet4 GUI")
     print("No wallet file is uploaded to a hosted server.")
     print(f"Opening {url} in your browser. Close this window to stop the app.")
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()

@@ -1,4 +1,4 @@
-name: Build and publish v0.1.9 test release
+name: Build and publish v0.1.10 test release
 
 on:
   push:
@@ -19,11 +19,11 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-source.sh 0.1.9
+      - run: bash scripts/build-source.sh 0.1.10
       - uses: actions/upload-artifact@v4
         with:
-          name: source-0.1.9
-          path: dist/easy-bitcoin-multisig-signer-v0.1.9.tar.gz
+          name: source-0.1.10
+          path: dist/easy-bitcoin-multisig-signer-v0.1.10.tar.gz
           if-no-files-found: error
 
   macos-apple-silicon:
@@ -38,10 +38,10 @@ jobs:
       - run: brew install libusb
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-macos.sh 0.1.9
+      - run: bash scripts/build-macos.sh 0.1.10
       - name: Check DMG and app resources
         run: |
-          hdiutil verify dist/Easy-Bitcoin-Multisig-v0.1.9-UNSIGNED-TEST.dmg
+          hdiutil verify dist/Bitcoin-Easy-Signer-v0.1.10-UNSIGNED-TEST.dmg
           test -f "dist/Easy Bitcoin Multisig.app/Contents/Info.plist"
           test -x "dist/Easy Bitcoin Multisig.app/Contents/MacOS/hwi"
           "dist/Easy Bitcoin Multisig.app/Contents/MacOS/hwi" --help >/dev/null
@@ -49,8 +49,8 @@ jobs:
           "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-network
       - uses: actions/upload-artifact@v4
         with:
-          name: unsigned-macos-apple-silicon-0.1.9
-          path: dist/Easy-Bitcoin-Multisig-v0.1.9-UNSIGNED-TEST.dmg
+          name: unsigned-macos-apple-silicon-0.1.10
+          path: dist/Bitcoin-Easy-Signer-v0.1.10-UNSIGNED-TEST.dmg
           if-no-files-found: error
 
   publish-test-release:
@@ -62,18 +62,18 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: source-0.1.9
+          name: source-0.1.10
           path: dist
       - uses: actions/download-artifact@v4
         with:
-          name: unsigned-macos-apple-silicon-0.1.9
+          name: unsigned-macos-apple-silicon-0.1.10
           path: dist
       - name: Publish a regular GitHub release with both downloads
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > release-notes.md <<'EOF'
-          ## v0.1.9 test build
+          ## v0.1.10 test build
 
           This is an unsigned Apple Silicon test build from the phase2-transaction-builder branch. It completes transaction preparation through read-only hardware signer recognition. It is not merged into main.
 
@@ -82,9 +82,9 @@ jobs:
           Mac download: unsigned and unnotarized Apple Silicon DMG.
           Linux/source download: source archive; requires Python as documented.
           EOF
-          if gh release view v0.1.9 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload v0.1.9 --repo "$GITHUB_REPOSITORY" --clobber dist/Easy-Bitcoin-Multisig-v0.1.9-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.9.tar.gz
-            gh release edit v0.1.9 --repo "$GITHUB_REPOSITORY" --title "v0.1.9 — transaction and signer recognition test build" --notes-file release-notes.md --latest
+          if gh release view v0.1.10 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload v0.1.10 --repo "$GITHUB_REPOSITORY" --clobber dist/Bitcoin-Easy-Signer-v0.1.10-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.10.tar.gz
+            gh release edit v0.1.10 --repo "$GITHUB_REPOSITORY" --title "v0.1.10 — transaction and signer recognition test build" --notes-file release-notes.md --latest
           else
-            gh release create v0.1.9 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.9 — transaction and signer recognition test build" --latest --notes-file release-notes.md dist/Easy-Bitcoin-Multisig-v0.1.9-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.9.tar.gz
+            gh release create v0.1.10 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.10 — transaction and signer recognition test build" --latest --notes-file release-notes.md dist/Bitcoin-Easy-Signer-v0.1.10-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.10.tar.gz
           fi

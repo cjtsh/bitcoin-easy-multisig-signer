@@ -27,13 +27,13 @@ if [[ "${RELEASE:-0}" == 1 && ( -z "${MAC_SIGN_IDENTITY:-}" || -z "${MAC_NOTARY_
 fi
 python3 -m venv .build-venv
 .build-venv/bin/python -m pip install --disable-pip-version-check -r requirements-desktop.txt
-args=(--noconfirm --clean --windowed --onedir --name "Easy Bitcoin Multisig"
+args=(--noconfirm --clean --windowed --onedir --name "Bitcoin Easy Signer"
       --add-data "ui.html:." --collect-data certifi --distpath dist desktop.py)
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   args+=(--codesign-identity "$MAC_SIGN_IDENTITY")
 fi
 .build-venv/bin/python -m PyInstaller "${args[@]}"
-app="dist/Easy Bitcoin Multisig.app"
+app="dist/Bitcoin Easy Signer.app"
 [[ -d "$app" ]] || { echo "PyInstaller did not produce the macOS app." >&2; exit 1; }
 libusb_dylib="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
 [[ -f "$libusb_dylib" ]] || {
@@ -63,11 +63,11 @@ trap 'rm -rf "$stage"' EXIT
 cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
 if [[ "${RELEASE:-0}" == 1 ]]; then
-  dmg="dist/Easy-Bitcoin-Multisig-v${version}-macOS.dmg"
+  dmg="dist/Bitcoin-Easy-Signer-v${version}-macOS.dmg"
 else
-  dmg="dist/Easy-Bitcoin-Multisig-v${version}-UNSIGNED-TEST.dmg"
+  dmg="dist/Bitcoin-Easy-Signer-v${version}-UNSIGNED-TEST.dmg"
 fi
-hdiutil create -ov -format UDZO -volname "Easy Bitcoin Multisig" \
+hdiutil create -ov -format UDZO -volname "Bitcoin Easy Signer" \
   -srcfolder "$stage" "$dmg"
 if [[ "${RELEASE:-0}" == 1 ]]; then
   xcrun notarytool submit "$dmg" --keychain-profile "$MAC_NOTARY_PROFILE" --wait

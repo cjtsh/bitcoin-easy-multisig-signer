@@ -1,6 +1,6 @@
 # Experimental software: risk, no warranty, and liability disclaimer
 
-**Read this before using Easy Bitcoin Multisig Signer.** This is
+**Read this before using Bitcoin Easy Signer Signer.** This is
 experimental software under development, not an audited or production-ready
 Bitcoin recovery tool. It may contain bugs, security flaws, incompatible
 hardware behavior, misleading information, or missing functionality.

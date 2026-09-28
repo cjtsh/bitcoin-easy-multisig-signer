@@ -1,6 +1,6 @@
-# Easy Bitcoin Multisig Signer — experimental mainnet and Testnet4 GUI
+# Bitcoin Easy Signer Signer — experimental mainnet and Testnet4 GUI
 
-The latest published build is [v0.1.8](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/tag/v0.1.8). It is an earlier transaction-preparation build and does not include the current fee/dollar checks or hardware-recognition screen. The next build is v0.1.9.
+The latest published build is [v0.1.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.8). It is an earlier transaction-preparation build and does not include the current fee/dollar checks or hardware-recognition screen. The next build is v0.1.10.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -32,11 +32,11 @@ The local browser GUI opens a BSMS 1.0
 wallet definition, checks public mainnet or Testnet4 balances, and prepares
 an **unsigned transaction file** (PSBT, short for Partially Signed Bitcoin
 Transaction) for signers to review, only where supported receive/change paths
-are verified. The v0.1.9 target adds transaction amount and fee review,
+are verified. The v0.1.10 target adds transaction amount and fee review,
 high-dollar confirmation, and read-only matching of connected signers. It does
 not sign or broadcast a transaction.
 
-The Mac app gives a family member a short flow for **sending from an existing
+The Mac app, named **Bitcoin Easy Signer** in Applications, gives a family member a short flow for **sending from an existing
 multisig wallet**. It will not create a wallet, generate keys, or ask for
 recovery words. The [Bitcoin Core HWI][hwi] tool is bundled for read-only device
 recognition; descriptor and PSBT handling use [embit][embit]. Signing and
@@ -55,7 +55,7 @@ not supported.** The separate Python source archive can also be used on Linux.
 
 Each test release attaches **two matching-version files**:
 
-- `Easy-Bitcoin-Multisig-vX.Y.Z-UNSIGNED-TEST.dmg`: the Mac `.app`, containing its
+- `Bitcoin-Easy-Signer-vX.Y.Z-UNSIGNED-TEST.dmg`: the Mac `.app`, containing its
   Python runtime, dependencies, bundled HWI device interface, existing wallet engine, and a small native
   WebKit window. A user opens the app without installing Python or using
   Terminal. The wallet picker uses the macOS WebKit file dialog without a file-type
@@ -217,7 +217,7 @@ creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. HWI 3.2.0 is bundled in the v0.1.9 Mac app. The command-line proof below
+2. HWI 3.2.0 is bundled in the v0.1.10 Mac app. The command-line proof below
    still uses an HWI 3.2.0 installation on your PATH. Use only the official
    [HWI release][releases]. It adds an explicit `testnet4` chain option.
 3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.
