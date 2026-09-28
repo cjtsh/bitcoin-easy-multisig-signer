@@ -1,6 +1,6 @@
 # Easy Bitcoin Multisig Signer — experimental mainnet and Testnet4 GUI
 
-The latest published release is [v0.1.7](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/tag/v0.1.7). The next candidate adds support for standard BSMS receive/change descriptor templates so eligible wallets can reach the existing unsigned transaction builder.
+The latest published build is [v0.1.8](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/tag/v0.1.8). It is an earlier transaction-preparation build and does not include the current fee/dollar checks or hardware-recognition screen. The next build is v0.1.9.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -31,17 +31,16 @@ review before using software to handle real funds.
 The local browser GUI opens a BSMS 1.0
 wallet definition, checks public mainnet or Testnet4 balances, and prepares
 an **unsigned transaction file** (PSBT, short for Partially Signed Bitcoin
-Transaction) for signers to review, only where the supported receive/change
-paths are verified.
-It cannot sign or broadcast a transaction. It is not yet
-a finished, Mac-tested application, and no physical signer has been tested. The
-previous command-line proof remains available in `probe.py`.
+Transaction) for signers to review, only where supported receive/change paths
+are verified. The v0.1.9 target adds transaction amount and fee review,
+high-dollar confirmation, and read-only matching of connected signers. It does
+not sign or broadcast a transaction.
 
-The intended Mac app will eventually give a family member a short guided
-flow for **sending from an existing multisig wallet**. It will not create a
-wallet, generate keys, or ask for recovery words. This proof keeps hardware
-communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
-and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
+The Mac app gives a family member a short flow for **sending from an existing
+multisig wallet**. It will not create a wallet, generate keys, or ask for
+recovery words. The [Bitcoin Core HWI][hwi] tool is bundled for read-only device
+recognition; descriptor and PSBT handling use [embit][embit]. Signing and
+broadcast code are not included.
 
 ## Development roadmap
 
@@ -57,7 +56,7 @@ not supported.** The separate Python source archive can also be used on Linux.
 Each test release attaches **two matching-version files**:
 
 - `Easy-Bitcoin-Multisig-vX.Y.Z-UNSIGNED-TEST.dmg`: the Mac `.app`, containing its
-  Python runtime, dependencies, existing wallet engine, and a small native
+  Python runtime, dependencies, bundled HWI device interface, existing wallet engine, and a small native
   WebKit window. A user opens the app without installing Python or using
   Terminal. The wallet picker uses the macOS WebKit file dialog without a file-type
   filter, so custom `.bsms` files remain selectable. Only `.bsms` or `.txt`
@@ -147,7 +146,13 @@ differ.
    unavailable; satoshi amounts still display without a rate. No wallet
    information is included in the price request.
 4. Enter a destination on the **selected network**, a whole-sat amount and fee
-   rate to prepare a PSBT from confirmed outputs. PSBT preparation on either
+   rate to prepare a PSBT from confirmed outputs. Three live mainnet fee
+   choices (slow/hour, medium/half-hour, fast/fastest) populate whole sat/vB
+   values. The screen estimates transaction vbytes conservatively from every
+   confirmed scanned UTXO and shows the fee in sats and its indicative USD
+   equivalent; the review shows the actual selected inputs and fee estimate.
+   A mainnet payment estimated at $10,000 or more requires a separate
+   confirmation of the amount and dollar value. PSBT preparation on either
    network requires a 2-of-3 multisig descriptor with verified receive/change
    paths matching its reference address. This version accepts explicit
    multipath descriptors and BSMS templates with exactly `/0/*,/1/*`
@@ -159,17 +164,22 @@ differ.
    estimate, and
    warns with extra acknowledgement below its standard estimate. An estimated
    fee above 10,000 sats is refused, and unusually high estimates require an
-   extra acknowledgement before download. Review destination, selected
+   extra acknowledgement before continuing. Review destination, selected
    sat/vB rate, **amount + estimated fee**, change,
    and every signer display independently; then download the unsigned `.psbt`.
    **Nothing signs or broadcasts.** A fee quote is an estimate, not a promise
    of confirmation or a substitute for checking a final signed transaction.
-   The "connect signers" step is not implemented in this version.
+   After reviewing the transaction, **Next: connect hardware wallets** opens a
+   device-recognition screen. HWI checks whether a connected, unlocked device's
+   public key matches one of the wallet signers. The app does not ask for a PIN,
+   sign the PSBT, or broadcast anything. A matching public key does not prove a
+   device can sign this particular transaction.
 
    The send flow begins with a clear **Yes, prepare a transaction** or **No**
    choice. Choosing Yes opens the destination, amount and fee fields. Review
-   the complete proposal before saving the unsigned PSBT. Choosing No prepares
-   nothing. Connecting hardware wallets to sign is a later milestone.
+   the complete proposal, save the unsigned PSBT if desired, then continue to
+   read-only signer recognition. Choosing No prepares nothing. Signing and
+   broadcast remain later work.
 
 **Optional server selection:** Open **Advanced network settings** to select
 an Esplora HTTP API base for each network's explorer and a separate Esplora
@@ -207,12 +217,9 @@ creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. For the device check on an Apple Silicon Mac, get the official **HWI 3.2.0**
-   macOS arm64 binary from the
-   [HWI releases][releases]. Follow its release verification instructions;
-   do not download a wallet tool from an untrusted mirror. You may instead
-   use an existing `hwi` command on your PATH. HWI is separate from this
-   Python environment. HWI 3.2.0 adds an explicit `testnet4` chain option.
+2. HWI 3.2.0 is bundled in the v0.1.9 Mac app. The command-line proof below
+   still uses an HWI 3.2.0 installation on your PATH. Use only the official
+   [HWI release][releases]. It adds an explicit `testnet4` chain option.
 3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.
    Its origins must use BIP48 coin type `1'`, and its reference address
    must match the descriptor's first address. Run:

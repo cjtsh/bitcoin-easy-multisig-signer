@@ -354,6 +354,29 @@ def _estimated_signed_vbytes(
     return (4 * base + witness + 3) // 4
 
 
+def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool) -> dict:
+    """Conservative live-screen estimate using every confirmed scanned input."""
+    layout = wallet_layout(record)
+    if not layout.change_verified or layout.change is None:
+        raise WalletError("Verified receive and change paths are required for a fee estimate.")
+    if not scan.get("utxo_consistent") or scan.get("coverage_limited"):
+        raise WalletError("Refresh a complete, consistent balance before estimating a transaction.")
+    chosen = [u for u in scan["utxos"] if u["status"]["confirmed"]]
+    if not chosen:
+        raise WalletError("No confirmed outputs are available to estimate.")
+    outputs = 1 if send_all else 2
+    dummy_output = script.Script(b"\x00\x20" + bytes(32))
+    script_lengths = {
+        "receive": len(layout.receive.derive(0).witness_script().data),
+        "change": len(layout.change.derive(0).witness_script().data),
+    }
+    vbytes = _estimated_signed_vbytes(
+        chosen, [dummy_output] * outputs, script_lengths
+    )
+    return {"estimated_vbytes": vbytes, "input_count": len(chosen),
+            "method": "conservative upper estimate using all confirmed scanned outputs"}
+
+
 def build_unsigned_psbt(
     record: WalletRecord, scan: dict, recipient: str, amount: int | None,
     fee_rate: int = 2, get: Callable = explorer_get,

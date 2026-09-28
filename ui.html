@@ -232,6 +232,7 @@
         <p class="small muted">You will enter the destination and amount, review the fee and change, then save an unsigned file. This app will not sign or send Bitcoin.</p>
         <button id="begin-send" type="button">Yes, prepare a transaction</button>
         <button id="decline-send" type="button" class="secondary">No</button>
+        <p id="send-choice-message" class="small" role="status" aria-live="polite"></p>
       </div>
       <div id="send-flow" hidden>
       <h3>Enter where and how much to send</h3>
@@ -251,8 +252,9 @@
         </details></div>
       <p class="small muted">Choose a speed. Review the fee before saving.</p>
       <div>
-        <button id="use-fast" type="button" class="secondary" disabled>Fast (recommended)</button>
-        <button id="use-standard" type="button" class="secondary" disabled>Standard</button>
+        <button id="use-slow" type="button" class="secondary" disabled>Slow</button>
+        <button id="use-standard" type="button" class="secondary" disabled>Medium</button>
+        <button id="use-fast" type="button" class="secondary" disabled>Fast</button>
       </div>
       <p id="fee-guidance" class="small muted" aria-live="polite">Loading current mainnet fee estimates…</p>
       <details><summary>Advanced: adjust network fee</summary>
@@ -264,6 +266,9 @@
       </details>
       <p id="fee-preview" class="small muted"></p>
       <div id="fee-input-warning" class="notice" hidden></div>
+      <div id="large-amount-warning" class="notice" hidden></div>
+      <label id="large-amount-ack-row" class="check" hidden><input id="confirm-large-amount" type="checkbox">
+        <span>I checked the BTC amount and dollar equivalent; this large amount is intentional.</span></label>
       <p class="small muted">Only confirmed Bitcoin can be sent. Check the amount and fee on your signer.</p>
       <p id="send-price-note" class="small muted">Mainnet BTC/USD is indicative, not a guaranteed exchange rate.</p>
       <button id="prepare">Review unsigned transaction</button>
@@ -287,6 +292,7 @@
         </details>
         <p id="review-equivalent" class="small equivalent"></p>
         <p id="review-fee-usd" class="small muted"></p>
+        <p id="review-total-usd" class="small muted"></p>
         <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
           <details class="context-help"><summary aria-label="What is change in a Bitcoin transaction?">?</summary>
             <div class="help-popout"><strong>Where does the rest go?</strong><p>Bitcoin spends whole outputs. On a partial send, the amount not sent or paid as a fee returns to an address in your wallet. Check that change address on your signer.</p></div>
@@ -294,14 +300,23 @@
         <div id="review-warning" class="notice"></div>
         <div id="review-fee-warning" class="notice" hidden></div>
         <label class="check"><input id="confirm-review" type="checkbox">
-          <span>I checked the network, full destination, BTC amount, fee and any change on my signer. This does not sign or send.</span></label>
+          <span>I checked the network, full destination, BTC amount, fee and any change shown above. This file is unsigned; no Bitcoin has been sent.</span></label>
         <label id="fee-ack-row" class="check" hidden><input id="confirm-fee" type="checkbox">
           <span>I checked the sat/vB units and the exact estimated fee and total above.</span></label>
         <div class="with-help"><button id="download" disabled>Download unsigned transaction file (.psbt)</button>
           <details class="context-help align-right"><summary aria-label="What am I saving as a PSBT file?">?</summary>
             <div class="help-popout"><strong>What am I saving?</strong><p>This PSBT (Partially Signed Bitcoin Transaction) is an unsigned proposal. Save the file for your signers to review in their own tools. Saving it does not sign or send Bitcoin.</p></div>
           </details></div>
-        <p class="small muted">Next: connect hardware signers to verify and sign. Signing and broadcasting are not implemented in this version.</p>
+        <button id="next-signers" type="button" disabled>Next: connect hardware wallets</button>
+        <p class="small muted">The next screen only checks whether connected devices match this wallet. It does not ask for a PIN, sign, or send.</p>
+        <section id="signer-step" class="review" hidden>
+          <h3>Connect your hardware wallets</h3>
+          <p>Connect a device and unlock it using the device itself. This app will only check whether its public identity matches one of this wallet’s three signers. It will not ask for or store your PIN.</p>
+          <button id="check-signers" type="button">Check connected devices</button>
+          <div id="signer-message" role="status" aria-live="polite"></div>
+          <ul id="signer-results"></ul>
+          <p class="notice">This is device recognition only. No transaction is signed or broadcast.</p>
+        </section>
       </div>
       </div>
     </section>
@@ -331,6 +346,8 @@
     let rate = null, lastScan = null, reviewAmountSats = null, reviewFeeSats = null;
     let priceRequestId = 0, feeRequestId = 0, walletActionId = 0, feeQuote = null;
     let feeRateCustomized = false, sendActionId = 0, preparing = false;
+    let feeEstimate = null;
+    let preparationId = null;
     let walletCanPrepare = false;
     const selectedChain = () => $("chain").value;
     function updateNetworkUI() {
@@ -446,6 +463,7 @@
       }
     }
     function updateSendEquivalent() {
+      renderAmountSafety();
       if ($("send-all").checked) {
         setText("send-equivalent", lastScan ?
           "Confirmed BTC found before fee: " + btc(lastScan.confirmed_sats) +
@@ -458,10 +476,41 @@
         fmt(sats) + " sats · " + usdLabel(sats) :
         "Enter a BTC amount of at least 0.00000546, with up to 8 decimal places.");
     }
+    function renderAmountSafety() {
+      const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
+      const usd = sats !== null && rate ? sats / 100000000 * rate.usd_per_btc : null;
+      const large = usd !== null && usd >= 10000;
+      $("large-amount-warning").hidden = !large;
+      setText("large-amount-warning", large ? "This amount is about " + usdLabel(sats) + ". That is a large Bitcoin payment. Check the BTC amount and destination carefully before continuing." : "");
+      $("large-amount-ack-row").hidden = !large;
+      if (!large) $("confirm-large-amount").checked = false;
+      renderFeePreview();
+    }
+    function renderFeePreview() {
+      const rateValue = Number($("fee-rate").value);
+      if (!feeEstimate || !Number.isInteger(rateValue) || rateValue < 1) {
+        setText("fee-preview", "Estimated fee appears here after a current fee quote and wallet scan.");
+        return;
+      }
+      const feeSats = feeEstimate.estimated_vbytes * rateValue;
+      setText("fee-preview", "Estimated size " + feeEstimate.estimated_vbytes + " vB × " + rateValue +
+        " sat/vB ≈ " + fmt(feeSats) + " sats · " + usdLabel(feeSats) +
+        " network fee. Conservative estimate uses all " + feeEstimate.input_count +
+        " confirmed scanned outputs; exact selected inputs and fee appear in Review.");
+    }
+    async function loadFeeEstimate() {
+      const chain = selectedChain();
+      try {
+        const estimate = await post("/api/estimate", {chain, send_all:$("send-all").checked});
+        if (chain === selectedChain()) feeEstimate = estimate;
+      } catch (_) { feeEstimate = null; }
+      renderFeePreview();
+    }
     function invalidateReview() {
       sendActionId++;
-      currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
+      currentPsbt = null; preparationId = null; reviewAmountSats = null; reviewFeeSats = null;
       $("review").hidden = true; $("download").disabled = true;
+      $("next-signers").disabled = true; $("signer-step").hidden = true;
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
     }
     function updateSendMode() {
@@ -491,7 +540,9 @@
       if (reviewAmountSats !== null) {
         setText("review-equivalent", usdLabel(reviewAmountSats));
         setText("review-fee-usd", "Estimated fee: " + usdLabel(reviewFeeSats));
+        setText("review-total-usd", "Total deducted: " + usdLabel(reviewAmountSats + reviewFeeSats));
       }
+      renderFeeGuidance();
     }
     async function loadPrice() {
       const requestId = ++priceRequestId;
@@ -509,8 +560,8 @@
     function renderFeeGuidance() {
       const value = Number($("fee-rate").value);
       setText("fee-guidance", feeQuote ?
-        "Current mainnet guidance: fast " + feeQuote.fastest + ", standard " +
-        feeQuote.standard + " sat/vB. " +
+        "Current mainnet guidance: slow " + Math.ceil(feeQuote.hour) + ", medium " +
+        Math.ceil(feeQuote.standard) + ", fast " + Math.ceil(feeQuote.fastest) + " sat/vB. " +
         (feeQuote.fastest > 25 ? "Fast exceeds this app's safety cap; it is not selected. " : "") +
         "Checked " + new Date(feeQuote.checked_at).toLocaleString() +
         ". Estimates, not guarantees." +
@@ -523,8 +574,12 @@
           (suggested ? " · " + suggested + " sat/vB" : "");
         button.setAttribute("aria-pressed", String(!button.disabled && value === suggested));
       }
-      setText("fee-preview", "The estimated fee depends on how many confirmed outputs your wallet uses. " +
-        "The recipient amount and fee are calculated together at review.");
+      const slow = $("use-slow"), slowRate = feeQuote && Math.ceil(feeQuote.hour);
+      slow.disabled = !slowRate || slowRate > 25;
+      slow.textContent = "Slow · " + (slowRate || "—") + " sat/vB";
+      $("use-standard").textContent = "Medium · " + (feeQuote ? Math.ceil(feeQuote.standard) : "—") + " sat/vB";
+      $("use-fast").textContent = "Fast · " + (feeQuote ? Math.ceil(feeQuote.fastest) : "—") + " sat/vB";
+      renderFeePreview();
       const warn = !Number.isInteger(value) || value < 1 || value > 25 ?
         "Fee rate must be a whole number from 1 to 25 sat/vB. Values such as 500 are blocked." :
         feeQuote && value < feeQuote.economy ?
@@ -539,6 +594,9 @@
       setText("fee-input-warning", warn);
       $("prepare").disabled = preparing || !feeQuote || feeQuote.standard > 25 ||
         !Number.isInteger(value) || value < feeQuote?.economy || value > 25;
+      const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
+      const highValue = sats !== null && rate && sats / 100000000 * rate.usd_per_btc >= 10000;
+      if (highValue && !$("confirm-large-amount").checked) $("prepare").disabled = true;
     }
     async function loadFees() {
       const requestId = ++feeRequestId;
@@ -549,10 +607,8 @@
         if (requestId === feeRequestId) {
           feeQuote = quote;
           if (!feeRateCustomized) {
-            if ($("fee-rate").value !== String(
-              quote.fastest <= 25 ? quote.fastest : quote.standard
-            )) invalidateReview();
-            $("fee-rate").value = quote.fastest <= 25 ? quote.fastest : quote.standard;
+            if ($("fee-rate").value !== String(Math.ceil(quote.standard))) invalidateReview();
+            $("fee-rate").value = Math.ceil(quote.standard);
           }
         }
       } catch (_) { if (requestId === feeRequestId) feeQuote = null; }
@@ -630,11 +686,14 @@
           " · Public explorer data can be stale; verify independently before spending." : ""));
       renderPrice();
       renderFeeGuidance();
+      loadFeeEstimate();
     }
     async function refresh() {
       const started = walletActionId, chain = selectedChain();
       $("balance-card").hidden = true; $("send-card").hidden = true;
       lastScan = null;
+      feeEstimate = null;
+      renderFeePreview();
       $("refresh").disabled = true; $("refresh-top").disabled = true;
       msg("message", "Refreshing " + (selectedChain() === "main" ? "mainnet" : "Testnet4") +
         " balance. Your wallet file is already open…");
@@ -665,6 +724,7 @@
       $("balance-card").hidden = true; $("send-card").hidden = true;
       $("refresh-top").hidden = true;
       lastScan = null; currentPsbt = null;
+      feeEstimate = null;
       reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
       $("download").disabled = true;
@@ -683,15 +743,17 @@
     $("begin-send").addEventListener("click", () => {
       $("send-choice").hidden = true;
       $("send-flow").hidden = false;
+      setText("send-choice-message", "");
       $("destination").focus();
     });
     $("decline-send").addEventListener("click", () => {
       resetSendChoice();
-      msg("send-message", "No transaction prepared. Your wallet has not been changed.");
+      setText("send-choice-message", "No transaction prepared. Your wallet has not been changed.");
     });
     $("chain").addEventListener("change", () => {
       walletActionId++;
       walletCanPrepare = false; lastScan = null;
+      feeEstimate = null;
       $("explorer-consent").checked = false;
       currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
@@ -706,18 +768,20 @@
       updateNetworkUI();
       loadServerSettings();
     });
-    $("amount").addEventListener("input", () => { invalidateReview(); updateSendEquivalent(); });
+    $("amount").addEventListener("input", () => { invalidateReview(); updateSendEquivalent(); renderFeeGuidance(); });
     $("destination").addEventListener("input", invalidateReview);
-    $("send-all").addEventListener("change", () => { invalidateReview(); updateSendMode(); });
+    $("send-all").addEventListener("change", () => {
+      invalidateReview(); updateSendMode(); renderFeeGuidance(); loadFeeEstimate();
+    });
     $("fee-rate").addEventListener("input", () => {
       feeRateCustomized = true; invalidateReview(); renderFeeGuidance();
     });
-    for (const [id, name] of [["use-standard", "standard"], ["use-fast", "fastest"]]) {
+    for (const [id, name] of [["use-slow", "hour"], ["use-standard", "standard"], ["use-fast", "fastest"]]) {
       $(id).addEventListener("click", () => {
         if (!feeQuote || feeQuote[name] > 25) return;
         feeRateCustomized = true;
         invalidateReview();
-        $("fee-rate").value = feeQuote[name];
+        $("fee-rate").value = Math.ceil(feeQuote[name]);
         renderFeeGuidance();
       });
     }
@@ -736,10 +800,12 @@
       $("prepare").disabled = true; msg("send-message", "Checking confirmed outputs and preparing your unsigned transaction file…");
       try {
         const result = await post("/api/prepare", {chain:selectedChain(),
-          recipient:$("destination").value.trim(), amount_sats:amount, send_all:sendAll, fee_rate:fee});
+          recipient:$("destination").value.trim(), amount_sats:amount, send_all:sendAll,
+          fee_rate:fee, large_amount_confirmed:$("confirm-large-amount").checked});
         if (started !== sendActionId || walletStarted !== walletActionId ||
             chain !== selectedChain()) return;
         currentPsbt = result.psbt_base64;
+        preparationId = result.preparation_id;
         setText("review-destination", result.recipient);
         setText("review-mode", result.send_all ?
           "All confirmed Bitcoin found by this scan: the network fee is deducted before the recipient amount is set. No change output. Other wallet addresses beyond the scan gap may still hold funds." :
@@ -768,11 +834,43 @@
       finally { preparing = false; renderFeeGuidance(); }
     });
     function updateDownload() {
-      $("download").disabled = !$("confirm-review").checked || !currentPsbt ||
-        (!$("fee-ack-row").hidden && !$("confirm-fee").checked);
+      const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
+      const highValue = sats !== null && rate && sats / 100000000 * rate.usd_per_btc >= 10000;
+      const confirmed = $("confirm-review").checked &&
+        (!highValue || $("confirm-large-amount").checked) &&
+        ($("fee-ack-row").hidden || $("confirm-fee").checked);
+      $("download").disabled = !confirmed || !currentPsbt;
+      $("next-signers").disabled = !confirmed || !currentPsbt;
     }
     $("confirm-review").addEventListener("change", updateDownload);
     $("confirm-fee").addEventListener("change", updateDownload);
+    $("confirm-large-amount").addEventListener("change", () => {
+      updateDownload(); renderFeeGuidance();
+    });
+    $("next-signers").addEventListener("click", () => {
+      if ($("next-signers").disabled) return;
+      $("signer-step").hidden = false;
+      $("signer-step").scrollIntoView({behavior:"smooth", block:"start"});
+      $("signer-results").replaceChildren();
+      setText("signer-message", "Connect and unlock a hardware wallet, then choose Check connected devices.");
+    });
+    $("check-signers").addEventListener("click", async () => {
+      $("check-signers").disabled = true;
+      setText("signer-message", "Checking connected devices. This is read-only…");
+      $("signer-results").replaceChildren();
+      try {
+        const result = await post("/api/devices", {preparation_id:preparationId});
+        for (const status of result.devices) {
+          const item = document.createElement("li");
+          item.textContent = status;
+          $("signer-results").append(item);
+        }
+        setText("signer-message", result.devices.length ? result.message :
+          "No compatible device was found. Connect a supported signer, unlock it on the device, then check again.");
+      } catch (e) {
+        setText("signer-message", e.message || "Hardware wallet recognition is unavailable.");
+      } finally { $("check-signers").disabled = false; }
+    });
     $("download").addEventListener("click", async () => {
       if (!currentPsbt || $("download").disabled) return;
       if (window.pywebview && window.pywebview.api &&

@@ -26,8 +26,9 @@ from network_settings import (
     validate_esplora_url, verify_esplora,
 )
 from version import APP_VERSION
-from probe import MAX_BSMS_BYTES, ProbeError, parse_bsms
-from wallet_service import WalletError, build_unsigned_psbt, scan_wallet, wallet_summary
+from probe import MAX_BSMS_BYTES, ProbeError, parse_bsms, probe_devices
+from wallet_service import (WalletError, build_unsigned_psbt, estimate_fee_preview,
+                            scan_wallet, wallet_summary)
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
 PRICE_URL = "https://mempool.space/api/v1/prices"
@@ -126,6 +127,7 @@ class LocalApp:
         self.explorer_consent = False
         self.scan = None
         self.prepared_psbt = None
+        self.prepared_id = None
         self.revision = 0
         self.scan_generation = 0
         self.price = None
@@ -240,6 +242,10 @@ class LocalApp:
                         self._scan(request)
                     elif self.path == "/api/prepare":
                         self._prepare(request)
+                    elif self.path == "/api/devices":
+                        self._devices(request)
+                    elif self.path == "/api/estimate":
+                        self._estimate(request)
                     elif self.path == "/api/status":
                         self._status()
                     elif self.path == "/api/settings":
@@ -268,6 +274,7 @@ class LocalApp:
                     state.explorer_consent = False
                     state.scan = None
                     state.prepared_psbt = None
+                    state.prepared_id = None
                     state.revision += 1
                     state.scan_generation += 1
                     revision = state.revision
@@ -295,6 +302,7 @@ class LocalApp:
                     explorer = state.servers[chain]["explorer"]
                     state.scan = None
                     state.prepared_psbt = None
+                    state.prepared_id = None
                     state.scan_generation += 1
                     generation = state.scan_generation
                 if record is None:
@@ -316,6 +324,31 @@ class LocalApp:
                     consent = state.explorer_consent
                 self._send(200, {"wallet": wallet, "balance": balance,
                                  "chain": chain, "explorer_consent": consent})
+
+            def _devices(self, data):
+                with state.lock:
+                    record, chain, preparation_id = state.record, state.chain, state.prepared_id
+                if record is None or chain is None:
+                    raise WalletError("Open a wallet before checking for signers.")
+                if not preparation_id or data.get("preparation_id") != preparation_id:
+                    raise WalletError("Review a transaction before continuing to signer recognition.")
+                hwi_chain = "main" if chain == "main" else "testnet4"
+                statuses = probe_devices(record, "hwi", hwi_chain)
+                self._send(200, {
+                    "devices": statuses,
+                    "message": ("No compatible hardware signer detected." if not statuses
+                                else "Device check complete. This check does not sign or send."),
+                })
+
+            def _estimate(self, data):
+                with state.lock:
+                    record, scan, chain = state.record, state.scan, state.chain
+                if record is None or scan is None or data.get("chain") != chain:
+                    raise WalletError("Refresh the open wallet before estimating a transaction.")
+                send_all = data.get("send_all", False)
+                if type(send_all) is not bool:
+                    raise WalletError("Choose either a partial amount or Send all.")
+                self._send(200, estimate_fee_preview(record, scan, send_all))
 
             def _settings(self, data):
                 chain = data.get("chain")
@@ -342,6 +375,7 @@ class LocalApp:
                         if chain == state.chain:
                             state.scan = None
                             state.prepared_psbt = None
+                            state.prepared_id = None
                             state.scan_generation += 1
                 with state.lock:
                     active = dict(state.servers[chain])
@@ -357,6 +391,7 @@ class LocalApp:
             def _prepare(self, data):
                 with state.lock:
                     state.prepared_psbt = None
+                    state.prepared_id = None
                     record, scan, revision, chain = (
                         state.record, state.scan, state.revision, state.chain
                     )
@@ -391,6 +426,25 @@ class LocalApp:
                         "Current mainnet standard fee exceeds this app's 25 sat/vB "
                         "safety cap. Wait or use an established wallet."
                     )
+                if chain == "main":
+                    with state.lock:
+                        price = (state.price if state.price is not None
+                                 and time.monotonic() - state.price_checked < PRICE_CACHE_SECONDS
+                                 else None)
+                    if price is None:
+                        price = fetch_btc_usd()
+                        with state.lock:
+                            state.price = price
+                            state.price_checked = time.monotonic()
+                    requested_amount = (scan["confirmed_sats"] if data.get("send_all")
+                                        else data.get("amount_sats"))
+                    if (type(requested_amount) is int
+                        and requested_amount * price["usd_per_btc"] / 100_000_000 >= 10_000
+                        and data.get("large_amount_confirmed") is not True):
+                        raise WalletError(
+                            "This transaction is worth at least $10,000 at the current BTC/USD "
+                            "reference. Confirm the amount and dollar equivalent before preparing it."
+                        )
                 requested_rate = data.get("fee_rate", 2)
                 if type(requested_rate) is not int or not 1 <= requested_rate <= 25:
                     raise WalletError("Fee rate must be a whole number from 1 to 25 sat/vB.")
@@ -423,6 +477,8 @@ class LocalApp:
                     if revision != state.revision or scan is not state.scan:
                         raise WalletError("Wallet or balance changed; review and prepare again.")
                     state.prepared_psbt = result["psbt_base64"]
+                    state.prepared_id = secrets.token_urlsafe(18)
+                    result["preparation_id"] = state.prepared_id
                 self._send(200, result)
 
         return Handler

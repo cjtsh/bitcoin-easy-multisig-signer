@@ -4,6 +4,7 @@ import json
 import io
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
@@ -101,6 +102,51 @@ class LocalGuiTests(unittest.TestCase):
         self.assertTrue(result["receive_address"].startswith("tb1"))
         self.assertIsNotNone(self.app.record)
         self.assertIsNone(self.app.scan)
+
+    def test_read_only_signer_check_requires_current_transaction_review(self):
+        text, _ = test_record(short_path=True)
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        self.app.prepared_psbt = "cHNidP8="
+        self.app.prepared_id = "prepared-test"
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/devices", {"preparation_id": "stale"})
+        self.assertEqual(err.exception.code, 400)
+        with patch("gui.probe_devices", return_value=["Trezor: signer 1 of 3 public xpub matched (not a signing test)."]):
+            result = self.post("/api/devices", {"preparation_id": "prepared-test"})
+        self.assertIn("does not sign or send", result["message"])
+        self.assertIn("not a signing test", result["devices"][0])
+
+    def test_mainnet_high_value_transaction_needs_explicit_confirmation(self):
+        self.app.price = {"usd_per_btc": 50_000}
+        self.app.price_checked = time.monotonic()
+        self.app.fees = {"standard": 2, "economy": 1, "network": "main",
+                         "checked_at": "2026-09-28T00:00:00Z"}
+        self.app.fees_checked = time.monotonic()
+        self.post("/api/import", {"chain": "main", "text": mainnet_record(),
+                                  "consent_explorer": True})
+        fake = {
+            "network": "main", "utxo_consistent": True, "confirmed_sats": 50_000_000,
+            "pending_delta_sats": 0, "observed_sats": 50_000_000, "addresses": [],
+            "utxos": [], "scanned": 40, "coverage_limited": False, "path_warning": "",
+            "scanned_at": "2026-09-28T00:00:00+00:00", "source": "https://mempool.space/api",
+        }
+        with patch("gui.scan_wallet", return_value=fake):
+            self.post("/api/scan", {"chain": "main"})
+        request = {"chain": "main", "recipient": self.app.record.reference_address,
+                   "amount_sats": 20_000_000, "fee_rate": 2}
+        with patch("gui.build_unsigned_psbt") as builder:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        builder.assert_not_called()
+        request["large_amount_confirmed"] = True
+        with patch("gui.build_unsigned_psbt", return_value={
+            "psbt_base64": "cHNidP8=", "fee_warning": "",
+            "fee_sats": 540, "fee_rate_estimate": 2,
+        }):
+            result = self.post("/api/prepare", request)
+        self.assertTrue(result["preparation_id"])
 
     def test_import_rejects_bad_chain_and_cross_origin_post(self):
         text, _ = test_record()
@@ -265,6 +311,8 @@ class LocalGuiTests(unittest.TestCase):
         text = mainnet_record()
         self.post("/api/import", {"chain": "main", "text": text,
                                   "consent_explorer": True})
+        self.app.price = {"usd_per_btc": 50_000}
+        self.app.price_checked = time.monotonic()
         fake = {
             "network": "main", "utxo_consistent": True,
             "confirmed_sats": 100_000, "pending_delta_sats": 0,

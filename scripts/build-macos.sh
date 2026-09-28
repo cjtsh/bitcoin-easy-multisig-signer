@@ -35,6 +35,24 @@ fi
 .build-venv/bin/python -m PyInstaller "${args[@]}"
 app="dist/Easy Bitcoin Multisig.app"
 [[ -d "$app" ]] || { echo "PyInstaller did not produce the macOS app." >&2; exit 1; }
+libusb_dylib="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
+[[ -f "$libusb_dylib" ]] || {
+  echo "Bundling HWI requires libusb; install it with: brew install libusb" >&2
+  exit 1
+}
+hwi_args=(--noconfirm --clean --onefile --name hwi --collect-all hwilib
+          --collect-all hid --add-binary "$libusb_dylib:." --distpath dist/hwi
+          scripts/hwi_entry.py)
+if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
+  hwi_args+=(--codesign-identity "$MAC_SIGN_IDENTITY")
+fi
+.build-venv/bin/python -m PyInstaller "${hwi_args[@]}"
+cp dist/hwi/hwi "$app/Contents/MacOS/hwi"
+chmod 755 "$app/Contents/MacOS/hwi"
+"$app/Contents/MacOS/hwi" --help >/dev/null
+if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
+  codesign --force --deep --options runtime --sign "$MAC_SIGN_IDENTITY" "$app"
+fi
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 cp -R "$app" "$stage/"

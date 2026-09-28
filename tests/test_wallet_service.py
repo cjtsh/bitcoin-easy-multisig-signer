@@ -16,7 +16,8 @@ from probe import ProbeError, load_bsms, parse_bsms
 from network_config import NETWORKS as CHAIN_CONFIGS
 from test_probe import test_record
 from wallet_service import (
-    WalletError, build_unsigned_psbt, check_fee_safety, explorer_get, scan_wallet, wallet_layout,
+    WalletError, build_unsigned_psbt, check_fee_safety, estimate_fee_preview,
+    explorer_get, scan_wallet, wallet_layout,
     wallet_summary,
 )
 
@@ -94,6 +95,15 @@ class WalletServiceTests(unittest.TestCase):
         address = next(item for item in result["addresses"] if item["address"] == self.receive)
         self.assertEqual(address["confirmed"], 6000)
         self.assertEqual(address["pending_delta"], 0)
+
+    def test_fee_preview_is_conservative_and_uses_confirmed_utxo_count(self):
+        data = scan_wallet(self.wallet, self.fake_get)
+        preview = estimate_fee_preview(self.wallet, data, send_all=False)
+        self.assertEqual(preview["input_count"], 1)
+        self.assertEqual(preview["estimated_vbytes"], 202)
+        self.assertIn("all confirmed", preview["method"])
+        send_all = estimate_fee_preview(self.wallet, data, send_all=True)
+        self.assertEqual(send_all["estimated_vbytes"], 159)
 
     def test_unsigned_psbt_has_correct_destination_change_and_prevout(self):
         from embit.networks import NETWORKS

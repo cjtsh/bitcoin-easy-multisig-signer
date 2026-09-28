@@ -168,6 +168,10 @@ def parse_bsms(text: str) -> WalletRecord:
 
 
 def _hwi_path(executable: str) -> str:
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys.executable).with_name("hwi")
+        if bundled.is_file():
+            return str(bundled)
     found = shutil.which(executable)
     if found is None:
         raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
