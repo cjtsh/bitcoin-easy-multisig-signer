@@ -1,5 +1,10 @@
 # Easy Bitcoin Multisig Signer — experimental mainnet and Testnet4 GUI
 
+## Latest test release: v0.1.7
+
+Download the [unsigned Apple Silicon Mac DMG](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/download/v0.1.7/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg) or the [source archive for Linux and other platforms](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/download/v0.1.7/easy-bitcoin-multisig-signer-v0.1.7.tar.gz). See the [v0.1.7 release notes](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/tag/v0.1.7). This is an unsigned, experimental test release from the `phase2-transaction-builder` candidate branch; it is not merged into `main`. It prepares unsigned transactions and does not sign or broadcast them.
+
+
 ## Disclaimer — experimental software; use at your own risk
 
 **This is experimental, unaudited software. It is not a production-ready
@@ -78,7 +83,7 @@ particular, verify first launch, BSMS file picking, refresh, and native PSBT
 saving on a real Mac. A Linux build environment cannot validate or notarize
 the Mac app. The active GitHub Actions workflow builds an unsigned **Apple
 Silicon** test DMG and matching source archive on the candidate branch; it
-does not publish releases or make the app trusted by Gatekeeper.
+publishes the v0.1.7 prerelease after both build jobs pass; it does not make the app trusted by Gatekeeper.
 The source packaging script accepts the recipe in either its staged `ci/`
 location or the active `.github/workflows/` location.
 The Mac app is built for Apple Silicon only; do not describe it as supporting
