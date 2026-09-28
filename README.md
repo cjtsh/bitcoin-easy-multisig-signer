@@ -127,7 +127,10 @@ differ.
    stopping after a gap of 20 unused addresses. **A displayed amount is an
    explorer observation, not a proof of a complete wallet balance.** The
    interface shows when it last scanned and warns on incomplete coverage or
-   inferred descriptor branches. If the explorer fails, it does *not* claim
+   inferred descriptor branches. It explains why transaction preparation is
+   unavailable, including an unsupported wallet path, partial scan, mismatch
+   between explorer UTXOs and the balance, or no confirmed outputs. If the
+   explorer fails, it does *not* claim
    the wallet is empty. An undeclared change branch is **never inferred on
    either network**, so a receive-only balance is partial. Each address with
    activity shows its own confirmed,

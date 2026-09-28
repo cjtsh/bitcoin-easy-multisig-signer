@@ -270,7 +270,9 @@ class WalletServiceTests(unittest.TestCase):
                 record = parse_bsms(test_record(short_path=short)[0])
                 layout = wallet_layout(record)
                 self.assertIsNone(layout.change)
-                self.assertFalse(wallet_summary(record)["can_prepare"])
+                summary = wallet_summary(record)
+                self.assertFalse(summary["can_prepare"])
+                self.assertIn("change", summary["prepare_reason"].lower())
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
                 self.assertTrue(scan["coverage_limited"])
@@ -339,7 +341,9 @@ class WalletServiceTests(unittest.TestCase):
                 record = parse_bsms(mainnet_record(suffix))
                 layout = wallet_layout(record)
                 self.assertIsNone(layout.change)
-                self.assertFalse(wallet_summary(record)["can_prepare"])
+                summary = wallet_summary(record)
+                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["prepare_reason"])
                 with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
                     build_unsigned_psbt(record, {"network": "main", "utxo_consistent": True},
                                         record.reference_address, 1000)

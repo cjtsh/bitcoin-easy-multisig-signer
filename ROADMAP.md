@@ -1,18 +1,18 @@
 # Roadmap and agent handoff
 
-**Baseline:** v0.1.6, 28 September 2026. The default branch is `main`; the corresponding Apple Silicon test DMG and source archive are attached to the GitHub v0.1.6 release. This document describes the work **after** that checkpoint, not a claim that the released app can already send Bitcoin.
+**Baseline:** v0.1.6, 28 September 2026. The default branch is `main`; the corresponding Apple Silicon test DMG and source archive are attached to the GitHub v0.1.6 release. Work on `phase2-transaction-builder` is the v0.1.7 candidate. The app prepares unsigned transactions only; it does not sign or broadcast.
 
 **How to hand this to another agent:** Say “Implement Phase 2 of `ROADMAP.md`,” then Phase 3, then Phase 4. Read the repository's `README.md`, `replit.md`, and this document first. Each phase has a goal, affected areas, constraints, acceptance checks, and a handoff record. Do not treat the next phase as approved just because the previous one is done. Complete phases in order: the balance view must lead to a clearly explained send-eligibility state before transaction preparation can be completed; an independently checked unsigned transaction is needed before a signer or broadcaster can be connected.
 
 ## Phase 1 — Current checkpoint: framework and balance view
 
-**Status: released as a test build; transaction journey not accepted as working.**
+**Status: v0.1.6 released; eligibility explanations updated in the v0.1.7 test candidate. Owner Mac walkthrough is pending.**
 
 The repository has one Python wallet/PSBT engine and one local HTML interface for Testnet4 and mainnet, selected by network configuration. The Apple Silicon wrapper embeds Python and displays that interface in a native WebKit window; the source archive is separately usable with Python. The app reads an existing BSMS wallet definition, checks network and reference-address consistency, derives supported public addresses, and asks a selected Esplora explorer about balances and UTXOs. The balance view displays BTC to eight decimal places, sats beside it, and an approximate mainnet BTC/USD comparison beneath BTC. The whole-BTC portion is not capped at one digit. The user has approved this balance presentation.
 
 Implemented code also includes a re-scan request, locally saved advanced Esplora endpoint settings, transaction inputs, fee guidance, PSBT creation, a transaction-review panel, and a native Mac save dialog for an unsigned `.psbt`. There are automated tests using synthetic wallet/explorer data and an Apple Silicon CI build with bundle/network self-checks. The v0.1.6 release build passed those checks. **Those checks are not evidence that the full click-through journey works with the user's actual wallet on the Mac.**
 
-The user says **Refresh balance appears to work**; do not list refresh as a reported defect. The unresolved issue is that **the user cannot reach a usable Prepare send flow beyond the balance view**. Determine whether a safety gate, the particular BSMS definition, or an interface failure explains that state before changing behavior. The advanced network-settings panel is visible but has **not** been user-tested with changed settings. The current UI explicitly labels “Connect signers” as unavailable. The app cannot sign or broadcast; the broadcaster URL in settings is stored for possible future use only.
+The user says **Refresh balance appears to work**; do not list refresh as a reported defect. The unresolved issue is that **the user cannot reach a usable Prepare send flow beyond the balance view**. The v0.1.7 candidate gives distinct reasons for unsupported wallet policy/path, partial coverage, UTXO mismatch, and no confirmed spendable outputs, with a next action where possible. This is a code change, not proof of the user's specific wallet state; the owner must test the candidate on the Mac. The advanced network-settings panel is visible but has **not** been user-tested with changed settings. The current UI explicitly labels “Connect signers” as unavailable. The app cannot sign or broadcast; the broadcaster URL in settings is stored for possible future use only.
 
 | Capability | Current evidence | Not yet proven / gap |
 | --- | --- | --- |

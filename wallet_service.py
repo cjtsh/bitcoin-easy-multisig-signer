@@ -176,12 +176,26 @@ def wallet_summary(record: WalletRecord) -> dict:
     layout = wallet_layout(record)
     config = CHAIN_CONFIGS[_chain(record)]
     network = NETWORKS[record.network]
+    can_prepare = bool(layout.change_verified and layout.change
+                       and record.threshold == 2 and len(record.keys) == 3)
+    if record.threshold != 2 or len(record.keys) != 3:
+        prepare_reason = (
+            "This version prepares transactions only for a 2-of-3 multisig wallet. "
+            "This wallet can still be viewed."
+        )
+    elif not layout.change_verified or layout.change is None:
+        prepare_reason = layout.warning or (
+            "This wallet file does not verify both receiving and change paths. "
+            "Use a BSMS export that declares both paths; the app will not guess them."
+        )
+    else:
+        prepare_reason = ""
     return {
         "policy": f"{record.threshold}-of-{len(record.keys)} native-SegWit multisig",
         "chain": config.label,
         "network": config.chain,
-        "can_prepare": bool(layout.change_verified and layout.change
-                            and record.threshold == 2 and len(record.keys) == 3),
+        "can_prepare": can_prepare,
+        "prepare_reason": prepare_reason,
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
         "receive_address": layout.receive.derive(0).address(network),

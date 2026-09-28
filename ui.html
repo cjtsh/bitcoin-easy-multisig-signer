@@ -217,6 +217,7 @@
       </details>
       <p id="price-note" class="small muted"></p>
       <p id="coverage" class="small muted"></p>
+      <div id="balance-send-status" class="notice" hidden></div>
       <div id="addresses"></div>
     </section>
 
@@ -556,8 +557,7 @@
       setText("path-warning", data.warning);
       $("send-unavailable").hidden = walletCanPrepare;
       setText("send-unavailable", walletCanPrepare ? "" :
-        "This wallet definition can show balances, but cannot prepare an unsigned transaction file. " +
-        "It needs verified 2-of-3 receiving and change paths. No change path will be guessed.");
+        (data.prepare_reason || "This wallet can show balances, but its policy or address paths are not supported for transaction preparation."));
       $("keys").replaceChildren();
       for (const key of data.keys) {
         const card = document.createElement("details"); card.className = "cosigner";
@@ -573,14 +573,26 @@
     }
     function showBalance(data) {
       $("balance-card").hidden = false;
-      const allowSend = walletCanPrepare && !data.coverage_limited && data.utxo_consistent;
-      $("send-card").hidden = !allowSend;
-      if (walletCanPrepare && !allowSend) {
-        $("send-unavailable").hidden = false;
-        setText("send-unavailable", data.utxo_consistent === false ?
-          "Explorer UTXOs and confirmed balance disagree. Transaction preparation is blocked; refresh or verify with your own node." :
-          "Address coverage is incomplete. Transaction preparation is blocked.");
+      let sendBlockReason = "";
+      if (!walletCanPrepare) {
+        sendBlockReason = "This wallet definition does not meet the transaction policy shown above.";
+      } else if (data.utxo_consistent === false) {
+        sendBlockReason = "Explorer UTXOs and confirmed balance disagree. Refresh the balance; if the mismatch remains, verify with your own node before preparing a transaction.";
+      } else if (data.coverage_limited) {
+        sendBlockReason = "The scan did not finish the supported address range. Refresh later or verify the wallet with your own node; this version will not prepare a transaction from a partial scan.";
+      } else if (data.confirmed_sats <= 0 || data.utxo_count <= 0) {
+        sendBlockReason = data.pending_delta_sats > 0 ?
+          "No confirmed Bitcoin was found. Pending Bitcoin cannot be spent yet. Refresh after a confirmation." :
+          "No confirmed Bitcoin was found in the scanned addresses. Refresh after funding the wallet. Addresses beyond this scan may still have activity.";
       }
+      const allowSend = !sendBlockReason;
+      $("send-card").hidden = !allowSend;
+      $("send-unavailable").hidden = walletCanPrepare || allowSend;
+      if (walletCanPrepare && sendBlockReason) {
+        setText("send-unavailable", sendBlockReason);
+      }
+      $("balance-send-status").hidden = !walletCanPrepare || allowSend;
+      setText("balance-send-status", sendBlockReason);
       $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       lastScan = data;
       $("send-all").checked = true;
