@@ -151,9 +151,10 @@ Synthetic fixtures prove code paths, not your wallet. Still unverified:
 
 1. **No Apple Silicon window walkthrough.** Nobody has driven the native WebKit
    window through import → refresh → send form → save.
-2. **No real Testnet4 BSMS import.** Whether the confirmation control appears, and
-   what the change-branch evidence line reports, is unproven against your actual
-   file.
+2. **Partially resolved.** The control did appear for the owner's real wallet and
+   they used it successfully (see the observations below). What has *not* been
+   checked is the change-branch evidence line against a wallet that has spent
+   before, and the review/save steps.
 3. **No hardware signer.** HWI recognition has never run against a physical
    device; signing and broadcast remain unimplemented by design.
 4. **The token-in-fragment change needs one browser check.** If the fragment did
@@ -164,6 +165,29 @@ Synthetic fixtures prove code paths, not your wallet. Still unverified:
    below). The PyInstaller/codesign/hdiutil path is verified only by `bash -n`,
    stubbed unit checks of the extracted logic, and the fact that v0.1.9/v0.1.10
    previously built on CI.
+
+### Observed on the real Mac (owner report, v0.1.11 DMG)
+
+This is the first evidence from the native app with a real wallet rather than
+synthetic fixtures.
+
+- The owner imported their wallet on Apple Silicon. The app showed the
+  send-eligibility blockage together with the change-branch confirmation control,
+  which **confirms the diagnosis in section 1 against the real file**: the wallet
+  is the receive-only `/*` form, so `can_prepare` was false and the send screen
+  could never appear before this work.
+- After confirming the control, the send flow became available and the owner
+  reached the "prepare a send" screen. That is the Phase 2 acceptance-gate
+  behaviour — a receive-only wallet explains itself, offers the control, and a
+  confirmed wallet reaches the send form — observed in the shipped app.
+- **Reported friction:** the owner did not understand *why* they were being asked
+  to confirm. That is a genuine usability finding from first live use, and the
+  wording has been rewritten in plain language as a result. The control is a
+  safety gate for how change is addressed, so it must be understood, not clicked
+  through.
+- Still unobserved: completing the review, saving the PSBT, and the hardware
+  signer screen.
+
 
 ---
 

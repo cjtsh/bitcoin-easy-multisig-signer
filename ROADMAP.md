@@ -34,7 +34,7 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 
 ## Phase 2 — Explain and unblock transaction eligibility on the Mac
 
-**Status: implemented on this branch; NOT accepted.** The code change and its tests are in place, but the acceptance gate requires a real Mac window and the owner's wallet, so this phase must not be marked passed on the strength of CI or synthetic fixtures alone.
+**Status: implemented and exercised on the owner's Mac; not yet fully accepted.** The owner's own wallet hit the receive-only gate, was offered the change-branch confirmation, and reached the send form after confirming it — the behaviour this phase asks for. The remaining acceptance evidence is the review, PSBT save and signer steps. The code change and its tests are in place, but the acceptance gate requires a real Mac window and the owner's wallet, so this phase must not be marked passed on the strength of CI or synthetic fixtures alone.
 
 **Goal:** After a working Testnet4 balance scan, determine why the user cannot use Prepare send. If the wallet is view-only, show the specific reason and requirements; if a verified spend-capable wallet meets all gates, make the send form available. Preserve the currently working refresh behavior. This is the immediate next assignment. **Do not add signing or broadcasting in this phase.**
 

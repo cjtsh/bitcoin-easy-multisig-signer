@@ -190,15 +190,20 @@
       <div id="path-warning" class="notice" hidden></div>
       <div id="send-unavailable" class="notice" hidden></div>
       <div id="declare-change" class="notice" hidden>
-        <p><strong>This wallet file does not declare a change path.</strong> The app will
-          not guess one. If your signing devices use the usual BIP48 branch convention,
-          you can confirm the standard <code>/1/*</code> change branch and continue.</p>
-        <p class="small">Your wallet file and keys are unchanged by this. The change address
-          is shown in the review, and it must match what your wallet and each signer display.</p>
+        <p><strong>Your wallet file does not say which addresses receive change.</strong>
+          When you send only part of your balance, the leftover Bitcoin comes back to you as
+          <em>change</em>. This file describes only the addresses that <em>receive</em> payments,
+          so the app cannot tell from it which addresses your wallet uses for change — and it
+          will not guess.</p>
+        <p class="small">Almost every multisig wallet uses two groups of addresses: one for
+          receiving, one for change (the <code>/1/*</code> branch). Confirming that lets the app
+          build a transaction. Your wallet file and your keys are not modified, and nothing is
+          signed or sent.</p>
         <label class="check"><input id="confirm-change-branch" type="checkbox">
-          <span>My wallet uses the standard <code>/1/*</code> change branch, and I will verify
-            the change address on my signers and in my wallet software.</span></label>
-        <button id="declare-change-button" type="button" disabled>Use the standard change branch</button>
+          <span>I understand the app will use this wallet's usual change addresses, and I will
+            check the change address shown in the review against my wallet and every signing
+            device before I approve anything.</span></label>
+        <button id="declare-change-button" type="button" disabled>Use this wallet's usual change addresses</button>
         <p id="declare-change-message" class="small" role="status" aria-live="polite"></p>
       </div>
     </section>
@@ -316,8 +321,9 @@
         <label id="fee-ack-row" class="check" hidden><input id="confirm-fee" type="checkbox">
           <span>I checked the sat/vB units and the exact estimated fee and total above.</span></label>
         <label id="declared-change-ack-row" class="check" hidden><input id="confirm-declared-change" type="checkbox">
-          <span>This change address comes from the change branch I confirmed, not from my wallet file,
-            and I verified it on my wallet and will check it on each signer.</span></label>
+          <span>The app chose this change address from the wallet's usual change addresses that
+            I confirmed, because my wallet file did not list them. I have checked that it matches
+            my wallet, and I will check it on every signing device.</span></label>
         <div class="with-help"><button id="download" disabled>Download unsigned transaction file (.psbt)</button>
           <details class="context-help align-right"><summary aria-label="What am I saving as a PSBT file?">?</summary>
             <div class="help-popout"><strong>What am I saving?</strong><p>This PSBT (Partially Signed Bitcoin Transaction) is an unsigned proposal. Save the file for your signers to review in their own tools. Saving it does not sign or send Bitcoin.</p></div>

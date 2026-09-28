@@ -227,9 +227,10 @@ def wallet_summary(record: WalletRecord) -> dict:
         )
         if declarable:
             prepare_reason += (
-                " If your signers use the usual BIP48 branch convention, you can "
-                "confirm the standard /1/* change branch below instead of exporting "
-                "a new wallet file."
+                " This wallet file does not list the addresses this wallet uses for change, "
+                "so the app will not build a transaction yet. If your signing devices use the "
+                "usual receive/change arrangement, confirm the standard change branch below "
+                "instead of exporting a new wallet file."
             )
     else:
         prepare_reason = ""
