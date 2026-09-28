@@ -66,6 +66,9 @@ class WalletServiceTests(unittest.TestCase):
         self.assertEqual(result["scanned"], 50)
         self.assertFalse(result["coverage_limited"])
         self.assertEqual(result["used_change_indices"], [])
+        address = next(item for item in result["addresses"] if item["address"] == self.receive)
+        self.assertEqual(address["confirmed"], 6000)
+        self.assertEqual(address["pending_delta"], 0)
 
     def test_unsigned_psbt_has_correct_destination_change_and_prevout(self):
         from embit.networks import NETWORKS
@@ -107,6 +110,8 @@ class WalletServiceTests(unittest.TestCase):
         data = scan_wallet(self.wallet, pending_get)
         self.assertEqual(data["confirmed_sats"], 0)
         self.assertEqual(data["observed_sats"], 6000)
+        address = next(item for item in data["addresses"] if item["address"] == self.receive)
+        self.assertEqual(address["confirmed"] + address["pending_delta"], 6000)
         with self.assertRaisesRegex(WalletError, "Not enough confirmed"):
             build_unsigned_psbt(self.wallet, data, self.receive, 1000, 2, pending_get)
 

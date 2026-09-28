@@ -1,4 +1,4 @@
-# Easy Bitcoin Multisig Signer — experimental Testnet4 GUI preview
+# Easy Bitcoin Multisig Signer — experimental Testnet4 GUI
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -26,7 +26,7 @@ seed words or private keys into this software. Read the full
 or a guarantee of enforceable protection; obtain qualified legal and security
 review before using software to handle real funds.
 
-The 0.0.4 development preview adds a local browser GUI for opening a BSMS 1.0
+Version 0.0.5 includes a local browser GUI for opening a BSMS 1.0
 wallet definition, checking public Testnet4 balances, and preparing an
 **unsigned** PSBT. It cannot sign or broadcast a transaction. It is not yet
 a finished Mac application, and no physical signer has been tested. The
@@ -38,7 +38,7 @@ wallet, generate keys, or ask for recovery words. This proof keeps hardware
 communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
 and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
-## Point-and-click Testnet4 preview on a Mac
+## Point-and-click Testnet4 GUI on a Mac
 
 1. Download the project's ZIP, unzip it, and double-click
    **Start Easy Multisig.command**. The launcher needs Python 3 installed and
@@ -58,7 +58,15 @@ and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
    explorer observation, not a proof of a complete wallet balance.** The
    interface shows when it last scanned and warns on incomplete coverage or
    inferred descriptor branches. If the explorer fails, it does *not* claim
-   the wallet is empty.
+   the wallet is empty. Each address with activity shows its own confirmed,
+   pending and observed net balance; the wallet total sums scanned addresses.
+   For a size reference, the interface also fetches a public BTC/USD spot
+   rate from mempool.space and displays approximate USD equivalents beside
+   the wallet balance, individual addresses and entered send amount.
+   **Testnet4 coins have no real USD value**: these are mainnet BTC price
+   comparisons, not a quote to redeem test coins. Rates can be delayed or
+   unavailable; satoshi amounts still display without a rate. No wallet
+   information is included in the price request.
 4. Enter a Testnet4 destination, a whole-sat amount and fee rate to prepare
    a PSBT from confirmed outputs. Review destination, estimated fee and
    change; then download the unsigned `.psbt`. **Nothing signs or broadcasts.**

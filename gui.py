@@ -8,16 +8,50 @@ Testnet4 explorer after the user clicks the balance button.
 from __future__ import annotations
 
 import json
+import math
 import secrets
 import threading
+import time
 import webbrowser
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from probe import MAX_BSMS_BYTES, ProbeError, parse_bsms
 from wallet_service import WalletError, build_unsigned_psbt, scan_wallet, wallet_summary
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
+PRICE_URL = "https://mempool.space/api/v1/prices"
+PRICE_CACHE_SECONDS = 300
+
+
+def fetch_btc_usd() -> dict:
+    """Public mainnet BTC/USD spot reference, never a value for test coins."""
+    request = Request(PRICE_URL, headers={
+        "User-Agent": "EasyMultisigTestnet4/0.0.5",
+        "Accept": "application/json",
+    })
+    try:
+        with urlopen(request, timeout=7) as response:
+            body = response.read(4097)
+        if len(body) > 4096:
+            raise ValueError("oversized price response")
+        data = json.loads(body)
+        rate, timestamp = data["USD"], data["time"]
+        now = datetime.now(timezone.utc).timestamp()
+        if (type(rate) not in (int, float) or not math.isfinite(rate)
+            or rate <= 0 or rate > 100_000_000
+            or type(timestamp) is not int or not now - 1800 <= timestamp <= now + 300):
+            raise ValueError("invalid or stale price")
+        return {
+            "usd_per_btc": rate,
+            "as_of": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(),
+            "source": "mempool.space BTC/USD spot",
+        }
+    except (HTTPError, URLError, TimeoutError, UnicodeError, ValueError, KeyError, TypeError) as exc:
+        raise WalletError("BTC/USD rate unavailable; satoshi balances are unaffected.") from exc
 
 
 class LocalApp:
@@ -27,6 +61,8 @@ class LocalApp:
         self.record = None
         self.scan = None
         self.revision = 0
+        self.price = None
+        self.price_checked = 0.0
 
     def handler(self):
         state = self
@@ -70,6 +106,21 @@ class LocalApp:
                     body = page.replace("__LOCAL_TOKEN__", state.token).encode("utf-8")
                     self._headers(200, "text/html; charset=utf-8", len(body))
                     self.wfile.write(body)
+                elif self.path == "/api/price":
+                    with state.lock:
+                        cached = (state.price if state.price is not None
+                                  and time.monotonic() - state.price_checked < PRICE_CACHE_SECONDS
+                                  else None)
+                    if cached is None:
+                        try:
+                            cached = fetch_btc_usd()
+                        except WalletError as exc:
+                            self._send(503, {"error": str(exc)})
+                            return
+                        with state.lock:
+                            state.price = cached
+                            state.price_checked = time.monotonic()
+                    self._send(200, cached)
                 else:
                     self._send(404, {"error": "Not found."})
 

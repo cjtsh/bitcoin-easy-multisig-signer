@@ -45,6 +45,7 @@
     .success { background:var(--mint); padding:11px 14px; border-radius:9px; color:var(--green); margin:12px 0; }
     .amount { font-size:clamp(30px,5vw,49px); font-weight:760; line-height:1.1; letter-spacing:-.05em; }
     .amount small { font-size:16px; letter-spacing:0; font-weight:600; color:var(--muted); }
+    .equivalent { margin:5px 0 12px; color:var(--green); font-weight:650; }
     .metrics { display:flex; gap:22px; flex-wrap:wrap; margin:18px 0; }
     .metric { border-top:1px solid var(--line); padding-top:11px; flex:1; min-width:140px; }
     .metric b { display:block; font-size:19px; }
@@ -69,7 +70,7 @@
 </head>
 <body>
   <header class="top">
-    <small>Easy Bitcoin Multisig Signer · experimental 0.0.4 prototype</small>
+    <small>Easy Bitcoin Multisig Signer · experimental 0.0.5</small>
     <h1>Your wallet, before the keys.</h1>
     <p>Open a wallet definition, check its Testnet4 balance, and prepare an unsigned send.</p>
     <div class="network">● TESTNET4 ONLY · NO REAL BITCOIN</div>
@@ -111,11 +112,13 @@
     <section id="balance-card" class="card" hidden>
       <h2>2. Testnet4 balance</h2>
       <div class="amount"><span id="observed">—</span> <small>test sats observed</small></div>
+      <p id="balance-usd" class="equivalent"></p>
       <div class="metrics">
         <div class="metric"><b id="confirmed">—</b><span>confirmed sats</span></div>
         <div class="metric"><b id="pending">—</b><span>pending change (sats)</span></div>
         <div class="metric"><b id="utxo-count">—</b><span>unspent outputs found</span></div>
       </div>
+      <p id="price-note" class="small muted"></p>
       <p id="coverage" class="small muted"></p>
       <button id="refresh" class="secondary">Refresh Testnet4 balance</button>
       <div id="addresses"></div>
@@ -128,11 +131,13 @@
         <div><label for="destination">Send to Testnet4 address</label>
           <input id="destination" type="text" placeholder="tb1…" autocomplete="off" spellcheck="false"></div>
         <div><label for="amount">Amount in sats</label>
-          <input id="amount" type="number" min="546" step="1" placeholder="e.g. 1000"></div>
+          <input id="amount" type="number" min="546" step="1" placeholder="e.g. 1000">
+          <p id="send-equivalent" class="small equivalent" aria-live="polite"></p></div>
       </div>
       <label for="fee-rate">Estimated fee rate (sat/vB)</label>
       <input id="fee-rate" type="number" min="1" max="25" step="1" value="2" style="max-width:150px">
       <p class="small muted">Confirmed coins only. The fee estimate is conservative; final inputs and change are shown for review.</p>
+      <p class="small muted">USD figures use the mainnet BTC spot rate for perspective. Testnet4 coins have no cash value.</p>
       <button id="prepare">Review unsigned transaction</button>
       <div id="send-message" role="status" aria-live="polite"></div>
       <div id="review" class="review" hidden>
@@ -143,6 +148,7 @@
           <div class="metric"><b id="review-fee"></b><span>estimated fee (sats)</span></div>
           <div class="metric"><b id="review-inputs"></b><span>inputs</span></div>
         </div>
+        <p id="review-equivalent" class="small equivalent"></p>
         <div class="kv"><b>Change (check against your wallet)</b><code id="review-change" class="mono"></code></div>
         <div id="review-warning" class="notice"></div>
         <label class="check"><input id="confirm-review" type="checkbox">
@@ -159,6 +165,7 @@
     const token = "__LOCAL_TOKEN__";
     const $ = id => document.getElementById(id);
     let currentPsbt = null;
+    let rate = null, lastScan = null, reviewAmountSats = null, priceRequestId = 0;
     function setText(id, value) { $(id).textContent = String(value); }
     function msg(id, text, error=false) {
       const el = $(id); el.textContent = text; el.className = text ? (error ? "error" : "success") : "";
@@ -171,6 +178,68 @@
       return result;
     }
     function fmt(num) { return Number(num).toLocaleString("en-US"); }
+    function usdReference(sats) {
+      if (!rate) return "USD reference unavailable";
+      const value = sats / 100000000 * rate.usd_per_btc;
+      if (value > 0 && value < 0.005) return "≈ <$0.01";
+      return "≈ " + value.toLocaleString("en-US", {style:"currency", currency:"USD"});
+    }
+    function usdLabel(sats) {
+      return rate ? usdReference(sats) + " mainnet BTC equivalent" : "USD reference unavailable";
+    }
+    function showAddresses(data) {
+      $("addresses").replaceChildren();
+      const heading = document.createElement("h3");
+      heading.textContent = "Addresses with activity"; $("addresses").append(heading);
+      for (const item of data.addresses) {
+        const row = document.createElement("div"); row.className = "address-row";
+        const address = document.createElement("div"); address.className = "mono";
+        address.textContent = item.address;
+        const sub = document.createElement("small");
+        const observed = item.confirmed + item.pending_delta;
+        const pending = (item.pending_delta >= 0 ? "+" : "") + fmt(item.pending_delta);
+        sub.textContent = item.branch + " #" + item.index + " · " +
+          fmt(observed) + " sats at this address (" + fmt(item.confirmed) +
+          " confirmed, " + pending + " pending)" +
+          (item.used ? "" : " · first receiving address");
+        const dollars = document.createElement("small");
+        dollars.textContent = usdLabel(observed);
+        row.append(address, sub, dollars); $("addresses").append(row);
+      }
+    }
+    function updateSendEquivalent() {
+      const text = $("amount").value;
+      const sats = Number(text);
+      setText("send-equivalent", text && Number.isSafeInteger(sats) && sats >= 0 ?
+        (sats / 100000000).toFixed(8) + " BTC · " +
+        usdLabel(sats) :
+        "Enter sats to see BTC and a USD size reference.");
+    }
+    function renderPrice() {
+      setText("price-note", rate ?
+        "Mainnet BTC/USD spot: " + fmt(rate.usd_per_btc) + " USD/BTC · " +
+        rate.source + " · " + new Date(rate.as_of).toLocaleString() +
+        ". Testnet4 coins have no cash value." :
+        "BTC/USD rate unavailable. Satoshi balances still display; Testnet4 coins have no cash value.");
+      if (lastScan) {
+        setText("balance-usd", usdLabel(lastScan.observed_sats));
+        showAddresses(lastScan);
+      }
+      updateSendEquivalent();
+      if (reviewAmountSats !== null) {
+        setText("review-equivalent", usdLabel(reviewAmountSats));
+      }
+    }
+    async function loadPrice() {
+      const requestId = ++priceRequestId;
+      try {
+        const response = await fetch("/api/price", {cache:"no-store"});
+        if (!response.ok) throw new Error("Price feed unavailable");
+        const quote = await response.json();
+        if (requestId === priceRequestId) rate = quote;
+      } catch (_) { if (requestId === priceRequestId) rate = null; }
+      renderPrice();
+    }
     function showWallet(data) {
       $("wallet-card").hidden = false;
       setText("policy", data.policy + " · " + data.chain);
@@ -195,7 +264,8 @@
     function showBalance(data) {
       $("balance-card").hidden = false;
       $("send-card").hidden = false;
-      $("review").hidden = true; currentPsbt = null;
+      $("review").hidden = true; currentPsbt = null; reviewAmountSats = null;
+      lastScan = data;
       setText("observed", fmt(data.observed_sats));
       setText("confirmed", fmt(data.confirmed_sats));
       setText("pending", fmt(data.pending_delta_sats));
@@ -204,22 +274,13 @@
         new Date(data.scanned_at).toLocaleString() + " · " + data.source +
         (data.coverage_limited ? " · Partial coverage: do not treat this as a complete wallet balance." :
         " · Standard 20-unused-address gap scan. Older or unusual paths may still be missed."));
-      $("addresses").replaceChildren();
-      const heading = document.createElement("h3");
-      heading.textContent = "Addresses with activity"; $("addresses").append(heading);
-      for (const item of data.addresses) {
-        const row = document.createElement("div"); row.className = "address-row";
-        const address = document.createElement("div"); address.className = "mono";
-        address.textContent = item.address;
-        const sub = document.createElement("small");
-        sub.textContent = item.branch + " #" + item.index + " · " +
-          fmt(item.confirmed) + " confirmed sats" + (item.used ? "" : " · first receiving address");
-        row.append(address, sub); $("addresses").append(row);
-      }
+      renderPrice();
     }
     async function refresh() {
       $("balance-card").hidden = true; $("send-card").hidden = true;
+      lastScan = null;
       $("refresh").disabled = true; msg("message", "Scanning Testnet4. This can take a little while…");
+      loadPrice();
       try {
         const balance = await post("/api/scan", {chain:"testnet4"});
         showBalance(balance); msg("message", "Balance refreshed. Check the coverage note below.");
@@ -232,6 +293,7 @@
       if (file.size > 65536) { msg("message", "BSMS file is unexpectedly large.", true); return; }
       $("open").disabled = true; $("wallet-card").hidden = true;
       $("balance-card").hidden = true; $("send-card").hidden = true;
+      lastScan = null;
       msg("message", "Opening wallet…");
       try {
         const wallet = await post("/api/import", {chain:$("chain").value, text:await file.text()});
@@ -240,12 +302,14 @@
       finally { $("open").disabled = false; }
     });
     $("refresh").addEventListener("click", refresh);
+    $("amount").addEventListener("input", updateSendEquivalent);
     $("prepare").addEventListener("click", async () => {
       const amount = Number($("amount").value), fee = Number($("fee-rate").value);
       if (!Number.isSafeInteger(amount) || amount < 546 || !Number.isSafeInteger(fee)) {
         msg("send-message", "Enter a whole-sat amount (at least 546) and fee rate.", true); return;
       }
       $("review").hidden = true; currentPsbt = null;
+      reviewAmountSats = null;
       $("prepare").disabled = true; msg("send-message", "Checking confirmed outputs and building an unsigned PSBT…");
       try {
         const result = await post("/api/prepare", {chain:"testnet4",
@@ -257,6 +321,7 @@
         setText("review-inputs", result.inputs);
         setText("review-change", result.change_address + " · " + fmt(result.change_sats) + " sats");
         setText("review-warning", result.change_warning);
+        reviewAmountSats = result.amount_sats; renderPrice();
         $("confirm-review").checked = false; $("download").disabled = true;
         $("review").hidden = false; msg("send-message", "Unsigned PSBT prepared. Nothing has been sent.");
       } catch (e) { msg("send-message", e.message, true); }
@@ -282,6 +347,7 @@
       note.style.cssText = "padding:3rem;font:18px system-ui";
       document.body.append(note);
     });
+    loadPrice();
   </script>
 </body>
 </html>

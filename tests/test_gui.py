@@ -1,14 +1,17 @@
 """Exercise the local browser API without a network or real wallet file."""
 
 import json
+import io
 import threading
 import unittest
+from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
 
-from gui import LocalApp
+from gui import LocalApp, fetch_btc_usd
+from wallet_service import WalletError
 from test_probe import test_record
 
 
@@ -40,6 +43,9 @@ class LocalGuiTests(unittest.TestCase):
             page = response.read().decode()
         self.assertIn('type="file"', page)
         self.assertIn("Testnet4", page)
+        self.assertIn('id="balance-usd"', page)
+        self.assertIn('id="send-equivalent"', page)
+        self.assertIn("sats at this address", page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
         text, _ = test_record(short_path=True)
         result = self.post("/api/import", {"chain": "testnet4", "text": text})
@@ -76,6 +82,45 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(result["confirmed_sats"], 6000)
         self.assertEqual(result["utxo_count"], 0)
         self.assertEqual(self.app.scan, fake)
+
+    def test_public_price_endpoint_is_cached_and_independent_of_wallet(self):
+        quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",
+                 "source": "mempool.space BTC/USD spot"}
+        with patch("gui.fetch_btc_usd", return_value=quote) as fetch:
+            with urlopen(self.base + "/api/price", timeout=3) as response:
+                self.assertEqual(json.load(response), quote)
+            with urlopen(self.base + "/api/price", timeout=3) as response:
+                self.assertEqual(json.load(response), quote)
+        fetch.assert_called_once_with()
+        self.assertIsNone(self.app.record)
+        request = Request(self.base + "/api/price", headers={"Host": "not-local.example"})
+        with self.assertRaises(HTTPError) as err:
+            urlopen(request, timeout=3)
+        self.assertEqual(err.exception.code, 403)
+
+    def test_bad_price_does_not_claim_a_zero_wallet_balance(self):
+        with patch("gui.fetch_btc_usd", side_effect=WalletError("Rate unavailable")):
+            with self.assertRaises(HTTPError) as err:
+                urlopen(self.base + "/api/price", timeout=3)
+        self.assertEqual(err.exception.code, 503)
+        self.assertIsNone(self.app.scan)
+
+    def test_price_feed_rejects_stale_and_malformed_quotes(self):
+        now = int(datetime.now(timezone.utc).timestamp())
+        for payload in ({"USD": True, "time": now},
+                        {"USD": 84362, "time": now - 3600},
+                        {"USD": 0, "time": now}):
+            with self.subTest(payload=payload):
+                with patch("gui.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+                    with self.assertRaisesRegex(WalletError, "rate unavailable"):
+                        fetch_btc_usd()
+        with patch("gui.urlopen", return_value=io.BytesIO(
+            json.dumps({"USD": 84362, "time": now}).encode()
+        )) as fetch:
+            quote = fetch_btc_usd()
+        self.assertEqual(quote["usd_per_btc"], 84362)
+        self.assertEqual(fetch.call_args.args[0].full_url,
+                         "https://mempool.space/api/v1/prices")
 
 
 if __name__ == "__main__":
