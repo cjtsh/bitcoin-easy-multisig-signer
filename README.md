@@ -41,6 +41,12 @@ wallet, generate keys, or ask for recovery words. This proof keeps hardware
 communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
 and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
+## Development roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the current checkpoint, three ordered
+development phases, acceptance gates, and handoff instructions for the
+next coding agent.
+
 ## Mac test releases
 
 **Mac app compatibility: Apple Silicon (M-series) only. Intel-based Macs are
