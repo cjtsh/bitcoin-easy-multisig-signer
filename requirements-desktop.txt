@@ -1,5 +1,8 @@
 -r requirements.txt
 pywebview==6.2.1
 pyinstaller==6.22.2
-certifi>=2025.1.31,<2027
+# certifi ships the app's HTTPS CA trust store, so it is pinned to one exact
+# version: an open range would silently adopt a future (or compromised) release.
+# 2026.7.22 is the newest version satisfying the previous >=2025.1.31,<2027 range.
+certifi==2026.7.22
 hwi==3.2.0

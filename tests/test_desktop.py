@@ -104,19 +104,20 @@ class DesktopTests(unittest.TestCase):
         self.assertNotIn('id="wallet-file" type="file" accept=', fake.page)
         self.assertIn('/\\.(bsms|txt)$/i.test(file.name)', fake.page)
         self.assertIn('const file = $("wallet-file").files[0];', fake.page)
-        self.assertIn('text:await file.text()', fake.page)
+        self.assertIn('text: await file.text()', fake.page)
         self.assertNotIn("The Mac file picker is not ready", fake.page)
         self.assertNotIn("__DESKTOP_HIDE_QUIT__", fake.page)
 
     def test_bundled_ui_is_resolved_inside_app(self):
         ui = Path(self.temp.name) / "ui.html"
-        ui.write_text("<html>__LOCAL_TOKEN__ __APP_VERSION__</html>")
+        ui.write_text("<html>__APP_VERSION__ location.hash</html>")
         with patch("gui.sys.frozen", True, create=True), patch(
             "gui.sys._MEIPASS", self.temp.name, create=True
         ), patch.dict(
             "sys.modules", {"certifi": SimpleNamespace(where=lambda: str(ui))}
         ):
-            self.assertEqual(ui_path().read_text(), "<html>__LOCAL_TOKEN__ __APP_VERSION__</html>")
+            self.assertEqual(ui_path().read_text(),
+                             "<html>__APP_VERSION__ location.hash</html>")
             check_bundle_resources()
 
     def test_frozen_app_uses_bundled_ca_file_and_checks_testnet_network(self):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,7 @@ class WalletRecord:
     reference_address: str = ""
     descriptor_text: str = ""
     change_descriptor: Descriptor | None = None
+    change_declared: bool = False
 
     @property
     def keys(self) -> list[Any]:
@@ -81,7 +83,44 @@ def load_bsms(path: Path) -> WalletRecord:
     return parse_bsms(text)
 
 
-def parse_bsms(text: str) -> WalletRecord:
+_BARE_WILDCARD = re.compile(r"(?<!/\d)/\*")
+_QUALIFIED_WILDCARD = re.compile(r"/\d/\*")
+
+
+def declare_change_branch(descriptor_text: str) -> tuple[str, Descriptor]:
+    """Expand a bare ``/*`` into the conventional /0/* receive + /1/* change pair.
+
+    Reached only when the owner has explicitly confirmed that their wallet uses
+    the standard BIP48 branch convention; the app never applies this on its own.
+    The caller still verifies that the change descriptor uses exactly the same
+    multisig keys as the receive descriptor.
+    """
+    if "/**" in descriptor_text or "<0;1>" in descriptor_text:
+        raise ProbeError(
+            "This wallet file already declares its address paths; no change "
+            "branch needs to be confirmed."
+        )
+    # A plain "/*" is a bare wildcard; "/0/*" and "/1/*" are already qualified.
+    # Count them explicitly: a base58 xpub may itself end in a digit, so the
+    # preceding character alone cannot distinguish the two forms.
+    bare = descriptor_text.count("/*") - len(_QUALIFIED_WILDCARD.findall(descriptor_text))
+    if bare < 1 or _QUALIFIED_WILDCARD.search(descriptor_text):
+        raise ProbeError(
+            "Only a wallet descriptor with a plain /* on every signer key can "
+            "use the standard change branch."
+        )
+    try:
+        return (
+            _BARE_WILDCARD.sub("/0/*", descriptor_text),
+            Descriptor.from_string(_BARE_WILDCARD.sub("/1/*", descriptor_text)),
+        )
+    except ProbeError:
+        raise
+    except Exception as exc:
+        raise ProbeError("The standard /1/* change branch could not be derived.") from exc
+
+
+def parse_bsms(text: str, *, declared_change: bool = False) -> WalletRecord:
     """Parse a BSMS record in memory so GUI uploads never touch disk."""
     if len(text.encode("utf-8")) > MAX_BSMS_BYTES:
         raise ProbeError("BSMS file is unexpectedly large.")
@@ -101,8 +140,22 @@ def parse_bsms(text: str) -> WalletRecord:
         raise ProbeError("Descriptor checksum could not be checked.") from exc
 
     change_descriptor = None
+    change_declared = False
     if restrictions == "No path restrictions":
         receive_descriptor_text = descriptor_text
+        if declared_change:
+            # The flag is only meaningful for a bare /* receive-only export.
+            # Anywhere it does not apply it is ignored, so a redundant
+            # confirmation can never break an otherwise valid wallet.
+            try:
+                receive_descriptor_text, change_descriptor = declare_change_branch(
+                    descriptor_text
+                )
+                change_declared = True
+            except ProbeError:
+                receive_descriptor_text = descriptor_text
+                change_descriptor = None
+                change_declared = False
     elif restrictions == "/0/*,/1/*" and "/**" in descriptor_text:
         # BIP 129 descriptor templates use /** with explicit derivation-path
         # restrictions. Expand only the conventional receive/change pair; do
@@ -164,6 +217,7 @@ def parse_bsms(text: str) -> WalletRecord:
         reference_address=reference,
         descriptor_text=receive_descriptor_text,
         change_descriptor=change_descriptor,
+        change_declared=change_declared,
     )
 
 

@@ -10,21 +10,28 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from gui import LocalApp, ui_path
+from gui import LocalApp, launch_url, ui_path
 
 
 class DesktopBridge:
     """Native PSBT save dialog; keep selected paths out of the page."""
 
     def __init__(self, state: LocalApp, webview_module, url: str):
+        """``url`` is the bare local app URL, without the token fragment."""
         self.state = state
         self.webview = webview_module
         self.url = url
         self.window = None
 
+    def _at_app_url(self) -> bool:
+        if self.window is None:
+            return False
+        current = (self.window.get_current_url() or "").split("#", 1)[0]
+        return current == self.url
+
     def save_psbt(self, encoded: str, chain: str) -> dict:
         def ensure_current() -> None:
-            if self.window is None or self.window.get_current_url() != self.url:
+            if not self._at_app_url():
                 raise ValueError("The wallet window is no longer at its local app URL.")
             if not isinstance(encoded, str) or len(encoded) > 2_800_000:
                 raise ValueError("Unsigned transaction file is missing or too large.")
@@ -73,8 +80,10 @@ class DesktopBridge:
 def check_bundle_resources() -> None:
     """Headless smoke check against the *actual* frozen executable's data path."""
     page = ui_path().read_text(encoding="utf-8")
-    if "__LOCAL_TOKEN__" not in page or "__APP_VERSION__" not in page:
+    if "__APP_VERSION__" not in page:
         raise RuntimeError("Bundled ui.html is missing or does not match this app.")
+    if "location.hash" not in page:
+        raise RuntimeError("Bundled ui.html does not read its local access token.")
     if getattr(sys, "frozen", False):
         import certifi
         if not Path(certifi.where()).is_file():
@@ -106,13 +115,14 @@ def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
     state = LocalApp(desktop=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
-    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    port = server.server_address[1]
+    url = f"http://127.0.0.1:{port}/"
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     try:
         thread.start()
         bridge = DesktopBridge(state, webview_module, url)
         bridge.window = webview_module.create_window(
-            "Bitcoin Easy Signer", url, js_api=bridge,
+            "Bitcoin Easy Signer", launch_url(port, state.token), js_api=bridge,
             width=1100, height=820, min_size=(780, 600),
         )
         webview_module.start(gui="cocoa")

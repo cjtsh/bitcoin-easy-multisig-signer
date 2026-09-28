@@ -15,7 +15,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from embit import psbt, script, transaction
 from embit.descriptor import Descriptor
@@ -120,6 +122,7 @@ class Layout:
     change: Descriptor | None
     warning: str
     change_verified: bool
+    change_declared: bool = False
 
 
 def wallet_layout(record: WalletRecord) -> Layout:
@@ -136,11 +139,20 @@ def wallet_layout(record: WalletRecord) -> Layout:
     text = record.descriptor_text
     suffixes = [key.suffix for key in record.keys]
     if record.change_descriptor is not None:
-        # BSMS restrictions explicitly declared and verified separate receive
-        # and change descriptors during import.
+        # Either BSMS restrictions explicitly declared and verified separate
+        # receive and change descriptors during import, or the owner explicitly
+        # declared the conventional change branch for a receive-only file.
         receive, change = desc, record.change_descriptor
-        warning = ""
         verified = True
+        if record.change_declared:
+            warning = (
+                "This wallet file does not declare a change path. The conventional "
+                "/1/* change branch was enabled by your own confirmation, not read "
+                "from the file. Check the change address on every signer before you "
+                "approve, and confirm it appears in your wallet's own address list."
+            )
+        else:
+            warning = ""
     elif desc.num_branches == 2:
         receive, change = desc.branch(0), desc.branch(1)
         warning = ""
@@ -175,7 +187,25 @@ def wallet_layout(record: WalletRecord) -> Layout:
         raise WalletError("Reference address does not match the chosen receive path.")
     if change and change.derive(0).address(network) == record.reference_address:
         raise WalletError("Receive and change paths unexpectedly overlap.")
-    return Layout(receive, change, warning, verified)
+    return Layout(receive, change, warning, verified, record.change_declared)
+
+
+def can_declare_change(record: WalletRecord) -> bool:
+    """True when the owner could explicitly declare the conventional /1/* branch.
+
+    Only for a receive-only `/*` export whose receive path is already anchored
+    by the reference address (either literally, or through the /0/* convention
+    this app already scans), and only for the 2-of-3 policy it prepares.
+    The app never applies this itself; the owner must confirm it.
+    """
+    suffixes = [key.suffix for key in record.keys]
+    return bool(
+        record.change_descriptor is None
+        and record.restrictions == "No path restrictions"
+        and record.reference_status in ("verified", "receive-branch-only")
+        and record.threshold == 2 and len(record.keys) == 3
+        and suffixes and all(suffix == "/*" for suffix in suffixes)
+    )
 
 
 def wallet_summary(record: WalletRecord) -> dict:
@@ -184,6 +214,7 @@ def wallet_summary(record: WalletRecord) -> dict:
     network = NETWORKS[record.network]
     can_prepare = bool(layout.change_verified and layout.change
                        and record.threshold == 2 and len(record.keys) == 3)
+    declarable = can_declare_change(record)
     if record.threshold != 2 or len(record.keys) != 3:
         prepare_reason = (
             "This version prepares transactions only for a 2-of-3 multisig wallet. "
@@ -194,6 +225,12 @@ def wallet_summary(record: WalletRecord) -> dict:
             "This wallet file does not verify both receiving and change paths. "
             "Use a BSMS export that declares both paths; the app will not guess them."
         )
+        if declarable:
+            prepare_reason += (
+                " If your signers use the usual BIP48 branch convention, you can "
+                "confirm the standard /1/* change branch below instead of exporting "
+                "a new wallet file."
+            )
     else:
         prepare_reason = ""
     return {
@@ -201,6 +238,8 @@ def wallet_summary(record: WalletRecord) -> dict:
         "chain": config.label,
         "network": config.chain,
         "can_prepare": can_prepare,
+        "can_declare_change": bool(declarable and not can_prepare),
+        "change_declared": layout.change_declared,
         "prepare_reason": prepare_reason,
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
@@ -354,27 +393,105 @@ def _estimated_signed_vbytes(
     return (4 * base + witness + 3) // 4
 
 
-def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool) -> dict:
-    """Conservative live-screen estimate using every confirmed scanned input."""
+def _select_inputs(
+    candidates: list[dict], amount: int | None, fee_rate: int,
+    output_scripts: list[script.Script], witness_script_lengths: dict[str, int],
+    *, send_all: bool,
+) -> tuple[list[dict], int, int]:
+    """Choose inputs and compute the fee for the transaction that will be built.
+
+    Single source of truth for both the live fee preview and the PSBT builder, so
+    the two can never disagree about which outputs are spent or what the fee is.
+    Returns (chosen_utxos, total_input_sats, fee_sats).
+    """
+    ordered = sorted(candidates, key=lambda u: u["value"], reverse=True)
+    if send_all:
+        # Every confirmed output found by this scan is spent and there is no
+        # change output, so the fee comes out of the recipient amount.
+        total = sum(u["value"] for u in ordered)
+        fee = _estimated_signed_vbytes(
+            ordered, output_scripts, witness_script_lengths
+        ) * fee_rate
+        return ordered, total, fee
+    chosen: list[dict] = []
+    total = 0
+    fee = 0
+    for utxo in ordered:
+        chosen.append(utxo)
+        total += utxo["value"]
+        fee = _estimated_signed_vbytes(
+            chosen, output_scripts, witness_script_lengths
+        ) * fee_rate
+        if amount is not None and total >= amount + fee + SATOSHI_DUST_FLOOR:
+            break
+    return chosen, total, fee
+
+
+def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
+                         amount: int | None = None, fee_rate: int = 2,
+                         recipient: str | None = None) -> dict:
+    """Live fee estimate for the transaction that would actually be built.
+
+    For a partial send with an amount, the same greedy input selection as the
+    builder is used, so the previewed size matches the review. With no amount
+    (or for send-all) every confirmed scanned output is used, which is the
+    conservative upper bound.
+    """
     layout = wallet_layout(record)
     if not layout.change_verified or layout.change is None:
         raise WalletError("Verified receive and change paths are required for a fee estimate.")
     if not scan.get("utxo_consistent") or scan.get("coverage_limited"):
         raise WalletError("Refresh a complete, consistent balance before estimating a transaction.")
-    chosen = [u for u in scan["utxos"] if u["status"]["confirmed"]]
-    if not chosen:
+    if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
+        raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
+    confirmed = [u for u in scan["utxos"] if u["status"]["confirmed"]]
+    if not confirmed:
         raise WalletError("No confirmed outputs are available to estimate.")
-    outputs = 1 if send_all else 2
-    dummy_output = script.Script(b"\x00\x20" + bytes(32))
+    if not send_all and amount is not None:
+        if type(amount) is not int or amount < SATOSHI_DUST_FLOOR:
+            raise WalletError("Amount must be at least 546 sats.")
+    else:
+        amount = None
+    destination = _output_script_for(recipient, record)
+    output_scripts = [destination] if send_all else [
+        destination, layout.change.derive(0).script_pubkey()
+    ]
     script_lengths = {
         "receive": len(layout.receive.derive(0).witness_script().data),
         "change": len(layout.change.derive(0).witness_script().data),
     }
-    vbytes = _estimated_signed_vbytes(
-        chosen, [dummy_output] * outputs, script_lengths
+    chosen, total, fee = _select_inputs(
+        confirmed, amount, fee_rate, output_scripts, script_lengths,
+        send_all=send_all,
     )
-    return {"estimated_vbytes": vbytes, "input_count": len(chosen),
-            "method": "conservative upper estimate using all confirmed scanned outputs"}
+    if not chosen:
+        raise WalletError("No confirmed outputs are available to estimate.")
+    if not send_all and amount is not None and total < amount + fee + SATOSHI_DUST_FLOOR:
+        raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
+    if send_all and fee > MAX_ESTIMATED_FEE_SATS:
+        raise WalletError(
+            "Sending all exceeds the 10,000-sat fee safety ceiling. "
+            "Wait for a lower fee rate or use an established wallet."
+        )
+    return {
+        "estimated_vbytes": _estimated_signed_vbytes(chosen, output_scripts, script_lengths),
+        "input_count": len(chosen),
+        "selected_sats": total,
+        "method": ("exact input selection for this amount" if amount is not None
+                   else "conservative upper estimate using all confirmed scanned outputs"),
+    }
+
+
+def _output_script_for(recipient: str | None, record: WalletRecord) -> script.Script:
+    """Real destination script when a valid address is supplied, else a P2WSH-sized stand-in."""
+    if isinstance(recipient, str):
+        try:
+            destination = script.address_to_scriptpubkey(recipient)
+            if destination.address(NETWORKS[record.network]) == recipient.lower():
+                return destination
+        except Exception:
+            pass
+    return script.Script(b"\x00\x20" + bytes(32))
 
 
 def build_unsigned_psbt(
@@ -417,40 +534,29 @@ def build_unsigned_psbt(
         raise WalletError("Amount must be at least 546 sats.")
     if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
         raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
-    candidates = sorted(
-        (u for u in scan["utxos"] if u["status"]["confirmed"]),
-        key=lambda u: u["value"], reverse=True,
-    )
+    candidates = [u for u in scan["utxos"] if u["status"]["confirmed"]]
     script_lengths = {
         "receive": len(layout.receive.derive(0).witness_script().data),
         "change": len(layout.change.derive(0).witness_script().data),
     }
     change_script = layout.change.derive(0).script_pubkey()
-    chosen, total, fee = [], 0, 0
+    output_scripts = [destination] if send_all else [destination, change_script]
+    chosen, total, fee = _select_inputs(
+        candidates, None if send_all else amount, fee_rate,
+        output_scripts, script_lengths, send_all=send_all,
+    )
     if send_all:
-        chosen = candidates
-        total = sum(u["value"] for u in chosen)
         if total != scan["confirmed_sats"]:
             raise WalletError("Confirmed outputs changed since the scan; refresh before sending all.")
         # One recipient output, no change. Include every confirmed output or refuse.
-        fee = _estimated_signed_vbytes(chosen, [destination], script_lengths) * fee_rate
         if fee > MAX_ESTIMATED_FEE_SATS:
             raise WalletError("Sending all exceeds the 10,000-sat fee safety ceiling. "
                               "Wait for a lower fee rate or use an established wallet.")
         amount = total - fee
         if amount < SATOSHI_DUST_FLOOR:
             raise WalletError("Confirmed balance cannot cover the fee and a spendable output.")
-    else:
-        for utxo in candidates:
-            chosen.append(utxo)
-            total += utxo["value"]
-            fee = _estimated_signed_vbytes(
-                chosen, [destination, change_script], script_lengths
-            ) * fee_rate
-            if total >= amount + fee + SATOSHI_DUST_FLOOR:
-                break
-        if total < amount + fee + SATOSHI_DUST_FLOOR:
-            raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
+    elif total < amount + fee + SATOSHI_DUST_FLOOR:
+        raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
     fee_warning = check_fee_safety(fee, amount, fee_rate)
     change_address = None
     change_sats = 0
@@ -517,6 +623,7 @@ def build_unsigned_psbt(
         "fee_rate_estimate": fee_rate,
         "change_sats": change_sats,
         "change_address": change_address,
+        "change_declared": layout.change_declared,
         "inputs": len(chosen),
         "change_warning": (
             "All confirmed outputs found by this scan are used, with no change output. "

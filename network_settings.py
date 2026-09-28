@@ -10,7 +10,9 @@ import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from network_config import NETWORKS
 from version import APP_VERSION

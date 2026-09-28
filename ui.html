@@ -189,6 +189,18 @@
       </div>
       <div id="path-warning" class="notice" hidden></div>
       <div id="send-unavailable" class="notice" hidden></div>
+      <div id="declare-change" class="notice" hidden>
+        <p><strong>This wallet file does not declare a change path.</strong> The app will
+          not guess one. If your signing devices use the usual BIP48 branch convention,
+          you can confirm the standard <code>/1/*</code> change branch and continue.</p>
+        <p class="small">Your wallet file and keys are unchanged by this. The change address
+          is shown in the review, and it must match what your wallet and each signer display.</p>
+        <label class="check"><input id="confirm-change-branch" type="checkbox">
+          <span>My wallet uses the standard <code>/1/*</code> change branch, and I will verify
+            the change address on my signers and in my wallet software.</span></label>
+        <button id="declare-change-button" type="button" disabled>Use the standard change branch</button>
+        <p id="declare-change-message" class="small" role="status" aria-live="polite"></p>
+      </div>
     </section>
 
     <section id="balance-card" class="card" hidden>
@@ -303,6 +315,9 @@
           <span>I checked the network, full destination, BTC amount, fee and any change shown above. This file is unsigned; no Bitcoin has been sent.</span></label>
         <label id="fee-ack-row" class="check" hidden><input id="confirm-fee" type="checkbox">
           <span>I checked the sat/vB units and the exact estimated fee and total above.</span></label>
+        <label id="declared-change-ack-row" class="check" hidden><input id="confirm-declared-change" type="checkbox">
+          <span>This change address comes from the change branch I confirmed, not from my wallet file,
+            and I verified it on my wallet and will check it on each signer.</span></label>
         <div class="with-help"><button id="download" disabled>Download unsigned transaction file (.psbt)</button>
           <details class="context-help align-right"><summary aria-label="What am I saving as a PSBT file?">?</summary>
             <div class="help-popout"><strong>What am I saving?</strong><p>This PSBT (Partially Signed Bitcoin Transaction) is an unsigned proposal. Save the file for your signers to review in their own tools. Saving it does not sign or send Bitcoin.</p></div>
@@ -326,7 +341,20 @@
        <p><button id="quit" class="secondary" __DESKTOP_HIDE_QUIT__>Quit local app</button></p></footer>
   </main>
   <script>
-    const token = "__LOCAL_TOKEN__";
+    // The access token arrives in the URL fragment, which a browser never sends
+    // to the server, so it does not appear in this page's source.
+    const token = (() => {
+      const match = location.hash.match(/[#&]token=([^&]+)/);
+      return match ? decodeURIComponent(match[1]) : "";
+    })();
+    if (!token) {
+      document.body.replaceChildren();
+      const notice = document.createElement("p");
+      notice.style.cssText = "padding:3rem;font:18px system-ui;max-width:38rem";
+      notice.textContent = "This app could not read its local access token. Close this " +
+        "window and reopen Bitcoin Easy Signer from the app icon or launcher.";
+      document.body.append(notice);
+    }
     const $ = id => document.getElementById(id);
     document.addEventListener("click", event => {
       for (const help of document.querySelectorAll(".context-help[open]")) {
@@ -349,6 +377,17 @@
     let feeEstimate = null;
     let preparationId = null;
     let walletCanPrepare = false;
+    let walletChangeDeclared = false;
+    let feeEstimateError = "";
+    let feeEstimateTimer = null;
+    // Matches the backend floor: a mainnet payment at or above 0.1 BTC always
+    // needs the high-value confirmation, whatever the price feed reports.
+    const LARGE_AMOUNT_SATS_FLOOR = 10000000;
+    function isLargeAmount(sats) {
+      if (sats === null || sats === undefined) return false;
+      if (sats >= LARGE_AMOUNT_SATS_FLOOR) return true;
+      return rate ? sats / 100000000 * rate.usd_per_btc >= 10000 : false;
+    }
     const selectedChain = () => $("chain").value;
     function updateNetworkUI() {
       const main = selectedChain() === "main";
@@ -478,33 +517,60 @@
     }
     function renderAmountSafety() {
       const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
-      const usd = sats !== null && rate ? sats / 100000000 * rate.usd_per_btc : null;
-      const large = usd !== null && usd >= 10000;
+      const large = isLargeAmount(sats);
       $("large-amount-warning").hidden = !large;
-      setText("large-amount-warning", large ? "This amount is about " + usdLabel(sats) + ". That is a large Bitcoin payment. Check the BTC amount and destination carefully before continuing." : "");
+      setText("large-amount-warning", large ? "This is a large Bitcoin payment (" +
+        (sats >= LARGE_AMOUNT_SATS_FLOOR ? "at least 0.1 BTC"
+          : "about " + usdLabel(sats)) +
+        "). Check the BTC amount and destination carefully before continuing." : "");
       $("large-amount-ack-row").hidden = !large;
       if (!large) $("confirm-large-amount").checked = false;
       renderFeePreview();
     }
     function renderFeePreview() {
+      if (feeEstimateError) {
+        setText("fee-preview", feeEstimateError);
+        return;
+      }
       const rateValue = Number($("fee-rate").value);
       if (!feeEstimate || !Number.isInteger(rateValue) || rateValue < 1) {
         setText("fee-preview", "Estimated fee appears here after a current fee quote and wallet scan.");
         return;
       }
       const feeSats = feeEstimate.estimated_vbytes * rateValue;
+      const outputs = feeEstimate.input_count === 1 ?
+        "1 confirmed output" : feeEstimate.input_count + " confirmed outputs";
       setText("fee-preview", "Estimated size " + feeEstimate.estimated_vbytes + " vB × " + rateValue +
-        " sat/vB ≈ " + fmt(feeSats) + " sats · " + usdLabel(feeSats) +
-        " network fee. Conservative estimate uses all " + feeEstimate.input_count +
-        " confirmed scanned outputs; exact selected inputs and fee appear in Review.");
+        " sat/vB ≈ " + fmt(feeSats) + " sats · " + usdLabel(feeSats) + " network fee. Uses " +
+        outputs + (feeEstimate.method.indexOf("exact") === 0 ?
+          " selected for this amount" : " (conservative upper bound)") +
+        "; the exact fee appears in Review.");
     }
     async function loadFeeEstimate() {
       const chain = selectedChain();
+      const sendAll = $("send-all").checked;
+      const feeRate = Number($("fee-rate").value);
       try {
-        const estimate = await post("/api/estimate", {chain, send_all:$("send-all").checked});
-        if (chain === selectedChain()) feeEstimate = estimate;
-      } catch (_) { feeEstimate = null; }
+        const estimate = await post("/api/estimate", {
+          chain,
+          send_all: sendAll,
+          amount_sats: sendAll ? null : btcToSats($("amount").value),
+          fee_rate: Number.isInteger(feeRate) ? feeRate : undefined,
+          recipient: $("destination").value.trim() || null,
+        });
+        if (chain !== selectedChain()) return;
+        feeEstimate = estimate;
+        feeEstimateError = "";
+      } catch (e) {
+        if (chain !== selectedChain()) return;
+        feeEstimate = null;
+        feeEstimateError = e.message || "";
+      }
       renderFeePreview();
+    }
+    function scheduleFeeEstimate() {
+      clearTimeout(feeEstimateTimer);
+      feeEstimateTimer = setTimeout(loadFeeEstimate, 250);
     }
     function invalidateReview() {
       sendActionId++;
@@ -512,6 +578,8 @@
       $("review").hidden = true; $("download").disabled = true;
       $("next-signers").disabled = true; $("signer-step").hidden = true;
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
+      $("confirm-declared-change").checked = false;
+      $("declared-change-ack-row").hidden = true;
     }
     function updateSendMode() {
       $("amount").disabled = $("send-all").checked;
@@ -595,8 +663,7 @@
       $("prepare").disabled = preparing || !feeQuote || feeQuote.standard > 25 ||
         !Number.isInteger(value) || value < feeQuote?.economy || value > 25;
       const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
-      const highValue = sats !== null && rate && sats / 100000000 * rate.usd_per_btc >= 10000;
-      if (highValue && !$("confirm-large-amount").checked) $("prepare").disabled = true;
+      if (isLargeAmount(sats) && !$("confirm-large-amount").checked) $("prepare").disabled = true;
     }
     async function loadFees() {
       const requestId = ++feeRequestId;
@@ -629,6 +696,11 @@
       $("send-unavailable").hidden = walletCanPrepare;
       setText("send-unavailable", walletCanPrepare ? "" :
         (data.prepare_reason || "This wallet can show balances, but its policy or address paths are not supported for transaction preparation."));
+      walletChangeDeclared = Boolean(data.change_declared);
+      $("declare-change").hidden = !data.can_declare_change;
+      $("confirm-change-branch").checked = false;
+      $("declare-change-button").disabled = true;
+      msg("declare-change-message", "");
       $("keys").replaceChildren();
       for (const key of data.keys) {
         const card = document.createElement("details"); card.className = "cosigner";
@@ -678,12 +750,21 @@
       setText("confirmed", fmt(data.confirmed_sats));
       setText("pending", fmt(data.pending_delta_sats));
       setText("utxo-count", fmt(data.utxo_count));
+      const usedChange = (data.addresses || []).filter(
+        item => item.branch === "change" && item.used).length;
+      const changeEvidence = walletChangeDeclared ? (usedChange > 0 ?
+        " · Change branch: " + usedChange + " previously used change address" +
+          (usedChange === 1 ? "" : "es") + " found, which supports the branch you confirmed." :
+        " · Change branch: no previously used change addresses were found, so this scan " +
+          "does not independently confirm the branch you selected. Verify the change " +
+          "address on your signers.") : "";
       setText("coverage", "Checked " + data.scanned + " addresses · last refreshed " +
         new Date(data.scanned_at).toLocaleString() + " · " + data.source +
         (data.coverage_limited ? " · Partial coverage: do not treat this as a complete wallet balance." :
         " · Standard 20-unused-address gap scan. Older or unusual paths may still be missed.") +
         (selectedChain() === "main" ?
-          " · Public explorer data can be stale; verify independently before spending." : ""));
+          " · Public explorer data can be stale; verify independently before spending." : "") +
+        changeEvidence);
       renderPrice();
       renderFeeGuidance();
       loadFeeEstimate();
@@ -705,38 +786,54 @@
       } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
       finally { $("refresh").disabled = false; $("refresh-top").disabled = false; }
     }
-    $("open").addEventListener("click", async () => {
+    async function importOpenWallet(declaredChange) {
       const started = ++walletActionId;
       const file = $("wallet-file").files[0];
-      if (!file) { msg("message", "Choose a BSMS wallet definition first.", true); return; }
+      if (!file) { msg("message", "Choose a BSMS wallet definition first.", true); return false; }
       if (!/\.(bsms|txt)$/i.test(file.name)) {
         msg("message", "Choose a .bsms wallet file (or a plain-text .txt export).", true);
-        return;
+        return false;
       }
       if (file.size > 65536) {
-        msg("message", "BSMS file is unexpectedly large.", true); return;
+        msg("message", "BSMS file is unexpectedly large.", true); return false;
       }
       if (!$("explorer-consent").checked) {
         msg("message", "Confirm that the public explorer may see your derived wallet addresses.", true);
-        return;
+        return false;
       }
-      $("open").disabled = true; $("wallet-card").hidden = true;
+      $("open").disabled = true; $("declare-change-button").disabled = true;
+      $("wallet-card").hidden = true;
       $("balance-card").hidden = true; $("send-card").hidden = true;
       $("refresh-top").hidden = true;
       lastScan = null; currentPsbt = null;
-      feeEstimate = null;
+      feeEstimate = null; feeEstimateError = "";
       reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
       $("download").disabled = true;
-      msg("message", "Opening wallet…");
+      msg("message", declaredChange ?
+        "Reopening the wallet with the standard change branch you confirmed…" : "Opening wallet…");
       try {
-        const wallet = await post("/api/import", {chain:selectedChain(),
-          consent_explorer:$("explorer-consent").checked,
-          text:await file.text()});
-        if (started !== walletActionId) return;
+        const wallet = await post("/api/import", {
+          chain: selectedChain(),
+          consent_explorer: true,
+          declared_change: Boolean(declaredChange),
+          text: await file.text()});
+        if (started !== walletActionId) return false;
         showWallet(wallet); await refresh();
-      } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
-      finally { $("open").disabled = false; }
+        return true;
+      } catch (e) {
+        if (started === walletActionId) msg("message", e.message, true);
+        return false;
+      } finally { $("open").disabled = false; }
+    }
+    $("open").addEventListener("click", () => importOpenWallet(false));
+    $("confirm-change-branch").addEventListener("change", () => {
+      $("declare-change-button").disabled = !$("confirm-change-branch").checked;
+    });
+    $("declare-change-button").addEventListener("click", async () => {
+      if (!$("declare-change-button").disabled) {
+        await importOpenWallet(true);
+      }
     });
     $("refresh").addEventListener("click", refresh);
     $("refresh-top").addEventListener("click", refresh);
@@ -768,13 +865,17 @@
       updateNetworkUI();
       loadServerSettings();
     });
-    $("amount").addEventListener("input", () => { invalidateReview(); updateSendEquivalent(); renderFeeGuidance(); });
-    $("destination").addEventListener("input", invalidateReview);
+    $("amount").addEventListener("input", () => {
+      invalidateReview(); updateSendEquivalent(); renderFeeGuidance(); scheduleFeeEstimate();
+    });
+    $("destination").addEventListener("input", () => {
+      invalidateReview(); scheduleFeeEstimate();
+    });
     $("send-all").addEventListener("change", () => {
       invalidateReview(); updateSendMode(); renderFeeGuidance(); loadFeeEstimate();
     });
     $("fee-rate").addEventListener("input", () => {
-      feeRateCustomized = true; invalidateReview(); renderFeeGuidance();
+      feeRateCustomized = true; invalidateReview(); renderFeeGuidance(); scheduleFeeEstimate();
     });
     for (const [id, name] of [["use-slow", "hour"], ["use-standard", "standard"], ["use-fast", "fastest"]]) {
       $(id).addEventListener("click", () => {
@@ -827,7 +928,9 @@
         $("review-fee-warning").hidden = !feeWarning;
         setText("review-fee-warning", feeWarning);
         $("fee-ack-row").hidden = !feeWarning;
+        $("declared-change-ack-row").hidden = !result.change_declared;
         $("confirm-review").checked = false; $("confirm-fee").checked = false;
+        $("confirm-declared-change").checked = false;
         $("download").disabled = true;
         $("review").hidden = false; msg("send-message", "Unsigned transaction file ready. Nothing has been signed or sent.");
       } catch (e) { if (started === sendActionId) msg("send-message", e.message, true); }
@@ -835,15 +938,16 @@
     });
     function updateDownload() {
       const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
-      const highValue = sats !== null && rate && sats / 100000000 * rate.usd_per_btc >= 10000;
       const confirmed = $("confirm-review").checked &&
-        (!highValue || $("confirm-large-amount").checked) &&
-        ($("fee-ack-row").hidden || $("confirm-fee").checked);
+        (!isLargeAmount(sats) || $("confirm-large-amount").checked) &&
+        ($("fee-ack-row").hidden || $("confirm-fee").checked) &&
+        ($("declared-change-ack-row").hidden || $("confirm-declared-change").checked);
       $("download").disabled = !confirmed || !currentPsbt;
       $("next-signers").disabled = !confirmed || !currentPsbt;
     }
     $("confirm-review").addEventListener("change", updateDownload);
     $("confirm-fee").addEventListener("change", updateDownload);
+    $("confirm-declared-change").addEventListener("change", updateDownload);
     $("confirm-large-amount").addEventListener("change", () => {
       updateDownload(); renderFeeGuidance();
     });

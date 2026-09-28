@@ -1,6 +1,6 @@
-# Bitcoin Easy Signer Signer — experimental mainnet and Testnet4 GUI
+# Bitcoin Easy Signer — experimental mainnet and Testnet4 GUI
 
-The latest published build is [v0.1.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.8). It is an earlier transaction-preparation build and does not include the current fee/dollar checks or hardware-recognition screen. The next build is v0.1.10.
+The latest published build is [v0.1.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.8). The current candidate, v0.1.11, repairs the transaction journey: a receive-only `/*` export can reach the send form after the owner explicitly confirms the standard change branch, and the live fee preview now matches the transaction that is actually built. It is still an unsigned, ad-hoc-signed test build.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -32,7 +32,7 @@ The local browser GUI opens a BSMS 1.0
 wallet definition, checks public mainnet or Testnet4 balances, and prepares
 an **unsigned transaction file** (PSBT, short for Partially Signed Bitcoin
 Transaction) for signers to review, only where supported receive/change paths
-are verified. The v0.1.10 target adds transaction amount and fee review,
+are verified. This build adds owner-confirmed change paths, transaction amount and fee review,
 high-dollar confirmation, and read-only matching of connected signers. It does
 not sign or broadcast a transaction.
 
@@ -69,7 +69,14 @@ Each test release attaches **two matching-version files**:
 
 Generate the source archive with `bash scripts/build-source.sh X.Y.Z`. On a
 Mac, build an **unsigned test** `.app` and DMG with
-`bash scripts/build-macos.sh X.Y.Z`. Unsigned test DMGs can be downloaded
+`bash scripts/build-macos.sh X.Y.Z`. That build also needs `libusb`
+(`brew install libusb`) and **Python 3.9–3.12** on `PATH`: the bundled
+`hwi 3.2.0` declares `Requires-Python >=3.9,<3.13`, so a newer interpreter
+cannot install it. The GitHub Actions workflow pins Python 3.12 for this
+reason. On a Mac whose default `python3` is newer, install `python@3.12` and
+put it first on `PATH`; the build script now fails immediately with that
+instruction rather than partway through a dependency install.
+Unsigned test DMGs can be downloaded
 without Apple enrollment; signing and notarization reduce first-open macOS
 security warnings later. The build script requires both
 `MAC_SIGN_IDENTITY` and `MAC_NOTARY_PROFILE` (an already configured macOS
@@ -198,12 +205,21 @@ fields. **The broadcaster URL is a future-use setting only:** this version
 cannot sign or broadcast, and no transaction is sent to that endpoint.
 
 The older Testnet4 sample export described below uses `/*` in the descriptor,
-but its reference address matches `/0/0`. That file is receive-only and remains
-view-only: the GUI does **not** infer a `/1/*` change branch. For transaction
-preparation, export a BSMS descriptor template that explicitly declares both
-`/0/*` and `/1/*` restrictions, or use an explicit multipath descriptor.
-The reference address must match the receive path. The same rule applies on
-mainnet. If the reference address cannot be matched, the GUI stops rather than
+but its reference address matches `/0/0`. Such a file proves a receiving path
+but not a change path, so by itself it stays view-only: the GUI never infers a
+`/1/*` change branch on its own. For transaction preparation you have two
+options. (1) Export a BSMS descriptor template that explicitly declares both
+`/0/*` and `/1/*` restrictions, or use an explicit `<0;1>/*` multipath
+descriptor; the app then derives both paths itself. (2) For that receive-only
+export only, the app offers a **Use the standard change branch** control: it
+explains that the file declares no change path, and asks you to confirm that
+your signing devices use the conventional BIP48 `/1/*` branch. Nothing is
+applied unless you tick that box and press the button, and the resulting change
+address is shown in the review and must be checked on every signer. The scan
+also reports how many previously used change addresses it found on that branch,
+so you can see whether the branch you confirmed is supported by the wallet's own
+history; if none were found it says so plainly. The reference address must match
+the receive path. The same rule applies on mainnet. If the reference address cannot be matched, the GUI stops rather than
 inventing a wallet balance. There is no hidden hosted server upload, wallet
 creation or seed entry.
 
@@ -217,7 +233,7 @@ creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. HWI 3.2.0 is bundled in the v0.1.10 Mac app. The command-line proof below
+2. HWI 3.2.0 is bundled in the v0.1.11 Mac app. The command-line proof below
    still uses an HWI 3.2.0 installation on your PATH. Use only the official
    [HWI release][releases]. It adds an explicit `testnet4` chain option.
 3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.

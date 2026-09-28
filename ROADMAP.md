@@ -1,6 +1,8 @@
 # Roadmap and agent handoff
 
-**Baseline:** v0.1.8, 28 September 2026. The default branch is `main`; v0.1.8 is published but is not the version to test for the current transaction workflow. Work on `phase2-transaction-builder` targets v0.1.9. It prepares unsigned transactions and checks connected signer identities; it does not sign or broadcast.
+**Baseline:** v0.1.10, 28 September 2026. The default branch is `main`; the current transaction workflow lives on `phase2-transaction-builder` and is published as v0.1.10, with v0.1.11 as the current candidate. It prepares and reviews an unsigned transaction and checks connected signer identities; it does not sign or broadcast.
+
+**Progress note (post-v0.1.10).** The receive-only dead end described in Phase 2 is now addressed in code. A `/*` export whose reference address matches `/0/0` can reach the send form after the owner explicitly confirms the conventional `/1/*` change branch; the app never applies that by itself, flags the change address as owner-declared in the review, and reports how many previously used change addresses the scan found on that branch. The live fee preview now performs the same input selection as the builder, so the previewed size and fee match the review. Redirect following was removed from outbound HTTP, the local access token is no longer disclosed in an unauthenticated response, and the high-value confirmation no longer depends on a remote price feed. All of this is covered by synthetic tests and a loopback-API test. The acceptance gates below still require an Apple Silicon Mac walkthrough with the owner's own Testnet4 wallet and signers, which has not been performed.
 
 **How to hand this to another agent:** Say “Implement Phase 2 of `ROADMAP.md`,” then Phase 3, then Phase 4. Read the repository's `README.md`, `replit.md`, and this document first. Each phase has a goal, affected areas, constraints, acceptance checks, and a handoff record. Do not treat the next phase as approved just because the previous one is done. Complete phases in order: the balance view must lead to a clearly explained send-eligibility state before transaction preparation can be completed; an independently checked unsigned transaction is needed before a signer or broadcaster can be connected.
 
@@ -31,6 +33,8 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 6. Synthetic fixtures prove code paths, **not** that the user's wallet, Mac window, real explorer, hardware signer, or final transaction works. Live validation with the actual Testnet4 BSMS requires explicit permission; keep wallet-derived material local and out of source control.
 
 ## Phase 2 — Explain and unblock transaction eligibility on the Mac
+
+**Status: implemented on this branch; NOT accepted.** The code change and its tests are in place, but the acceptance gate requires a real Mac window and the owner's wallet, so this phase must not be marked passed on the strength of CI or synthetic fixtures alone.
 
 **Goal:** After a working Testnet4 balance scan, determine why the user cannot use Prepare send. If the wallet is view-only, show the specific reason and requirements; if a verified spend-capable wallet meets all gates, make the send form available. Preserve the currently working refresh behavior. This is the immediate next assignment. **Do not add signing or broadcasting in this phase.**
 

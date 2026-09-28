@@ -7,6 +7,7 @@ public explorer after the user clicks the balance button.
 
 from __future__ import annotations
 
+import hmac
 import json
 import math
 import secrets
@@ -18,7 +19,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from network_config import NETWORKS as CHAIN_CONFIGS
 from network_settings import (
@@ -35,6 +38,19 @@ PRICE_URL = "https://mempool.space/api/v1/prices"
 PRICE_CACHE_SECONDS = 300
 FEES_URL = "https://mempool.space/api/v1/fees/recommended"
 FEES_CACHE_SECONDS = 120
+# Mainnet payments at or above this size always need the high-value confirmation,
+# independent of any remote BTC/USD quote. 0.1 BTC is 10,000,000 satoshis.
+LARGE_AMOUNT_SATS_FLOOR = 10_000_000
+
+
+def launch_url(port: int, token: str) -> str:
+    """Local app URL carrying the access token in the fragment.
+
+    The fragment is not sent to the server and is not part of the referrer, so
+    the token is never disclosed in an unauthenticated HTTP response, browser
+    history, or an upstream log.
+    """
+    return f"http://127.0.0.1:{port}/#token={token}"
 
 
 def ui_path() -> Path:
@@ -180,7 +196,10 @@ class LocalApp:
                     return
                 if self.path == "/":
                     page = ui_path().read_text(encoding="utf-8")
-                    body = (page.replace("__LOCAL_TOKEN__", state.token)
+                    # The access token is deliberately NOT placed in this
+                    # unauthenticated response. It travels in the URL fragment of
+                    # the launch URL, which a browser never sends to the server.
+                    body = (page.replace("__LOCAL_TOKEN__", "")
                             .replace("__APP_VERSION__", APP_VERSION)
                             .replace("__DESKTOP_HIDE_QUIT__", "hidden" if state.desktop else "")
                             .encode("utf-8"))
@@ -224,7 +243,9 @@ class LocalApp:
                 expected = f"http://127.0.0.1:{self.server.server_address[1]}"
                 if (not self._trusted_host()
                     or (origin is not None and origin != expected)
-                    or self.headers.get("X-Local-Token") != state.token):
+                    or not hmac.compare_digest(
+                        self.headers.get("X-Local-Token") or "", state.token
+                    )):
                     self._send(403, {"error": "Local access only."})
                     return
                 try:
@@ -278,7 +299,9 @@ class LocalApp:
                     state.revision += 1
                     state.scan_generation += 1
                     revision = state.revision
-                record = parse_bsms(data["text"])
+                record = parse_bsms(
+                    data["text"], declared_change=data.get("declared_change") is True
+                )
                 if record.network != CHAIN_CONFIGS[chain].record_network:
                     raise WalletError("BSMS wallet address does not match the selected network.")
                 summary = wallet_summary(record)
@@ -348,7 +371,13 @@ class LocalApp:
                 send_all = data.get("send_all", False)
                 if type(send_all) is not bool:
                     raise WalletError("Choose either a partial amount or Send all.")
-                self._send(200, estimate_fee_preview(record, scan, send_all))
+                recipient = data.get("recipient")
+                self._send(200, estimate_fee_preview(
+                    record, scan, send_all,
+                    amount=data.get("amount_sats"),
+                    fee_rate=data.get("fee_rate", 2),
+                    recipient=recipient if isinstance(recipient, str) else None,
+                ))
 
             def _settings(self, data):
                 chain = data.get("chain")
@@ -438,12 +467,17 @@ class LocalApp:
                             state.price_checked = time.monotonic()
                     requested_amount = (scan["confirmed_sats"] if data.get("send_all")
                                         else data.get("amount_sats"))
+                    # Two independent triggers: an absolute satoshi floor that no
+                    # remote feed can influence, and the USD reference when the
+                    # price quote is available.
                     if (type(requested_amount) is int
-                        and requested_amount * price["usd_per_btc"] / 100_000_000 >= 10_000
+                        and (requested_amount >= LARGE_AMOUNT_SATS_FLOOR
+                             or requested_amount * price["usd_per_btc"] / 100_000_000 >= 10_000)
                         and data.get("large_amount_confirmed") is not True):
                         raise WalletError(
-                            "This transaction is worth at least $10,000 at the current BTC/USD "
-                            "reference. Confirm the amount and dollar equivalent before preparing it."
+                            "This is a large mainnet payment: at least 0.1 BTC, or worth "
+                            "$10,000 or more at the current BTC/USD reference. Confirm the "
+                            "BTC amount and dollar equivalent before preparing it."
                         )
                 requested_rate = data.get("fee_rate", 2)
                 if type(requested_rate) is not int or not 1 <= requested_rate <= 25:
@@ -487,11 +521,13 @@ class LocalApp:
 def main():
     state = LocalApp()
     server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
-    url = f"http://127.0.0.1:{server.server_address[1]}/"
-    print("Bitcoin Easy Signer Signer — local mainnet/Testnet4 GUI")
+    port = server.server_address[1]
+    # Printed without the token so it stays out of terminal scrollback and logs.
+    display_url = f"http://127.0.0.1:{port}/"
+    print("Bitcoin Easy Signer — local mainnet/Testnet4 GUI")
     print("No wallet file is uploaded to a hosted server.")
-    print(f"Opening {url} in your browser. Close this window to stop the app.")
-    threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+    print(f"Opening {display_url} in your browser. Close this window to stop the app.")
+    threading.Timer(0.5, lambda: webbrowser.open(launch_url(port, state.token))).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
