@@ -9,12 +9,15 @@ prepare -> reviewable unsigned PSBT, plus the access-control behaviour of the
 local server itself.
 """
 
+import base64
 import json
+import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from unittest.mock import patch
 
 from embit import psbt
@@ -222,6 +225,43 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertEqual(sweep["remaining_confirmed_sats"], 0)
         self.assertEqual(sweep["change_sats"], 0)
         self.assertEqual(packet.fee(), sweep["fee_sats"])
+
+    def test_saving_writes_the_prepared_psbt_where_the_user_can_find_it(self):
+        """The save the user clicks must produce a real file, over the same API
+        every other action uses (the pywebview bridge is not always available)."""
+        self.import_wallet(declared_change=True)
+        self.post("/api/scan", {"chain": "testnet4"})
+        recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
+        status, prepared = self.post("/api/prepare", {
+            "chain": "testnet4", "recipient": recipient, "amount_sats": 1_000,
+            "send_all": False, "fee_rate": 5,
+        })
+        self.assertEqual(status, 200)
+
+        home = Path(tempfile.mkdtemp())
+        (home / "Downloads").mkdir()
+        with patch("gui.Path.home", return_value=home):
+            status, body = self.post("/api/save", {"chain": "testnet4"})
+        self.assertEqual(status, 200)
+        self.assertTrue(body["saved"])
+        saved = Path(body["path"])
+        self.assertEqual(saved.parent, home / "Downloads")
+        self.assertEqual(saved.name, "testnet4-unsigned.psbt")
+        self.assertEqual(saved.read_bytes(), base64.b64decode(prepared["psbt_base64"]))
+        # The file must be a real, parseable PSBT.
+        self.assertEqual(psbt.PSBT.parse(saved.read_bytes()).tx.vout[0].value, 1_000)
+
+        # A second save must not overwrite the first transaction.
+        with patch("gui.Path.home", return_value=home):
+            _, second = self.post("/api/save", {"chain": "testnet4"})
+        self.assertEqual(Path(second["path"]).name, "testnet4-unsigned-2.psbt")
+
+        # Refuse a mismatched network, and refuse when nothing is prepared.
+        self.assertEqual(self.post("/api/save", {"chain": "main"})[0], 400)
+        self.state.prepared_psbt = None
+        status, body = self.post("/api/save", {"chain": "testnet4"})
+        self.assertEqual(status, 400)
+        self.assertIn("Prepare and review", body["error"])
 
     def test_prepare_is_refused_before_a_scan(self):
         self.import_wallet(declared_change=True)

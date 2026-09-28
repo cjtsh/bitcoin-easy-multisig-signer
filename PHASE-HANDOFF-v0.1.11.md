@@ -185,8 +185,17 @@ synthetic fixtures.
   wording has been rewritten in plain language as a result. The control is a
   safety gate for how change is addressed, so it must be understood, not clicked
   through.
-- Still unobserved: completing the review, saving the PSBT, and the hardware
-  signer screen.
+- **Second real-Mac finding: the save button did nothing.** Two fragile
+  dependencies were involved. The page silently fell back to a browser blob
+  download, which WKWebView ignores without any error, and the native save dialog
+  could return nothing while reporting no error either. Saving now goes through
+  `POST /api/save` — the same local API every other action in that window already
+  uses, so it cannot depend on the pywebview bridge being injected. It writes a
+  new file into the user's **Downloads** folder and names the full path on screen.
+  The bytes come from server-side state, so nothing the page sends can influence
+  what is written or where, and an existing file is never replaced. The pywebview
+  bridge remains only as a fallback path and shares the same implementation.
+- Still unobserved: the hardware signer screen.
 
 
 ---

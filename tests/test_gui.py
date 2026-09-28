@@ -66,7 +66,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('aria-label="What am I saving as a PSBT file?"', page)
         self.assertIn("PSBT means Partially Signed Bitcoin Transaction.", page)
         self.assertIn("Preparing it does not move Bitcoin.", page)
-        self.assertIn("Download unsigned transaction file (.psbt)", page)
+        self.assertIn("Save unsigned transaction file (.psbt) to Downloads", page)
         self.assertIn("Apple Silicon (M-series) only. Intel-based Macs are not supported.", page)
         self.assertIn('id="send-all" type="checkbox"', page)
         self.assertNotIn('id="send-all" type="checkbox" checked', page)

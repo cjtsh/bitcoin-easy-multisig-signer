@@ -7,9 +7,12 @@ public explorer after the user clicks the balance button.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hmac
 import json
 import math
+import os
 import secrets
 import sys
 import threading
@@ -133,6 +136,54 @@ def public_scan(result: dict) -> dict:
     }
 
 
+def save_prepared_psbt(state: "LocalApp", chain) -> dict:
+    """Write the app's currently prepared PSBT into the user's Downloads folder.
+
+    The bytes come from server-side state and never from the page, so nothing a
+    web page sends can influence what is written or where. An existing file is
+    never replaced: each save gets a new name.
+    """
+    with state.lock:
+        prepared = state.prepared_psbt
+        active = state.chain
+    if not prepared or chain != active:
+        raise WalletError("Prepare and review a transaction before saving it.")
+    try:
+        raw = base64.b64decode(prepared, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise WalletError("The prepared transaction is not valid.") from exc
+    if not raw.startswith(b"psbt\xff") or len(raw) > 2_000_000:
+        raise WalletError("The prepared transaction is not valid or is too large.")
+    folder = Path.home() / "Downloads"
+    if not folder.is_dir():
+        folder = Path.home()
+    for suffix in ("",) + tuple(f"-{n}" for n in range(2, 100)):
+        target = folder / f"{chain}-unsigned{suffix}.psbt"
+        try:
+            handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise WalletError(f"Could not save the transaction file to {folder}.") from exc
+        try:
+            with os.fdopen(handle, "wb") as output:
+                if output.write(raw) != len(raw):
+                    raise OSError("Incomplete write.")
+                output.flush()
+                os.fsync(output.fileno())
+        except OSError as exc:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+            raise WalletError(f"Could not save the transaction file to {folder}.") from exc
+        return {"saved": True, "path": str(target)}
+    raise WalletError(
+        f"Too many files named {chain}-unsigned*.psbt already exist in {folder}. "
+        "Move or rename some and try again."
+    )
+
+
 class LocalApp:
     def __init__(self, *, desktop: bool = False):
         self.token = secrets.token_urlsafe(32)
@@ -201,6 +252,7 @@ class LocalApp:
                     # the launch URL, which a browser never sends to the server.
                     body = (page.replace("__LOCAL_TOKEN__", "")
                             .replace("__APP_VERSION__", APP_VERSION)
+                            .replace("__DESKTOP_MODE__", "true" if state.desktop else "false")
                             .replace("__DESKTOP_HIDE_QUIT__", "hidden" if state.desktop else "")
                             .encode("utf-8"))
                     self._headers(200, "text/html; charset=utf-8", len(body))
@@ -263,6 +315,8 @@ class LocalApp:
                         self._scan(request)
                     elif self.path == "/api/prepare":
                         self._prepare(request)
+                    elif self.path == "/api/save":
+                        self._save(request)
                     elif self.path == "/api/devices":
                         self._devices(request)
                     elif self.path == "/api/estimate":
@@ -362,6 +416,9 @@ class LocalApp:
                     "message": ("No compatible hardware signer detected." if not statuses
                                 else "Device check complete. This check does not sign or send."),
                 })
+
+            def _save(self, data):
+                self._send(200, save_prepared_psbt(state, data.get("chain")))
 
             def _estimate(self, data):
                 with state.lock:

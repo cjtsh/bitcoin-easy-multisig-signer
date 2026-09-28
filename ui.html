@@ -324,7 +324,7 @@
           <span>The app chose this change address from the wallet's usual change addresses that
             I confirmed, because my wallet file did not list them. I have checked that it matches
             my wallet, and I will check it on every signing device.</span></label>
-        <div class="with-help"><button id="download" disabled>Download unsigned transaction file (.psbt)</button>
+        <div class="with-help"><button id="download" disabled>Save unsigned transaction file (.psbt) to Downloads</button>
           <details class="context-help align-right"><summary aria-label="What am I saving as a PSBT file?">?</summary>
             <div class="help-popout"><strong>What am I saving?</strong><p>This PSBT (Partially Signed Bitcoin Transaction) is an unsigned proposal. Save the file for your signers to review in their own tools. Saving it does not sign or send Bitcoin.</p></div>
           </details></div>
@@ -353,6 +353,9 @@
       const match = location.hash.match(/[#&]token=([^&]+)/);
       return match ? decodeURIComponent(match[1]) : "";
     })();
+    // True inside the packaged Mac app, where the page talks to Python through
+    // pywebview instead of using browser downloads (WKWebView ignores those).
+    const desktopMode = __DESKTOP_MODE__;
     if (!token) {
       document.body.replaceChildren();
       const notice = document.createElement("p");
@@ -983,24 +986,17 @@
     });
     $("download").addEventListener("click", async () => {
       if (!currentPsbt || $("download").disabled) return;
-      if (window.pywebview && window.pywebview.api &&
-          window.pywebview.api.save_psbt) {
-        $("download").disabled = true;
-        try {
-          const result = await window.pywebview.api.save_psbt(currentPsbt, selectedChain());
-          if (result.saved) msg("send-message", "Unsigned transaction file saved. Nothing was signed or sent.");
-          else msg("send-message", "Save canceled. Your unsigned transaction file is still ready.");
-        } catch (e) {
-          msg("send-message", e.message || "Could not save the unsigned transaction file.", true);
-        } finally { updateDownload(); }
-        return;
-      }
-      const raw = atob(currentPsbt);
-      const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], {type:"application/octet-stream"}));
-      const a = document.createElement("a");
-      a.href = url; a.download = selectedChain() + "-unsigned.psbt"; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      $("download").disabled = true;
+      try {
+        // Same local API every other action already uses, so this works in the
+        // packaged app even when the pywebview bridge is unavailable.
+        const result = await post("/api/save", {chain: selectedChain()});
+        msg("send-message", (desktopMode ? "Saved to your Downloads folder: " : "Saved to ") +
+          result.path + " — nothing has been signed or sent.");
+      } catch (e) {
+        msg("send-message", (e && e.message) ||
+          "Could not save the unsigned transaction file.", true);
+      } finally { updateDownload(); }
     });
     $("quit").addEventListener("click", async () => {
       try { await post("/api/quit", {}); } catch (e) {}

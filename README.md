@@ -60,8 +60,10 @@ Each test release attaches **two matching-version files**:
   WebKit window. A user opens the app without installing Python or using
   Terminal. The wallet picker uses the macOS WebKit file dialog without a file-type
   filter, so custom `.bsms` files remain selectable. Only `.bsms` or `.txt`
-  wallet definitions are accepted after selection; the desktop wrapper uses
-  a native save dialog for unsigned PSBTs.
+  wallet definitions are accepted after selection. Saving an unsigned PSBT writes
+  a new file into your **Downloads** folder and names the full path on screen; an
+  existing file is never replaced, so an earlier transaction cannot be mistaken
+  for this one.
 - `bitcoin-easy-multisig-signer-vX.Y.Z.tar.gz`: the source code, tests, older
   command launcher, and build scripts. This is also usable on Linux, but
   source users need Python 3 and `pip install -r requirements.txt`.
@@ -173,7 +175,7 @@ differ.
    fee above 10,000 sats is refused, and unusually high estimates require an
    extra acknowledgement before continuing. Review destination, selected
    sat/vB rate, **amount + estimated fee**, change,
-   and every signer display independently; then download the unsigned `.psbt`.
+   and every signer display independently; then save the unsigned `.psbt` to your Downloads folder.
    **Nothing signs or broadcasts.** A fee quote is an estimate, not a promise
    of confirmation or a substitute for checking a final signed transaction.
    After reviewing the transaction, **Next: connect hardware wallets** opens a

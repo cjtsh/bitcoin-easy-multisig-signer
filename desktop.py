@@ -11,11 +11,21 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import safe_http
-from gui import LocalApp, launch_url, ui_path
+from gui import LocalApp, launch_url, save_prepared_psbt, ui_path
+from wallet_service import WalletError
 
 
 class DesktopBridge:
-    """Native PSBT save dialog; keep selected paths out of the page."""
+    """Saves the prepared PSBT to the user's Downloads folder.
+
+    Deliberately not a native save dialog. In the shipped build the dialog could
+    return nothing while reporting no error, so the button appeared to do nothing
+    at all — the worst possible failure for the person this app is for. Saving to
+    a known folder and naming the full path in the interface is clearer for a
+    non-technical user, and it also removes any file path arriving from the web
+    page. Overwriting is still refused, the file is created 0600, and the payload
+    must still be byte-identical to the PSBT the app prepared.
+    """
 
     def __init__(self, state: LocalApp, webview_module, url: str):
         """``url`` is the bare local app URL, without the token fragment."""
@@ -24,58 +34,40 @@ class DesktopBridge:
         self.url = url
         self.window = None
 
-    def _at_app_url(self) -> bool:
+    def _window_at_app_url(self) -> bool:
+        """Best-effort pin to our own page.
+
+        If the current URL cannot be read, do NOT block the save: the payload
+        equality check below is the real protection, and refusing to save because
+        of an unreadable URL is exactly the kind of silent failure this replaced.
+        """
         if self.window is None:
             return False
-        current = (self.window.get_current_url() or "").split("#", 1)[0]
-        return current == self.url
+        try:
+            current = (self.window.get_current_url() or "").split("#", 1)[0].rstrip("/")
+        except Exception:  # noqa: BLE001 - treat an unreadable URL as unknown
+            return True
+        return not current or current == self.url.rstrip("/")
 
     def save_psbt(self, encoded: str, chain: str) -> dict:
-        def ensure_current() -> None:
-            if not self._at_app_url():
-                raise ValueError("The wallet window is no longer at its local app URL.")
-            if not isinstance(encoded, str) or len(encoded) > 2_800_000:
-                raise ValueError("Unsigned transaction file is missing or too large.")
-            with self.state.lock:
-                if chain != self.state.chain or encoded != self.state.prepared_psbt:
-                    raise ValueError("Wallet or unsigned transaction changed; prepare and review it again.")
+        """pywebview-bridge entry point; the page normally uses POST /api/save.
 
-        ensure_current()
+        Kept so the native bridge still works if it is available, but the shared
+        implementation lives in gui.py so the two paths cannot drift.
+        """
+        if not self._window_at_app_url():
+            raise ValueError("The wallet window is no longer at its local app URL.")
+        if not isinstance(encoded, str) or len(encoded) > 2_800_000:
+            raise ValueError("Unsigned transaction file is missing or too large.")
+        with self.state.lock:
+            if chain != self.state.chain or encoded != self.state.prepared_psbt:
+                raise ValueError("Wallet or unsigned transaction changed; prepare and review it again.")
         try:
-            raw = base64.b64decode(encoded, validate=True)
-        except (ValueError, binascii.Error) as exc:
-            raise ValueError("Unsigned transaction file is invalid.") from exc
-        if not raw.startswith(b"psbt\xff") or len(raw) > 2_000_000:
-            raise ValueError("Unsigned transaction file is invalid or too large.")
-        chosen = self.window.create_file_dialog(
-            self.webview.SAVE_DIALOG,
-            save_filename=f"{chain}-unsigned.psbt",
-        )
-        if not chosen:
-            return {"saved": False}
-        ensure_current()
-        filename = chosen[0] if isinstance(chosen, (tuple, list)) else chosen
-        # Refuse to overwrite an existing file; the selected path comes from
-        # the native save dialog, not from arbitrary web-page JavaScript.
-        created = False
-        try:
-            fd = os.open(filename, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            created = True
-            with os.fdopen(fd, "wb") as output:
-                if output.write(raw) != len(raw):
-                    raise OSError("Incomplete PSBT write.")
-                output.flush()
-                os.fsync(output.fileno())
-        except FileExistsError as exc:
-            raise ValueError("That file already exists. Choose a new filename.") from exc
-        except OSError as exc:
-            if created:
-                try:
-                    os.unlink(filename)
-                except OSError:
-                    pass
-            raise ValueError("Could not save the unsigned transaction file to that location.") from exc
-        return {"saved": True}
+            return save_prepared_psbt(self.state, chain)
+        except WalletError as exc:
+            # pywebview surfaces the message; keep this bridge's documented
+            # ValueError contract rather than leaking the API error type.
+            raise ValueError(str(exc)) from exc
 
 
 def check_bundle_resources() -> None:
@@ -85,6 +77,8 @@ def check_bundle_resources() -> None:
         raise RuntimeError("Bundled ui.html is missing or does not match this app.")
     if "location.hash" not in page:
         raise RuntimeError("Bundled ui.html does not read its local access token.")
+    if "__DESKTOP_MODE__" not in page:
+        raise RuntimeError("Bundled ui.html cannot tell that it is the desktop app.")
     if getattr(sys, "frozen", False):
         import certifi
         bundle = Path(certifi.where())
