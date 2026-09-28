@@ -28,54 +28,6 @@ class DesktopTests(unittest.TestCase):
         self.state.prepared_psbt = self.encoded
         self.url = "http://127.0.0.1:54321/"
 
-    def test_native_picker_prefers_bsms_and_reads_only_selected_text(self):
-        path = Path(self.temp.name) / "sample.bsms"
-        path.write_text("BSMS 1.0\nsynthetic data", encoding="utf-8")
-
-        class Window:
-            def get_current_url(self):
-                return self.url
-            def create_file_dialog(self, dialog, **kwargs):
-                self.dialog = dialog
-                self.file_types = kwargs["file_types"]
-                return (str(self.file_path),)
-
-        window = Window()
-        window.url = self.url
-        window.file_path = path
-        module = type("Webview", (), {"OPEN_DIALOG": "open"})
-        bridge = DesktopBridge(self.state, module, self.url)
-        bridge.window = window
-        self.assertEqual(bridge.choose_bsms(), {
-            "selected": True, "name": "sample.bsms", "text": "BSMS 1.0\nsynthetic data",
-        })
-        self.assertEqual(window.dialog, "open")
-        self.assertEqual(window.file_types, (
-            "BSMS wallet (*.bsms)", "Plain-text BSMS (*.txt)",
-        ))
-
-        window.file_path = path.rename(path.with_suffix(".md"))
-        with self.assertRaisesRegex(ValueError, "Choose a .bsms"):
-            bridge.choose_bsms()
-        window.url = "https://example.org/"
-        with self.assertRaisesRegex(ValueError, "local app URL"):
-            bridge.choose_bsms()
-
-    def test_native_picker_cancel_and_oversized_file(self):
-        path = Path(self.temp.name) / "oversized.bsms"
-        path.write_bytes(b"x" * 65537)
-        module = type("Webview", (), {"OPEN_DIALOG": "open"})
-        bridge = DesktopBridge(self.state, module, self.url)
-        window = type("Window", (), {
-            "get_current_url": lambda _self: self.url,
-            "create_file_dialog": lambda *_args, **_kwargs: None,
-        })()
-        bridge.window = window
-        self.assertEqual(bridge.choose_bsms(), {"selected": False})
-        window.create_file_dialog = lambda *_args, **_kwargs: (str(path),)
-        with self.assertRaisesRegex(ValueError, "unexpectedly large"):
-            bridge.choose_bsms()
-
     def test_native_save_is_only_for_current_local_prepared_psbt(self):
         target = Path(self.temp.name) / "unsigned.psbt"
 
@@ -148,9 +100,12 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(fake.url.startswith("http://127.0.0.1:"))
         self.assertIs(fake.bridge.window, fake.window)
         self.assertIn('id="quit" class="secondary" hidden', fake.page)
-        self.assertIn('id="browser-wallet-input" hidden', fake.page)
-        self.assertIn('id="native-wallet-input" >', fake.page)
-        self.assertIn("const desktopMode = true;", fake.page)
+        self.assertIn('id="wallet-file" type="file"', fake.page)
+        self.assertNotIn('id="wallet-file" type="file" accept=', fake.page)
+        self.assertIn('/\\.(bsms|txt)$/i.test(file.name)', fake.page)
+        self.assertIn('const file = $("wallet-file").files[0];', fake.page)
+        self.assertIn('text:await file.text()', fake.page)
+        self.assertNotIn("The Mac file picker is not ready", fake.page)
         self.assertNotIn("__DESKTOP_HIDE_QUIT__", fake.page)
 
     def test_bundled_ui_is_resolved_inside_app(self):

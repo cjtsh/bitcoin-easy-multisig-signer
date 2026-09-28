@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from unittest.mock import patch
 
 from gui import LocalApp, fetch_btc_usd, fetch_fee_rates
+from version import APP_VERSION
 from wallet_service import WalletError
 from test_probe import test_record
 from test_wallet_service import mainnet_record
@@ -61,7 +62,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("LIVE BITCOIN NETWORK · REAL FUNDS", page)
         self.assertIn("body.live-mode", page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
-        self.assertIn("v0.1.2", page)
+        self.assertIn("v" + APP_VERSION, page)
         self.assertNotIn("__APP_VERSION__", page)
         text, _ = test_record(short_path=True)
         result = self.post("/api/import", {"chain": "testnet4", "text": text,

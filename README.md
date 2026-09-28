@@ -46,7 +46,10 @@ Each test release attaches **two matching-version files**:
 - `Easy-Bitcoin-Multisig-vX.Y.Z-UNSIGNED-TEST.dmg`: the Mac `.app`, containing its
   Python runtime, dependencies, existing wallet engine, and a small native
   WebKit window. A user opens the app without installing Python or using
-  Terminal. The desktop wrapper uses a native save dialog for unsigned PSBTs.
+  Terminal. The wallet picker uses the macOS WebKit file dialog without a file-type
+  filter, so custom `.bsms` files remain selectable. Only `.bsms` or `.txt`
+  wallet definitions are accepted after selection; the desktop wrapper uses
+  a native save dialog for unsigned PSBTs.
 - `easy-bitcoin-multisig-signer-vX.Y.Z.tar.gz`: the source code, tests, older
   command launcher, and build scripts. This is also usable on Linux, but
   source users need Python 3 and `pip install -r requirements.txt`.
