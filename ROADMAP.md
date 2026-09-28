@@ -22,8 +22,8 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   small-test-payment recommendation; and the `.psbt` saved to the Downloads folder.
   Two usability bugs found in live use — no confirmation of the chosen fee tier,
   and no sign of progress during a slow scan — were fixed in v0.1.14.
-  **Not evidenced:** independent decoding of a saved PSBT from the owner's real
-  wallet, and recognition of a physical hardware signer.
+  **Independently verified** (see the verification record below). **Still not
+  evidenced:** recognition of a physical hardware signer.
 - [ ] **Phase 4 — signing and broadcast.** **Not started and not authorised.** The
   app today can identify a connected signer read-only; it cannot sign or send.
   Starting this requires the owner to move the signing boundary explicitly and to
@@ -52,7 +52,7 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 | Capability | Evidence | Not yet proven / gap |
 | --- | --- | --- |
 | Open a BSMS definition and display balance | Owner uses it on Apple Silicon; wallet, balance and change-address handling all reach the screen; parsing, rejection and scan-coverage tests exist. | Formal error-path walkthrough by the owner. |
-| Prepare an unsigned transaction | Owner reached the send form, fee selection, review and save on the Mac; the engine is verified independently by signing a synthetic PSBT and measuring it (305 vB actual against 307 estimated; effective 5.033 sat/vB against a requested 5). | Independent decoding of a PSBT saved from the owner's real wallet. |
+| Prepare an unsigned transaction | Owner reached the send form, fee selection, review and save on the Mac; the engine is verified independently by signing a synthetic PSBT and measuring it (305 vB actual against 307 estimated; effective 5.033 sat/vB against a requested 5). | Recognition of a physical hardware signer (recognition is not signing). |
 | Recognize hardware signers | HWI-backed recognition matches a connected device's public key to a BSMS signer; the packaged app passes its headless checks. | Never run against a physical device. Recognition is not signing. |
 | Sign and broadcast | Not implemented, by design. | Phase 4, and only after explicit owner authorisation. |
 
@@ -115,8 +115,11 @@ set on two buttons and had no CSS; selection was inferred by comparing rate valu
 which cannot distinguish tiers that round to the same whole sat/vB — the owner's
 live quote was 1 / 2 / 2), and a slow scan looked like a dead app.
 
-*Not evidenced:* independent decoding of a PSBT saved from the owner's real wallet,
-and recognition of a physical hardware signer.
+*Independently verified:* a PSBT saved from the owner's real wallet was decoded by
+  two independent implementations that agreed on every material value, and the change
+  output was rebuilt from its declared keys and matched the wallet's own change
+  branch. See the verification record below. *Still not evidenced:* recognition of a
+  physical hardware signer.
 
 **Goal:** With verified 2-of-3 receive/change paths and a consistent confirmed scan, the user can prepare and review a partial or Send All transaction, see live slow/medium/fast fee choices with sats and USD estimates, catch a high-dollar amount, save an unsigned PSBT, then reach an HWI device-recognition screen that identifies matching signers. The v0.1.9 Mac app must be ready for physical keys to be plugged in for this recognition check. **Do not sign or broadcast.**
 
@@ -134,14 +137,45 @@ native Mac dialog could return nothing while reporting no error, and WKWebView
 ignores browser downloads, so the button appeared to do nothing at all. Saving now
 uses the same local API every other action uses, writes a new file into the
 Downloads folder, and names the full path on screen; an existing file is never
-replaced. **Still outstanding:** independently decode a PSBT saved from the owner's
-real wallet and compare its network, inputs, outputs, change and fee with the app's
-review. The next screen bundles HWI 3.2.0, prompts the user to connect and unlock hardware wallets on-device, enumerates devices, and verifies each available xpub against a public BSMS signer key. Clearly say this does not sign or test transaction approval. Independently decode the PSBT offline and compare its network, inputs, outputs, change, and fee with the app's review.
+replaced. **Done:** a PSBT saved from the owner's real wallet was independently
+   decoded and agreed with the review on every material value — see the verification
+   record below. The next screen bundles HWI 3.2.0, prompts the user to connect and
+   unlock hardware wallets on-device, enumerates devices, and verifies each available
+   xpub against a public BSMS signer key. It states clearly that this does not sign
+   and is not a test of transaction approval.
 7. Extend tests for both accepted and rejected cases, including a real frontend-to-local-API path in the packaged Mac app, backend policy refusals, offline/malformed explorer responses, wrong-network destination, and a save cancellation. Recheck the approved balance view and refresh flow for regressions.
 
 **Acceptance gate:** The v0.1.9 Mac build completes **import → fresh scan → yes/no → partial or Send All → live fee/amount/fee-dollar review → high-value confirmation where applicable → PSBT save → signer-recognition page**. HWI launches from the packaged app, and an independent decoder agrees with the transaction review. With the owner's devices available, at least one intended signer is recognized as matching its BSMS key. Unsupported, incomplete, stale, wrong-network, unaffordable, or excessive-fee cases fail visibly. No Bitcoin is signed or transmitted.
 
 **Handoff to Phase 4:** Record supported descriptor/export format, deterministic fixtures, independent PSBT verification, fee policy, HWI/device recognition results, and Mac steps without wallet data. Actual signing and broadcast remain a separately approved later phase.
+
+### Verification record: a real PSBT, decoded independently
+
+The owner saved an unsigned `.psbt` from the app and it was decoded without trusting
+the app's own report. Two independent implementations were used — a hand-written
+BIP174 and raw-transaction parser that uses no Bitcoin library at all, and a
+different library — and they agreed on every material value: the transaction id, the
+input and output counts, every amount, and the fee.
+
+Beyond agreeing, the things that matter were checked directly from the bytes:
+
+- **Each input's `witness_utxo` really is this wallet's multisig script**, by
+  recomputing the P2WSH from the `witness_script` carried in the PSBT.
+- **The change output was rebuilt from its own declared keys** using plain SHA-256,
+  and it reproduced the output script exactly. The change output's declared cosigner
+  fingerprints are the same three as the spent input's, and its derivation path is
+  the wallet's **change branch** while the input's is the **receive branch** — so the
+  change demonstrably returns to this wallet's own change addresses, which is the
+  claim the app makes and the one that could cost money if wrong.
+- **The fee equals the reviewed rate times the reviewed size exactly**, so the
+  on-screen estimate and the file agree.
+- **No partial signatures are present**: the file is genuinely unsigned.
+- The destination output is a single payment to an address that is not the wallet's.
+
+No wallet material — addresses, keys, fingerprints, amounts or transaction id — is
+recorded here, and the PSBT was not committed. A third library was attempted for a
+further cross-check and could not load in this environment; that limitation is
+stated rather than glossed.
 
 ## Phase 4 — Decide the signing boundary, complete the send, and review the whole tool
 

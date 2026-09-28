@@ -23,7 +23,7 @@ wallet, never asks for seed words or a PIN, and cannot sign or send.
 | Reach "Prepare a send"; enter a destination and amount, or Send All | Works |
 | Live slow/medium/fast fee tiers, with the chosen one visibly marked | Works |
 | Review: destination, amount, fee, total, change, final transaction id, explorer link | Works |
-| Save the unsigned `.psbt` into the Downloads folder | Works |
+| Save the unsigned `.psbt` into the Downloads folder | Works, and a saved file was decoded independently and matched the review |
 | Show progress while the blockchain scan runs | Works |
 | Recognise a connected hardware signer, read-only | Implemented, **never run against a physical device** |
 
@@ -32,8 +32,12 @@ wallet, never asks for seed words or a PIN, and cannot sign or send.
 - **Signing and broadcasting.** The app cannot sign a transaction or send Bitcoin.
   That is deliberate: it is Phase 4 in `ROADMAP.md`, and starting it needs the owner
   to move that boundary explicitly, naming the supported devices and workflow.
-- **Independent decoding of a PSBT saved from the owner's real wallet** has not been
-  done. The engine was verified independently on synthetic data instead.
+- ~~Independent decoding of a PSBT saved from the owner's real wallet.~~ **Done in
+  v0.1.14:** a saved PSBT was decoded by two independent implementations that agreed
+  on every material value, the change output was rebuilt from its declared keys and
+  confirmed to land on the wallet's own change branch, and the fee matched the
+  reviewed rate times the reviewed size exactly. No wallet material is recorded and
+  the file was not committed. See `ROADMAP.md`, *Verification record*.
 - **Physical signer recognition** has never been exercised.
 
 **Limits worth repeating**
