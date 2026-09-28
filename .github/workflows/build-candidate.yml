@@ -38,6 +38,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
+      # PyYAML is only needed to lint the workflow itself, so it is installed
+      # here rather than added to the application's dependency list.
+      - run: python -m pip install --quiet pyyaml
       - run: python -m unittest discover -s tests -q
       - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -86,7 +89,7 @@ jobs:
           # passes on a runner that happens to have system CA files.
           echo "Re-checking HTTPS with the ambient trust store removed:"
           env -u SSL_CERT_FILE SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
-          SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network"
+          SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-dmg
