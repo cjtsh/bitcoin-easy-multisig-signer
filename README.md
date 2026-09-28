@@ -1,4 +1,4 @@
-# Easy Bitcoin Multisig Signer — read-only hardware proof
+# Easy Bitcoin Multisig Signer — experimental Testnet4 GUI preview
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -26,17 +26,53 @@ seed words or private keys into this software. Read the full
 or a guarantee of enforceable protection; obtain qualified legal and security
 review before using software to handle real funds.
 
-This prototype is a command-line proof for inspecting a BSMS 1.0 wallet export and identifying
-matching USB hardware signers. It cannot sign, create, or broadcast a
-transaction. It is not yet the recovery app.
+The 0.0.4 development preview adds a local browser GUI for opening a BSMS 1.0
+wallet definition, checking public Testnet4 balances, and preparing an
+**unsigned** PSBT. It cannot sign or broadcast a transaction. It is not yet
+a finished Mac application, and no physical signer has been tested. The
+previous command-line proof remains available in `probe.py`.
 
 The intended Mac app will eventually give a family member a short guided
 flow for **sending from an existing multisig wallet**. It will not create a
 wallet, generate keys, or ask for recovery words. This proof keeps hardware
 communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
-parsing in [embit][embit]; it contains no USB driver or signing code.
+and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
-## Run on a Mac
+## Point-and-click Testnet4 preview on a Mac
+
+1. Download the project's ZIP, unzip it, and double-click
+   **Start Easy Multisig.command**. The launcher needs Python 3 installed and
+   prepares a local environment on first launch; Terminal will be visible,
+   but you do not need to type commands or file paths. macOS may warn about
+   an unsigned downloaded launcher. Do not bypass a warning for software
+   whose origin you cannot independently verify.
+2. A browser window opens on **127.0.0.1** on your Mac (not a hosted website).
+   Select Testnet4 and choose a **nonproduction BSMS 1.0** definition with
+   the file picker. It shows three public cosigners/xpubs, origin fingerprints,
+   the reference address, and the first receiving and change addresses.
+   The file remains in process memory; it is not stored by the app.
+3. The balance check derives public addresses and sends **those addresses**
+   to the public mempool.space Testnet4 explorer. Neither BSMS nor xpubs are
+   sent. It checks receive and change branches up to 100 indices apiece,
+   stopping after a gap of 20 unused addresses. **A displayed amount is an
+   explorer observation, not a proof of a complete wallet balance.** The
+   interface shows when it last scanned and warns on incomplete coverage or
+   inferred descriptor branches. If the explorer fails, it does *not* claim
+   the wallet is empty.
+4. Enter a Testnet4 destination, a whole-sat amount and fee rate to prepare
+   a PSBT from confirmed outputs. Review destination, estimated fee and
+   change; then download the unsigned `.psbt`. **Nothing signs or broadcasts.**
+   The "connect signers" step is not implemented in this version.
+
+The sample export described below uses `/*` in the descriptor, but its
+reference address matches `/0/0`. The GUI uses that address to identify
+the receive branch, marks the `/1/*` change branch as **inferred**, and asks
+you to verify change independently before any future signing. It must never
+be treated as proof that hardware owns that branch. If the reference address
+cannot be matched, the GUI stops rather than inventing a wallet balance.
+There is no hidden server upload, wallet creation, seed entry, or mainnet mode.
+
+## Run the older command-line hardware proof on a Mac
 
 1. Install Python 3 and, in a Terminal opened in this repository, run:
 
@@ -136,7 +172,7 @@ Run offline tests with:
 python -m unittest discover -s tests -v
 ```
 
-## What this proves—and what it does not
+## What has been tested—and what has not
 
 - A strict BSMS 1.0 format and descriptor checksum check.
 - A local reference-address comparison for native-SegWit multisig.
@@ -144,8 +180,12 @@ python -m unittest discover -s tests -v
   path, not a vendor-name-only or fingerprint-only match.
 - Explicit Testnet4 selection and a guarded test-wallet funding address;
   no assumption that `tb1` identifies a blockchain.
-- No balance scanning, transaction construction, signing, or broadcasting.
-  Those need separate, tested off-the-shelf components and a guided UI.
+- A local GUI can parse synthetic BSMS data, derive addresses, display the
+  three public cosigners, scan a mocked Testnet4 explorer, and build an
+  unsigned PSBT with verified previous outputs in offline tests.
+- No real Testnet4 wallet balance has been checked with this GUI yet; no Mac
+  launch or physical hardware has been tested. No signing or broadcasting
+  exists. Do not use the PSBT preview to move production funds.
 
 [hwi]: https://github.com/bitcoin-core/HWI
 [releases]: https://github.com/bitcoin-core/HWI/releases/tag/3.2.0

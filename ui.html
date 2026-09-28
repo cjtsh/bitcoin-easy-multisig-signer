@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Easy Multisig · Testnet4</title>
+  <style>
+    :root { color-scheme: light; --ink:#182527; --muted:#607174; --line:#dbe5e2;
+      --mint:#dbf5e8; --green:#176b53; --paper:#fbfcf8; --warn:#fff1d6; --red:#a13430; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#edf3ef; color:var(--ink); font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .top { padding:30px max(22px,calc((100vw - 1060px)/2)); background:#102d2a; color:#eaf7ef; }
+    .top small { text-transform:uppercase; letter-spacing:.13em; color:#90d9bd; font-weight:700; }
+    .top h1 { margin:6px 0 4px; font-size:clamp(28px,4vw,42px); letter-spacing:-.035em; line-height:1.12; }
+    .top p { margin:0; color:#c5e0d4; }
+    .network { display:inline-flex; border:1px solid #5a9b80; border-radius:99px; padding:4px 11px;
+      margin-top:17px; font-size:13px; font-weight:700; color:#c9f7dc; }
+    main { max-width:1060px; padding:26px 22px 70px; margin:auto; }
+    .steps { display:flex; gap:10px; color:var(--muted); font-size:13px; margin-bottom:19px; flex-wrap:wrap; }
+    .steps span { background:#dfe9e2; border-radius:99px; padding:5px 12px; }
+    .steps .active { background:#c0ead5; color:#155c48; font-weight:700; }
+    .card { background:var(--paper); border:1px solid var(--line); box-shadow:0 8px 25px #142c1e0b;
+      border-radius:18px; padding:25px; margin:16px 0; }
+    h2 { margin:0 0 5px; font-size:22px; letter-spacing:-.025em; }
+    h3 { margin:0; font-size:16px; }
+    p { margin:5px 0 12px; }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:17px; }
+    label { display:block; font-weight:650; margin:17px 0 6px; font-size:14px; }
+    input[type=file], input[type=text], input[type=number], select {
+      width:100%; border:1px solid #bfd0c6; border-radius:11px; background:white; color:var(--ink);
+      padding:12px 13px; font:inherit; }
+    input[type=file] { padding:11px; }
+    input:focus, select:focus, button:focus-visible { outline:3px solid #86d4a6; outline-offset:2px; }
+    button { appearance:none; border:0; background:#157655; color:white; font:700 15px system-ui;
+      border-radius:11px; padding:13px 19px; cursor:pointer; }
+    button:hover { background:#0c5c42; }
+    button:disabled { background:#adc2b8; cursor:not-allowed; }
+    .secondary { background:#e5f2e9; color:#155943; }
+    .secondary:hover { background:#d3ebdc; }
+    .action { margin-top:18px; }
+    .notice { border-left:4px solid #d59a32; padding:12px 15px; border-radius:8px; background:var(--warn); margin:15px 0; }
+    .error { background:#ffeae8; color:var(--red); border-left:4px solid var(--red); padding:13px 15px; border-radius:9px; margin:14px 0; }
+    .success { background:var(--mint); padding:11px 14px; border-radius:9px; color:var(--green); margin:12px 0; }
+    .amount { font-size:clamp(30px,5vw,49px); font-weight:760; line-height:1.1; letter-spacing:-.05em; }
+    .amount small { font-size:16px; letter-spacing:0; font-weight:600; color:var(--muted); }
+    .metrics { display:flex; gap:22px; flex-wrap:wrap; margin:18px 0; }
+    .metric { border-top:1px solid var(--line); padding-top:11px; flex:1; min-width:140px; }
+    .metric b { display:block; font-size:19px; }
+    .metric span { color:var(--muted); font-size:13px; }
+    .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; overflow-wrap:anywhere; }
+    .kv { margin:12px 0; }
+    .kv b { display:block; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .kv code { display:block; margin-top:3px; }
+    .cosigner { border:1px solid var(--line); padding:15px; border-radius:12px; background:#fff; margin:10px 0; }
+    .cosigner summary { cursor:pointer; font-weight:700; }
+    .cosigner p { margin:8px 0 0; }
+    .address-row { padding:12px 0; border-top:1px solid var(--line); }
+    .address-row small { display:block; color:var(--muted); }
+    .review { border:1px solid #b2dcc4; border-radius:13px; background:#f0faf2; padding:19px; margin-top:20px; }
+    .check { display:flex; align-items:flex-start; gap:9px; margin:15px 0; font-weight:500; }
+    .check input { width:17px; height:17px; flex:0 0 17px; margin-top:3px; }
+    footer { color:var(--muted); font-size:13px; padding-top:10px; }
+    a { color:#166c55; }
+    [hidden] { display:none !important; }
+    @media(max-width:680px) { .grid { grid-template-columns:1fr; } .card { padding:20px; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <small>Easy Bitcoin Multisig Signer · experimental 0.0.4 prototype</small>
+    <h1>Your wallet, before the keys.</h1>
+    <p>Open a wallet definition, check its Testnet4 balance, and prepare an unsigned send.</p>
+    <div class="network">● TESTNET4 ONLY · NO REAL BITCOIN</div>
+  </header>
+  <main>
+    <div class="steps"><span class="active">1 · Open wallet</span><span>2 · Check balance</span>
+      <span>3 · Prepare send</span><span>4 · Connect signers (not available yet)</span></div>
+
+    <section class="card" aria-labelledby="open-title">
+      <h2 id="open-title">1. Open your existing wallet</h2>
+      <p class="muted">Choose a BSMS 1.0 wallet definition. Do not choose a seed backup or private-key file.</p>
+      <div class="grid">
+        <div><label for="chain">Bitcoin network</label>
+          <select id="chain"><option value="testnet4">Testnet4</option></select></div>
+        <div><label for="wallet-file">Wallet definition</label>
+          <input id="wallet-file" type="file" accept=".bsms,.txt,text/plain"></div>
+      </div>
+      <p class="small muted">Your file stays in this app on your Mac. To check its balance, the app sends derived
+        <strong>public addresses</strong> (not xpubs or the file) to mempool.space's Testnet4 explorer.</p>
+      <button id="open" class="action">Open wallet &amp; check balance</button>
+      <div id="message" role="status" aria-live="polite"></div>
+    </section>
+
+    <section id="wallet-card" class="card" hidden>
+      <h2>Wallet definition</h2>
+      <p id="policy" class="muted"></p>
+      <div class="grid">
+        <div>
+          <div class="kv"><b>Reference address</b><code id="reference" class="mono"></code></div>
+          <div class="kv"><b>First receive address</b><code id="receive" class="mono"></code></div>
+          <div class="kv"><b>First inferred/declared change address</b><code id="change" class="mono"></code></div>
+        </div>
+        <div><h3>Three public cosigners</h3><p class="muted small">These xpubs identify the wallet; they cannot sign. Keep them private for wallet privacy.</p>
+          <div id="keys"></div></div>
+      </div>
+      <div id="path-warning" class="notice" hidden></div>
+    </section>
+
+    <section id="balance-card" class="card" hidden>
+      <h2>2. Testnet4 balance</h2>
+      <div class="amount"><span id="observed">—</span> <small>test sats observed</small></div>
+      <div class="metrics">
+        <div class="metric"><b id="confirmed">—</b><span>confirmed sats</span></div>
+        <div class="metric"><b id="pending">—</b><span>pending change (sats)</span></div>
+        <div class="metric"><b id="utxo-count">—</b><span>unspent outputs found</span></div>
+      </div>
+      <p id="coverage" class="small muted"></p>
+      <button id="refresh" class="secondary">Refresh Testnet4 balance</button>
+      <div id="addresses"></div>
+    </section>
+
+    <section id="send-card" class="card" hidden>
+      <h2>3. Prepare a send</h2>
+      <p class="muted">This builds an <strong>unsigned PSBT</strong>. It will not sign or broadcast anything.</p>
+      <div class="grid">
+        <div><label for="destination">Send to Testnet4 address</label>
+          <input id="destination" type="text" placeholder="tb1…" autocomplete="off" spellcheck="false"></div>
+        <div><label for="amount">Amount in sats</label>
+          <input id="amount" type="number" min="546" step="1" placeholder="e.g. 1000"></div>
+      </div>
+      <label for="fee-rate">Estimated fee rate (sat/vB)</label>
+      <input id="fee-rate" type="number" min="1" max="25" step="1" value="2" style="max-width:150px">
+      <p class="small muted">Confirmed coins only. The fee estimate is conservative; final inputs and change are shown for review.</p>
+      <button id="prepare">Review unsigned transaction</button>
+      <div id="send-message" role="status" aria-live="polite"></div>
+      <div id="review" class="review" hidden>
+        <h3>Review before connecting any signer</h3>
+        <div class="kv"><b>Destination (check every character)</b><code id="review-destination" class="mono"></code></div>
+        <div class="metrics">
+          <div class="metric"><b id="review-amount"></b><span>amount (sats)</span></div>
+          <div class="metric"><b id="review-fee"></b><span>estimated fee (sats)</span></div>
+          <div class="metric"><b id="review-inputs"></b><span>inputs</span></div>
+        </div>
+        <div class="kv"><b>Change (check against your wallet)</b><code id="review-change" class="mono"></code></div>
+        <div id="review-warning" class="notice"></div>
+        <label class="check"><input id="confirm-review" type="checkbox">
+          <span>I checked the network, full destination, amount, fee and change address. This does not sign or send.</span></label>
+        <button id="download" disabled>Download unsigned PSBT</button>
+        <p class="small muted">Next: connect hardware signers to verify and sign. Signing and broadcasting are not implemented in this version.</p>
+      </div>
+    </section>
+    <footer>Experimental Testnet4 software. Do not use with real Bitcoin or enter seed words/private keys.
+      <a href="https://github.com/cjtsh/easy-bitcoin-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Read the full disclaimer</a>.
+      <p><button id="quit" class="secondary">Quit local app</button></p></footer>
+  </main>
+  <script>
+    const token = "__LOCAL_TOKEN__";
+    const $ = id => document.getElementById(id);
+    let currentPsbt = null;
+    function setText(id, value) { $(id).textContent = String(value); }
+    function msg(id, text, error=false) {
+      const el = $(id); el.textContent = text; el.className = text ? (error ? "error" : "success") : "";
+    }
+    async function post(path, data) {
+      const response = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json",
+        "X-Local-Token":token}, body:JSON.stringify(data), cache:"no-store"});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Operation failed.");
+      return result;
+    }
+    function fmt(num) { return Number(num).toLocaleString("en-US"); }
+    function showWallet(data) {
+      $("wallet-card").hidden = false;
+      setText("policy", data.policy + " · " + data.chain);
+      setText("reference", data.reference_address);
+      setText("receive", data.receive_address);
+      setText("change", data.change_address || "Not defined in this file");
+      $("path-warning").hidden = !data.warning;
+      setText("path-warning", data.warning);
+      $("keys").replaceChildren();
+      for (const key of data.keys) {
+        const card = document.createElement("details"); card.className = "cosigner";
+        const title = document.createElement("summary");
+        title.textContent = "Cosigner " + key.number + " · " + key.fingerprint;
+        card.append(title);
+        const origin = document.createElement("p"); origin.className = "small";
+        origin.textContent = "Origin: " + key.origin + "  ·  Suffix: " + key.suffix;
+        const pub = document.createElement("p"); pub.className = "mono";
+        pub.textContent = key.public_key; card.append(origin, pub);
+        $("keys").append(card);
+      }
+    }
+    function showBalance(data) {
+      $("balance-card").hidden = false;
+      $("send-card").hidden = false;
+      $("review").hidden = true; currentPsbt = null;
+      setText("observed", fmt(data.observed_sats));
+      setText("confirmed", fmt(data.confirmed_sats));
+      setText("pending", fmt(data.pending_delta_sats));
+      setText("utxo-count", fmt(data.utxo_count));
+      setText("coverage", "Checked " + data.scanned + " addresses · last refreshed " +
+        new Date(data.scanned_at).toLocaleString() + " · " + data.source +
+        (data.coverage_limited ? " · Partial coverage: do not treat this as a complete wallet balance." :
+        " · Standard 20-unused-address gap scan. Older or unusual paths may still be missed."));
+      $("addresses").replaceChildren();
+      const heading = document.createElement("h3");
+      heading.textContent = "Addresses with activity"; $("addresses").append(heading);
+      for (const item of data.addresses) {
+        const row = document.createElement("div"); row.className = "address-row";
+        const address = document.createElement("div"); address.className = "mono";
+        address.textContent = item.address;
+        const sub = document.createElement("small");
+        sub.textContent = item.branch + " #" + item.index + " · " +
+          fmt(item.confirmed) + " confirmed sats" + (item.used ? "" : " · first receiving address");
+        row.append(address, sub); $("addresses").append(row);
+      }
+    }
+    async function refresh() {
+      $("balance-card").hidden = true; $("send-card").hidden = true;
+      $("refresh").disabled = true; msg("message", "Scanning Testnet4. This can take a little while…");
+      try {
+        const balance = await post("/api/scan", {chain:"testnet4"});
+        showBalance(balance); msg("message", "Balance refreshed. Check the coverage note below.");
+      } catch (e) { msg("message", e.message, true); }
+      finally { $("refresh").disabled = false; }
+    }
+    $("open").addEventListener("click", async () => {
+      const file = $("wallet-file").files[0];
+      if (!file) { msg("message", "Choose a BSMS wallet definition first.", true); return; }
+      if (file.size > 65536) { msg("message", "BSMS file is unexpectedly large.", true); return; }
+      $("open").disabled = true; $("wallet-card").hidden = true;
+      $("balance-card").hidden = true; $("send-card").hidden = true;
+      msg("message", "Opening wallet…");
+      try {
+        const wallet = await post("/api/import", {chain:$("chain").value, text:await file.text()});
+        showWallet(wallet); await refresh();
+      } catch (e) { msg("message", e.message, true); }
+      finally { $("open").disabled = false; }
+    });
+    $("refresh").addEventListener("click", refresh);
+    $("prepare").addEventListener("click", async () => {
+      const amount = Number($("amount").value), fee = Number($("fee-rate").value);
+      if (!Number.isSafeInteger(amount) || amount < 546 || !Number.isSafeInteger(fee)) {
+        msg("send-message", "Enter a whole-sat amount (at least 546) and fee rate.", true); return;
+      }
+      $("review").hidden = true; currentPsbt = null;
+      $("prepare").disabled = true; msg("send-message", "Checking confirmed outputs and building an unsigned PSBT…");
+      try {
+        const result = await post("/api/prepare", {chain:"testnet4",
+          recipient:$("destination").value.trim(), amount_sats:amount, fee_rate:fee});
+        currentPsbt = result.psbt_base64;
+        setText("review-destination", result.recipient);
+        setText("review-amount", fmt(result.amount_sats));
+        setText("review-fee", fmt(result.fee_sats));
+        setText("review-inputs", result.inputs);
+        setText("review-change", result.change_address + " · " + fmt(result.change_sats) + " sats");
+        setText("review-warning", result.change_warning);
+        $("confirm-review").checked = false; $("download").disabled = true;
+        $("review").hidden = false; msg("send-message", "Unsigned PSBT prepared. Nothing has been sent.");
+      } catch (e) { msg("send-message", e.message, true); }
+      finally { $("prepare").disabled = false; }
+    });
+    $("confirm-review").addEventListener("change", () => {
+      $("download").disabled = !$("confirm-review").checked || !currentPsbt;
+    });
+    $("download").addEventListener("click", () => {
+      if (!currentPsbt || !$("confirm-review").checked) return;
+      const raw = atob(currentPsbt);
+      const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], {type:"application/octet-stream"}));
+      const a = document.createElement("a");
+      a.href = url; a.download = "testnet4-unsigned.psbt"; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    });
+    $("quit").addEventListener("click", async () => {
+      try { await post("/api/quit", {}); } catch (e) {}
+      document.body.replaceChildren();
+      const note = document.createElement("p");
+      note.textContent = "Easy Multisig has stopped. You can close this tab.";
+      note.style.cssText = "padding:3rem;font:18px system-ui";
+      document.body.append(note);
+    });
+  </script>
+</body>
+</html>

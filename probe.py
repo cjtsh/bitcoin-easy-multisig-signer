@@ -31,6 +31,8 @@ class WalletRecord:
     network: str
     restrictions: str
     reference_status: str
+    reference_address: str = ""
+    descriptor_text: str = ""
 
     @property
     def keys(self) -> list[Any]:
@@ -69,12 +71,19 @@ def load_bsms(path: Path) -> WalletRecord:
     try:
         if path.stat().st_size > MAX_BSMS_BYTES:
             raise ProbeError("BSMS file is unexpectedly large.")
-        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        text = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise ProbeError("Could not read the BSMS file.") from exc
     except UnicodeError as exc:
         raise ProbeError("BSMS file must be UTF-8 text.") from exc
+    return parse_bsms(text)
 
+
+def parse_bsms(text: str) -> WalletRecord:
+    """Parse a BSMS record in memory so GUI uploads never touch disk."""
+    if len(text.encode("utf-8")) > MAX_BSMS_BYTES:
+        raise ProbeError("BSMS file is unexpectedly large.")
+    lines = text.lstrip("\ufeff").splitlines()
     if len(lines) != 4 or lines[0] != "BSMS 1.0":
         raise ProbeError("Expected a four-line BSMS 1.0 wallet record.")
     descriptor_with_checksum, restrictions, reference = lines[1:]
@@ -121,6 +130,8 @@ def load_bsms(path: Path) -> WalletRecord:
         network=network,
         restrictions=restrictions,
         reference_status=_reference_status(descriptor_text, reference, network),
+        reference_address=reference,
+        descriptor_text=descriptor_text,
     )
 
 
