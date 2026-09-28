@@ -82,6 +82,7 @@ jobs:
           "$app/Contents/MacOS/hwi" --help >/dev/null
           codesign --verify --strict "$app"
           "$exe" --check-bundle
+          "$exe" --check-save
           "$exe" --check-network
           # Prove the app trusts the CA store it SHIPS, not the build machine's.
           # With the ambient trust paths removed, only the bundled store can make

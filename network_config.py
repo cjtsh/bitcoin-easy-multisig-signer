@@ -17,6 +17,7 @@ class NetworkConfig:
     label: str
     bip48_coin_type: int
     genesis_hash: str
+    web_url: str
 
 
 NETWORKS = {
@@ -25,11 +26,13 @@ NETWORKS = {
         "Testnet4 (selected in this app; tb1 alone cannot identify a chain)",
         0x80000001,
         "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
+        "https://mempool.space/testnet4",
     ),
     "main": NetworkConfig(
         "main", "main", "bc1", "https://mempool.space/api",
         "Bitcoin mainnet", 0x80000000,
         "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+        "https://mempool.space",
     ),
 }
 

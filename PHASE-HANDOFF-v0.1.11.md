@@ -198,6 +198,38 @@ synthetic fixtures.
 - Still unobserved: the hardware signer screen.
 
 
+### Interface simplification (owner request)
+
+The owner's standing design criterion is that this is **not** a wallet for a
+Bitcoiner: it is a guided "send from an existing wallet" tool for a lawyer, a bank
+officer, or a family member, possibly under stress. The first live build had drifted
+into showing the policy, reference/receive/change addresses, three cosigner xpubs
+with derivation paths, scan statistics and a full per-address activity list all on
+the main screen.
+
+- All of that now lives behind a **See wallet details** button, which opens a
+  panel. Two entry points (the wallet card and the balance card) open one dialog.
+- The main screen shows: network, balance in BTC with satoshis and an approximate
+  dollar line, one short coverage sentence, and the send flow.
+- The four step chips are gone (the cards are numbered), the duplicated Refresh
+  button is down to one, several paragraphs of small print were cut, and the
+  "Signer Signer" typo from the repository rename is fixed.
+- **Nothing safety-critical was hidden.** Destination, amount, fee and the change
+  address remain visible in the review, as do errors, warnings, the high-value
+  confirmation and the change-branch confirmation.
+
+Alongside it, two safety-ergonomics additions the owner asked for:
+
+- The send step recommends a **small test transaction first** — advisory, never
+  blocking.
+- The review shows the **final transaction ID** (for segwit the witness is not part
+  of the txid, so it is already known before signing) plus a **public explorer
+  link**, and explains that the app does not broadcast, so the link is how the
+  result is confirmed afterwards.
+
+Verified by rendering the real page in headless Chrome and inspecting it, since the
+native window cannot be driven from here.
+
 ---
 
 ## 7. Build status

@@ -136,7 +136,7 @@ def public_scan(result: dict) -> dict:
     }
 
 
-def save_prepared_psbt(state: "LocalApp", chain) -> dict:
+def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> dict:
     """Write the app's currently prepared PSBT into the user's Downloads folder.
 
     The bytes come from server-side state and never from the page, so nothing a
@@ -154,9 +154,10 @@ def save_prepared_psbt(state: "LocalApp", chain) -> dict:
         raise WalletError("The prepared transaction is not valid.") from exc
     if not raw.startswith(b"psbt\xff") or len(raw) > 2_000_000:
         raise WalletError("The prepared transaction is not valid or is too large.")
-    folder = Path.home() / "Downloads"
-    if not folder.is_dir():
-        folder = Path.home()
+    if folder is None:
+        folder = Path.home() / "Downloads"
+        if not folder.is_dir():
+            folder = Path.home()
     for suffix in ("",) + tuple(f"-{n}" for n in range(2, 100)):
         target = folder / f"{chain}-unsigned{suffix}.psbt"
         try:
@@ -558,6 +559,7 @@ class LocalApp:
                     result["fee_warning"] = " ".join(
                         part for part in (result["fee_warning"], low_warning) if part
                     )
+                result["explorer_web"] = CHAIN_CONFIGS[chain].web_url
                 result["fee_reference"] = {
                     "standard": fee_quote["standard"],
                     "economy": fee_quote["economy"],

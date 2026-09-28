@@ -49,25 +49,31 @@ class LocalGuiTests(unittest.TestCase):
         with urlopen(request, timeout=3) as response:
             return json.load(response)
 
-    def test_file_picker_page_imports_synthetic_public_wallet(self):
+    def get_page(self):
         with urlopen(self.base, timeout=3) as response:
-            page = response.read().decode()
+            return response.read().decode()
+
+    def test_file_picker_page_imports_synthetic_public_wallet(self):
+        page = self.get_page()
         self.assertIn('type="file"', page)
         self.assertIn("Testnet4", page)
         self.assertIn('id="balance-usd"', page)
         self.assertIn('id="observed-btc"', page)
-        balance_row = page.split('<div class="balance-primary">', 1)[1].split('</details>', 1)[0]
+        balance_row = page.split('<div class="balance-primary">', 1)[1].split('</section>', 1)[0]
         self.assertLess(balance_row.index('id="observed-btc"'), balance_row.index('id="observed"'))
         self.assertLess(balance_row.index('id="balance-usd"'), balance_row.index('id="observed"'))
         self.assertIn('setText("observed-btc", btc(data.observed_sats))', page)
         self.assertIn('id="send-equivalent"', page)
         self.assertIn('class="context-help"', page)
-        self.assertGreaterEqual(page.count('class="help-popout"'), 6)
+        # Help is opt-in and was deliberately reduced; keep a floor so it does
+        # not disappear entirely.
+        self.assertGreaterEqual(page.count('class="help-popout"'), 4)
         self.assertIn('aria-label="What am I saving as a PSBT file?"', page)
         self.assertIn("PSBT means Partially Signed Bitcoin Transaction.", page)
         self.assertIn("Preparing it does not move Bitcoin.", page)
         self.assertIn("Save unsigned transaction file (.psbt) to Downloads", page)
-        self.assertIn("Apple Silicon (M-series) only. Intel-based Macs are not supported.", page)
+        self.assertIn("Apple Silicon (M-series) only", page)
+        self.assertIn("Intel-based Macs are not supported", page)
         self.assertIn('id="send-all" type="checkbox"', page)
         self.assertNotIn('id="send-all" type="checkbox" checked', page)
         self.assertIn('id="send-choice"', page)
@@ -102,6 +108,55 @@ class LocalGuiTests(unittest.TestCase):
         self.assertTrue(result["receive_address"].startswith("tb1"))
         self.assertIsNotNone(self.app.record)
         self.assertIsNone(self.app.scan)
+
+    def test_technical_detail_is_behind_a_details_panel(self):
+        """The screen a lawyer or a spouse sees must not be a wall of keys."""
+        page = self.get_page()
+        start = page.index('id="wallet-details"')
+        panel = page[start:]
+        # Everything technical lives in the panel...
+        for element in ("id=\"reference\"", "id=\"receive\"", "id=\"change\"",
+                        "id=\"keys\"", "id=\"confirmed\"", "id=\"pending\"",
+                        "id=\"utxo-count\"", "id=\"addresses\"", "id=\"price-note\"",
+                        "id=\"scan-source\""):
+            self.assertIn(element, panel, f"{element} should live in the details panel")
+        # ...and nothing technical is left on the main screen above it.
+        before = page[:start]
+        for element in ("id=\"keys\"", "id=\"addresses\"", "id=\"confirmed\"",
+                        "id=\"utxo-count\"", "id=\"reference\""):
+            self.assertNotIn(element, before,
+                             f"{element} should not be on the main screen any more")
+        # Two ways in, one dialog.
+        self.assertEqual(page.count('class="details-button"'), 2)
+        self.assertIn('id="close-details"', panel)
+
+    def test_send_flow_recommends_a_test_and_links_to_the_explorer(self):
+        page = self.get_page()
+        self.assertIn("Recommended: send a small test amount first.", page)
+        self.assertIn('id="review-txid"', page)
+        self.assertIn('id="review-explorer"', page)
+        self.assertIn("A payment is not finished until it is confirmed.", page)
+        self.assertIn("This app\n              does not sign or send Bitcoin.", page)
+        self.assertIn("explorer_web", page)
+
+    def test_prepare_reports_a_final_transaction_id(self):
+        """Segwit txids do not cover the witness, so the id is fixed at prepare."""
+        from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout
+        from fake_explorer import three_output_wallet
+        from probe import parse_bsms
+        from embit.networks import NETWORKS
+        text, _ = test_record(bsms_template=True)
+        record = parse_bsms(text)
+        layout = wallet_layout(record)
+        explorer = three_output_wallet(layout, NETWORKS["test"])
+        scan = scan_wallet(record, explorer)
+        recipient = layout.receive.derive(5).address(NETWORKS["test"])
+        result = build_unsigned_psbt(record, scan, recipient, 1_000, 5, explorer)
+        import base64
+        packet = __import__("embit").psbt.PSBT.parse(
+            base64.b64decode(result["psbt_base64"]))
+        self.assertEqual(result["txid"], packet.tx.txid().hex())
+        self.assertEqual(len(result["txid"]), 64)
 
     def test_read_only_signer_check_requires_current_transaction_review(self):
         text, _ = test_record(short_path=True)

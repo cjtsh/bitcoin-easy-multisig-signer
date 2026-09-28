@@ -146,10 +146,9 @@ def wallet_layout(record: WalletRecord) -> Layout:
         verified = True
         if record.change_declared:
             warning = (
-                "This wallet file does not declare a change path. The conventional "
-                "/1/* change branch was enabled by your own confirmation, not read "
-                "from the file. Check the change address on every signer before you "
-                "approve, and confirm it appears in your wallet's own address list."
+                "Your wallet file declares no change path. The usual /1/* change branch "
+                "was enabled by your own confirmation, not read from the file, so check "
+                "the change address on every signer and confirm your wallet lists it."
             )
         else:
             warning = ""
@@ -612,6 +611,9 @@ def build_unsigned_psbt(
         raise WalletError("Transaction fee check failed; no unsigned transaction was prepared.")
     return {
         "psbt_base64": packet.to_base64(),
+        # For segwit the witness is not part of the txid, so this id is already
+        # final: the same id will appear on the explorer once it is broadcast.
+        "txid": packet.tx.txid().hex(),
         "recipient": recipient,
         "amount_sats": amount,
         "send_all": send_all,

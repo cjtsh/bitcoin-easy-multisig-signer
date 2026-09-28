@@ -11,7 +11,8 @@ from unittest.mock import patch
 
 import safe_http
 from support import real_ca_bundle
-from desktop import DesktopBridge, check_bundle_resources, configure_packaged_tls, main, run_desktop
+from desktop import (DesktopBridge, check_bundle_resources, check_psbt_save,
+                     configure_packaged_tls, main, run_desktop)
 from gui import LocalApp, ui_path
 
 
@@ -93,6 +94,10 @@ class DesktopTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Could not save"):
                 self._bridge().save_psbt(self.encoded, "testnet4")
         self.assertEqual(list((home / "Downloads").iterdir()), [])
+
+    def test_headless_save_check_actually_writes_a_psbt(self):
+        """The packaged app's own save path, using a temp folder."""
+        check_psbt_save()  # raises RuntimeError on any failure
 
     def test_window_starts_one_local_server_and_stops_on_close(self):
         class FakeWebview:

@@ -57,7 +57,7 @@
     .help-popout p { margin:0; }
     p { margin:5px 0 12px; }
     .muted { color:var(--muted); }
-    .small { font-size:13px; }
+    .small { font-size:14px; }
     .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:17px; }
     label { display:block; font-weight:650; margin:17px 0 6px; font-size:14px; }
     input[type=file], input[type=text], input[type=number], select {
@@ -102,6 +102,19 @@
     footer { color:var(--muted); font-size:13px; padding-top:10px; }
     a { color:#166c55; }
     [hidden] { display:none !important; }
+    dialog.panel { border:0; border-radius:18px; padding:0; width:min(760px,92vw);
+      max-height:88vh; color:var(--ink); box-shadow:0 24px 60px #102d2a40; }
+    dialog.panel::backdrop { background:#102d2a99; }
+    .panel-head { display:flex; align-items:center; justify-content:space-between; gap:14px;
+      padding:16px 22px; border-bottom:1px solid var(--line); background:var(--paper); }
+    .panel-head h2 { margin:0; font-size:20px; }
+    .panel-body { padding:4px 22px 22px; overflow:auto; max-height:calc(88vh - 68px); }
+    .details-button { background:#e5f2e9; color:#155943; font-weight:650; padding:11px 16px; }
+    .details-button:hover { background:#d3ebdc; }
+    .tip { background:var(--mint); border-left:4px solid var(--green); padding:12px 16px;
+      border-radius:9px; margin:15px 0; }
+    .tip ol { margin:6px 0 0; padding-left:20px; }
+    .tip li { margin:4px 0; }
     @media(max-width:680px) {
       .grid, .balance-primary { grid-template-columns:1fr; }
       .card { padding:20px; }
@@ -114,19 +127,16 @@
 </head>
 <body>
   <header class="top">
-    <small>Bitcoin Easy Signer Signer · v__APP_VERSION__ · experimental</small>
+    <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Your wallet, before the keys.</h1>
     <p>Open an existing multisig wallet, check its balance, and review an unsigned send.</p>
-    <p class="platform-note"><strong>Mac app requirement:</strong> Apple Silicon (M-series) only. Intel-based Macs are not supported.</p>
     <div id="network-badge" class="network">● TESTNET4 · NO REAL BITCOIN</div>
-    <div><button id="refresh-top" class="secondary" hidden>↻ Refresh wallet balance</button></div>
+    <div><button id="refresh-top" class="secondary" hidden>↻ Refresh balance</button></div>
   </header>
   <main>
     <div id="live-banner" class="live-banner" role="alert" hidden>
       ⚠ LIVE BITCOIN NETWORK · REAL FUNDS. Check the wallet file, destination and fee before proceeding.
     </div>
-    <div class="steps"><span class="active">1 · Open wallet</span><span>2 · Check balance</span>
-      <span>3 · Prepare send</span><span>4 · Connect signers (not available yet)</span></div>
 
     <section class="card" aria-labelledby="open-title">
       <div class="with-help"><h2 id="open-title">1. Open your existing wallet</h2>
@@ -142,10 +152,8 @@
           <label for="wallet-file">BSMS wallet file</label>
           <input id="wallet-file" type="file"></div>
       </div>
-      <p class="small muted">Your file stays on this Mac. Checking balance shares public addresses with
-        an explorer, which may reveal wallet activity.</p>
       <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
-        <span id="explorer-consent-text">I understand a public explorer will see derived addresses from my Testnet4 wallet.</span></label>
+        <span id="explorer-consent-text">I understand a public explorer will see my wallet's public addresses.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
       <div id="message" role="status" aria-live="polite"></div>
     </section>
@@ -173,70 +181,77 @@
     </details>
 
     <section id="wallet-card" class="card" hidden>
-      <h2>Wallet definition</h2>
+      <h2>Your wallet</h2>
       <p id="policy" class="muted"></p>
-      <div class="grid">
-        <div>
-          <div class="kv"><b>Reference address</b><code id="reference" class="mono"></code></div>
-          <div class="kv"><b>First receive address</b><code id="receive" class="mono"></code></div>
-          <div class="kv"><b>First declared change address</b><code id="change" class="mono"></code></div>
-        </div>
-        <div><div class="with-help"><h3>Three public cosigners</h3>
-          <details class="context-help"><summary aria-label="What are public cosigner keys?">?</summary>
-            <div class="help-popout"><strong>What are xpubs?</strong><p>Extended public keys identify each signer and help find wallet addresses. They cannot sign or spend Bitcoin, but sharing them can expose wallet activity.</p></div>
-          </details></div>
-          <div id="keys"></div></div>
-      </div>
+      <button type="button" class="details-button">See wallet details</button>
       <div id="path-warning" class="notice" hidden></div>
       <div id="send-unavailable" class="notice" hidden></div>
       <div id="declare-change" class="notice" hidden>
         <p><strong>Your wallet file does not say which addresses receive change.</strong>
           When you send only part of your balance, the leftover Bitcoin comes back to you as
-          <em>change</em>. This file describes only the addresses that <em>receive</em> payments,
-          so the app cannot tell from it which addresses your wallet uses for change — and it
-          will not guess.</p>
-        <p class="small">Almost every multisig wallet uses two groups of addresses: one for
-          receiving, one for change (the <code>/1/*</code> branch). Confirming that lets the app
-          build a transaction. Your wallet file and your keys are not modified, and nothing is
-          signed or sent.</p>
+          <em>change</em>. This file lists only the addresses that <em>receive</em> payments, so
+          the app cannot tell from it which addresses your wallet uses for change — and it will
+          not guess.</p>
         <label class="check"><input id="confirm-change-branch" type="checkbox">
-          <span>I understand the app will use this wallet's usual change addresses, and I will
-            check the change address shown in the review against my wallet and every signing
-            device before I approve anything.</span></label>
+          <span>My wallet uses its usual change addresses, and I will check the change address
+            shown in the review on every signing device before I approve anything.</span></label>
         <button id="declare-change-button" type="button" disabled>Use this wallet's usual change addresses</button>
         <p id="declare-change-message" class="small" role="status" aria-live="polite"></p>
       </div>
     </section>
 
     <section id="balance-card" class="card" hidden>
-      <div class="with-help"><h2 id="balance-title">2. Testnet4 balance</h2>
-        <details class="context-help"><summary aria-label="What do confirmed and pending mean?">?</summary>
-          <div class="help-popout"><strong>What counts as available?</strong><p>Confirmed Bitcoin has been recorded on the network. Pending amounts may change and cannot be spent here. The scan may miss wallet addresses outside its search range.</p></div>
-        </details></div>
-      <button id="refresh" class="secondary">↻ Refresh balance (no file needed)</button>
+      <h2 id="balance-title">2. Your balance</h2>
       <div class="balance-primary">
         <div>
-          <p class="balance-label">Bitcoin balance</p>
+          <p class="balance-label">Confirmed balance</p>
           <div class="amount"><span id="observed-btc">—</span> <small>BTC</small></div>
           <p id="balance-usd" class="equivalent"></p>
         </div>
         <div>
-          <p id="balance-unit" class="balance-label">Satoshi balance</p>
+          <p id="balance-unit" class="balance-label">In satoshis</p>
           <div class="amount"><span id="observed">—</span> <small>sats</small></div>
         </div>
       </div>
-      <details class="technical-details"><summary>More balance details</summary>
+      <p id="coverage" class="muted"></p>
+      <p id="address-summary" class="muted"></p>
+      <button type="button" class="details-button">See wallet details</button>
+      <div id="balance-send-status" class="notice" hidden></div>
+    </section>
+
+    <dialog id="wallet-details" class="panel">
+      <div class="panel-head">
+        <h2>Wallet details</h2>
+        <button type="button" class="secondary" id="close-details">Close</button>
+      </div>
+      <div class="panel-body">
+        <div class="grid">
+          <div>
+            <div class="kv"><b>Reference address</b><code id="reference" class="mono"></code></div>
+            <div class="kv"><b>First receive address</b><code id="receive" class="mono"></code></div>
+            <div class="kv"><b>First declared change address</b><code id="change" class="mono"></code></div>
+          </div>
+          <div>
+            <h3>Public cosigners</h3>
+            <p class="small muted">These identify each signing device. They cannot spend Bitcoin.</p>
+            <div id="keys"></div>
+          </div>
+        </div>
+        <h3>Scan details</h3>
         <div class="metrics">
           <div class="metric"><b id="confirmed">—</b><span>confirmed sats</span></div>
           <div class="metric"><b id="pending">—</b><span>pending change (sats)</span></div>
           <div class="metric"><b id="utxo-count">—</b><span>unspent outputs found</span></div>
         </div>
-      </details>
-      <p id="price-note" class="small muted"></p>
-      <p id="coverage" class="small muted"></p>
-      <div id="balance-send-status" class="notice" hidden></div>
-      <div id="addresses"></div>
-    </section>
+        <p id="scan-source" class="small muted"></p>
+        <p id="price-note" class="small muted"></p>
+        <div id="addresses"></div>
+        <h3>About this app</h3>
+        <p class="small muted"><strong>Mac requirement:</strong> Apple Silicon (M-series) only;
+          Intel-based Macs are not supported. This is experimental, unaudited software. Verify
+          every address, amount and fee on your signing devices.</p>
+      </div>
+    </dialog>
 
     <section id="send-card" class="card" hidden>
       <div class="with-help"><h2>3. Prepare a send</h2>
@@ -247,6 +262,9 @@
       <div id="send-choice" role="group" aria-label="Choose whether to prepare a transaction">
         <h3>Would you like to prepare a Bitcoin transaction?</h3>
         <p class="small muted">You will enter the destination and amount, review the fee and change, then save an unsigned file. This app will not sign or send Bitcoin.</p>
+        <div class="tip"><strong>Recommended: send a small test amount first.</strong>
+          Confirm that a small payment arrives before you move a large amount. Nothing here is
+          forced — a test transaction is simply the cheapest insurance there is.</div>
         <button id="begin-send" type="button">Yes, prepare a transaction</button>
         <button id="decline-send" type="button" class="secondary">No</button>
         <p id="send-choice-message" class="small" role="status" aria-live="polite"></p>
@@ -310,6 +328,16 @@
         <p id="review-equivalent" class="small equivalent"></p>
         <p id="review-fee-usd" class="small muted"></p>
         <p id="review-total-usd" class="small muted"></p>
+        <div class="kv"><b>Transaction ID (final once broadcast)</b><code id="review-txid" class="mono"></code></div>
+        <p id="review-explorer" class="small"></p>
+        <div class="tip"><strong>What happens next</strong>
+          <ol class="small">
+            <li>Save the unsigned file to your Downloads folder.</li>
+            <li>Open it in your own wallet software and sign it on your devices. <strong>This app
+              does not sign or send Bitcoin.</strong></li>
+            <li>Broadcast it, then open the transaction link above to confirm it arrived and is
+              confirming. A payment is not finished until it is confirmed.</li>
+          </ol></div>
         <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
           <details class="context-help"><summary aria-label="What is change in a Bitcoin transaction?">?</summary>
             <div class="help-popout"><strong>Where does the rest go?</strong><p>Bitcoin spends whole outputs. On a partial send, the amount not sent or paid as a fee returns to an address in your wallet. Check that change address on your signer.</p></div>
@@ -341,9 +369,9 @@
       </div>
       </div>
     </section>
-    <footer>Experimental, unaudited software. Mainnet mode handles real BTC; independently verify every
-      output and fee on a trusted signer before signing elsewhere. Never enter seed words or private keys.
-      <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Read the full disclaimer</a>.
+    <footer>Experimental, unaudited software. Verify every output and fee on your signing devices.
+      Never enter seed words or private keys.
+      <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Full disclaimer</a>.
        <p><button id="quit" class="secondary" __DESKTOP_HIDE_QUIT__>Quit local app</button></p></footer>
   </main>
   <script>
@@ -405,9 +433,8 @@
       $("network-badge").classList.toggle("live", main);
       document.body.classList.toggle("live-mode", main);
       $("live-banner").hidden = !main;
-      setText("explorer-consent-text", main ?
-        "I understand a public explorer will see derived addresses from my real mainnet wallet." :
-        "I understand a public explorer will see derived addresses from my Testnet4 wallet.");
+      setText("explorer-consent-text",
+        "I understand a public explorer will see my wallet's public addresses.");
       setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
       setText("balance-unit", main ? "Satoshi balance" : "Testnet4 satoshi balance");
       setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
@@ -767,12 +794,15 @@
         " · Change branch: no previously used change addresses were found, so this scan " +
           "does not independently confirm the branch you selected. Verify the change " +
           "address on your signers.") : "";
-      setText("coverage", "Checked " + data.scanned + " addresses · last refreshed " +
-        new Date(data.scanned_at).toLocaleString() + " · " + data.source +
-        (data.coverage_limited ? " · Partial coverage: do not treat this as a complete wallet balance." :
-        " · Standard 20-unused-address gap scan. Older or unusual paths may still be missed.") +
-        (selectedChain() === "main" ?
-          " · Public explorer data can be stale; verify independently before spending." : "") +
+      const usedCount = (data.addresses || []).filter(item => item.used).length;
+      setText("address-summary", usedCount === 1 ? "1 address has activity."
+        : usedCount + " addresses have activity.");
+      setText("scan-source", "Scanned " + data.scanned + " addresses via " + data.source +
+        " · refreshed " + new Date(data.scanned_at).toLocaleString() + ".");
+      setText("coverage", (data.coverage_limited ?
+        "Partial coverage: do not treat this as a complete wallet balance." :
+        "Balance from a standard gap scan; older or unusual addresses may be missed.") +
+        (selectedChain() === "main" ? " Explorer data can be stale." : "") +
         changeEvidence);
       renderPrice();
       renderFeeGuidance();
@@ -784,7 +814,7 @@
       lastScan = null;
       feeEstimate = null;
       renderFeePreview();
-      $("refresh").disabled = true; $("refresh-top").disabled = true;
+      $("refresh-top").disabled = true;
       msg("message", "Refreshing " + (selectedChain() === "main" ? "mainnet" : "Testnet4") +
         " balance. Your wallet file is already open…");
       loadPrice(); loadFees();
@@ -793,7 +823,7 @@
         if (started !== walletActionId || chain !== selectedChain()) return;
         showBalance(balance); msg("message", "Balance refreshed. Check the coverage note below.");
       } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
-      finally { $("refresh").disabled = false; $("refresh-top").disabled = false; }
+      finally { $("refresh-top").disabled = false; }
     }
     async function importOpenWallet(declaredChange) {
       const started = ++walletActionId;
@@ -844,7 +874,6 @@
         await importOpenWallet(true);
       }
     });
-    $("refresh").addEventListener("click", refresh);
     $("refresh-top").addEventListener("click", refresh);
     $("begin-send").addEventListener("click", () => {
       $("send-choice").hidden = true;
@@ -929,6 +958,20 @@
         setText("review-inputs", result.inputs);
         setText("review-change", result.send_all ? "None — all confirmed outputs are used." :
           result.change_address + " · " + btc(result.change_sats) + " BTC (" + fmt(result.change_sats) + " sats)");
+        setText("review-txid", result.txid || "unavailable");
+        const explorerBase = result.explorer_web || "https://mempool.space";
+        const explorerHolder = $("review-explorer");
+        if (result.txid) {
+          const link = document.createElement("a");
+          link.href = explorerBase + "/tx/" + result.txid;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "check it on " + explorerBase.replace(/^https?:\/\//, "");
+          explorerHolder.replaceChildren(
+            document.createTextNode("Once broadcast it will appear here — "), link, ".");
+        } else {
+          explorerHolder.textContent = "";
+        }
         setText("review-warning", result.change_warning);
         reviewAmountSats = result.amount_sats; reviewFeeSats = result.fee_sats; renderPrice();
         const feeWarning = result.fee_warning ||
@@ -1005,6 +1048,17 @@
       note.textContent = "Easy Multisig has stopped. You can close this tab.";
       note.style.cssText = "padding:3rem;font:18px system-ui";
       document.body.append(note);
+    });
+    const detailsDialog = $("wallet-details");
+    for (const button of document.querySelectorAll(".details-button")) {
+      button.addEventListener("click", () => {
+        if (typeof detailsDialog.showModal === "function") detailsDialog.showModal();
+        else detailsDialog.setAttribute("open", "");
+      });
+    }
+    $("close-details").addEventListener("click", () => detailsDialog.close());
+    detailsDialog.addEventListener("click", (event) => {
+      if (event.target === detailsDialog) detailsDialog.close();
     });
     updateNetworkUI();
     loadPrice();

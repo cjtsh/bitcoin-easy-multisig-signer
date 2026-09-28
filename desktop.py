@@ -125,6 +125,42 @@ def check_testnet4_network() -> None:
     print("Bundled Testnet4 explorer HTTPS check passed.")
 
 
+def check_psbt_save() -> None:
+    """Headless proof that the packaged app can write an unsigned PSBT to disk.
+
+    The save button once produced no file and no error on a real Mac, and no test
+    covered the write from the frozen binary. This does, using a synthetic
+    transaction and a temporary folder, so it never touches the user's files.
+    """
+    import tempfile
+
+    from embit import psbt, script, transaction
+
+    from gui import LocalApp, save_prepared_psbt
+
+    tx = transaction.Transaction(
+        vin=[transaction.TransactionInput(bytes(32), 0)],
+        vout=[transaction.TransactionOutput(1000, script.Script(b"\x00\x14" + bytes(20)))],
+    )
+    state = LocalApp(desktop=True)
+    state.chain = "testnet4"
+    state.prepared_psbt = psbt.PSBT(tx).to_base64()
+    with tempfile.TemporaryDirectory() as folder:
+        first = save_prepared_psbt(state, "testnet4", Path(folder))
+        # A second save must produce a new file, never replace the first.
+        second = save_prepared_psbt(state, "testnet4", Path(folder))
+        saved = Path(first["path"])
+        if not saved.is_file() or saved.parent != Path(folder):
+            raise RuntimeError("The prepared transaction was not written to disk.")
+        if saved.read_bytes() != Path(second["path"]).read_bytes():
+            raise RuntimeError("Two saves produced different files.")
+        if not saved.read_bytes().startswith(b"psbt\xff"):
+            raise RuntimeError("The saved file is not a PSBT.")
+        if saved.stat().st_mode & 0o777 != 0o600:
+            raise RuntimeError("The saved file permissions are not 0600.")
+    print("Bundled unsigned-PSBT save check passed.")
+
+
 def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
     state = LocalApp(desktop=True)
@@ -154,6 +190,9 @@ def main() -> None:
         return
     if "--check-network" in sys.argv[1:]:
         check_testnet4_network()
+        return
+    if "--check-save" in sys.argv[1:]:
+        check_psbt_save()
         return
     if sys.platform != "darwin":
         raise SystemExit("The desktop window bundle is for macOS; Linux can use gui.py.")

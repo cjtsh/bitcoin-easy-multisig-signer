@@ -178,6 +178,18 @@ differ.
    and every signer display independently; then save the unsigned `.psbt` to your Downloads folder.
    **Nothing signs or broadcasts.** A fee quote is an estimate, not a promise
    of confirmation or a substitute for checking a final signed transaction.
+   Before you prepare anything, the send step recommends **sending a small test
+   amount first** — advice only, never a requirement. The review shows the final
+   **transaction ID** and a link to a public explorer so you can confirm, after you
+   broadcast elsewhere, that the payment arrived and is confirming. **This app does
+   not broadcast**, so that link is how you verify the result yourself.
+
+   The interface keeps technical detail out of the way: addresses, xpubs, the
+   per-address activity list and scan statistics live behind a
+   **See wallet details** button, so the main screen shows only the balance and the
+   next step. The review screen is the exception — destination, amount, fee and
+   change stay in plain sight there, because those are what must be checked.
+
    After reviewing the transaction, **Next: connect hardware wallets** opens a
    device-recognition screen. HWI checks whether a connected, unlocked device's
    public key matches one of the wallet signers. The app does not ask for a PIN,
