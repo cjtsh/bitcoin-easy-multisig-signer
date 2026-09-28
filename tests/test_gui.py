@@ -300,7 +300,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(result["fee_reference"]["standard"], 12)
 
     def test_testnet4_prepare_uses_identical_fee_guards_and_mainnet_reference(self):
-        text, _ = test_record(dual_branch=True)
+        text, _ = test_record(bsms_template=True)
         wallet = self.post("/api/import", {
             "chain": "testnet4", "text": text, "consent_explorer": True,
         })

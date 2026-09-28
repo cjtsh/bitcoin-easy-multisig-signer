@@ -1,4 +1,4 @@
-name: Build release candidate (no publishing)
+name: Build and publish v0.1.8 test release
 
 on:
   push:
@@ -19,11 +19,11 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-source.sh 0.1.7
+      - run: bash scripts/build-source.sh 0.1.8
       - uses: actions/upload-artifact@v4
         with:
-          name: source-0.1.7
-          path: dist/easy-bitcoin-multisig-signer-v0.1.7.tar.gz
+          name: source-0.1.8
+          path: dist/easy-bitcoin-multisig-signer-v0.1.8.tar.gz
           if-no-files-found: error
 
   macos-apple-silicon:
@@ -37,15 +37,54 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-macos.sh 0.1.7
+      - run: bash scripts/build-macos.sh 0.1.8
       - name: Check DMG and app resources
         run: |
-          hdiutil verify dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg
+          hdiutil verify dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg
           test -f "dist/Easy Bitcoin Multisig.app/Contents/Info.plist"
           "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-bundle
           "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-network
       - uses: actions/upload-artifact@v4
         with:
-          name: unsigned-macos-apple-silicon-0.1.7
-          path: dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg
+          name: unsigned-macos-apple-silicon-0.1.8
+          path: dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg
           if-no-files-found: error
+
+  publish-test-release:
+    if: github.event_name == 'push'
+    needs: [source, macos-apple-silicon]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: source-0.1.8
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-macos-apple-silicon-0.1.8
+          path: dist
+      - name: Publish GitHub prerelease with both downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## v0.1.8 test build
+
+          This is a test build for the owner's Testnet4 transaction preparation workflow. It is built from the `phase2-transaction-builder` branch and is not merged into `main`.
+
+          This version accepts a BSMS descriptor template with explicit /0/* receive and /1/* change restrictions, verifies the receive address, and routes supported wallets into the existing amount, fee, Send All, review, and unsigned PSBT save flow. Partial sends pay the network fee in addition to the entered amount; Send All deducts the fee from the available balance. This build does not sign or broadcast transactions.
+
+          Included downloads:
+          - **Mac (Apple Silicon):** unsigned, unnotarized test DMG.
+          - **Linux/source:** source archive; requires the documented environment.
+
+          GitHub Actions passed the automated test suite and packaging checks. Please treat this as an owner test build; first-open macOS security prompts are expected for an unsigned app.
+          EOF
+          if gh release view v0.1.8 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit v0.1.8 --repo "$GITHUB_REPOSITORY" --prerelease=false --latest --notes-file release-notes.md
+            gh release upload v0.1.8 --repo "$GITHUB_REPOSITORY" --clobber dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.8.tar.gz
+          else
+            gh release create v0.1.8 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.8 — transaction preparation test build" --latest --notes-file release-notes.md dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.8.tar.gz
+          fi

@@ -18,10 +18,12 @@ from probe import (
 )
 
 
-def test_record(short_path: bool = False, dual_branch: bool = False) -> tuple[str, list[bip32.HDKey]]:
+def test_record(short_path: bool = False, dual_branch: bool = False,
+                bsms_template: bool = False) -> tuple[str, list[bip32.HDKey]]:
     roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
     path = "m/48h/1h/0h/2h"
-    suffix = "/<0;1>/*" if dual_branch else "/*" if short_path else "/0/*"
+    suffix = ("/**" if bsms_template else
+              "/<0;1>/*" if dual_branch else "/*" if short_path else "/0/*")
     keys = [
         f"[{root.my_fingerprint.hex()}/48h/1h/0h/2h]"
         f"{root.derive(path).to_public().to_base58()}{suffix}"
@@ -29,11 +31,13 @@ def test_record(short_path: bool = False, dual_branch: bool = False) -> tuple[st
     ]
     descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
     full_descriptor = descriptor + "#" + checksum(descriptor)
-    canonical = (descriptor.replace("/<0;1>/*", "/0/*") if dual_branch else
+    canonical = (descriptor.replace("/**", "/0/*") if bsms_template else
+                 descriptor.replace("/<0;1>/*", "/0/*") if dual_branch else
                  descriptor.replace("/*", "/0/*") if short_path else descriptor)
     reference = Descriptor.from_string(canonical).derive(0).address(NETWORKS["test"])
+    restrictions = "/0/*,/1/*" if bsms_template else "No path restrictions"
     return (
-        f"BSMS 1.0\n{full_descriptor}\nNo path restrictions\n{reference}\n",
+        f"BSMS 1.0\n{full_descriptor}\n{restrictions}\n{reference}\n",
         roots,
     )
 
@@ -59,6 +63,20 @@ class ProbeTests(unittest.TestCase):
         record, _ = test_record(short_path=True)
         wallet = self.write(record)
         self.assertEqual(wallet.reference_status, "receive-branch-only")
+
+    def test_bsms_template_expands_only_declared_receive_and_change_paths(self):
+        record, _ = test_record(bsms_template=True)
+        wallet = self.write(record)
+        self.assertEqual(wallet.reference_status, "verified")
+        self.assertEqual(wallet.restrictions, "/0/*,/1/*")
+        self.assertIsNotNone(wallet.change_descriptor)
+        self.assertTrue(all(key.suffix == "/0/*" for key in wallet.descriptor.keys))
+        self.assertTrue(all(key.suffix == "/1/*" for key in wallet.change_descriptor.keys))
+
+    def test_unsupported_bsms_paths_are_rejected_not_guessed(self):
+        record, _ = test_record(bsms_template=True)
+        with self.assertRaisesRegex(ProbeError, "supports either"):
+            self.write(record.replace("/0/*,/1/*", "/0/*,/2/*"))
 
     def test_bad_checksum_fails_closed(self):
         record, _ = test_record()

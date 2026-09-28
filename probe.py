@@ -35,6 +35,7 @@ class WalletRecord:
     reference_status: str
     reference_address: str = ""
     descriptor_text: str = ""
+    change_descriptor: Descriptor | None = None
 
     @property
     def keys(self) -> list[Any]:
@@ -99,14 +100,30 @@ def parse_bsms(text: str) -> WalletRecord:
     except Exception as exc:
         raise ProbeError("Descriptor checksum could not be checked.") from exc
 
-    if restrictions != "No path restrictions":
+    change_descriptor = None
+    if restrictions == "No path restrictions":
+        receive_descriptor_text = descriptor_text
+    elif restrictions == "/0/*,/1/*" and "/**" in descriptor_text:
+        # BIP 129 descriptor templates use /** with explicit derivation-path
+        # restrictions. Expand only the conventional receive/change pair; do
+        # not infer a change path from a receive-only wildcard.
+        if descriptor_text.count("/**") < 2:
+            raise ProbeError("BSMS receive/change template is incomplete.")
+        receive_descriptor_text = descriptor_text.replace("/**", "/0/*")
+        change_descriptor_text = descriptor_text.replace("/**", "/1/*")
+        try:
+            change_descriptor = Descriptor.from_string(change_descriptor_text)
+        except Exception as exc:
+            raise ProbeError("BSMS change descriptor template is invalid.") from exc
+    else:
         raise ProbeError(
-            "This first probe only supports 'No path restrictions' BSMS records."
+            "This version supports either 'No path restrictions' or the explicit "
+            "BSMS receive/change restrictions '/0/*,/1/*'."
         )
     network = _network_for_address(reference)
     try:
         script.address_to_scriptpubkey(reference)  # Validate address encoding.
-        descriptor = Descriptor.from_string(descriptor_text)
+        descriptor = Descriptor.from_string(receive_descriptor_text)
     except Exception as exc:
         raise ProbeError("Address or descriptor format is invalid.") from exc
     if not descriptor.wsh or descriptor.sh or not isinstance(descriptor.miniscript, Multi):
@@ -118,6 +135,15 @@ def parse_bsms(text: str) -> WalletRecord:
         raise ProbeError("Multisig threshold or signer count is unsupported.")
     if any(not key.is_extended or key.is_private or key.origin is None for key in keys):
         raise ProbeError("Every signer needs a public xpub and key origin.")
+    if change_descriptor is not None:
+        change_keys = change_descriptor.keys
+        if (not change_descriptor.wsh or change_descriptor.sh
+            or not isinstance(change_descriptor.miniscript, Multi)
+            or change_descriptor.miniscript.args[0].num != threshold
+            or len(change_keys) != len(keys)
+            or sorted(key.key.to_base58() for key in change_keys)
+               != sorted(key.key.to_base58() for key in keys)):
+            raise ProbeError("BSMS receive and change descriptors do not use the same multisig keys.")
     if len({key.fingerprint for key in keys}) != len(keys):
         raise ProbeError("Duplicate signer fingerprints are ambiguous in this proof.")
     if network in ("test", "main"):
@@ -134,9 +160,10 @@ def parse_bsms(text: str) -> WalletRecord:
         threshold=threshold,
         network=network,
         restrictions=restrictions,
-        reference_status=_reference_status(descriptor_text, reference, network),
+        reference_status=_reference_status(receive_descriptor_text, reference, network),
         reference_address=reference,
-        descriptor_text=descriptor_text,
+        descriptor_text=receive_descriptor_text,
+        change_descriptor=change_descriptor,
     )
 
 

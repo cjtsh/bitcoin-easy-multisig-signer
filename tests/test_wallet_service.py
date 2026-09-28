@@ -37,7 +37,9 @@ def mainnet_record(suffix="/<0;1>/*"):
 
 class WalletServiceTests(unittest.TestCase):
     def setUp(self):
-        self.text, _ = test_record(dual_branch=True)
+        # Exercise the standard BSMS descriptor-template form used to declare
+        # separate receive and change paths.
+        self.text, _ = test_record(bsms_template=True)
         self.wallet = parse_bsms(self.text)
         self.layout = wallet_layout(self.wallet)
         from embit.networks import NETWORKS

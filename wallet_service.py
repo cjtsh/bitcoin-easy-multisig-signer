@@ -135,7 +135,13 @@ def wallet_layout(record: WalletRecord) -> Layout:
     desc = record.descriptor
     text = record.descriptor_text
     suffixes = [key.suffix for key in record.keys]
-    if desc.num_branches == 2:
+    if record.change_descriptor is not None:
+        # BSMS restrictions explicitly declared and verified separate receive
+        # and change descriptors during import.
+        receive, change = desc, record.change_descriptor
+        warning = ""
+        verified = True
+    elif desc.num_branches == 2:
         receive, change = desc.branch(0), desc.branch(1)
         warning = ""
         verified = True

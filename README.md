@@ -1,5 +1,7 @@
 # Easy Bitcoin Multisig Signer — experimental mainnet and Testnet4 GUI
 
+The latest published release is [v0.1.7](https://github.com/cjtsh/easy-bitcoin-multisig-signer/releases/tag/v0.1.7). The next candidate adds support for standard BSMS receive/change descriptor templates so eligible wallets can reach the existing unsigned transaction builder.
+
 ## Disclaimer — experimental software; use at your own risk
 
 **This is experimental, unaudited software. It is not a production-ready
@@ -146,9 +148,12 @@ differ.
    information is included in the price request.
 4. Enter a destination on the **selected network**, a whole-sat amount and fee
    rate to prepare a PSBT from confirmed outputs. PSBT preparation on either
-   network requires a 2-of-3 multisig descriptor with explicit receive/change branches
-   matching its reference address; inferred change or incomplete scans are
-   view-only. Public explorer UTXOs must agree with the confirmed balance.
+   network requires a 2-of-3 multisig descriptor with verified receive/change
+   paths matching its reference address. This version accepts explicit
+   multipath descriptors and BSMS templates with exactly `/0/*,/1/*`
+   restrictions; the reference address must match the first, receive path.
+   A receive-only descriptor or incomplete scan remains view-only. Public
+   explorer UTXOs must agree with the confirmed balance.
    The fee rate is limited to 1–25 sat/vB; preparation on either network
    requires a fresh mainnet fee reference, refuses rates below its economy
    estimate, and
@@ -177,14 +182,15 @@ servers or loopback HTTP are accepted. Electrum TLS servers (including port
 fields. **The broadcaster URL is a future-use setting only:** this version
 cannot sign or broadcast, and no transaction is sent to that endpoint.
 
-The Testnet4 sample export described below uses `/*` in the descriptor, but its
-reference address matches `/0/0`. The GUI uses that address to identify
-the receive branch, but does **not** infer a `/1/*` change branch.
-The same rule applies on mainnet. Both files are view-only until an explicit,
-reference-matched receive/change definition is available. If the reference
-address cannot be matched, the GUI stops
-rather than inventing a wallet balance. There is no hidden hosted server
-upload, wallet creation or seed entry.
+The older Testnet4 sample export described below uses `/*` in the descriptor,
+but its reference address matches `/0/0`. That file is receive-only and remains
+view-only: the GUI does **not** infer a `/1/*` change branch. For transaction
+preparation, export a BSMS descriptor template that explicitly declares both
+`/0/*` and `/1/*` restrictions, or use an explicit multipath descriptor.
+The reference address must match the receive path. The same rule applies on
+mainnet. If the reference address cannot be matched, the GUI stops rather than
+inventing a wallet balance. There is no hidden hosted server upload, wallet
+creation or seed entry.
 
 ## Run the older command-line hardware proof on a Mac
 
