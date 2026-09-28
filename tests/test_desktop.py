@@ -46,9 +46,9 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(target.read_bytes(), self.raw)
         with self.assertRaisesRegex(ValueError, "already exists"):
             bridge.save_psbt(self.encoded, "testnet4")
-        with self.assertRaisesRegex(ValueError, "Wallet or PSBT changed"):
+        with self.assertRaisesRegex(ValueError, "Wallet or unsigned transaction changed"):
             bridge.save_psbt(base64.b64encode(b"psbt\xffother").decode(), "testnet4")
-        with self.assertRaisesRegex(ValueError, "Wallet or PSBT changed"):
+        with self.assertRaisesRegex(ValueError, "Wallet or unsigned transaction changed"):
             bridge.save_psbt(self.encoded, "main")
         window.url = "https://example.org/"
         with self.assertRaisesRegex(ValueError, "local app URL"):

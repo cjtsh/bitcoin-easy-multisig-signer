@@ -58,6 +58,21 @@ class LocalGuiTests(unittest.TestCase):
         self.assertLess(page.index('id="observed-btc"'), page.index('id="observed"'))
         self.assertIn('setText("observed-btc", btc(data.observed_sats))', page)
         self.assertIn('id="send-equivalent"', page)
+        self.assertIn('class="context-help"', page)
+        self.assertGreaterEqual(page.count('class="help-popout"'), 6)
+        self.assertIn('aria-label="What am I saving as a PSBT file?"', page)
+        self.assertIn("PSBT means Partially Signed Bitcoin Transaction.", page)
+        self.assertIn("Preparing it does not move Bitcoin.", page)
+        self.assertIn("Download unsigned transaction file (.psbt)", page)
+        self.assertIn("Apple Silicon (M-series) only. Intel-based Macs are not supported.", page)
+        self.assertIn('id="send-all" type="checkbox" checked', page)
+        self.assertIn('id="copy-balance"', page)
+        self.assertIn('id="confirmed-btc" type="text" readonly', page)
+        self.assertIn('id="amount" type="text" inputmode="decimal"', page)
+        self.assertIn('send_all:sendAll', page)
+        self.assertIn('id="review-amount-sats"', page)
+        self.assertIn('id="review-remaining"', page)
+        self.assertIn("Other wallet addresses beyond the scan gap may still hold funds.", page)
         self.assertIn("sats at this address", page)
         self.assertIn('value="testnet4"', page)
         self.assertIn('value="main"', page)
@@ -319,6 +334,17 @@ class LocalGuiTests(unittest.TestCase):
             result = self.post("/api/prepare", request)
         self.assertIn("below the current mainnet standard", result["fee_warning"])
         self.assertEqual(result["fee_reference"]["network"], "main")
+        with patch("gui.build_unsigned_psbt", return_value={
+            "fee_warning": "", "fee_rate_estimate": 12, "fee_sats": 2640,
+            "psbt_base64": "cHNidP8=", "send_all": True,
+        }) as builder:
+            swept = self.post("/api/prepare", {
+                "chain": "testnet4", "recipient": wallet["receive_address"],
+                "amount_sats": None, "send_all": True, "fee_rate": 12,
+            })
+        self.assertTrue(swept["send_all"])
+        self.assertIsNone(builder.call_args.args[3])
+        self.assertTrue(builder.call_args.kwargs["send_all"])
 
     def test_public_price_endpoint_is_cached_and_independent_of_wallet(self):
         quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",

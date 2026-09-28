@@ -7,6 +7,10 @@ cd -- "$(dirname -- "$0")/.."
   echo "DMGs must be built and tested on macOS." >&2
   exit 1
 }
+[[ "$(uname -m)" == "arm64" ]] || {
+  echo "The Mac app supports Apple Silicon (M-series) only; Intel-based Macs are not supported." >&2
+  exit 1
+}
 version="${1:?Usage: scripts/build-macos.sh VERSION (e.g. 0.1.0)}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
   echo "Expected a numeric version such as 0.1.0." >&2

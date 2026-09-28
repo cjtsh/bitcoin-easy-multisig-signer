@@ -28,7 +28,9 @@ review before using software to handle real funds.
 
 The local browser GUI opens a BSMS 1.0
 wallet definition, checks public mainnet or Testnet4 balances, and prepares
-an **unsigned** PSBT only where the supported receive/change paths are verified.
+an **unsigned transaction file** (PSBT, short for Partially Signed Bitcoin
+Transaction) for signers to review, only where the supported receive/change
+paths are verified.
 It cannot sign or broadcast a transaction. It is not yet
 a finished, Mac-tested application, and no physical signer has been tested. The
 previous command-line proof remains available in `probe.py`.
@@ -40,6 +42,9 @@ communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
 and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
 ## Mac test releases
+
+**Mac app compatibility: Apple Silicon (M-series) only. Intel-based Macs are
+not supported.** The separate Python source archive can also be used on Linux.
 
 Each test release attaches **two matching-version files**:
 
@@ -62,7 +67,7 @@ without Apple enrollment; signing and notarization reduce first-open macOS
 security warnings later. The build script requires both
 `MAC_SIGN_IDENTITY` and `MAC_NOTARY_PROFILE` (an already configured macOS
 keychain profile) when run with `RELEASE=1`. Keep credentials out of this
-repository. Build/test on the Mac architecture(s) being supported. In
+repository. Build/test on Apple Silicon. In
 particular, verify first launch, BSMS file picking, refresh, and native PSBT
 saving on a real Mac. A Linux build environment cannot validate or notarize
 the Mac app. The active GitHub Actions workflow builds an unsigned **Apple
@@ -70,8 +75,8 @@ Silicon** test DMG and matching source archive on the candidate branch; it
 does not publish releases or make the app trusted by Gatekeeper.
 The source packaging script accepts the recipe in either its staged `ci/`
 location or the active `.github/workflows/` location.
-Intel compatibility or a universal
-Mac build must be verified separately rather than assumed.
+The Mac app is built for Apple Silicon only; do not describe it as supporting
+Intel-based Macs or as a universal Mac app.
 
 GitHub may additionally display its automatically generated source archives;
 the two files above are the intended **attached release artifacts**. See the
@@ -182,8 +187,8 @@ upload, wallet creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. For the device check, get the official **HWI 3.2.0** macOS binary for
-   your Mac's architecture (arm64 or x86_64) from the
+2. For the device check on an Apple Silicon Mac, get the official **HWI 3.2.0**
+   macOS arm64 binary from the
    [HWI releases][releases]. Follow its release verification instructions;
    do not download a wallet tool from an untrusted mirror. You may instead
    use an existing `hwi` command on your PATH. HWI is separate from this

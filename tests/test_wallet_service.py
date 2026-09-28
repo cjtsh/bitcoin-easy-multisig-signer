@@ -104,6 +104,8 @@ class WalletServiceTests(unittest.TestCase):
         self.assertEqual(len(packet.inputs), 1)
         self.assertEqual(packet.tx.vout[0].value, 1000)
         self.assertEqual(packet.tx.vout[1].value, result["change_sats"])
+        self.assertEqual(result["fee_sats"], 404)
+        self.assertEqual(result["estimated_signed_vbytes"], 202)
         self.assertEqual(packet.tx.vout[1].script_pubkey.address(NETWORKS["test"]),
                          self.change)
         self.assertEqual(packet.fee(), result["fee_sats"])
@@ -117,6 +119,80 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "disagree"):
             build_unsigned_psbt(self.wallet, {**data, "utxo_consistent": False},
                                 recipient, 1000, 2, self.fake_get)
+
+    def test_send_all_deducts_fee_uses_every_confirmed_output_and_has_no_change(self):
+        data = scan_wallet(self.wallet, self.fake_get)
+        recipient = self.layout.receive.derive(1).address(NETWORKS["test"])
+        result = build_unsigned_psbt(self.wallet, data, recipient, None, 2,
+                                     self.fake_get, send_all=True)
+        packet = psbt.PSBT.from_base64(result["psbt_base64"])
+        self.assertEqual(result["amount_sats"], 5682)
+        self.assertEqual(result["fee_sats"], 318)
+        self.assertEqual(result["estimated_signed_vbytes"], 159)
+        self.assertEqual(result["total_spend_sats"], data["confirmed_sats"])
+        self.assertEqual(result["remaining_confirmed_sats"], 0)
+        self.assertTrue(result["send_all"])
+        self.assertIsNone(result["change_address"])
+        self.assertEqual(result["change_sats"], 0)
+        self.assertEqual(len(packet.tx.vout), 1)
+        self.assertEqual(packet.tx.vout[0].value, 5682)
+        self.assertEqual(packet.fee(), 318)
+        self.assertEqual(packet.inputs[0].partial_sigs, {})
+        pending = {**data, "utxos": data["utxos"] + [{
+            **data["utxos"][0], "value": 2000,
+            "status": {"confirmed": False},
+        }]}
+        pending_result = build_unsigned_psbt(
+            self.wallet, pending, recipient, None, 2, self.fake_get, send_all=True
+        )
+        self.assertEqual(pending_result["total_spend_sats"], 6000)
+        self.assertEqual(psbt.PSBT.from_base64(pending_result["psbt_base64"]).fee(), 318)
+        with self.assertRaisesRegex(WalletError, "separate amount"):
+            build_unsigned_psbt(self.wallet, data, recipient, 6000, 2,
+                                self.fake_get, send_all=True)
+        with self.assertRaisesRegex(WalletError, "refresh"):
+            build_unsigned_psbt(self.wallet, {**data, "confirmed_sats": 7000},
+                                recipient, None, 2, self.fake_get, send_all=True)
+        with self.assertRaisesRegex(WalletError, "coverage"):
+            build_unsigned_psbt(self.wallet, {**data, "coverage_limited": True},
+                                recipient, None, 2, self.fake_get, send_all=True)
+
+    def test_send_all_requires_every_confirmed_input_and_respects_fee_ceiling(self):
+        data = scan_wallet(self.wallet, self.fake_get)
+        recipient = self.layout.receive.derive(1).address(NETWORKS["test"])
+        second = transaction.Transaction(
+            vin=[transaction.TransactionInput(bytes.fromhex("cc" * 32), 0)],
+            vout=[transaction.TransactionOutput(
+                4000, self.layout.receive.derive(0).script_pubkey()
+            )],
+        )
+        txid = second.txid().hex()
+        data["utxos"].append({
+            **data["utxos"][0], "txid": txid, "value": 4000,
+        })
+        data["confirmed_sats"] = 10_000
+        def get(path, *, text=False):
+            if path == f"/tx/{txid}/hex":
+                return second.serialize().hex()
+            return self.fake_get(path, text=text)
+        result = build_unsigned_psbt(self.wallet, data, recipient, None, 2, get,
+                                     send_all=True)
+        packet = psbt.PSBT.from_base64(result["psbt_base64"])
+        self.assertEqual(len(packet.inputs), 2)
+        self.assertEqual(len(packet.outputs), 1)
+        self.assertEqual(result["fee_sats"], 528)
+        self.assertEqual(result["amount_sats"], 9472)
+        self.assertEqual(packet.fee(), 528)
+        costly = {**data, "utxos": data["utxos"] + [data["utxos"][0]] * 2,
+                  "confirmed_sats": 22_000}
+        with self.assertRaisesRegex(WalletError, "fee safety ceiling"):
+            build_unsigned_psbt(self.wallet, costly, recipient, None, 25, get,
+                                send_all=True)
+        with self.assertRaisesRegex(WalletError, "spendable output"):
+            build_unsigned_psbt(self.wallet, {**data, "utxos": [{
+                **data["utxos"][0], "value": 4000,
+            }], "confirmed_sats": 4000},
+                                recipient, None, 25, self.fake_get, send_all=True)
 
     def test_one_explorer_client_routes_by_selected_network(self):
         class Response:
@@ -198,7 +274,7 @@ class WalletServiceTests(unittest.TestCase):
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
                 self.assertTrue(scan["coverage_limited"])
-                with self.assertRaisesRegex(WalletError, "explicit 2-of-3"):
+                with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
                     build_unsigned_psbt(record, scan, record.reference_address, 1000)
 
     def test_mainnet_explicit_branches_build_only_unsigned_psbt(self):
@@ -242,6 +318,12 @@ class WalletServiceTests(unittest.TestCase):
                          layout.change.derive(0).address(NETWORKS["main"]))
         self.assertEqual(packet.fee(), packet_data["fee_sats"])
         self.assertEqual(packet.inputs[0].partial_sigs, {})
+        sweep = build_unsigned_psbt(record, data, recipient, None, 2, fake_get,
+                                    send_all=True)
+        sweep_packet = psbt.PSBT.from_base64(sweep["psbt_base64"])
+        self.assertEqual(len(sweep_packet.tx.vout), 1)
+        self.assertEqual(sweep["total_spend_sats"], 100_000)
+        self.assertEqual(sweep["remaining_confirmed_sats"], 0)
         with self.assertRaisesRegex(WalletError, "bc1"):
             build_unsigned_psbt(record, data, self.receive, 10_000, 2, fake_get)
         with self.assertRaisesRegex(WalletError, "network differ"):
@@ -258,7 +340,7 @@ class WalletServiceTests(unittest.TestCase):
                 layout = wallet_layout(record)
                 self.assertIsNone(layout.change)
                 self.assertFalse(wallet_summary(record)["can_prepare"])
-                with self.assertRaisesRegex(WalletError, "explicit 2-of-3"):
+                with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
                     build_unsigned_psbt(record, {"network": "main", "utxo_consistent": True},
                                         record.reference_address, 1000)
         lines = mainnet_record().splitlines()

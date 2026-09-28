@@ -364,7 +364,7 @@ class LocalApp:
                         raise WalletError(state.settings_error)
                     explorer = state.servers[chain]["explorer"] if chain else None
                 if record is None or scan is None:
-                    raise WalletError("Import and refresh the balance before preparing a PSBT.")
+                    raise WalletError("Open a wallet and refresh its balance before preparing an unsigned transaction.")
                 if data.get("chain") != chain:
                     raise WalletError("Selected network does not match the open wallet.")
                 if scan.get("source") != explorer:
@@ -381,7 +381,7 @@ class LocalApp:
                     except WalletError as exc:
                         raise WalletError(
                             "Live mainnet fee reference is unavailable; "
-                            "no PSBT will be prepared."
+                            "no unsigned transaction file will be prepared."
                         ) from exc
                     with state.lock:
                         state.fees = fee_quote
@@ -402,7 +402,7 @@ class LocalApp:
                     )
                 result = build_unsigned_psbt(
                     record, scan, data.get("recipient"), data.get("amount_sats"),
-                    requested_rate, base_url=explorer,
+                    requested_rate, base_url=explorer, send_all=data.get("send_all", False),
                 )
                 if requested_rate < fee_quote["standard"]:
                     low_warning = (

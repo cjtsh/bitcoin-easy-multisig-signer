@@ -27,18 +27,18 @@ class DesktopBridge:
             if self.window is None or self.window.get_current_url() != self.url:
                 raise ValueError("The wallet window is no longer at its local app URL.")
             if not isinstance(encoded, str) or len(encoded) > 2_800_000:
-                raise ValueError("Unsigned PSBT is missing or too large.")
+                raise ValueError("Unsigned transaction file is missing or too large.")
             with self.state.lock:
                 if chain != self.state.chain or encoded != self.state.prepared_psbt:
-                    raise ValueError("Wallet or PSBT changed; prepare and review it again.")
+                    raise ValueError("Wallet or unsigned transaction changed; prepare and review it again.")
 
         ensure_current()
         try:
             raw = base64.b64decode(encoded, validate=True)
         except (ValueError, binascii.Error) as exc:
-            raise ValueError("Unsigned PSBT is malformed.") from exc
+            raise ValueError("Unsigned transaction file is invalid.") from exc
         if not raw.startswith(b"psbt\xff") or len(raw) > 2_000_000:
-            raise ValueError("Unsigned PSBT is malformed or too large.")
+            raise ValueError("Unsigned transaction file is invalid or too large.")
         chosen = self.window.create_file_dialog(
             self.webview.SAVE_DIALOG,
             save_filename=f"{chain}-unsigned.psbt",
@@ -66,7 +66,7 @@ class DesktopBridge:
                     os.unlink(filename)
                 except OSError:
                     pass
-            raise ValueError("Could not save the unsigned PSBT to that location.") from exc
+            raise ValueError("Could not save the unsigned transaction file to that location.") from exc
         return {"saved": True}
 
 

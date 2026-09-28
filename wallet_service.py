@@ -304,19 +304,49 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
     }
 
 
+def _compact_size_length(value: int) -> int:
+    if value < 253:
+        return 1
+    if value <= 0xFFFF:
+        return 3
+    if value <= 0xFFFFFFFF:
+        return 5
+    return 9
+
+
+def _estimated_signed_vbytes(
+    chosen: list[dict], output_scripts: list[script.Script],
+    witness_script_lengths: dict[str, int],
+) -> int:
+    """Estimate native P2WSH 2-of-3 signed weight with 73-byte signatures.
+
+    Signatures are not present yet; this is a conservative size estimate, not
+    the guaranteed final sat/vB rate. The PSBT's absolute fee is exact.
+    """
+    base = (8 + _compact_size_length(len(chosen))
+            + _compact_size_length(len(output_scripts)) + 41 * len(chosen))
+    base += sum(8 + _compact_size_length(len(out.data)) + len(out.data)
+                for out in output_scripts)
+    witness = 2  # SegWit marker and flag.
+    for utxo in chosen:
+        size = witness_script_lengths[utxo["branch"]]
+        witness += 1 + 1 + 2 * (1 + 73) + _compact_size_length(size) + size
+    return (4 * base + witness + 3) // 4
+
+
 def build_unsigned_psbt(
-    record: WalletRecord, scan: dict, recipient: str, amount: int,
+    record: WalletRecord, scan: dict, recipient: str, amount: int | None,
     fee_rate: int = 2, get: Callable = explorer_get,
-    *, base_url: str | None = None,
+    *, base_url: str | None = None, send_all: bool = False,
 ) -> dict:
     """Create an unsigned PSBT with previous transactions; never sign/broadcast."""
     layout = wallet_layout(record)
     chain = _chain(record)
     query = _query_for(record, get, base_url)
     if scan.get("network") != chain:
-        raise WalletError("Wallet and scanned network differ; no PSBT built.")
+        raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
     if not layout.change_verified or record.threshold != 2 or len(record.keys) != 3:
-        raise WalletError("PSBTs require an explicit 2-of-3 receive/change descriptor.")
+        raise WalletError("Preparing a transaction requires verified 2-of-3 receiving and change paths.")
     if scan.get("source") != (base_url or EXPLORERS[chain]):
         raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
     if not scan.get("utxo_consistent", False):
@@ -324,7 +354,7 @@ def build_unsigned_psbt(
             "UTXOs and confirmed balance disagree; refresh or verify with your own node."
         )
     if layout.change is None or scan.get("coverage_limited"):
-        raise WalletError("Change path or scan coverage is incomplete; no PSBT will be built.")
+        raise WalletError("Change path or scan coverage is incomplete; no unsigned transaction will be prepared.")
     config = CHAIN_CONFIGS[chain]
     prefix = config.address_prefix
     if not isinstance(recipient, str) or not recipient.startswith(prefix):
@@ -335,7 +365,12 @@ def build_unsigned_psbt(
             raise ValueError("wrong network")
     except Exception as exc:
         raise WalletError("Destination address is invalid.") from exc
-    if type(amount) is not int or amount < SATOSHI_DUST_FLOOR:
+    if type(send_all) is not bool:
+        raise WalletError("Choose either the full balance or a specific amount.")
+    if send_all:
+        if amount is not None:
+            raise WalletError("Full-balance send must not include a separate amount.")
+    elif type(amount) is not int or amount < SATOSHI_DUST_FLOOR:
         raise WalletError("Amount must be at least 546 sats.")
     if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
         raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
@@ -343,30 +378,52 @@ def build_unsigned_psbt(
         (u for u in scan["utxos"] if u["status"]["confirmed"]),
         key=lambda u: u["value"], reverse=True,
     )
+    script_lengths = {
+        "receive": len(layout.receive.derive(0).witness_script().data),
+        "change": len(layout.change.derive(0).witness_script().data),
+    }
+    change_script = layout.change.derive(0).script_pubkey()
     chosen, total, fee = [], 0, 0
-    for utxo in candidates:
-        chosen.append(utxo)
-        total += utxo["value"]
-        # Conservative 2-of-3 P2WSH input estimate; fee is a displayed estimate.
-        fee = (20 + 150 * len(chosen) + 50 * 2) * fee_rate
-        if total >= amount + fee + SATOSHI_DUST_FLOOR:
-            break
-    if total < amount + fee + SATOSHI_DUST_FLOOR:
-        raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
+    if send_all:
+        chosen = candidates
+        total = sum(u["value"] for u in chosen)
+        if total != scan["confirmed_sats"]:
+            raise WalletError("Confirmed outputs changed since the scan; refresh before sending all.")
+        # One recipient output, no change. Include every confirmed output or refuse.
+        fee = _estimated_signed_vbytes(chosen, [destination], script_lengths) * fee_rate
+        if fee > MAX_ESTIMATED_FEE_SATS:
+            raise WalletError("Sending all exceeds the 10,000-sat fee safety ceiling. "
+                              "Wait for a lower fee rate or use an established wallet.")
+        amount = total - fee
+        if amount < SATOSHI_DUST_FLOOR:
+            raise WalletError("Confirmed balance cannot cover the fee and a spendable output.")
+    else:
+        for utxo in candidates:
+            chosen.append(utxo)
+            total += utxo["value"]
+            fee = _estimated_signed_vbytes(
+                chosen, [destination, change_script], script_lengths
+            ) * fee_rate
+            if total >= amount + fee + SATOSHI_DUST_FLOOR:
+                break
+        if total < amount + fee + SATOSHI_DUST_FLOOR:
+            raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
     fee_warning = check_fee_safety(fee, amount, fee_rate)
-    change_index = next(
-        (i for i in range(MAX_INDEX)
-         if i not in scan["used_change_indices"]),
-        None,
-    )
-    if change_index is None:
-        raise WalletError("No unused change index found within the scanned range.")
-    change_desc = layout.change.derive(change_index)
-    change_address = change_desc.address(NETWORKS[record.network])
-    outputs = [
-        transaction.TransactionOutput(amount, destination),
-        transaction.TransactionOutput(total - amount - fee, change_desc.script_pubkey()),
-    ]
+    change_address = None
+    change_sats = 0
+    outputs = [transaction.TransactionOutput(amount, destination)]
+    if not send_all:
+        change_index = next(
+            (i for i in range(MAX_INDEX)
+             if i not in scan["used_change_indices"]),
+            None,
+        )
+        if change_index is None:
+            raise WalletError("No unused change index found within the scanned range.")
+        change_desc = layout.change.derive(change_index)
+        change_address = change_desc.address(NETWORKS[record.network])
+        change_sats = total - amount - fee
+        outputs.append(transaction.TransactionOutput(change_sats, change_desc.script_pubkey()))
     tx = transaction.Transaction(
         version=2,
         vin=[transaction.TransactionInput(bytes.fromhex(u["txid"]), u["vout"])
@@ -386,7 +443,7 @@ def build_unsigned_psbt(
         if (previous.txid().hex() != utxo["txid"].lower()
             or prevout.value != utxo["value"]
             or prevout.script_pubkey != derived.script_pubkey()):
-            raise WalletError("Previous output does not match this wallet; no PSBT built.")
+            raise WalletError("Previous output does not match this wallet; no unsigned transaction was prepared.")
         scope.non_witness_utxo = previous
         scope.witness_utxo = prevout
         scope.witness_script = derived.witness_script()
@@ -394,26 +451,36 @@ def build_unsigned_psbt(
             key.get_public_key(): psbt.DerivationPath(key.fingerprint, key.derivation)
             for key in derived.keys
         }
-    change_scope = packet.outputs[1]
-    change_scope.witness_script = change_desc.witness_script()
-    change_scope.bip32_derivations = {
-        key.get_public_key(): psbt.DerivationPath(key.fingerprint, key.derivation)
-        for key in change_desc.keys
-    }
+    if not send_all:
+        change_scope = packet.outputs[1]
+        change_scope.witness_script = change_desc.witness_script()
+        change_scope.bip32_derivations = {
+            key.get_public_key(): psbt.DerivationPath(key.fingerprint, key.derivation)
+            for key in change_desc.keys
+        }
     if packet.fee() != fee:
-        raise WalletError("PSBT fee check failed; no PSBT built.")
+        raise WalletError("Transaction fee check failed; no unsigned transaction was prepared.")
     return {
         "psbt_base64": packet.to_base64(),
         "recipient": recipient,
         "amount_sats": amount,
+        "send_all": send_all,
+        "wallet_confirmed_sats": scan["confirmed_sats"],
+        "remaining_confirmed_sats": scan["confirmed_sats"] - amount - fee,
         "fee_sats": fee,
+        "estimated_signed_vbytes": fee // fee_rate,
         "fee_warning": fee_warning,
         "total_spend_sats": amount + fee,
         "fee_rate_estimate": fee_rate,
-        "change_sats": total - amount - fee,
+        "change_sats": change_sats,
         "change_address": change_address,
         "inputs": len(chosen),
-        "change_warning": layout.warning or (
-            "Unsigned only. Verify destination, amount, fee, and change on each signer."
+        "change_warning": (
+            "All confirmed outputs found by this scan are used, with no change output. "
+            "An address beyond the scan gap or range may still hold Bitcoin. "
+            "Verify wallet coverage, recipient amount and fee independently on each signer."
+            if send_all else layout.warning or (
+                "Unsigned only. Verify destination, amount, fee, and change on each signer."
+            )
         ),
     }
