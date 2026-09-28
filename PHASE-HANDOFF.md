@@ -1,7 +1,7 @@
-# Phase 2/3 handoff — current build v0.1.13
+# Phase 2/3 handoff — current build v0.1.14
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (branch `phase2-transaction-builder`)
-**Version:** `0.1.13` (`version.py`). The work described below landed across v0.1.9-v0.1.13. The v0.1.11 and v0.1.12 release assets were rebuilt in place during development; the versioning rule in `ROADMAP.md` now forbids that.
+**Version:** `0.1.14` (`version.py`). The work described below landed across v0.1.9-v0.1.13. The v0.1.11 and v0.1.12 release assets were rebuilt in place during development; the versioning rule in `ROADMAP.md` now forbids that.
 **Status:** code complete and verified with synthetic data and a real loopback HTTP
 server. **The Apple Silicon DMG has not yet been built through GitHub Actions** —
 this session has no GitHub authentication, and that workflow requires it. A local
@@ -229,6 +229,30 @@ Alongside it, two safety-ergonomics additions the owner asked for:
 
 Verified by rendering the real page in headless Chrome and inspecting it, since the
 native window cannot be driven from here.
+
+### Two usability bugs found in live use (v0.1.14)
+
+Both were reported by the owner from screenshots of the real app.
+
+1. **The fee-speed buttons gave no confirmation of the choice.** `aria-pressed` was
+   set on two of the three buttons and had **no CSS at all**, so pressing Slow /
+   Medium / Fast changed the rate with no visible effect. Worse, selection was
+   inferred by comparing rate *values*, and on a quiet mempool Slow/Medium/Fast are
+   often the same whole sat/vB (the owner's live quote was 1 / 2 / 2), so the
+   comparison could not tell them apart even in principle.
+   Fixed: selection is tracked as an explicit tier, the chosen button is filled
+   green with a check mark, and a line under the buttons states it in words —
+   `Selected: Fast · 3 sat/vB`, or `Custom` when the rate is typed by hand.
+2. **A slow scan looked like a dead app.** Loading a wallet scans up to a hundred
+   addresses per branch over HTTP, which takes seconds. The only feedback was a
+   line of text that is often below the fold. Fixed: a spinner bar is pinned to the
+   top of the window whenever work is in progress, with what it is doing
+   ("Reading your wallet file…", "Checking the blockchain for your balance — this
+   can take a few seconds…", "Looking for connected signing devices…"), and the page
+   is padded so the bar never covers content.
+
+Both are covered by page tests. Verified by rendering the page in headless Chrome
+with a deterministic fee quote and forcing the busy state on.
 
 ---
 

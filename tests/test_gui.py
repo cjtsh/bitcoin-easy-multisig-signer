@@ -130,6 +130,35 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(page.count('class="details-button"'), 2)
         self.assertIn('id="close-details"', panel)
 
+    def test_the_fee_speed_buttons_show_which_one_is_selected(self):
+        """Reported bug: pressing Slow/Medium/Fast gave no confirmation at all."""
+        page = self.get_page()
+        self.assertEqual(page.count('class="secondary rate-button"'), 3)
+        # A real visual state, not just an aria attribute nobody styles.
+        self.assertIn("button.rate-button.selected", page)
+        self.assertIn('id="fee-selected"', page)
+        self.assertIn('setText("fee-selected"', page)
+        # Selection is tracked by tier, not by rate value: slow, medium and fast are
+        # frequently the same whole sat/vB, so comparing rates cannot distinguish them.
+        self.assertIn("let selectedTier", page)
+        self.assertIn("selectedTier = tier", page)
+        self.assertIn('selectedTier = "custom"', page)
+        self.assertIn('selectedTier = "medium"', page)
+
+    def test_slow_work_shows_a_spinner(self):
+        """Reported bug: a slow scan looked like the app had done nothing."""
+        page = self.get_page()
+        self.assertIn('id="busy"', page)
+        self.assertIn('class="spinner"', page)
+        self.assertIn('id="busy-text"', page)
+        self.assertIn("@keyframes spin", page)
+        self.assertIn("function setBusy", page)
+        # Each wait the owner can hit, including both they reported.
+        for message in ("Reading your wallet file",
+                        "Checking the blockchain for your balance",
+                        "Looking for connected signing devices"):
+            self.assertIn(message, page, f"missing progress message: {message}")
+
     def test_the_main_screen_asks_nothing_technical_of_the_user(self):
         """A lawyer or a spouse must not be asked to assert wallet internals.
 

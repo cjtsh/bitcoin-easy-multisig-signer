@@ -115,6 +115,20 @@
       border-radius:9px; margin:15px 0; }
     .tip ol { margin:6px 0 0; padding-left:20px; }
     .tip li { margin:4px 0; }
+    button.rate-button.selected { background:#0f6a4f; color:#fff;
+      box-shadow:inset 0 0 0 2px #0a4a37; }
+    button.rate-button.selected::before { content:"✓ "; }
+    #fee-selected { font-weight:650; color:var(--green); margin:10px 0 4px; }
+    body.busy-mode { padding-top:47px; }
+    .busy-bar { position:fixed; top:0; left:0; right:0; z-index:60;
+      display:flex; align-items:center; gap:11px; padding:12px 20px;
+      background:#0c5c42; color:#eaf7ef; font-weight:650; font-size:15px;
+      box-shadow:0 3px 14px #102d2a4d; }
+    .spinner { width:17px; height:17px; flex:none; border-radius:50%;
+      border:3px solid #ffffff4d; border-top-color:#8ff0c0;
+      animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration:2.4s; } }
     @media(max-width:680px) {
       .grid, .balance-primary { grid-template-columns:1fr; }
       .card { padding:20px; }
@@ -126,6 +140,10 @@
   </style>
 </head>
 <body>
+  <div id="busy" class="busy-bar" hidden role="status" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="busy-text"></span>
+  </div>
   <header class="top">
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Your wallet, before the keys.</h1>
@@ -277,10 +295,11 @@
         </details></div>
       <p class="small muted">Choose a speed. Review the fee before saving.</p>
       <div>
-        <button id="use-slow" type="button" class="secondary" disabled>Slow</button>
-        <button id="use-standard" type="button" class="secondary" disabled>Medium</button>
-        <button id="use-fast" type="button" class="secondary" disabled>Fast</button>
+        <button id="use-slow" type="button" class="secondary rate-button" disabled>Slow</button>
+        <button id="use-standard" type="button" class="secondary rate-button" disabled>Medium</button>
+        <button id="use-fast" type="button" class="secondary rate-button" disabled>Fast</button>
       </div>
+      <p id="fee-selected" aria-live="polite"></p>
       <p id="fee-guidance" class="small muted" aria-live="polite">Loading current mainnet fee estimates…</p>
       <details><summary>Advanced: adjust network fee</summary>
         <label for="fee-rate">Fee rate (satoshis per virtual byte)</label>
@@ -397,6 +416,9 @@
     let rate = null, lastScan = null, reviewAmountSats = null, reviewFeeSats = null;
     let priceRequestId = 0, feeRequestId = 0, walletActionId = 0, feeQuote = null;
     let feeRateCustomized = false, sendActionId = 0, preparing = false;
+    // Which speed button the user actually chose. Rate values alone cannot
+    // distinguish them: slow/medium/fast are often the same whole sat/vB.
+    let selectedTier = "custom";
     let feeEstimate = null;
     let preparationId = null;
     let walletCanPrepare = false;
@@ -642,6 +664,34 @@
       } catch (_) { if (requestId === priceRequestId) rate = null; }
       renderPrice();
     }
+    const FEE_TIERS = [["use-slow", "slow", "Slow"], ["use-standard", "medium", "Medium"],
+      ["use-fast", "fast", "Fast"]];
+    function tierRate(tier) {
+      if (!feeQuote) return null;
+      const field = { slow: "hour", medium: "standard", fast: "fastest" }[tier];
+      const rate = Math.ceil(feeQuote[field]);
+      return rate >= 1 && rate <= 25 ? rate : null;
+    }
+    function renderSpeedButtons() {
+      const value = Number($("fee-rate").value);
+      for (const [id, tier, label] of FEE_TIERS) {
+        const button = $(id), rate = tierRate(tier);
+        button.disabled = rate === null;
+        button.textContent = label + " · " + (rate === null ? "—" : rate + " sat/vB");
+        const active = selectedTier === tier;
+        button.classList.toggle("selected", active);
+        button.setAttribute("aria-pressed", String(active));
+      }
+      const name = { slow: "Slow", medium: "Medium", fast: "Fast" }[selectedTier];
+      setText("fee-selected", "Selected: " + (name || "Custom") + " · " + value + " sat/vB");
+    }
+    function setBusy(text) {
+      const busy = Boolean(text);
+      $("busy").hidden = !busy;
+      // Reserve the space the fixed bar occupies, so it never covers the page.
+      document.body.classList.toggle("busy-mode", busy);
+      setText("busy-text", text || "");
+    }
     function feeTooHighForNetwork(value) {
       return value > Math.max(5, feeQuote ? 2 * feeQuote.fastest : 5);
     }
@@ -655,18 +705,7 @@
         ". Estimates, not guarantees." +
         (selectedChain() === "testnet4" ? " Testnet4 fees may differ." : "") :
         "Live fee guidance unavailable. Transaction preparation is paused until rates can be checked.");
-      for (const [id, name] of [["use-standard", "standard"], ["use-fast", "fastest"]]) {
-        const button = $(id), suggested = feeQuote && feeQuote[name];
-        button.disabled = !suggested || suggested > 25;
-        button.textContent = (name === "standard" ? "Standard" : "Fast (recommended)") +
-          (suggested ? " · " + suggested + " sat/vB" : "");
-        button.setAttribute("aria-pressed", String(!button.disabled && value === suggested));
-      }
-      const slow = $("use-slow"), slowRate = feeQuote && Math.ceil(feeQuote.hour);
-      slow.disabled = !slowRate || slowRate > 25;
-      slow.textContent = "Slow · " + (slowRate || "—") + " sat/vB";
-      $("use-standard").textContent = "Medium · " + (feeQuote ? Math.ceil(feeQuote.standard) : "—") + " sat/vB";
-      $("use-fast").textContent = "Fast · " + (feeQuote ? Math.ceil(feeQuote.fastest) : "—") + " sat/vB";
+      renderSpeedButtons();
       renderFeePreview();
       const warn = !Number.isInteger(value) || value < 1 || value > 25 ?
         "Fee rate must be a whole number from 1 to 25 sat/vB. Values such as 500 are blocked." :
@@ -696,6 +735,7 @@
           if (!feeRateCustomized) {
             if ($("fee-rate").value !== String(Math.ceil(quote.standard))) invalidateReview();
             $("fee-rate").value = Math.ceil(quote.standard);
+            selectedTier = "medium";
           }
         }
       } catch (_) { if (requestId === feeRequestId) feeQuote = null; }
@@ -797,15 +837,15 @@
       feeEstimate = null;
       renderFeePreview();
       $("refresh-top").disabled = true;
-      msg("message", "Refreshing " + (selectedChain() === "main" ? "mainnet" : "Testnet4") +
-        " balance. Your wallet file is already open…");
+      msg("message", "");
+      setBusy("Checking the blockchain for your balance — this can take a few seconds…");
       loadPrice(); loadFees();
       try {
         const balance = await post("/api/scan", {chain});
         if (started !== walletActionId || chain !== selectedChain()) return;
-        showBalance(balance); msg("message", "Balance refreshed. Check the coverage note below.");
+        showBalance(balance); msg("message", "Balance checked. See the note under the balance.");
       } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
-      finally { $("refresh-top").disabled = false; }
+      finally { $("refresh-top").disabled = false; setBusy(""); }
     }
     async function importOpenWallet() {
       const started = ++walletActionId;
@@ -831,7 +871,8 @@
       reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
       $("download").disabled = true;
-      msg("message", "Opening wallet…");
+      msg("message", "");
+      setBusy("Reading your wallet file…");
       try {
         const wallet = await post("/api/import", {
           chain: selectedChain(),
@@ -843,7 +884,7 @@
       } catch (e) {
         if (started === walletActionId) msg("message", e.message, true);
         return false;
-      } finally { $("open").disabled = false; }
+      } finally { $("open").disabled = false; setBusy(""); }
     }
     $("open").addEventListener("click", () => importOpenWallet());
     $("refresh-top").addEventListener("click", refresh);
@@ -866,7 +907,7 @@
       $("destination").value = ""; $("amount").value = "";
       $("send-all").checked = false;
       feeRateCustomized = false;
-      $("fee-rate").value = 2; $("download").disabled = true;
+      $("fee-rate").value = 2; selectedTier = "custom"; $("download").disabled = true;
       invalidateReview();
       updateSendMode();
       $("wallet-card").hidden = true; $("balance-card").hidden = true;
@@ -885,15 +926,20 @@
       invalidateReview(); updateSendMode(); renderFeeGuidance(); loadFeeEstimate();
     });
     $("fee-rate").addEventListener("input", () => {
-      feeRateCustomized = true; invalidateReview(); renderFeeGuidance(); scheduleFeeEstimate();
+      feeRateCustomized = true;
+      selectedTier = "custom";
+      invalidateReview(); renderFeeGuidance(); scheduleFeeEstimate();
     });
-    for (const [id, name] of [["use-slow", "hour"], ["use-standard", "standard"], ["use-fast", "fastest"]]) {
+    for (const [id, tier] of FEE_TIERS.map(([id, tier]) => [id, tier])) {
       $(id).addEventListener("click", () => {
-        if (!feeQuote || feeQuote[name] > 25) return;
+        const rate = tierRate(tier);
+        if (rate === null) return;
         feeRateCustomized = true;
+        selectedTier = tier;
         invalidateReview();
-        $("fee-rate").value = Math.ceil(feeQuote[name]);
+        $("fee-rate").value = rate;
         renderFeeGuidance();
+        scheduleFeeEstimate();
       });
     }
     $("prepare").addEventListener("click", async () => {
@@ -980,6 +1026,7 @@
     });
     $("check-signers").addEventListener("click", async () => {
       $("check-signers").disabled = true;
+      setBusy("Looking for connected signing devices…");
       setText("signer-message", "Checking connected devices. This is read-only…");
       $("signer-results").replaceChildren();
       try {
@@ -993,7 +1040,7 @@
           "No compatible device was found. Connect a supported signer, unlock it on the device, then check again.");
       } catch (e) {
         setText("signer-message", e.message || "Hardware wallet recognition is unavailable.");
-      } finally { $("check-signers").disabled = false; }
+      } finally { $("check-signers").disabled = false; setBusy(""); }
     });
     $("download").addEventListener("click", async () => {
       if (!currentPsbt || $("download").disabled) return;
