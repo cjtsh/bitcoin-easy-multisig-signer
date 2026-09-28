@@ -150,7 +150,8 @@ jobs:
           cat > notes.md <<EOF
           ## v${VERSION} — Apple Silicon test build
 
-          Unsigned, unnotarized test build from the \`phase2-transaction-builder\` branch.
+          Unsigned, unnotarized test build from the \`phase2-transaction-builder\` branch,
+          commit \`${GITHUB_SHA:0:12}\`.
 
           - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
           - Prepares and reviews an **unsigned** transaction: a partial amount or Send All

@@ -1,7 +1,7 @@
-# Phase 2/3 handoff — v0.1.11
+# Phase 2/3 handoff — current build v0.1.12
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (branch `phase2-transaction-builder`)
-**Version:** `0.1.11` (`version.py`)
+**Version:** `0.1.12` (`version.py`). The work described below landed across v0.1.9-v0.1.12; earlier fixes were published under 0.1.11, whose release assets were replaced repeatedly (see the versioning rule in `ROADMAP.md`).
 **Status:** code complete and verified with synthetic data and a real loopback HTTP
 server. **The Apple Silicon DMG has not yet been built through GitHub Actions** —
 this session has no GitHub authentication, and that workflow requires it. A local
@@ -238,7 +238,7 @@ native window cannot be driven from here.
 the repository's current release, carrying the Apple Silicon DMG, the matching
 source archive, and `SHA256SUMS`.
 
-- Final workflow run `36453605797` — **all five jobs green** on the current
+- Final workflow run for the save fix `36453605797` — **all five jobs green** on the current
   commit: read version (5s), source archive and tests (25s), Apple Silicon DMG
   (2m1s), SHA256SUMS (5s), publish release (15s). CI runs the full suite on
   Python 3.12, so the tests are verified on Linux and macOS, not only this Mac.

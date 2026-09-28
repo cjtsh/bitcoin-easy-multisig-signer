@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer — experimental mainnet and Testnet4 GUI
 
-The latest published build is [v0.1.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.8). The current candidate, v0.1.11, repairs the transaction journey: a receive-only `/*` export can reach the send form after the owner explicitly confirms the standard change branch, and the live fee preview now matches the transaction that is actually built. It is still an unsigned, ad-hoc-signed test build.
+The latest published build is [v0.1.12](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.12): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, and then identifies connected hardware signers. **It does not sign or broadcast.** A receive-only `/*` wallet export can reach the send form once you confirm the wallet's usual change addresses. A v0.1.11 release also exists, but its assets were replaced several times during development; prefer v0.1.12.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -247,7 +247,7 @@ creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. HWI 3.2.0 is bundled in the v0.1.11 Mac app. The command-line proof below
+2. HWI 3.2.0 is bundled in the v0.1.12 Mac app. The command-line proof below
    still uses an HWI 3.2.0 installation on your PATH. Use only the official
    [HWI release][releases]. It adds an explicit `testnet4` chain option.
 3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.

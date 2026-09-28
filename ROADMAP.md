@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**Baseline:** v0.1.10, 28 September 2026. The default branch is `main`; the current transaction workflow lives on `phase2-transaction-builder` and is published as v0.1.10, with v0.1.11 as the current candidate. It prepares and reviews an unsigned transaction and checks connected signer identities; it does not sign or broadcast.
+**Baseline:** v0.1.10, 28 September 2026. The default branch is `main`; the current transaction workflow lives on `phase2-transaction-builder` and is published as v0.1.10, with v0.1.12 as the current candidate (v0.1.11 was superseded during development). It prepares and reviews an unsigned transaction and checks connected signer identities; it does not sign or broadcast.
 
 **Progress note (post-v0.1.10).** The receive-only dead end described in Phase 2 is now addressed in code. A `/*` export whose reference address matches `/0/0` can reach the send form after the owner explicitly confirms the conventional `/1/*` change branch; the app never applies that by itself, flags the change address as owner-declared in the review, and reports how many previously used change addresses the scan found on that branch. The live fee preview now performs the same input selection as the builder, so the previewed size and fee match the review. Redirect following was removed from outbound HTTP, the local access token is no longer disclosed in an unauthenticated response, and the high-value confirmation no longer depends on a remote price feed. All of this is covered by synthetic tests and a loopback-API test. The acceptance gates below still require an Apple Silicon Mac walkthrough with the owner's own Testnet4 wallet and signers, which has not been performed.
 
@@ -94,6 +94,7 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 
 ## Delivery discipline for any agent working from this roadmap
 
+- **One version per published build.** Never rebuild a released tag in place: v0.1.11's assets were replaced five times, so a filename and a tag no longer identified their contents. Bump `version.py` for every build that is published; it is the single place the version lives, and the workflow derives the tag, the artifact names and the release title from it.
 - Make one phase's scoped changes at a time. Before editing, compare this roadmap with the actual code and the latest release; the document can become stale. State any assumptions or blocker rather than inventing wallet paths, policy, or a successful click flow.
 - Add focused tests for each fixed failure and run `python -m unittest discover -s tests -q`; validate inline JavaScript syntax and inspect runtime errors when changing `ui.html`. For Mac changes, build on Apple Silicon and perform a **manual native-window** walkthrough. Record which checks used synthetic data and which used real Testnet4 services/devices.
 - Keep `README.md`, `ROADMAP.md`, and user-facing capability claims consistent with observed behavior. An automated build self-check is not a substitute for native file-picker, refresh, review, save, signer, or broadcast testing.
