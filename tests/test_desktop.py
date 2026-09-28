@@ -10,6 +10,7 @@ from urllib.request import urlopen
 from unittest.mock import patch
 
 import safe_http
+from support import real_ca_bundle
 from desktop import DesktopBridge, check_bundle_resources, configure_packaged_tls, main, run_desktop
 from gui import LocalApp, ui_path
 
@@ -118,9 +119,10 @@ class DesktopTests(unittest.TestCase):
         # assertion is meaningful. patch.dict(os.environ, {}) restores the
         # SSL_CERT_FILE that configure_packaged_tls() sets, so it cannot leak
         # into other tests.
-        bundle = Path("/etc/ssl/cert.pem")
-        if not bundle.is_file():
+        found = real_ca_bundle()
+        if found is None:
             self.skipTest("no system CA bundle available to stand in for certifi")
+        bundle = Path(found)
         self.addCleanup(safe_http.set_trust_bundle, "/nonexistent/reset.pem")
         with patch("gui.sys.frozen", True, create=True), patch(
             "gui.sys._MEIPASS", self.temp.name, create=True
@@ -136,13 +138,17 @@ class DesktopTests(unittest.TestCase):
         """The check must fail when the app would fall back to ambient trust."""
         ui = Path(self.temp.name) / "ui.html"
         ui.write_text("<html>__APP_VERSION__ location.hash</html>")
+        # A real file stands in for the bundled store, so the check that fires is
+        # the identity check rather than "trust store is missing".
+        bundled_ca = Path(self.temp.name) / "cacert.pem"
+        bundled_ca.write_text("stand-in bundle\n")
         self.addCleanup(safe_http.set_trust_bundle, "/nonexistent/reset.pem")
         safe_http.set_trust_bundle("/nonexistent/reset.pem")
         with patch("gui.sys.frozen", True, create=True), patch(
             "gui.sys._MEIPASS", self.temp.name, create=True
         ), patch.dict(os.environ, {"SSL_CERT_FILE": "/nonexistent/env-ca.pem"}), patch.dict(
             "sys.modules",
-            {"certifi": SimpleNamespace(where=lambda: "/etc/ssl/cert.pem")},
+            {"certifi": SimpleNamespace(where=lambda: str(bundled_ca))},
         ):
             with self.assertRaisesRegex(RuntimeError, "not the one configured"):
                 check_bundle_resources()

@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 
 import safe_http
 from safe_http import open_url
+from support import real_ca_bundle
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -93,13 +94,13 @@ class TrustStoreTests(_ServerFixture):
         with open_url(urllib.request.Request(self.base + "/ok"), timeout=5) as response:
             self.assertEqual(response.read(), b"genesis")
         self.assertIsNotNone(safe_http._client)
-        safe_http.set_trust_bundle("/etc/ssl/cert.pem")
+        safe_http.set_trust_bundle(real_ca_bundle() or "/nonexistent/reset.pem")
         self.assertIsNone(safe_http._client,
                           "a newly configured bundle must invalidate the opener")
 
     def test_a_real_bundle_contributes_trusted_cas(self):
-        bundle = "/etc/ssl/cert.pem"
-        if not Path(bundle).is_file():
+        bundle = real_ca_bundle()
+        if bundle is None:
             self.skipTest("no system CA bundle available to test with")
         safe_http.set_trust_bundle(bundle)
         self.assertEqual(safe_http.trust_bundle(), bundle)
