@@ -1,4 +1,4 @@
-name: Build release candidate (no publishing)
+name: Build and publish v0.1.7 test release
 
 on:
   push:
@@ -49,3 +49,37 @@ jobs:
           name: unsigned-macos-apple-silicon-0.1.7
           path: dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg
           if-no-files-found: error
+
+  publish-test-release:
+    if: github.event_name == 'push'
+    needs: [source, macos-apple-silicon]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: source-0.1.7
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-macos-apple-silicon-0.1.7
+          path: dist
+      - name: Publish GitHub prerelease with both downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## v0.1.7 test build
+
+          This is a test build for the owner's Testnet4 transaction preparation workflow. It is built from the `phase2-transaction-builder` branch and is not merged into `main`.
+
+          This version clarifies why a limited wallet scan can block sending. Partial sends pay the selected network fee in addition to the entered amount; Send All deducts the fee from the available balance. This build prepares transactions but does not sign or broadcast them.
+
+          Included downloads:
+          - **Mac (Apple Silicon):** unsigned, unnotarized test DMG.
+          - **Linux/source:** source archive; requires the documented environment.
+
+          GitHub Actions passed the automated test suite and packaging checks. Please treat this as an owner test build; first-open macOS security prompts are expected for an unsigned app.
+          EOF
+          gh release create v0.1.7             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "v0.1.7 — transaction preparation test build"             --prerelease             --notes-file release-notes.md             dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg             dist/easy-bitcoin-multisig-signer-v0.1.7.tar.gz
