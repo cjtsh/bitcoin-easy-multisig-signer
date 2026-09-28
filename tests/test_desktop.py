@@ -1,13 +1,15 @@
 """Desktop wrapper tests run without macOS, WebKit or real wallet files."""
 
 import base64
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.request import urlopen
 from unittest.mock import patch
 
-from desktop import DesktopBridge, check_bundle_resources, run_desktop
+from desktop import DesktopBridge, check_bundle_resources, configure_packaged_tls, main, run_desktop
 from gui import LocalApp, ui_path
 
 
@@ -156,9 +158,25 @@ class DesktopTests(unittest.TestCase):
         ui.write_text("<html>__LOCAL_TOKEN__ __APP_VERSION__</html>")
         with patch("gui.sys.frozen", True, create=True), patch(
             "gui.sys._MEIPASS", self.temp.name, create=True
+        ), patch.dict(
+            "sys.modules", {"certifi": SimpleNamespace(where=lambda: str(ui))}
         ):
             self.assertEqual(ui_path().read_text(), "<html>__LOCAL_TOKEN__ __APP_VERSION__</html>")
             check_bundle_resources()
+
+    def test_frozen_app_uses_bundled_ca_file_and_checks_testnet_network(self):
+        ca = Path(self.temp.name) / "ca.pem"
+        ca.write_text("test placeholder")
+        with patch("desktop.sys.frozen", True, create=True), patch.dict(
+            "sys.modules", {"certifi": SimpleNamespace(where=lambda: str(ca))}
+        ), patch.dict(os.environ, {"SSL_CERT_FILE": "old-path"}):
+            configure_packaged_tls()
+            self.assertEqual(os.environ["SSL_CERT_FILE"], str(ca))
+        with patch("desktop.sys.argv", ["desktop.py", "--check-network"]), patch(
+            "desktop.configure_packaged_tls"
+        ), patch("desktop.check_testnet4_network") as check:
+            main()
+        check.assert_called_once_with()
 
 
 if __name__ == "__main__":

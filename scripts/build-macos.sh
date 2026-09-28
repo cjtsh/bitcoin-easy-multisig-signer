@@ -24,7 +24,7 @@ fi
 python3 -m venv .build-venv
 .build-venv/bin/python -m pip install --disable-pip-version-check -r requirements-desktop.txt
 args=(--noconfirm --clean --windowed --onedir --name "Easy Bitcoin Multisig"
-      --add-data "ui.html:." --distpath dist desktop.py)
+      --add-data "ui.html:." --collect-data certifi --distpath dist desktop.py)
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   args+=(--codesign-identity "$MAC_SIGN_IDENTITY")
 fi

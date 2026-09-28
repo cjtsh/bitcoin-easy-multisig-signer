@@ -108,6 +108,31 @@ def check_bundle_resources() -> None:
     page = ui_path().read_text(encoding="utf-8")
     if "__LOCAL_TOKEN__" not in page or "__APP_VERSION__" not in page:
         raise RuntimeError("Bundled ui.html is missing or does not match this app.")
+    if getattr(sys, "frozen", False):
+        import certifi
+        if not Path(certifi.where()).is_file():
+            raise RuntimeError("Bundled HTTPS trust store is missing.")
+
+
+def configure_packaged_tls() -> None:
+    """Give the frozen Python runtime a bundled public CA store for HTTPS."""
+    if getattr(sys, "frozen", False):
+        import certifi
+        bundle = Path(certifi.where())
+        if not bundle.is_file():
+            raise RuntimeError("Bundled HTTPS trust store is missing.")
+        os.environ["SSL_CERT_FILE"] = str(bundle)
+
+
+def check_testnet4_network() -> None:
+    """Headless probe of the same HTTPS client used by wallet balance scans."""
+    from network_config import NETWORKS
+    from wallet_service import explorer_get
+
+    genesis = explorer_get("/block-height/0", text=True, chain="testnet4").strip().lower()
+    if genesis != NETWORKS["testnet4"].genesis_hash:
+        raise RuntimeError("Testnet4 explorer returned the wrong network's genesis block.")
+    print("Bundled Testnet4 explorer HTTPS check passed.")
 
 
 def run_desktop(webview_module) -> None:
@@ -132,8 +157,12 @@ def run_desktop(webview_module) -> None:
 
 
 def main() -> None:
+    configure_packaged_tls()
     if "--check-bundle" in sys.argv[1:]:
         check_bundle_resources()
+        return
+    if "--check-network" in sys.argv[1:]:
+        check_testnet4_network()
         return
     if sys.platform != "darwin":
         raise SystemExit("The desktop window bundle is for macOS; Linux can use gui.py.")

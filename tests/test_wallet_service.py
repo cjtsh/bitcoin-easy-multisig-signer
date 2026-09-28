@@ -1,8 +1,10 @@
 """Only synthetic public test-wallet data; no real BSMS export is checked in."""
 
+import ssl
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from embit import bip32, psbt, transaction
@@ -131,6 +133,28 @@ class WalletServiceTests(unittest.TestCase):
                 self.assertEqual(fetch.call_args.args[0].full_url,
                                  config.explorer_url + "/blocks/tip")
         self.assertEqual(fetch.call_count, len(CHAIN_CONFIGS))
+
+    def test_explorer_rate_limit_is_retried_without_disclosing_address(self):
+        private_path = "/address/tb1qtestaddressnotforerrors"
+        error = HTTPError("https://example.org" + private_path, 429, "rate limit", {}, None)
+        with patch("wallet_service.urlopen", side_effect=error) as fetch, patch(
+            "wallet_service.time.sleep"
+        ) as pause:
+            with self.assertRaises(WalletError) as caught:
+                explorer_get(private_path, chain="testnet4")
+        self.assertEqual(fetch.call_count, 2)
+        pause.assert_called_once()
+        self.assertIn("HTTP 429", str(caught.exception))
+        self.assertNotIn("tb1qtestaddress", str(caught.exception))
+
+    def test_explorer_tls_failure_has_actionable_safe_message(self):
+        error = URLError(ssl.SSLCertVerificationError(1, "certificate verify failed"))
+        with patch("wallet_service.urlopen", side_effect=error) as fetch:
+            with self.assertRaises(WalletError) as caught:
+                explorer_get("/address/tb1qtestaddressnotforerrors")
+        self.assertEqual(fetch.call_count, 1)
+        self.assertIn("HTTPS certificate", str(caught.exception))
+        self.assertNotIn("tb1qtestaddress", str(caught.exception))
 
     def test_rejects_mainnet_destination_and_insufficient_funds(self):
         data = scan_wallet(self.wallet, self.fake_get)

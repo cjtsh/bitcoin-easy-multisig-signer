@@ -7,6 +7,8 @@ Address queries disclose the queried addresses to the configured public explorer
 from __future__ import annotations
 
 import json
+import ssl
+import time
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -61,19 +63,43 @@ def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
     request = Request(base + path, headers={
         "User-Agent": f"EasyMultisig/{APP_VERSION}", "Accept": "application/json",
     })
-    try:
-        with urlopen(request, timeout=12) as response:
-            if response.length is not None and response.length > 2_000_000:
+    for attempt in range(2):
+        try:
+            with urlopen(request, timeout=12) as response:
+                if response.length is not None and response.length > 2_000_000:
+                    raise WalletError("Explorer response is unexpectedly large.")
+                body = response.read(2_000_001)
+            if len(body) > 2_000_000:
                 raise WalletError("Explorer response is unexpectedly large.")
-            body = response.read(2_000_001)
-        if len(body) > 2_000_000:
-            raise WalletError("Explorer response is unexpectedly large.")
-        return body.decode("ascii") if text else json.loads(body)
-    except (HTTPError, URLError, TimeoutError, UnicodeError, ValueError) as exc:
-        raise WalletError(
-            "Bitcoin explorer is unavailable or returned invalid data. "
-            "No zero balance is claimed; try Refresh later."
-        ) from exc
+            return body.decode("ascii") if text else json.loads(body)
+        except HTTPError as exc:
+            if exc.code in (429, 502, 503, 504) and attempt == 0:
+                time.sleep(1)
+                continue
+            if exc.code == 429:
+                detail = "rate-limited requests (HTTP 429). Wait a minute and refresh."
+            else:
+                detail = f"returned HTTP {exc.code}. Check the explorer in Advanced network settings."
+            raise WalletError(f"{chain} explorer {detail} No zero balance is claimed.") from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            reason = exc.reason if isinstance(exc, URLError) else exc
+            if isinstance(reason, ssl.SSLError):
+                raise WalletError(
+                    f"Could not verify the {chain} explorer HTTPS certificate. "
+                    "No zero balance is claimed."
+                ) from exc
+            if attempt == 0:
+                time.sleep(1)
+                continue
+            raise WalletError(
+                f"Could not connect to the {chain} explorer. Check your internet connection "
+                "and the explorer in Advanced network settings. No zero balance is claimed."
+            ) from exc
+        except (UnicodeError, ValueError) as exc:
+            raise WalletError(
+                f"{chain} explorer returned invalid data. Check the explorer in Advanced "
+                "network settings. No zero balance is claimed."
+            ) from exc
 
 
 def _chain(record: WalletRecord) -> str:
@@ -209,7 +235,7 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
         if branch is None:
             continue
         gap = 0
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             for start in range(0, MAX_INDEX, 10):
                 chunk = [
                     (index, branch.derive(index).address(NETWORKS[record.network]))
