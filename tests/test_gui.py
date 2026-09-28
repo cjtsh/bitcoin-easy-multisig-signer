@@ -61,7 +61,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("LIVE BITCOIN NETWORK · REAL FUNDS", page)
         self.assertIn("body.live-mode", page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
-        self.assertIn("v0.1.0", page)
+        self.assertIn("v0.1.1", page)
         self.assertNotIn("__APP_VERSION__", page)
         text, _ = test_record(short_path=True)
         result = self.post("/api/import", {"chain": "testnet4", "text": text,

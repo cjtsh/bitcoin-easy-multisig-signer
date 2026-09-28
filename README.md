@@ -39,11 +39,11 @@ wallet, generate keys, or ask for recovery words. This proof keeps hardware
 communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
 and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
-## Distribution plan (local development; not yet a public DMG)
+## Mac test releases
 
-Each future release should attach **two matching-version files**:
+Each test release attaches **two matching-version files**:
 
-- `Easy-Bitcoin-Multisig-vX.Y.Z-macOS.dmg`: the Mac `.app`, containing its
+- `Easy-Bitcoin-Multisig-vX.Y.Z-UNSIGNED-TEST.dmg`: the Mac `.app`, containing its
   Python runtime, dependencies, existing wallet engine, and a small native
   WebKit window. A user opens the app without installing Python or using
   Terminal. The desktop wrapper uses a native save dialog for unsigned PSBTs.
@@ -54,30 +54,26 @@ Each future release should attach **two matching-version files**:
 
 Generate the source archive with `bash scripts/build-source.sh X.Y.Z`. On a
 Mac, build an **unsigned test** `.app` and DMG with
-`bash scripts/build-macos.sh X.Y.Z`. Public Mac distribution needs Apple
-Developer ID signing and notarization; the build script requires both
+`bash scripts/build-macos.sh X.Y.Z`. Unsigned test DMGs can be downloaded
+without Apple enrollment; signing and notarization reduce first-open macOS
+security warnings later. The build script requires both
 `MAC_SIGN_IDENTITY` and `MAC_NOTARY_PROFILE` (an already configured macOS
 keychain profile) when run with `RELEASE=1`. Keep credentials out of this
 repository. Build/test on the Mac architecture(s) being supported. In
 particular, verify first launch, BSMS file picking, refresh, and native PSBT
-saving before releasing. A Linux build environment cannot validate or
-notarize the Mac app. No Mac DMG has been built or published yet.
-The candidate GitHub Actions recipe is staged as `ci/build-candidate.yml`.
-**It is not active**: this repository connection cannot write GitHub's
-protected `.github/workflows/` path with its present permission. Once an
-authorized maintainer installs that workflow, pushing
-`candidate-v0.1.0-macos` can build an unsigned **Apple Silicon** test DMG on a
-macOS runner plus the source archive. The recipe never publishes a release
-or makes the app trusted by Gatekeeper, and it has not been run yet.
+saving on a real Mac. A Linux build environment cannot validate or notarize
+the Mac app. The active GitHub Actions workflow builds an unsigned **Apple
+Silicon** test DMG and matching source archive on the candidate branch; it
+does not publish releases or make the app trusted by Gatekeeper.
 The source packaging script accepts the recipe in either its staged `ci/`
 location or the active `.github/workflows/` location.
 Intel compatibility or a universal
 Mac build must be verified separately rather than assumed.
 
 GitHub may additionally display its automatically generated source archives;
-the two files above are the intended **attached release artifacts**. Do not
-publish either as v0.1.0 until the Mac build is validated and release approval
-is given.
+the two files above are the intended **attached release artifacts**. See the
+GitHub Releases page for the latest downloadable test build. These builds are
+unsigned, not notarized, and not a substitute for an interactive Mac test.
 
 ## Point-and-click Testnet4 practice or mainnet viewing on a Mac
 

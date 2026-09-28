@@ -106,8 +106,13 @@
         <div><label for="chain">Bitcoin network</label>
           <select id="chain"><option value="testnet4">TESTNET4 · practice with test coins</option>
             <option value="main">LIVE MAINNET · real BTC</option></select></div>
-        <div><label for="wallet-file">Wallet definition</label>
-          <input id="wallet-file" type="file" accept=".bsms,.txt,text/plain"></div>
+        <div id="browser-wallet-input" __DESKTOP_HIDE_BROWSER_PICKER__>
+          <label for="wallet-file">Wallet definition</label>
+          <input id="wallet-file" type="file" accept=".bsms,.txt"></div>
+        <div id="native-wallet-input" __DESKTOP_HIDE_NATIVE_PICKER__>
+          <label for="choose-wallet">Wallet definition</label>
+          <button id="choose-wallet" type="button" class="secondary">Choose BSMS file…</button>
+          <span id="chosen-wallet" class="small muted" role="status">No file selected</span></div>
       </div>
       <p class="small muted">Your file stays in this app on your Mac. To check its balance, the app sends derived
         <strong>public addresses</strong> (not xpubs or the file) to the selected explorer
@@ -225,7 +230,9 @@
   </main>
   <script>
     const token = "__LOCAL_TOKEN__";
+    const desktopMode = __DESKTOP_MODE__;
     const $ = id => document.getElementById(id);
+    let nativeWalletFile = null;
     let currentPsbt = null;
     let rate = null, lastScan = null, reviewAmountSats = null, reviewFeeSats = null;
     let priceRequestId = 0, feeRequestId = 0, walletActionId = 0, feeQuote = null;
@@ -480,11 +487,29 @@
       } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
       finally { $("refresh").disabled = false; $("refresh-top").disabled = false; }
     }
+    $("choose-wallet").addEventListener("click", async () => {
+      $("choose-wallet").disabled = true;
+      try {
+        if (!window.pywebview?.api?.choose_bsms) {
+          throw new Error("The Mac file picker is not ready. Try again.");
+        }
+        const picked = await window.pywebview.api.choose_bsms();
+        if (!picked?.selected) return;
+        if (typeof picked.name !== "string" || typeof picked.text !== "string") {
+          throw new Error("The selected wallet file could not be read.");
+        }
+        nativeWalletFile = picked;
+        setText("chosen-wallet", picked.name);
+      } catch (e) { msg("message", e.message, true); }
+      finally { $("choose-wallet").disabled = false; }
+    });
     $("open").addEventListener("click", async () => {
       const started = ++walletActionId;
-      const file = $("wallet-file").files[0];
+      const file = desktopMode ? nativeWalletFile : $("wallet-file").files[0];
       if (!file) { msg("message", "Choose a BSMS wallet definition first.", true); return; }
-      if (file.size > 65536) { msg("message", "BSMS file is unexpectedly large.", true); return; }
+      if (!desktopMode && file.size > 65536) {
+        msg("message", "BSMS file is unexpectedly large.", true); return;
+      }
       if (!$("explorer-consent").checked) {
         msg("message", "Confirm that the public explorer may see your derived wallet addresses.", true);
         return;
@@ -499,7 +524,8 @@
       msg("message", "Opening wallet…");
       try {
         const wallet = await post("/api/import", {chain:selectedChain(),
-          consent_explorer:$("explorer-consent").checked, text:await file.text()});
+          consent_explorer:$("explorer-consent").checked,
+          text:desktopMode ? file.text : await file.text()});
         if (started !== walletActionId) return;
         showWallet(wallet); await refresh();
       } catch (e) { if (started === walletActionId) msg("message", e.message, true); }

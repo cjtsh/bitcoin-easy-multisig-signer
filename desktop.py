@@ -5,21 +5,55 @@ from __future__ import annotations
 import base64
 import binascii
 import os
+import stat
 import sys
 import threading
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 from gui import LocalApp, ui_path
+from probe import MAX_BSMS_BYTES
 
 
 class DesktopBridge:
-    """Native save dialog for PSBTs; never expose arbitrary file or wallet access."""
+    """Native BSMS open and PSBT save dialogs; keep selected paths out of the page."""
 
     def __init__(self, state: LocalApp, webview_module, url: str):
         self.state = state
         self.webview = webview_module
         self.url = url
         self.window = None
+
+    def choose_bsms(self) -> dict:
+        if self.window is None or self.window.get_current_url() != self.url:
+            raise ValueError("The wallet window is no longer at its local app URL.")
+        chosen = self.window.create_file_dialog(
+            self.webview.OPEN_DIALOG,
+            file_types=("BSMS wallet (*.bsms)", "Plain-text BSMS (*.txt)"),
+        )
+        if not chosen:
+            return {"selected": False}
+        if self.window.get_current_url() != self.url:
+            raise ValueError("The wallet window is no longer at its local app URL.")
+        filename = chosen[0] if isinstance(chosen, (tuple, list)) else chosen
+        path = Path(filename)
+        if path.suffix.lower() not in (".bsms", ".txt"):
+            raise ValueError("Choose a .bsms wallet file (or a plain-text .txt export).")
+        try:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "rb") as source:
+                if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                    raise ValueError("Choose a regular BSMS wallet file.")
+                raw = source.read(MAX_BSMS_BYTES + 1)
+        except OSError as exc:
+            raise ValueError("Could not read the selected BSMS wallet file.") from exc
+        if len(raw) > MAX_BSMS_BYTES:
+            raise ValueError("BSMS wallet file is unexpectedly large.")
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise ValueError("BSMS wallet file must be UTF-8 text.") from exc
+        return {"selected": True, "name": path.name, "text": text}
 
     def save_psbt(self, encoded: str, chain: str) -> dict:
         def ensure_current() -> None:
