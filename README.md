@@ -166,6 +166,11 @@ differ.
    of confirmation or a substitute for checking a final signed transaction.
    The "connect signers" step is not implemented in this version.
 
+   The send flow begins with a clear **Yes, prepare a transaction** or **No**
+   choice. Choosing Yes opens the destination, amount and fee fields. Review
+   the complete proposal before saving the unsigned PSBT. Choosing No prepares
+   nothing. Connecting hardware wallets to sign is a later milestone.
+
 **Optional server selection:** Open **Advanced network settings** to select
 an Esplora HTTP API base for each network's explorer and a separate Esplora
 broadcast server URL. Defaults for both are mempool.space; you can restore them

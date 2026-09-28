@@ -226,12 +226,20 @@
         <details class="context-help"><summary aria-label="What is an unsigned transaction file or PSBT?">?</summary>
           <div class="help-popout"><strong>What is a PSBT?</strong><p>PSBT means Partially Signed Bitcoin Transaction. Here, it is an unsigned file describing a proposed payment for your signers to review and approve. Preparing it does not move Bitcoin.</p></div>
         </details></div>
-      <p class="muted">Prepare an unsigned transaction file for your signers. Nothing is signed or sent here.</p>
+      <p class="muted">First prepare and review the transaction. Nothing is signed or sent here.</p>
+      <div id="send-choice" role="group" aria-label="Choose whether to prepare a transaction">
+        <h3>Would you like to prepare a Bitcoin transaction?</h3>
+        <p class="small muted">You will enter the destination and amount, review the fee and change, then save an unsigned file. This app will not sign or send Bitcoin.</p>
+        <button id="begin-send" type="button">Yes, prepare a transaction</button>
+        <button id="decline-send" type="button" class="secondary">No</button>
+      </div>
+      <div id="send-flow" hidden>
+      <h3>Enter where and how much to send</h3>
       <div class="grid">
         <div><label id="destination-label" for="destination">Send to Testnet4 address</label>
           <input id="destination" type="text" placeholder="tb1…" autocomplete="off" spellcheck="false"></div>
         <div><label for="amount">Amount to receive (BTC)</label>
-          <label class="check"><input id="send-all" type="checkbox" checked>
+          <label class="check"><input id="send-all" type="checkbox">
             <span>Send all confirmed Bitcoin found by this scan</span></label>
           <p id="available-btc" class="small muted"></p>
           <input id="amount" type="text" inputmode="decimal" placeholder="Calculated after fee" autocomplete="off" disabled>
@@ -294,6 +302,7 @@
             <div class="help-popout"><strong>What am I saving?</strong><p>This PSBT (Partially Signed Bitcoin Transaction) is an unsigned proposal. Save the file for your signers to review in their own tools. Saving it does not sign or send Bitcoin.</p></div>
           </details></div>
         <p class="small muted">Next: connect hardware signers to verify and sign. Signing and broadcasting are not implemented in this version.</p>
+      </div>
       </div>
     </section>
     <footer>Experimental, unaudited software. Mainnet mode handles real BTC; independently verify every
@@ -460,6 +469,12 @@
       $("amount").placeholder = $("send-all").checked ? "Calculated after fee" : "e.g. 0.00100000";
       updateSendEquivalent();
     }
+    function resetSendChoice() {
+      $("send-choice").hidden = false;
+      $("send-flow").hidden = true;
+      $("review").hidden = true;
+      msg("send-message", "");
+    }
     function renderPrice() {
       const test = selectedChain() === "testnet4";
       setText("price-note", rate ?
@@ -587,6 +602,7 @@
       }
       const allowSend = !sendBlockReason;
       $("send-card").hidden = !allowSend;
+      if (allowSend) resetSendChoice();
       $("send-unavailable").hidden = walletCanPrepare || allowSend;
       if (walletCanPrepare && sendBlockReason) {
         setText("send-unavailable", sendBlockReason);
@@ -595,7 +611,7 @@
       setText("balance-send-status", sendBlockReason);
       $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       lastScan = data;
-      $("send-all").checked = true;
+      $("send-all").checked = false;
       $("amount").value = "";
       setText("available-btc", "Confirmed BTC found by scan: " + btc(data.confirmed_sats) +
         (data.pending_delta_sats ? " · pending Bitcoin is not spendable yet." : "."));
@@ -664,13 +680,22 @@
     });
     $("refresh").addEventListener("click", refresh);
     $("refresh-top").addEventListener("click", refresh);
+    $("begin-send").addEventListener("click", () => {
+      $("send-choice").hidden = true;
+      $("send-flow").hidden = false;
+      $("destination").focus();
+    });
+    $("decline-send").addEventListener("click", () => {
+      resetSendChoice();
+      msg("send-message", "No transaction prepared. Your wallet has not been changed.");
+    });
     $("chain").addEventListener("change", () => {
       walletActionId++;
       walletCanPrepare = false; lastScan = null;
       $("explorer-consent").checked = false;
       currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
-      $("send-all").checked = true;
+      $("send-all").checked = false;
       feeRateCustomized = false;
       $("fee-rate").value = 2; $("download").disabled = true;
       invalidateReview();

@@ -50,7 +50,7 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 
 ## Phase 3 — Produce and independently verify a Testnet4 unsigned transaction
 
-**Goal:** With an explicitly verified 2-of-3 native-SegWit receiving **and change** definition and a consistent confirmed Testnet4 scan, the Mac user can enter a destination, choose a custom amount or “send all confirmed outputs found by this scan,” review every material field, and save an unsigned PSBT. **No signing or broadcasting in this phase.** The v0.1.8 candidate supports BIP 129 descriptor templates with the explicit `/0/*,/1/*` receive/change restrictions.
+**Goal:** With an explicitly verified 2-of-3 native-SegWit receiving **and change** definition and a consistent confirmed Testnet4 scan, the Mac user can choose whether to prepare a transaction, enter a destination and custom amount or choose Send All, review the fee and every material field, and save an unsigned PSBT. **No signing or broadcasting in this phase.** The v0.1.8 candidate supports BIP 129 descriptor templates with the explicit `/0/*,/1/*` receive/change restrictions and makes the transaction flow explicit: Yes/No → destination and amount → fee → review → save unsigned PSBT.
 
 **Start here in the code:** `wallet_service.py` (`wallet_layout`, `scan_wallet`, `build_unsigned_psbt`); `gui.py` (`/api/prepare`, cached scan/fee binding); `ui.html` (send form, fee guidance, review, download); `desktop.py` (`save_psbt`); `tests/test_wallet_service.py`, `tests/test_gui.py`, and `tests/test_desktop.py`. The existing tests prove important synthetic cases, but the owner has not been able to complete this journey on the Mac.
 

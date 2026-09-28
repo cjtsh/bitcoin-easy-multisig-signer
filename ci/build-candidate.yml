@@ -65,7 +65,7 @@ jobs:
         with:
           name: unsigned-macos-apple-silicon-0.1.8
           path: dist
-      - name: Publish GitHub prerelease with both downloads
+      - name: Publish regular GitHub release with both downloads
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -74,7 +74,7 @@ jobs:
 
           This is a test build for the owner's Testnet4 transaction preparation workflow. It is built from the `phase2-transaction-builder` branch and is not merged into `main`.
 
-          This version accepts a BSMS descriptor template with explicit /0/* receive and /1/* change restrictions, verifies the receive address, and routes supported wallets into the existing amount, fee, Send All, review, and unsigned PSBT save flow. Partial sends pay the network fee in addition to the entered amount; Send All deducts the fee from the available balance. This build does not sign or broadcast transactions.
+          This version accepts standard BSMS templates with explicit /0/* receive and /1/* change restrictions, and verifies the first receive address before enabling transaction preparation. The screen asks whether to prepare a transaction, then collects a destination, amount, and fee, shows a full review, and saves an unsigned PSBT. A partial amount is the default; Send All is an explicit opt-in and deducts the fee from the available balance. This build does not sign or broadcast transactions.
 
           Included downloads:
           - **Mac (Apple Silicon):** unsigned, unnotarized test DMG.
@@ -83,8 +83,6 @@ jobs:
           GitHub Actions passed the automated test suite and packaging checks. Please treat this as an owner test build; first-open macOS security prompts are expected for an unsigned app.
           EOF
           if gh release view v0.1.8 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit v0.1.8 --repo "$GITHUB_REPOSITORY" --prerelease=false --latest --notes-file release-notes.md
-            gh release upload v0.1.8 --repo "$GITHUB_REPOSITORY" --clobber dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.8.tar.gz
-          else
-            gh release create v0.1.8 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.8 — transaction preparation test build" --latest --notes-file release-notes.md dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.8.tar.gz
+            gh release delete v0.1.8 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
           fi
+          gh release create v0.1.8 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.8 — transaction preparation test build" --latest --notes-file release-notes.md dist/Easy-Bitcoin-Multisig-v0.1.8-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.8.tar.gz
