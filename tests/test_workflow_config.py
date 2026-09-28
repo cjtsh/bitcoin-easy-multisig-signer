@@ -84,6 +84,11 @@ class WorkflowConfigTests(unittest.TestCase):
                       "CI must re-verify HTTPS with the host's CA configuration "
                       "removed, so only the bundled trust store can make it pass")
 
+    def test_documentation_only_pushes_do_not_republish(self):
+        """A released version must keep exactly the artifacts it was verified with."""
+        trigger = self.data.get("on", self.data.get(True))
+        self.assertEqual(trigger["push"]["paths-ignore"], ["**/*.md"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,10 @@ on:
   push:
     branches:
       - phase2-transaction-builder
+    # A documentation-only push must not rebuild and republish a release: the
+    # version would stay the same, so its artifacts must stay the same too.
+    paths-ignore:
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:

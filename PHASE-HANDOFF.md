@@ -1,11 +1,51 @@
-# Phase 2/3 handoff — current build v0.1.14
+# Project status and handoff — v0.1.14
 
-**Repository:** `cjtsh/bitcoin-easy-multisig-signer` (branch `phase2-transaction-builder`)
-**Version:** `0.1.14` (`version.py`). The work described below landed across v0.1.9-v0.1.13. The v0.1.11 and v0.1.12 release assets were rebuilt in place during development; the versioning rule in `ROADMAP.md` now forbids that.
-**Status:** code complete and verified with synthetic data and a real loopback HTTP
-server. **The Apple Silicon DMG has not yet been built through GitHub Actions** —
-this session has no GitHub authentication, and that workflow requires it. A local
-build was attempted as a substitute; see *Build status* below.
+**Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
+**Current build:** `v0.1.14`. `version.py` is the single source of the version; the
+workflow derives the tag, the artifact names and the release title from it.
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.14-UNSIGNED-TEST.dmg`
+**Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
+
+## Where this stands
+
+**What the tool is.** A small Mac app that lets someone who is not a Bitcoiner — a
+lawyer, a bank officer, a family member — send Bitcoin from an **existing** 2-of-3
+multisig wallet. It opens a BSMS wallet file, shows the balance, prepares an
+**unsigned** transaction, and saves it for hardware signing. It never creates a
+wallet, never asks for seed words or a PIN, and cannot sign or send.
+
+**What works, as exercised by the owner on the real Mac**
+
+| Step | State |
+| --- | --- |
+| Open the wallet file and check the balance | Works |
+| Explain what the app assumed about change addresses, in plain words, without a checkbox | Works |
+| Reach "Prepare a send"; enter a destination and amount, or Send All | Works |
+| Live slow/medium/fast fee tiers, with the chosen one visibly marked | Works |
+| Review: destination, amount, fee, total, change, final transaction id, explorer link | Works |
+| Save the unsigned `.psbt` into the Downloads folder | Works |
+| Show progress while the blockchain scan runs | Works |
+| Recognise a connected hardware signer, read-only | Implemented, **never run against a physical device** |
+
+**What does not exist yet**
+
+- **Signing and broadcasting.** The app cannot sign a transaction or send Bitcoin.
+  That is deliberate: it is Phase 4 in `ROADMAP.md`, and starting it needs the owner
+  to move that boundary explicitly, naming the supported devices and workflow.
+- **Independent decoding of a PSBT saved from the owner's real wallet** has not been
+  done. The engine was verified independently on synthetic data instead.
+- **Physical signer recognition** has never been exercised.
+
+**Limits worth repeating**
+
+- Experimental, unaudited software that handles real money. Verify every address,
+  amount, fee and change on the signing devices.
+- The DMG is unsigned and unnotarized, so Gatekeeper blocks a double-click launch:
+  right-click → Open the first time.
+- Complete the recommended small test payment before moving a large amount.
+
+Everything below is the detailed record: what was wrong, what changed, the security
+findings and their dispositions, the evidence, and the delivery rules.
 
 ---
 

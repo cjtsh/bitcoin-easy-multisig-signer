@@ -1,14 +1,47 @@
 # Roadmap and agent handoff
 
-**Baseline:** v0.1.10, 28 September 2026. The default branch is `main`; the current transaction workflow lives on `phase2-transaction-builder` and is published as v0.1.10, with v0.1.14 as the current candidate (v0.1.11 and v0.1.12 were superseded during development). It prepares and reviews an unsigned transaction and checks connected signer identities; it does not sign or broadcast.
+**Current build:** **v0.1.14**, 28 September 2026, on the `phase2-transaction-builder`
+branch. It prepares and reviews an **unsigned** transaction and performs read-only
+hardware signer recognition. **It does not sign, and it does not broadcast.**
 
-**Progress note (post-v0.1.10).** The receive-only dead end described in Phase 2 is now addressed in code. A `/*` export whose reference address matches `/0/0` reaches the send form without asking the owner to confirm anything: the app resolves the wallet's usual `/1/*` change addresses itself, reports whether the wallet's own history supports them, and shows the change address in the review for checking on the signing device. The live fee preview now performs the same input selection as the builder, so the previewed size and fee match the review. Redirect following was removed from outbound HTTP, the local access token is no longer disclosed in an unauthenticated response, and the high-value confirmation no longer depends on a remote price feed. All of this is covered by synthetic tests and a loopback-API test. The acceptance gates below still require an Apple Silicon Mac walkthrough with the owner's own Testnet4 wallet and signers, which has not been performed.
+## Status at a glance
 
+- [x] **Phase 1 — framework and balance view.** Complete and owner-approved. One
+  Python wallet/PSBT engine, one local HTML interface, an Apple Silicon WebKit
+  wrapper, balance in BTC with satoshis and an approximate USD line.
+- [x] **Phase 2 — send eligibility explained and unblocked.** Complete. The owner's
+  receive-only `/*` export now reaches the send form. The app resolves the wallet's
+  usual change addresses itself rather than asking the owner to confirm a detail
+  they have no way to check, and reports whether the wallet's own history supports
+  them.
+- [x] **Phase 3 — prepare, review and save an unsigned transaction.** Complete for
+  what it claims, exercised by the owner on Apple Silicon: destination and amount,
+  or Send All with the fee deducted; live fee tiers with a visible selected state;
+  size and fee computed from the inputs actually selected; the change address shown
+  in the review; the final transaction id and a public explorer link; a
+  small-test-payment recommendation; and the `.psbt` saved to the Downloads folder.
+  Two usability bugs found in live use — no confirmation of the chosen fee tier,
+  and no sign of progress during a slow scan — were fixed in v0.1.14.
+  **Not evidenced:** independent decoding of a saved PSBT from the owner's real
+  wallet, and recognition of a physical hardware signer.
+- [ ] **Phase 4 — signing and broadcast.** **Not started and not authorised.** The
+  app today can identify a connected signer read-only; it cannot sign or send.
+  Starting this requires the owner to move the signing boundary explicitly and to
+  name the supported devices and workflow.
+
+**Progress note.** The phases were fixed in sequence on this branch: the transaction
+journey was unreachable (v0.1.10); the bundled trust store was never actually used,
+so HTTPS depended on the host machine; the save button produced no file; the wallet
+card asked the owner to answer an unanswerable question; the fee buttons confirmed
+nothing; and a slow scan looked like a dead app. Each is fixed and covered by tests.
+Redirect following was removed from outbound HTTP, the local access token is no
+longer disclosed in an unauthenticated response, and the high-value confirmation no
+longer depends on a remote price feed.
 **How to hand this to another agent:** Say “Implement Phase 2 of `ROADMAP.md`,” then Phase 3, then Phase 4. Read the repository's `README.md`, `replit.md`, and this document first. Each phase has a goal, affected areas, constraints, acceptance checks, and a handoff record. Do not treat the next phase as approved just because the previous one is done. Complete phases in order: the balance view must lead to a clearly explained send-eligibility state before transaction preparation can be completed; an independently checked unsigned transaction is needed before a signer or broadcaster can be connected.
 
 ## Phase 1 — Current checkpoint: framework and balance view
 
-**Status: v0.1.8 is published but does not include the current Phase 3 scope. v0.1.9 is being built to complete transaction preparation, fee/value review, and read-only hardware signer recognition.**
+**Status: complete.**
 
 The repository has one Python wallet/PSBT engine and one local HTML interface for Testnet4 and mainnet, selected by network configuration. The Apple Silicon wrapper embeds Python and displays that interface in a native WebKit window; the source archive is separately usable with Python. The app reads an existing BSMS wallet definition, checks network and reference-address consistency, derives supported public addresses, and asks a selected Esplora explorer about balances and UTXOs. The balance view displays BTC to eight decimal places, sats beside it, and an approximate mainnet BTC/USD comparison beneath BTC. The whole-BTC portion is not capped at one digit. The user has approved this balance presentation.
 
@@ -16,12 +49,12 @@ Implemented code also includes a re-scan request, locally saved advanced Esplora
 
 The user says **Refresh balance appears to work**; do not list refresh as a reported defect. v0.1.8 does not include the current transaction workflow. v0.1.9 adds three live fee tiers, a UTXO-count fee preview with dollar equivalent, a high-dollar confirmation, transaction review, and HWI-backed signer recognition. Testnet4 and physical signer use remain to be tested on the owner's Mac. Signer recognition is not signing; the app cannot sign or broadcast, and the broadcaster URL remains future-use only.
 
-| Capability | Current evidence | Not yet proven / gap |
+| Capability | Evidence | Not yet proven / gap |
 | --- | --- | --- |
-| Open a BSMS definition and display balance | User sees BTC, sats, and approximate USD in the Mac app and says Refresh appears to work; automated parsing/scan tests exist. | Formal error-path and scan-coverage checks; do not invent a refresh bug. |
-| Prepare an unsigned transaction | Engine and HTTP/UI paths create PSBTs; synthetic tests exercise PSBT creation. | Owner's Mac transaction journey and independent decoding of the saved PSBT. |
-| Recognize hardware signers | HWI-backed device recognition matches a connected device's public key to one of the BSMS signers. | Owner's physical-device compatibility check; recognition alone is not a signing test. |
-| Sign and broadcast | Not implemented. | Later phase: explicit approval, signer review, signing, final-transaction verification, broadcast and independent review. |
+| Open a BSMS definition and display balance | Owner uses it on Apple Silicon; wallet, balance and change-address handling all reach the screen; parsing, rejection and scan-coverage tests exist. | Formal error-path walkthrough by the owner. |
+| Prepare an unsigned transaction | Owner reached the send form, fee selection, review and save on the Mac; the engine is verified independently by signing a synthetic PSBT and measuring it (305 vB actual against 307 estimated; effective 5.033 sat/vB against a requested 5). | Independent decoding of a PSBT saved from the owner's real wallet. |
+| Recognize hardware signers | HWI-backed recognition matches a connected device's public key to a BSMS signer; the packaged app passes its headless checks. | Never run against a physical device. Recognition is not signing. |
+| Sign and broadcast | Not implemented, by design. | Phase 4, and only after explicit owner authorisation. |
 
 ### Rules that apply to every subsequent phase
 
@@ -34,7 +67,19 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 
 ## Phase 2 — Explain and unblock transaction eligibility on the Mac
 
-**Status: implemented and exercised on the owner's Mac; not yet fully accepted.** The owner's own wallet hit the receive-only gate; the app now resolves its usual change addresses itself and reaches the send form, with the change address shown in the review — the behaviour this phase asks for. The remaining acceptance evidence is the review, PSBT save and signer steps. The code change and its tests are in place, but the acceptance gate requires a real Mac window and the owner's wallet, so this phase must not be marked passed on the strength of CI or synthetic fixtures alone.
+**Status: complete — acceptance gate passed on the owner's Mac.** The owner's own
+receive-only `/*` wallet hit the gate, was explained plainly, and reached the send
+form. The declaration checkbox this phase originally introduced was removed in
+v0.1.13 by owner decision (see rule 3), because it asked a non-technical owner to
+assert something they could not check. The app now resolves the wallet's usual
+change addresses itself, reports whether the wallet's own history supports them, and
+keeps the change address visible in the review.
+
+*Evidence:* the owner imported their real wallet in the shipped Apple Silicon app,
+saw the blockage and its explanation, and reached the send form; screenshots
+confirmed the wallet card, the balance and the send step. Synthetic and
+loopback-API tests cover the eligibility logic, and page tests forbid descriptor
+jargon and the return of the confirmation checkbox on the main screen.
 
 **Goal:** After a working Testnet4 balance scan, determine why the user cannot use Prepare send. If the wallet is view-only, show the specific reason and requirements; if a verified spend-capable wallet meets all gates, make the send form available. Preserve the currently working refresh behavior. This is the immediate next assignment. **Do not add signing or broadcasting in this phase.**
 
@@ -55,6 +100,24 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 
 ## Phase 3 — Produce and independently verify a Testnet4 unsigned transaction
 
+**Status: complete for what it claims** — owner-exercised on Apple Silicon, with the
+two unproven items noted below.
+
+*Evidence:* the owner reached the send step, chose a fee tier, prepared and reviewed
+a transaction, and reports the journey working in v0.1.13/v0.1.14. The engine is
+verified independently of its own tests by building a transaction, signing it with
+2 of 3 synthetic keys, finalizing it and measuring it. 96 automated tests pass,
+including a loopback frontend-to-API journey and a headless check that the packaged
+binary can write a PSBT.
+
+*Fixed after live use:* the fee-speed buttons confirmed nothing (`aria-pressed` was
+set on two buttons and had no CSS; selection was inferred by comparing rate values,
+which cannot distinguish tiers that round to the same whole sat/vB — the owner's
+live quote was 1 / 2 / 2), and a slow scan looked like a dead app.
+
+*Not evidenced:* independent decoding of a PSBT saved from the owner's real wallet,
+and recognition of a physical hardware signer.
+
 **Goal:** With verified 2-of-3 receive/change paths and a consistent confirmed scan, the user can prepare and review a partial or Send All transaction, see live slow/medium/fast fee choices with sats and USD estimates, catch a high-dollar amount, save an unsigned PSBT, then reach an HWI device-recognition screen that identifies matching signers. The v0.1.9 Mac app must be ready for physical keys to be plugged in for this recognition check. **Do not sign or broadcast.**
 
 **Start here in the code:** `wallet_service.py` (`wallet_layout`, `scan_wallet`, `build_unsigned_psbt`); `gui.py` (`/api/prepare`, cached scan/fee binding); `ui.html` (send form, fee guidance, review, download); `desktop.py` (`save_psbt`); `tests/test_wallet_service.py`, `tests/test_gui.py`, and `tests/test_desktop.py`. The existing tests prove important synthetic cases, but the owner has not been able to complete this journey on the Mac.
@@ -66,7 +129,14 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 3. Show live slow/hour, medium/half-hour, and fast/fastest mainnet sat/vB guidance; round the selected rate up to a whole sat/vB and prepopulate the rate field. Label that fee data is a mainnet reference in Testnet4 mode. Keep fee caps and minimum-rate checks.
 4. Confirm correct destination network, amount parsing to whole sats, sufficient confirmed funds, input selection, previously verified transaction outputs, change ownership, dust handling, fee bounds, and send-all fee deduction. Ensure stale scans or changed settings invalidate a pending review. Keep backend validation authoritative even if frontend fields are enabled.
 5. Show recipient, exact amount in BTC/sats and indicative USD, selected fee rate, estimated vbytes, fee in sats and USD, total deducted, change, and the scan-coverage caveat before enabling the next step. Require transaction and fee review acknowledgements. For a mainnet amount worth $10,000 or more, require a separate high-value confirmation; enforce it in the backend too.
-6. Save the `.psbt` with the native Mac dialog; a cancel must be harmless. The next screen bundles HWI 3.2.0, prompts the user to connect and unlock hardware wallets on-device, enumerates devices, and verifies each available xpub against a public BSMS signer key. Clearly say this does not sign or test transaction approval. Independently decode the PSBT offline and compare its network, inputs, outputs, change, and fee with the app's review.
+6. Save the `.psbt` where the user can actually find it. **Amended in v0.1.12:** the
+native Mac dialog could return nothing while reporting no error, and WKWebView
+ignores browser downloads, so the button appeared to do nothing at all. Saving now
+uses the same local API every other action uses, writes a new file into the
+Downloads folder, and names the full path on screen; an existing file is never
+replaced. **Still outstanding:** independently decode a PSBT saved from the owner's
+real wallet and compare its network, inputs, outputs, change and fee with the app's
+review. The next screen bundles HWI 3.2.0, prompts the user to connect and unlock hardware wallets on-device, enumerates devices, and verifies each available xpub against a public BSMS signer key. Clearly say this does not sign or test transaction approval. Independently decode the PSBT offline and compare its network, inputs, outputs, change, and fee with the app's review.
 7. Extend tests for both accepted and rejected cases, including a real frontend-to-local-API path in the packaged Mac app, backend policy refusals, offline/malformed explorer responses, wrong-network destination, and a save cancellation. Recheck the approved balance view and refresh flow for regressions.
 
 **Acceptance gate:** The v0.1.9 Mac build completes **import → fresh scan → yes/no → partial or Send All → live fee/amount/fee-dollar review → high-value confirmation where applicable → PSBT save → signer-recognition page**. HWI launches from the packaged app, and an independent decoder agrees with the transaction review. With the owner's devices available, at least one intended signer is recognized as matching its BSMS key. Unsupported, incomplete, stale, wrong-network, unaffordable, or excessive-fee cases fail visibly. No Bitcoin is signed or transmitted.
@@ -74,6 +144,10 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 **Handoff to Phase 4:** Record supported descriptor/export format, deterministic fixtures, independent PSBT verification, fee policy, HWI/device recognition results, and Mac steps without wallet data. Actual signing and broadcast remain a separately approved later phase.
 
 ## Phase 4 — Decide the signing boundary, complete the send, and review the whole tool
+
+**Status: not started, and deliberately not authorised.** The read-only recognition
+screen exists from Phase 3; signing and broadcast do not. This is the next phase and
+its first step is an owner decision, not code.
 
 **Goal:** Move from a proven unsigned Testnet4 PSBT to an **owner-approved** end-to-end Testnet4 prototype: hardware signers review and sign, the app verifies the finalized payment, and only an explicit user action submits it. Then run an independent full-tool review. This is **future scope**, not existing functionality. `replit.md` currently says no signing or broadcasting; do not implement this phase until the owner explicitly approves changing that boundary, the supported devices, and the intended send workflow. If the owner instead chooses external signing/broadcast, document and validate that handoff as the agreed prototype endpoint; do not claim the app itself sends Bitcoin.
 
@@ -94,6 +168,9 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 
 ## Delivery discipline for any agent working from this roadmap
 
+- **Documentation-only pushes must not republish.** The workflow ignores changes that
+  touch only Markdown, and a docs-only commit can carry `[skip ci]`, so a released
+  version keeps exactly the artifacts it was verified with.
 - **One version per published build.** Never rebuild a released tag in place: v0.1.11's assets were replaced five times, so a filename and a tag no longer identified their contents. Bump `version.py` for every build that is published; it is the single place the version lives, and the workflow derives the tag, the artifact names and the release title from it.
 - Make one phase's scoped changes at a time. Before editing, compare this roadmap with the actual code and the latest release; the document can become stale. State any assumptions or blocker rather than inventing wallet paths, policy, or a successful click flow.
 - Add focused tests for each fixed failure and run `python -m unittest discover -s tests -q`; validate inline JavaScript syntax and inspect runtime errors when changing `ui.html`. For Mac changes, build on Apple Silicon and perform a **manual native-window** walkthrough. Record which checks used synthetic data and which used real Testnet4 services/devices.
