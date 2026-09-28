@@ -10,6 +10,7 @@ import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+import safe_http
 from gui import LocalApp, launch_url, ui_path
 
 
@@ -86,8 +87,24 @@ def check_bundle_resources() -> None:
         raise RuntimeError("Bundled ui.html does not read its local access token.")
     if getattr(sys, "frozen", False):
         import certifi
-        if not Path(certifi.where()).is_file():
+        bundle = Path(certifi.where())
+        if not bundle.is_file():
             raise RuntimeError("Bundled HTTPS trust store is missing.")
+        # Prove the BUNDLED store is the one configured for use. Checking only
+        # that "some CA is loaded" is not enough: on a build machine with ambient
+        # OpenSSL CA files that passes even when the bundle is ignored, which is
+        # precisely how an earlier build shipped while being unable to verify any
+        # certificate on the user's Mac.
+        if Path(safe_http.trust_bundle() or "\0") != bundle:
+            raise RuntimeError(
+                "The bundled HTTPS trust store is not the one configured for use; "
+                "HTTPS would depend on the host machine's CA configuration."
+            )
+        if safe_http.loaded_ca_count() == 0:
+            raise RuntimeError(
+                "No trusted CA certificates are loaded, so every HTTPS request "
+                "would fail. The bundled trust store is not in effect."
+            )
 
 
 def configure_packaged_tls() -> None:
@@ -98,6 +115,9 @@ def configure_packaged_tls() -> None:
         if not bundle.is_file():
             raise RuntimeError("Bundled HTTPS trust store is missing.")
         os.environ["SSL_CERT_FILE"] = str(bundle)
+        # The environment variable alone is not enough: the HTTPS handler may
+        # already have built its context, so trust the bundle explicitly too.
+        safe_http.set_trust_bundle(bundle)
 
 
 def check_testnet4_network() -> None:

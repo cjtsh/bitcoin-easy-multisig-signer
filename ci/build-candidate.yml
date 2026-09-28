@@ -80,6 +80,13 @@ jobs:
           codesign --verify --strict "$app"
           "$exe" --check-bundle
           "$exe" --check-network
+          # Prove the app trusts the CA store it SHIPS, not the build machine's.
+          # With the ambient trust paths removed, only the bundled store can make
+          # this succeed. Without this, a build that ignores its bundle still
+          # passes on a runner that happens to have system CA files.
+          echo "Re-checking HTTPS with the ambient trust store removed:"
+          env -u SSL_CERT_FILE SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
+          SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-dmg

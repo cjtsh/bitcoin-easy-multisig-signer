@@ -85,6 +85,7 @@ plausibly cause fund loss, code injection, or meaningful disclosure were actione
 | 6 | Medium | GitHub Actions pinned to mutable tags; a stale `.build-venv` was reused across builds | **Fixed.** All 12 actions pinned to commit SHAs; venv rebuilt from scratch each build |
 | 7 | Medium | The genesis-hash check is one-shot and a malicious custom explorer can echo the public constant | **Accepted, documented.** Fund loss is already blocked: every previous transaction is re-fetched and required to match the wallet's derived script and value, and `utxo_consistent` ties balance to UTXOs. Residual risk is privacy and misleading balances, not fabricated amounts |
 | 8 | Low | "Same user on this machine" is the residual trust boundary for the local API | **Accepted, documented.** |
+| 9 | **High** | **Regression introduced during this work, caught only by testing the shipped artifact:** the bundled `certifi` CA store was never actually used. `build_opener()` constructs an `SSLContext` eagerly at import time, but the packaged app sets its bundle later, inside `main()`. HTTPS therefore depended on whatever CA files the host machine happened to have — the build self-check passed on the runner and the app failed on the owner's Mac | **Fixed.** The HTTP opener is now built on first use and the bundle is loaded explicitly (`safe_http.set_trust_bundle`); the packaged self-check asserts the configured store *is* the bundled one; and CI re-runs the network check with the ambient trust paths removed so this cannot regress silently |
 
 Two review passes agreed the following were already clean: loopback-only bind with
 an ephemeral port, Host and Origin checks, `nosniff`/CSP/no-store headers, TLS
@@ -94,6 +95,31 @@ extraction, no request field reaching a filesystem path or subprocess, atomic
 signing or broadcast endpoint, and no xpub, descriptor, fingerprint or origin ever
 leaving the machine (only derived addresses and public txids, and only to the
 configured explorer, after explicit consent).
+
+### Post-mortem: the trust-store regression (finding 9)
+
+Worth recording because the *verification* failed, not just the code.
+
+The previous self-check only asked "did an HTTPS request succeed?". On the GitHub
+runner that was true — the runner has ambient CA files where OpenSSL looks — so
+the check passed while the app was ignoring the CA store it ships. On a Mac
+without that ambient configuration, every HTTPS request failed with
+`CERTIFICATE_VERIFY_FAILED`, which would have broken balance scans, fee quotes and
+price quotes: the app would have looked completely dead.
+
+The replacement check asserts the *configured* store is the bundled one and that
+it contributes trusted CAs, and CI additionally repeats the network check with
+`SSL_CERT_FILE`/`SSL_CERT_DIR` pointed at nonexistent paths. That last step is the
+one that actually distinguishes "HTTPS works here" from "HTTPS will work
+anywhere", and it is reproducible locally:
+
+```sh
+SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs \
+  "dist/Bitcoin Easy Signer.app/Contents/MacOS/Bitcoin Easy Signer" --check-network
+```
+
+Verified: the fixed build passes that command; the previously published v0.1.11
+artifact built by CI fails it.
 
 ---
 
@@ -141,29 +167,55 @@ Synthetic fixtures prove code paths, not your wallet. Still unverified:
 
 ---
 
-## 7. Build status and blockers
+## 7. Build status
 
-**Blocker:** GitHub authentication. `gh auth status` reports no logged-in host, and
-the macOS keychain credential for `github.com` is stale and belongs to a different
-account (`mypbs`), so even `git push` fails with "Invalid username or token". The
-workflow cannot be triggered and artifacts cannot be downloaded without it.
+**The GitHub Actions DMG is built, published and verified.** Release `v0.1.11` is
+the repository's current release, carrying the Apple Silicon DMG, the matching
+source archive, and `SHA256SUMS`.
 
-**Required human action:** `gh auth login` (GitHub.com → HTTPS → authenticate Git →
-login with a web browser) signed in as the account that owns or can write to
-`cjtsh/bitcoin-easy-multisig-signer`.
+- Workflow run `36451204639` — all five jobs green: read version, source archive
+  and tests, Apple Silicon DMG, SHA256SUMS, publish release. The DMG job took
+  1m59s. That run used the hardened workflow; the trust-store fix above is
+  published by the follow-up run.
+- The downloaded DMG matches its published `SHA256SUMS` digest, `hdiutil verify`
+  reports the checksum VALID, and the app inside is valid under
+  `codesign --verify --strict` with `CFBundleShortVersionString` correctly
+  recorded as `0.1.11`.
+- A local build was also produced and verified end to end on this Mac
+  (Apple Silicon, macOS 27) to isolate problems the runner could not show.
 
-Once authenticated: commit, push the branch, push tag `v0.1.11`, watch the run,
-then verify the downloaded DMG against the published `SHA256SUMS`.
+**The workflow is deliberately simple**, per the owner's request: pushing to
+`phase2-transaction-builder` builds the app, verifies it, and publishes an
+ordinary (non-pre-release) release. The version and tag are read from
+`version.py`, no version number is hardcoded, and re-running for an existing
+version replaces that release, so iterating is a single push.
 
-Note the deliberate guard in the publish job: it refuses to publish unless the tag
-is exactly `v0.1.11`, so version-0.1.11 assets can never be mislabelled. Bumping
-the version means updating `version.py` and the workflow together.
+### Two build bugs found by running the build for real
 
-**Versioning note:** `main` is still at `0.1.6` while the released line has run to
-`v0.1.10` on this branch. `main` should be brought current as part of any release
-process.
+1. **Wrong Python.** `hwi 3.2.0` declares `Requires-Python >=3.9,<3.13`. On this
+   Mac `python3` is 3.14, so the build died deep inside pip with an unreadable
+   error. The script now fails immediately with the required range and the fix.
+   This is also why the CI workflow is genuinely necessary here: it pins 3.12.
+2. **Stray extended attributes.** macOS FileProvider (this repo lives in
+   `~/Documents`) attaches `com.apple.FinderInfo` to bundle contents, and
+   `codesign --verify --strict` rejects that as unsealed "detritus". The build now
+   strips xattrs before signing and again on the staged copy. A CI runner would
+   not have hit this; a local build did.
 
----
+### Remaining non-blocking notes
+
+- `main` is still at `version.py 0.1.6` and its copy of the workflow is a
+  *different, older* file named "Build release candidate (no publishing)". That
+  stale name is what GitHub displays in the workflow list. `main` should be
+  brought current as part of any release tidy-up.
+- GitHub reports a deprecation notice: the pinned actions target Node 20 and are
+  being forced onto Node 24. Harmless today; the pins will need refreshing.
+- `CFBundleIdentifier` is still `Bitcoin Easy Signer` (with spaces) rather than a
+  reverse-DNS identifier. Cosmetic for an ad-hoc-signed local build, but it should
+  be fixed before any notarized distribution.
+- The release DMG is unsigned and unnotarized, so Gatekeeper blocks a
+  double-click launch. The user must right-click → Open, or allow it once in
+  System Settings → Privacy & Security.
 
 ## 8. Next phase entry point
 
