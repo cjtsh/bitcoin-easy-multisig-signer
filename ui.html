@@ -59,7 +59,10 @@
     .notice { border-left:4px solid #d59a32; padding:12px 15px; border-radius:8px; background:var(--warn); margin:15px 0; }
     .error { background:#ffeae8; color:var(--red); border-left:4px solid var(--red); padding:13px 15px; border-radius:9px; margin:14px 0; }
     .success { background:var(--mint); padding:11px 14px; border-radius:9px; color:var(--green); margin:12px 0; }
-    .amount { font-size:clamp(30px,5vw,49px); font-weight:760; line-height:1.1; letter-spacing:-.05em; }
+    .balance-primary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; align-items:start; }
+    .balance-primary > div { min-width:0; }
+    .balance-label { margin:0 0 5px; color:var(--muted); font-size:14px; font-weight:650; }
+    .amount { font-size:clamp(26px,3.7vw,43px); font-weight:760; line-height:1.15; letter-spacing:-.045em; white-space:nowrap; }
     .amount small { font-size:16px; letter-spacing:0; font-weight:600; color:var(--muted); }
     .equivalent { margin:5px 0 12px; color:var(--green); font-weight:650; }
     .metrics { display:flex; gap:22px; flex-wrap:wrap; margin:18px 0; }
@@ -81,7 +84,10 @@
     footer { color:var(--muted); font-size:13px; padding-top:10px; }
     a { color:#166c55; }
     [hidden] { display:none !important; }
-    @media(max-width:680px) { .grid { grid-template-columns:1fr; } .card { padding:20px; } }
+    @media(max-width:680px) {
+      .grid, .balance-primary { grid-template-columns:1fr; }
+      .card { padding:20px; }
+    }
   </style>
 </head>
 <body>
@@ -161,8 +167,17 @@
     <section id="balance-card" class="card" hidden>
       <h2 id="balance-title">2. Testnet4 balance</h2>
       <button id="refresh" class="secondary">↻ Refresh balance (no file needed)</button>
-      <div class="amount"><span id="observed">—</span> <small id="balance-unit">test sats observed</small></div>
-      <p id="balance-usd" class="equivalent"></p>
+      <div class="balance-primary">
+        <div>
+          <p class="balance-label">Bitcoin balance</p>
+          <div class="amount"><span id="observed-btc">—</span> <small>BTC</small></div>
+          <p id="balance-usd" class="equivalent"></p>
+        </div>
+        <div>
+          <p id="balance-unit" class="balance-label">Testnet4 sats observed</p>
+          <div id="observed" class="amount">—</div>
+        </div>
+      </div>
       <div class="metrics">
         <div class="metric"><b id="confirmed">—</b><span>confirmed sats</span></div>
         <div class="metric"><b id="pending">—</b><span>pending change (sats)</span></div>
@@ -243,7 +258,7 @@
         "I understand a public explorer will see derived addresses from my real mainnet wallet." :
         "I understand a public explorer will see derived addresses from my Testnet4 wallet.");
       setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
-      setText("balance-unit", main ? "sats observed" : "test sats observed");
+      setText("balance-unit", main ? "Sats observed" : "Testnet4 sats observed");
       setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
       $("destination").placeholder = main ? "bc1…" : "tb1…";
       setText("send-price-note", main ?
@@ -303,6 +318,11 @@
     $("save-servers").addEventListener("click", () => changeServerSettings("save"));
     $("reset-servers").addEventListener("click", () => changeServerSettings("reset"));
     function fmt(num) { return Number(num).toLocaleString("en-US"); }
+    function btc(sats) {
+      const absolute = Math.abs(sats);
+      return (sats < 0 ? "-" : "") + Math.floor(absolute / 100000000).toLocaleString("en-US") +
+        "." + String(absolute % 100000000).padStart(8, "0");
+    }
     function usdReference(sats) {
       if (!rate) return "USD reference unavailable";
       const value = sats / 100000000 * rate.usd_per_btc;
@@ -454,6 +474,7 @@
       }
       $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       lastScan = data;
+      setText("observed-btc", btc(data.observed_sats));
       setText("observed", fmt(data.observed_sats));
       setText("confirmed", fmt(data.confirmed_sats));
       setText("pending", fmt(data.pending_delta_sats));
