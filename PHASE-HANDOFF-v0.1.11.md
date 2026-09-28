@@ -125,7 +125,7 @@ artifact built by CI fails it.
 
 ## 5. Evidence
 
-- `python -m unittest discover -s tests -q` → **77 tests pass** (was 51).
+- `python -m unittest discover -s tests -q` → **88 tests pass** (was 51).
   New: `test_gui_integration.py` (real loopback HTTP server: import → scan →
   estimate → prepare → PSBT, plus token/Origin/Host rejection), 
   `test_declared_change.py` (change-branch derivation and preview/builder
@@ -173,16 +173,27 @@ Synthetic fixtures prove code paths, not your wallet. Still unverified:
 the repository's current release, carrying the Apple Silicon DMG, the matching
 source archive, and `SHA256SUMS`.
 
-- Workflow run `36451204639` — all five jobs green: read version, source archive
-  and tests, Apple Silicon DMG, SHA256SUMS, publish release. The DMG job took
-  1m59s. That run used the hardened workflow; the trust-store fix above is
-  published by the follow-up run.
+- Final workflow run `36453605797` — **all five jobs green** on the current
+  commit: read version (5s), source archive and tests (25s), Apple Silicon DMG
+  (2m1s), SHA256SUMS (5s), publish release (15s). CI runs the full suite on
+  Python 3.12, so the tests are verified on Linux and macOS, not only this Mac.
+- The published DMG was then downloaded and verified as a user would receive it:
+  its SHA-256 matches the published `SHA256SUMS` (`hdiutil verify`: VALID); the
+  app inside is valid under `codesign --verify --strict`; `CFBundleShortVersionString`
+  reads `0.1.11`; and both self-checks pass.
+- **The decisive check passes on the published artifact**: `--check-network`
+  succeeds with `SSL_CERT_FILE` unset *and* with it pointed at a nonexistent
+  path, with `SSL_CERT_DIR` nonexistent, which proves the shipped app trusts the
+  CA store it carries rather than the host's configuration. The same command
+  failed on the artifact built before the fix and on the artifact CI published
+  from the previous commit.
 - The downloaded DMG matches its published `SHA256SUMS` digest, `hdiutil verify`
   reports the checksum VALID, and the app inside is valid under
   `codesign --verify --strict` with `CFBundleShortVersionString` correctly
   recorded as `0.1.11`.
 - A local build was also produced and verified end to end on this Mac
-  (Apple Silicon, macOS 27) to isolate problems the runner could not show.
+  (Apple Silicon, macOS 27). That is what exposed the trust-store regression:
+  every CI check was green while the app could not verify any certificate here.
 
 **The workflow is deliberately simple**, per the owner's request: pushing to
 `phase2-transaction-builder` builds the app, verifies it, and publishes an
