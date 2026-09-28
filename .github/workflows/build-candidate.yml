@@ -1,20 +1,36 @@
-name: Build and publish v0.1.11 test release
+name: Build macOS DMG and release
 
+# Deliberately simple: pushing to the build branch builds the app, verifies it,
+# and publishes a NORMAL GitHub release (not a pre-release) for the version in
+# version.py. Bumping version.py is the only edit needed for a new version --
+# no version number is hardcoded anywhere in this file.
+#
+# Re-running for a version that already has a release replaces it, so iterating
+# on a test build stays a one-push operation.
 on:
   push:
     branches:
       - phase2-transaction-builder
-    tags:
-      - "v*"
   workflow_dispatch:
 
-# Least privilege by default. Only the tag-triggered release job (below) may
-# write, and branch pushes never create or modify a GitHub Release.
 permissions:
   contents: read
 
 jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: read
+        run: |
+          echo "version=$(python3 -c 'import version; print(version.APP_VERSION)')" >> "$GITHUB_OUTPUT"
+
   source:
+    name: Source archive and tests
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -23,14 +39,16 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-source.sh 0.1.11
+      - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: source-0.1.11
-          path: dist/bitcoin-easy-multisig-signer-v0.1.11.tar.gz
+          name: source-archive
+          path: dist/*.tar.gz
           if-no-files-found: error
 
-  macos-apple-silicon:
+  macos:
+    name: Apple Silicon DMG
+    needs: version
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -42,95 +60,106 @@ jobs:
       - run: brew install libusb
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-macos.sh 0.1.11
-      - name: Check DMG and app resources
+      - name: Build the DMG
+        # Without the LIBUSB_SHA256 repository variable the build still succeeds
+        # but prints a loud warning that the bundled native library is unverified.
+        # Set that variable to the reviewed digest to arm the integrity gate.
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
+        run: bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
+      - name: Verify the DMG, the signature and the bundled app
         run: |
-          hdiutil verify dist/Bitcoin-Easy-Signer-v0.1.11-UNSIGNED-TEST.dmg
-          test -f "dist/Bitcoin Easy Signer.app/Contents/Info.plist"
-          test -x "dist/Bitcoin Easy Signer.app/Contents/MacOS/hwi"
-          "dist/Bitcoin Easy Signer.app/Contents/MacOS/hwi" --help >/dev/null
-          "dist/Bitcoin Easy Signer.app/Contents/MacOS/Bitcoin Easy Signer" --check-bundle
-          "dist/Bitcoin Easy Signer.app/Contents/MacOS/Bitcoin Easy Signer" --check-network
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          app="dist/Bitcoin Easy Signer.app"
+          exe="$app/Contents/MacOS/Bitcoin Easy Signer"
+          hdiutil verify "dist/Bitcoin-Easy-Signer-v${version}-UNSIGNED-TEST.dmg"
+          test -f "$app/Contents/Info.plist"
+          test -x "$app/Contents/MacOS/hwi"
+          "$app/Contents/MacOS/hwi" --help >/dev/null
+          codesign --verify --strict "$app"
+          "$exe" --check-bundle
+          "$exe" --check-network
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: unsigned-macos-apple-silicon-0.1.11
-          path: dist/Bitcoin-Easy-Signer-v0.1.11-UNSIGNED-TEST.dmg
+          name: macos-dmg
+          path: dist/*.dmg
           if-no-files-found: error
 
-  # SHA256SUMS is produced on every trigger (branch push, workflow_dispatch and
-  # tag push) so a downloaded artifact can always be verified by the user.
   checksums:
-    needs: [source, macos-apple-silicon]
+    name: SHA256SUMS
+    needs: [version, source, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: source-0.1.11
+          name: source-archive
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: unsigned-macos-apple-silicon-0.1.11
+          name: macos-dmg
           path: dist
-      - name: Write SHA256SUMS for both artifacts
+      - name: Write SHA256SUMS
         run: |
           cd dist
-          shasum -a 256 bitcoin-easy-multisig-signer-v0.1.11.tar.gz Bitcoin-Easy-Signer-v0.1.11-UNSIGNED-TEST.dmg > SHA256SUMS
+          shasum -a 256 *.tar.gz *.dmg > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: SHA256SUMS-0.1.11
+          name: sha256sums
           path: dist/SHA256SUMS
           if-no-files-found: error
 
-  publish-release:
-    # A public release is created or updated ONLY for a pushed tag matching v*.
-    # Branch pushes and workflow_dispatch stop at the uploaded artifacts above.
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [source, macos-apple-silicon, checksums]
+  release:
+    name: Publish release
+    needs: [version, source, macos, checksums]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: source-0.1.11
+          name: source-archive
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: unsigned-macos-apple-silicon-0.1.11
+          name: macos-dmg
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: SHA256SUMS-0.1.11
+          name: sha256sums
           path: dist
-      - name: Publish the release for the pushed tag
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
-          # This workflow always builds 0.1.11, so refuse to publish its assets
-          # under any other tag instead of mislabelling a download.
-          if [[ "$tag" != "v0.1.11" ]]; then
-            echo "This workflow builds version 0.1.11; refusing to publish under tag $tag." >&2
-            exit 1
-          fi
-          cat > release-notes.md <<'EOF'
-          ## v0.1.11 test build
+          tag="v${VERSION}"
+          cat > notes.md <<EOF
+          ## v${VERSION} — Apple Silicon test build
 
-          This is an unsigned Apple Silicon test build from the phase2-transaction-builder branch. It completes transaction preparation through read-only hardware signer recognition. It is not merged into main.
+          Unsigned, unnotarized test build from the \`phase2-transaction-builder\` branch.
 
-          It supports a Yes/No start, partial amount or Send All, live slow/medium/fast fee suggestions, sats and indicative USD fee review, and an additional confirmation for mainnet payments estimated at $10,000 or more. It creates an unsigned PSBT, then uses bundled Bitcoin Core HWI 3.2.0 to identify connected devices whose public keys match this wallet. It does not collect PINs, sign, or broadcast.
+          - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
+          - Prepares and reviews an **unsigned** transaction: a partial amount or Send All
+            with the fee deducted, live slow/medium/fast sat/vB suggestions, a
+            UTXO-based size estimate, the fee in sats and indicative USD, and an extra
+            confirmation for large amounts.
+          - Saves the unsigned \`.psbt\`, then identifies connected hardware signers with
+            bundled Bitcoin Core HWI 3.2.0.
+          - It never asks for a PIN or seed, and it does not sign or broadcast.
 
-          Mac download: unsigned and unnotarized Apple Silicon DMG.
-          Linux/source download: source archive; requires Python as documented.
-          Checksums: SHA256SUMS lists the SHA-256 digest of both downloads.
+          Downloads: \`Bitcoin-Easy-Signer-v${VERSION}-UNSIGNED-TEST.dmg\` (Apple Silicon) and
+          \`bitcoin-easy-multisig-signer-v${VERSION}.tar.gz\` (source).
+          Verify either file against \`SHA256SUMS\`.
+
+          Experimental and unaudited: verify every address, amount and fee on your signers.
           EOF
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # Never overwrite an already-published asset: upload without the
-            # clobber flag, so a conflicting release fails loudly instead.
-            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" dist/Bitcoin-Easy-Signer-v0.1.11-UNSIGNED-TEST.dmg dist/bitcoin-easy-multisig-signer-v0.1.11.tar.gz dist/SHA256SUMS
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "v0.1.11 — transaction and signer recognition test build" --prerelease --notes-file release-notes.md
-          else
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.11 — transaction and signer recognition test build" --latest=false --prerelease --notes-file release-notes.md dist/Bitcoin-Easy-Signer-v0.1.11-UNSIGNED-TEST.dmg dist/bitcoin-easy-multisig-signer-v0.1.11.tar.gz dist/SHA256SUMS
-          fi
+          # Replace an existing release for this version rather than failing, so a
+          # repeated push simply refreshes the test build.
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" >/dev/null 2>&1 || true
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "v${VERSION} — unsigned Apple Silicon test build" \
+            --notes-file notes.md dist/*
