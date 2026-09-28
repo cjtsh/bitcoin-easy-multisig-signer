@@ -52,7 +52,12 @@ chmod 755 "$app/Contents/MacOS/hwi"
 "$app/Contents/MacOS/hwi" --help >/dev/null
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   codesign --force --deep --options runtime --sign "$MAC_SIGN_IDENTITY" "$app"
+else
+  # Adding HWI after PyInstaller created the app invalidates its original seal.
+  # Ad-hoc sign the final bundle so macOS does not treat the changed bundle as damaged.
+  codesign --force --deep --sign - "$app"
 fi
+codesign --verify --deep --strict "$app"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 cp -R "$app" "$stage/"
