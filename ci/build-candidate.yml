@@ -42,11 +42,11 @@ jobs:
       - name: Check DMG and app resources
         run: |
           hdiutil verify dist/Bitcoin-Easy-Signer-v0.1.10-UNSIGNED-TEST.dmg
-          test -f "dist/Easy Bitcoin Multisig.app/Contents/Info.plist"
-          test -x "dist/Easy Bitcoin Multisig.app/Contents/MacOS/hwi"
-          "dist/Easy Bitcoin Multisig.app/Contents/MacOS/hwi" --help >/dev/null
-          "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-bundle
-          "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-network
+          test -f "dist/Bitcoin Easy Signer.app/Contents/Info.plist"
+          test -x "dist/Bitcoin Easy Signer.app/Contents/MacOS/hwi"
+          "dist/Bitcoin Easy Signer.app/Contents/MacOS/hwi" --help >/dev/null
+          "dist/Bitcoin Easy Signer.app/Contents/MacOS/Bitcoin Easy Signer" --check-bundle
+          "dist/Bitcoin Easy Signer.app/Contents/MacOS/Bitcoin Easy Signer" --check-network
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-macos-apple-silicon-0.1.10
