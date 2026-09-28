@@ -82,4 +82,9 @@ jobs:
 
           GitHub Actions passed the automated test suite and packaging checks. Please treat this as an owner test build; first-open macOS security prompts are expected for an unsigned app.
           EOF
-          gh release create v0.1.7             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "v0.1.7 — transaction preparation test build"             --prerelease             --notes-file release-notes.md             dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg             dist/easy-bitcoin-multisig-signer-v0.1.7.tar.gz
+          if gh release view v0.1.7 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit v0.1.7 --repo "$GITHUB_REPOSITORY" --prerelease=false --latest --notes-file release-notes.md
+            gh release upload v0.1.7 --repo "$GITHUB_REPOSITORY" --clobber dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.7.tar.gz
+          else
+            gh release create v0.1.7 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v0.1.7 — transaction preparation test build" --latest --notes-file release-notes.md dist/Easy-Bitcoin-Multisig-v0.1.7-UNSIGNED-TEST.dmg dist/easy-bitcoin-multisig-signer-v0.1.7.tar.gz
+          fi
