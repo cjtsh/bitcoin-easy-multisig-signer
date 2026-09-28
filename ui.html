@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Easy Multisig · Testnet4</title>
+  <title>Easy Multisig · Bitcoin wallet</title>
   <style>
     :root { color-scheme: light; --ink:#182527; --muted:#607174; --line:#dbe5e2;
       --mint:#dbf5e8; --green:#176b53; --paper:#fbfcf8; --warn:#fff1d6; --red:#a13430; }
@@ -13,8 +13,24 @@
     .top small { text-transform:uppercase; letter-spacing:.13em; color:#90d9bd; font-weight:700; }
     .top h1 { margin:6px 0 4px; font-size:clamp(28px,4vw,42px); letter-spacing:-.035em; line-height:1.12; }
     .top p { margin:0; color:#c5e0d4; }
+    .top .secondary { margin-top:14px; }
     .network { display:inline-flex; border:1px solid #5a9b80; border-radius:99px; padding:4px 11px;
       margin-top:17px; font-size:13px; font-weight:700; color:#c9f7dc; }
+    .network.live { border:3px solid #ff9e2c; background:#ffdc99; color:#48260a; }
+    .live-banner { background:#ffde9d; border:3px solid #de6f0b; border-radius:12px;
+      color:#552806; font-weight:800; padding:15px 18px; margin:0 0 19px; font-size:17px; }
+    body.live-mode { background:#fff5e3; }
+    body.live-mode .top { background:#332713; border-bottom:8px solid #db7918; }
+    body.live-mode .top small { color:#ffd38c; }
+    body.live-mode .top p { color:#ffe7c7; }
+    body.live-mode .card { border:2px solid #e5aa4f; box-shadow:0 8px 25px #61341418; }
+    body.live-mode button:not(.secondary) { background:#ae5108; }
+    body.live-mode button:not(.secondary):hover { background:#843a06; }
+    body.live-mode button:not(.secondary):disabled { background:#cab99e; }
+    body.live-mode .secondary { background:#ffe0ad; color:#613009; }
+    body.live-mode .secondary:hover { background:#f9cb80; }
+    body.live-mode input:focus, body.live-mode select:focus,
+    body.live-mode button:focus-visible { outline-color:#e68927; }
     main { max-width:1060px; padding:26px 22px 70px; margin:auto; }
     .steps { display:flex; gap:10px; color:var(--muted); font-size:13px; margin-bottom:19px; flex-wrap:wrap; }
     .steps span { background:#dfe9e2; border-radius:99px; padding:5px 12px; }
@@ -70,12 +86,16 @@
 </head>
 <body>
   <header class="top">
-    <small>Easy Bitcoin Multisig Signer · experimental 0.0.5</small>
+    <small>Easy Bitcoin Multisig Signer · experimental 0.0.6</small>
     <h1>Your wallet, before the keys.</h1>
-    <p>Open a wallet definition, check its Testnet4 balance, and prepare an unsigned send.</p>
-    <div class="network">● TESTNET4 ONLY · NO REAL BITCOIN</div>
+    <p>Open an existing multisig wallet, check its balance, and review an unsigned send.</p>
+    <div id="network-badge" class="network">● TESTNET4 · NO REAL BITCOIN</div>
+    <div><button id="refresh-top" class="secondary" hidden>↻ Refresh wallet balance</button></div>
   </header>
   <main>
+    <div id="live-banner" class="live-banner" role="alert" hidden>
+      ⚠ LIVE BITCOIN NETWORK · REAL FUNDS. Check the wallet file, destination and fee before proceeding.
+    </div>
     <div class="steps"><span class="active">1 · Open wallet</span><span>2 · Check balance</span>
       <span>3 · Prepare send</span><span>4 · Connect signers (not available yet)</span></div>
 
@@ -84,12 +104,16 @@
       <p class="muted">Choose a BSMS 1.0 wallet definition. Do not choose a seed backup or private-key file.</p>
       <div class="grid">
         <div><label for="chain">Bitcoin network</label>
-          <select id="chain"><option value="testnet4">Testnet4</option></select></div>
+          <select id="chain"><option value="testnet4">TESTNET4 · practice with test coins</option>
+            <option value="main">LIVE MAINNET · real BTC</option></select></div>
         <div><label for="wallet-file">Wallet definition</label>
           <input id="wallet-file" type="file" accept=".bsms,.txt,text/plain"></div>
       </div>
       <p class="small muted">Your file stays in this app on your Mac. To check its balance, the app sends derived
-        <strong>public addresses</strong> (not xpubs or the file) to mempool.space's Testnet4 explorer.</p>
+        <strong>public addresses</strong> (not xpubs or the file) to mempool.space's explorer for the selected network.
+        On mainnet, that discloses real wallet activity to a third party.</p>
+      <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
+        <span>I understand a public explorer will see derived addresses from my real mainnet wallet.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
       <div id="message" role="status" aria-live="polite"></div>
     </section>
@@ -107,11 +131,13 @@
           <div id="keys"></div></div>
       </div>
       <div id="path-warning" class="notice" hidden></div>
+      <div id="send-unavailable" class="notice" hidden></div>
     </section>
 
     <section id="balance-card" class="card" hidden>
-      <h2>2. Testnet4 balance</h2>
-      <div class="amount"><span id="observed">—</span> <small>test sats observed</small></div>
+      <h2 id="balance-title">2. Testnet4 balance</h2>
+      <button id="refresh" class="secondary">↻ Refresh balance (no file needed)</button>
+      <div class="amount"><span id="observed">—</span> <small id="balance-unit">test sats observed</small></div>
       <p id="balance-usd" class="equivalent"></p>
       <div class="metrics">
         <div class="metric"><b id="confirmed">—</b><span>confirmed sats</span></div>
@@ -120,7 +146,6 @@
       </div>
       <p id="price-note" class="small muted"></p>
       <p id="coverage" class="small muted"></p>
-      <button id="refresh" class="secondary">Refresh Testnet4 balance</button>
       <div id="addresses"></div>
     </section>
 
@@ -128,16 +153,23 @@
       <h2>3. Prepare a send</h2>
       <p class="muted">This builds an <strong>unsigned PSBT</strong>. It will not sign or broadcast anything.</p>
       <div class="grid">
-        <div><label for="destination">Send to Testnet4 address</label>
+        <div><label id="destination-label" for="destination">Send to Testnet4 address</label>
           <input id="destination" type="text" placeholder="tb1…" autocomplete="off" spellcheck="false"></div>
         <div><label for="amount">Amount in sats</label>
           <input id="amount" type="number" min="546" step="1" placeholder="e.g. 1000">
           <p id="send-equivalent" class="small equivalent" aria-live="polite"></p></div>
       </div>
-      <label for="fee-rate">Estimated fee rate (sat/vB)</label>
+      <label for="fee-rate">Fee rate — sats per virtual byte (sat/vB), not dollars</label>
       <input id="fee-rate" type="number" min="1" max="25" step="1" value="2" style="max-width:150px">
-      <p class="small muted">Confirmed coins only. The fee estimate is conservative; final inputs and change are shown for review.</p>
-      <p class="small muted">USD figures use the mainnet BTC spot rate for perspective. Testnet4 coins have no cash value.</p>
+      <p id="fee-guidance" class="small muted" aria-live="polite">Loading current mainnet fee estimates…</p>
+      <div>
+        <button id="use-standard" class="secondary" disabled>Use standard rate</button>
+        <button id="use-fast" class="secondary" disabled>Use fast rate</button>
+      </div>
+      <p id="fee-preview" class="small muted"></p>
+      <div id="fee-input-warning" class="notice" hidden></div>
+      <p class="small muted">Confirmed coins only. Hard limit: 1–25 sat/vB and 10,000 sats estimated fee. Actual inputs and fee are shown for review.</p>
+      <p id="send-price-note" class="small muted">Mainnet BTC/USD is indicative, not a guaranteed exchange rate.</p>
       <button id="prepare">Review unsigned transaction</button>
       <div id="send-message" role="status" aria-live="polite"></div>
       <div id="review" class="review" hidden>
@@ -146,18 +178,25 @@
         <div class="metrics">
           <div class="metric"><b id="review-amount"></b><span>amount (sats)</span></div>
           <div class="metric"><b id="review-fee"></b><span>estimated fee (sats)</span></div>
+          <div class="metric"><b id="review-rate"></b><span>selected sat/vB</span></div>
+          <div class="metric"><b id="review-total"></b><span>amount + fee (sats)</span></div>
           <div class="metric"><b id="review-inputs"></b><span>inputs</span></div>
         </div>
         <p id="review-equivalent" class="small equivalent"></p>
+        <p id="review-fee-usd" class="small muted"></p>
         <div class="kv"><b>Change (check against your wallet)</b><code id="review-change" class="mono"></code></div>
         <div id="review-warning" class="notice"></div>
+        <div id="review-fee-warning" class="notice" hidden></div>
         <label class="check"><input id="confirm-review" type="checkbox">
           <span>I checked the network, full destination, amount, fee and change address. This does not sign or send.</span></label>
+        <label id="fee-ack-row" class="check" hidden><input id="confirm-fee" type="checkbox">
+          <span>I checked the sat/vB units and the exact estimated fee and total above.</span></label>
         <button id="download" disabled>Download unsigned PSBT</button>
         <p class="small muted">Next: connect hardware signers to verify and sign. Signing and broadcasting are not implemented in this version.</p>
       </div>
     </section>
-    <footer>Experimental Testnet4 software. Do not use with real Bitcoin or enter seed words/private keys.
+    <footer>Experimental, unaudited software. Mainnet mode handles real BTC; independently verify every
+      output and fee on a trusted signer before signing elsewhere. Never enter seed words or private keys.
       <a href="https://github.com/cjtsh/easy-bitcoin-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Read the full disclaimer</a>.
       <p><button id="quit" class="secondary">Quit local app</button></p></footer>
   </main>
@@ -165,7 +204,28 @@
     const token = "__LOCAL_TOKEN__";
     const $ = id => document.getElementById(id);
     let currentPsbt = null;
-    let rate = null, lastScan = null, reviewAmountSats = null, priceRequestId = 0;
+    let rate = null, lastScan = null, reviewAmountSats = null, reviewFeeSats = null;
+    let priceRequestId = 0, feeRequestId = 0, walletActionId = 0, feeQuote = null;
+    let walletCanPrepare = false;
+    const selectedChain = () => $("chain").value;
+    function updateNetworkUI() {
+      const main = selectedChain() === "main";
+      setText("network-badge", main ? "● MAINNET · REAL BITCOIN" :
+        "● TESTNET4 · NO REAL BITCOIN");
+      $("network-badge").classList.toggle("live", main);
+      document.body.classList.toggle("live-mode", main);
+      $("live-banner").hidden = !main;
+      $("explorer-consent-row").hidden = !main;
+      setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
+      setText("balance-unit", main ? "sats observed" : "test sats observed");
+      setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
+      $("destination").placeholder = main ? "bc1…" : "tb1…";
+      setText("send-price-note", main ?
+        "BTC/USD and fee suggestions are mainnet references, not guarantees." :
+        "BTC/USD and fee suggestions use mainnet as a reference. Testnet4 coins have no cash value.");
+      renderPrice();
+      renderFeeGuidance();
+    }
     function setText(id, value) { $(id).textContent = String(value); }
     function msg(id, text, error=false) {
       const el = $(id); el.textContent = text; el.className = text ? (error ? "error" : "success") : "";
@@ -216,11 +276,13 @@
         "Enter sats to see BTC and a USD size reference.");
     }
     function renderPrice() {
+      const test = selectedChain() === "testnet4";
       setText("price-note", rate ?
         "Mainnet BTC/USD spot: " + fmt(rate.usd_per_btc) + " USD/BTC · " +
         rate.source + " · " + new Date(rate.as_of).toLocaleString() +
-        ". Testnet4 coins have no cash value." :
-        "BTC/USD rate unavailable. Satoshi balances still display; Testnet4 coins have no cash value.");
+        (test ? ". Testnet4 coins have no cash value." : ". Indicative quote, not a sale price.") :
+        "BTC/USD rate unavailable. Satoshi balances still display." +
+        (test ? " Testnet4 coins have no cash value." : ""));
       if (lastScan) {
         setText("balance-usd", usdLabel(lastScan.observed_sats));
         showAddresses(lastScan);
@@ -228,6 +290,7 @@
       updateSendEquivalent();
       if (reviewAmountSats !== null) {
         setText("review-equivalent", usdLabel(reviewAmountSats));
+        setText("review-fee-usd", "Estimated fee: " + usdLabel(reviewFeeSats));
       }
     }
     async function loadPrice() {
@@ -240,14 +303,67 @@
       } catch (_) { if (requestId === priceRequestId) rate = null; }
       renderPrice();
     }
+    function feeTooHighForNetwork(value) {
+      return value > Math.max(5, feeQuote ? 2 * feeQuote.fastest : 5);
+    }
+    function renderFeeGuidance() {
+      const value = Number($("fee-rate").value);
+      setText("fee-guidance", feeQuote ?
+        "Live mainnet estimates: economy " + feeQuote.economy + ", standard " +
+        feeQuote.standard + ", fast " + feeQuote.fastest +
+        " sat/vB · checked " + new Date(feeQuote.checked_at).toLocaleString() +
+        " via " + feeQuote.source + ". Estimates, not guarantees." +
+        (selectedChain() === "testnet4" ? " Testnet4 fees may differ." : "") :
+        "Live mainnet fee estimates unavailable. You can still enter 1–25 sat/vB; verify the fee at review.");
+      for (const [id, name] of [["use-standard", "standard"], ["use-fast", "fastest"]]) {
+        const button = $(id), suggested = feeQuote && feeQuote[name];
+        button.disabled = !suggested || suggested > 25;
+        button.textContent = "Use " + (name === "standard" ? "standard" : "fast") +
+          (suggested ? " (" + suggested + " sat/vB)" : " rate");
+      }
+      setText("fee-preview", Number.isInteger(value) && value >= 1 ?
+        "At " + value + " sat/vB, a one-input send is roughly " + fmt(270 * value) +
+        " sats in fees. More inputs cost more; review the actual estimate below." :
+        "Enter a whole-number fee rate in sat/vB.");
+      const warn = !Number.isInteger(value) || value < 1 || value > 25 ?
+        "Fee rate must be a whole number from 1 to 25 sat/vB. Values such as 500 are blocked." :
+        feeQuote && selectedChain() === "main" && value < feeQuote.economy ?
+        "Below the live mainnet economy estimate of " + feeQuote.economy +
+        " sat/vB. Mainnet transaction preparation is blocked at this rate." :
+        feeQuote && selectedChain() === "main" && value < feeQuote.standard ?
+        "Below the live mainnet standard estimate of " + feeQuote.standard +
+        " sat/vB. Confirmation may be slower; review this rate carefully." :
+        feeTooHighForNetwork(value) ?
+        "This is much higher than the available network estimate. Check that you entered sat/vB, not dollars." : "";
+      $("fee-input-warning").hidden = !warn;
+      setText("fee-input-warning", warn);
+    }
+    async function loadFees() {
+      const requestId = ++feeRequestId;
+      try {
+        const response = await fetch("/api/fees", {cache:"no-store"});
+        if (!response.ok) throw new Error("Fee feed unavailable");
+        const quote = await response.json();
+        if (requestId === feeRequestId) feeQuote = quote;
+      } catch (_) { if (requestId === feeRequestId) feeQuote = null; }
+      renderFeeGuidance();
+    }
     function showWallet(data) {
+      $("chain").value = data.network;
+      updateNetworkUI();
+      walletCanPrepare = data.can_prepare;
       $("wallet-card").hidden = false;
+      $("refresh-top").hidden = false;
       setText("policy", data.policy + " · " + data.chain);
       setText("reference", data.reference_address);
       setText("receive", data.receive_address);
       setText("change", data.change_address || "Not defined in this file");
       $("path-warning").hidden = !data.warning;
       setText("path-warning", data.warning);
+      $("send-unavailable").hidden = walletCanPrepare;
+      setText("send-unavailable", walletCanPrepare ? "" :
+        "View-only for this wallet definition. Mainnet PSBTs require an explicitly declared, " +
+        "reference-matched 2-of-3 receive/change descriptor. No change path will be guessed.");
       $("keys").replaceChildren();
       for (const key of data.keys) {
         const card = document.createElement("details"); card.className = "cosigner";
@@ -263,8 +379,16 @@
     }
     function showBalance(data) {
       $("balance-card").hidden = false;
-      $("send-card").hidden = false;
-      $("review").hidden = true; currentPsbt = null; reviewAmountSats = null;
+      const allowSend = walletCanPrepare && !data.coverage_limited &&
+        (selectedChain() !== "main" || data.utxo_consistent);
+      $("send-card").hidden = !allowSend;
+      if (walletCanPrepare && !allowSend) {
+        $("send-unavailable").hidden = false;
+        setText("send-unavailable", data.utxo_consistent === false ?
+          "Explorer UTXOs and confirmed balance disagree. Transaction preparation is blocked; refresh or verify with your own node." :
+          "Address coverage is incomplete. Transaction preparation is blocked.");
+      }
+      $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       lastScan = data;
       setText("observed", fmt(data.observed_sats));
       setText("confirmed", fmt(data.confirmed_sats));
@@ -273,70 +397,120 @@
       setText("coverage", "Checked " + data.scanned + " addresses · last refreshed " +
         new Date(data.scanned_at).toLocaleString() + " · " + data.source +
         (data.coverage_limited ? " · Partial coverage: do not treat this as a complete wallet balance." :
-        " · Standard 20-unused-address gap scan. Older or unusual paths may still be missed."));
+        " · Standard 20-unused-address gap scan. Older or unusual paths may still be missed.") +
+        (selectedChain() === "main" ?
+          " · Public explorer data can be stale; verify independently before spending." : ""));
       renderPrice();
     }
     async function refresh() {
+      const started = walletActionId, chain = selectedChain();
       $("balance-card").hidden = true; $("send-card").hidden = true;
       lastScan = null;
-      $("refresh").disabled = true; msg("message", "Scanning Testnet4. This can take a little while…");
-      loadPrice();
+      $("refresh").disabled = true; $("refresh-top").disabled = true;
+      msg("message", "Refreshing " + (selectedChain() === "main" ? "mainnet" : "Testnet4") +
+        " balance. Your wallet file is already open…");
+      loadPrice(); loadFees();
       try {
-        const balance = await post("/api/scan", {chain:"testnet4"});
+        const balance = await post("/api/scan", {chain});
+        if (started !== walletActionId || chain !== selectedChain()) return;
         showBalance(balance); msg("message", "Balance refreshed. Check the coverage note below.");
-      } catch (e) { msg("message", e.message, true); }
-      finally { $("refresh").disabled = false; }
+      } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
+      finally { $("refresh").disabled = false; $("refresh-top").disabled = false; }
     }
     $("open").addEventListener("click", async () => {
+      const started = ++walletActionId;
       const file = $("wallet-file").files[0];
       if (!file) { msg("message", "Choose a BSMS wallet definition first.", true); return; }
       if (file.size > 65536) { msg("message", "BSMS file is unexpectedly large.", true); return; }
+      if (selectedChain() === "main" && !$("explorer-consent").checked) {
+        msg("message", "Confirm that the public explorer may see your derived mainnet addresses.", true);
+        return;
+      }
       $("open").disabled = true; $("wallet-card").hidden = true;
       $("balance-card").hidden = true; $("send-card").hidden = true;
-      lastScan = null;
+      $("refresh-top").hidden = true;
+      lastScan = null; currentPsbt = null;
+      reviewAmountSats = null; reviewFeeSats = null;
+      $("destination").value = ""; $("amount").value = "";
+      $("download").disabled = true;
       msg("message", "Opening wallet…");
       try {
-        const wallet = await post("/api/import", {chain:$("chain").value, text:await file.text()});
+        const wallet = await post("/api/import", {chain:selectedChain(),
+          consent_explorer:$("explorer-consent").checked, text:await file.text()});
+        if (started !== walletActionId) return;
         showWallet(wallet); await refresh();
-      } catch (e) { msg("message", e.message, true); }
+      } catch (e) { if (started === walletActionId) msg("message", e.message, true); }
       finally { $("open").disabled = false; }
     });
     $("refresh").addEventListener("click", refresh);
+    $("refresh-top").addEventListener("click", refresh);
+    $("chain").addEventListener("change", () => {
+      walletActionId++;
+      walletCanPrepare = false; lastScan = null;
+      currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
+      $("destination").value = ""; $("amount").value = "";
+      $("fee-rate").value = 2; $("download").disabled = true;
+      $("wallet-card").hidden = true; $("balance-card").hidden = true;
+      $("send-card").hidden = true; $("refresh-top").hidden = true;
+      msg("message", "Choose a BSMS definition for the selected network to continue.");
+      updateNetworkUI();
+    });
     $("amount").addEventListener("input", updateSendEquivalent);
+    $("fee-rate").addEventListener("input", renderFeeGuidance);
+    for (const [id, name] of [["use-standard", "standard"], ["use-fast", "fastest"]]) {
+      $(id).addEventListener("click", () => {
+        if (!feeQuote || feeQuote[name] > 25) return;
+        $("fee-rate").value = feeQuote[name];
+        renderFeeGuidance();
+      });
+    }
     $("prepare").addEventListener("click", async () => {
       const amount = Number($("amount").value), fee = Number($("fee-rate").value);
-      if (!Number.isSafeInteger(amount) || amount < 546 || !Number.isSafeInteger(fee)) {
-        msg("send-message", "Enter a whole-sat amount (at least 546) and fee rate.", true); return;
+      if (!Number.isSafeInteger(amount) || amount < 546 ||
+          !Number.isSafeInteger(fee) || fee < 1 || fee > 25) {
+        msg("send-message", "Enter a whole-sat amount (at least 546) and a fee rate of 1–25 sat/vB.", true); return;
       }
       $("review").hidden = true; currentPsbt = null;
-      reviewAmountSats = null;
+      reviewAmountSats = null; reviewFeeSats = null;
       $("prepare").disabled = true; msg("send-message", "Checking confirmed outputs and building an unsigned PSBT…");
       try {
-        const result = await post("/api/prepare", {chain:"testnet4",
+        const result = await post("/api/prepare", {chain:selectedChain(),
           recipient:$("destination").value.trim(), amount_sats:amount, fee_rate:fee});
         currentPsbt = result.psbt_base64;
         setText("review-destination", result.recipient);
         setText("review-amount", fmt(result.amount_sats));
         setText("review-fee", fmt(result.fee_sats));
+        setText("review-rate", fmt(result.fee_rate_estimate));
+        setText("review-total", fmt(result.total_spend_sats));
         setText("review-inputs", result.inputs);
         setText("review-change", result.change_address + " · " + fmt(result.change_sats) + " sats");
         setText("review-warning", result.change_warning);
-        reviewAmountSats = result.amount_sats; renderPrice();
-        $("confirm-review").checked = false; $("download").disabled = true;
+        reviewAmountSats = result.amount_sats; reviewFeeSats = result.fee_sats; renderPrice();
+        const feeWarning = result.fee_warning ||
+          (feeTooHighForNetwork(fee) ?
+            "The selected sat/vB rate is much higher than the available network estimate. Check the units." : "");
+        $("review-fee-warning").hidden = !feeWarning;
+        setText("review-fee-warning", feeWarning);
+        $("fee-ack-row").hidden = !feeWarning;
+        $("confirm-review").checked = false; $("confirm-fee").checked = false;
+        $("download").disabled = true;
         $("review").hidden = false; msg("send-message", "Unsigned PSBT prepared. Nothing has been sent.");
       } catch (e) { msg("send-message", e.message, true); }
       finally { $("prepare").disabled = false; }
     });
-    $("confirm-review").addEventListener("change", () => {
-      $("download").disabled = !$("confirm-review").checked || !currentPsbt;
-    });
+    function updateDownload() {
+      $("download").disabled = !$("confirm-review").checked || !currentPsbt ||
+        (!$("fee-ack-row").hidden && !$("confirm-fee").checked);
+    }
+    $("confirm-review").addEventListener("change", updateDownload);
+    $("confirm-fee").addEventListener("change", updateDownload);
     $("download").addEventListener("click", () => {
-      if (!currentPsbt || !$("confirm-review").checked) return;
+      if (!currentPsbt || $("download").disabled) return;
       const raw = atob(currentPsbt);
       const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], {type:"application/octet-stream"}));
       const a = document.createElement("a");
-      a.href = url; a.download = "testnet4-unsigned.psbt"; a.click();
+      a.href = url; a.download = selectedChain() + "-unsigned.psbt"; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     });
     $("quit").addEventListener("click", async () => {
@@ -347,7 +521,24 @@
       note.style.cssText = "padding:3rem;font:18px system-ui";
       document.body.append(note);
     });
+    updateNetworkUI();
     loadPrice();
+    loadFees();
+    async function restoreWallet() {
+      const started = walletActionId;
+      try {
+        const saved = await post("/api/status", {});
+        if (started !== walletActionId || !saved.wallet) return;
+        $("chain").value = saved.chain;
+        if (saved.chain === "main" && saved.mainnet_consent) {
+          $("explorer-consent").checked = true;
+        }
+        showWallet(saved.wallet);
+        if (saved.balance) showBalance(saved.balance);
+        msg("message", "Wallet still open in this local app. Use Refresh balance for new transactions.");
+      } catch (_) { /* A newly started or stopped app has no wallet to restore. */ }
+    }
+    restoreWallet();
   </script>
 </body>
 </html>

@@ -4,13 +4,31 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from embit import psbt, transaction
+from embit import bip32, psbt, transaction
+from embit.descriptor import Descriptor
+from embit.descriptor.checksum import checksum
+from embit.networks import NETWORKS
 
-from probe import load_bsms, parse_bsms
+from probe import ProbeError, load_bsms, parse_bsms
 from test_probe import test_record
 from wallet_service import (
-    WalletError, build_unsigned_psbt, scan_wallet, wallet_layout, wallet_summary,
+    WalletError, build_unsigned_psbt, check_fee_safety, scan_wallet, wallet_layout,
+    wallet_summary,
 )
+
+def mainnet_record(suffix="/<0;1>/*"):
+    """Synthetic keys only. No real or uploaded wallet data enters tests."""
+    roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
+    keys = [
+        f"[{root.my_fingerprint.hex()}/48h/0h/0h/2h]"
+        f"{root.derive('m/48h/0h/0h/2h').to_public().to_base58()}{suffix}"
+        for root in roots
+    ]
+    descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
+    receive = Descriptor.from_string(
+        descriptor.replace("/*", "/0/*") if suffix == "/*" else descriptor
+    ).branch(0).derive(0).address(NETWORKS["main"])
+    return f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\nNo path restrictions\n{receive}\n"
 
 
 class WalletServiceTests(unittest.TestCase):
@@ -120,6 +138,83 @@ class WalletServiceTests(unittest.TestCase):
         lines[3] = self.change
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
+
+    def test_mainnet_explicit_branches_build_only_unsigned_psbt(self):
+        record = parse_bsms(mainnet_record())
+        self.assertTrue(wallet_summary(record)["can_prepare"])
+        layout = wallet_layout(record)
+        receive = layout.receive.derive(0).address(NETWORKS["main"])
+        recipient = layout.receive.derive(1).address(NETWORKS["main"])
+        previous = transaction.Transaction(
+            vin=[transaction.TransactionInput(bytes.fromhex("bb" * 32), 0)],
+            vout=[transaction.TransactionOutput(
+                100_000, layout.receive.derive(0).script_pubkey()
+            )],
+        )
+        txid = previous.txid().hex()
+        def fake_get(path, *, text=False):
+            if path == f"/tx/{txid}/hex":
+                return previous.serialize().hex()
+            if path == f"/address/{receive}/utxo":
+                return [{"txid": txid, "vout": 0, "value": 100_000,
+                         "status": {"confirmed": True}}]
+            if path.endswith("/utxo"):
+                return []
+            if path.startswith("/address/"):
+                used = path == f"/address/{receive}"
+                return {
+                    "chain_stats": {"funded_txo_sum": 100_000 if used else 0,
+                                    "spent_txo_sum": 0, "tx_count": 1 if used else 0},
+                    "mempool_stats": {"funded_txo_sum": 0, "spent_txo_sum": 0,
+                                     "tx_count": 0},
+                }
+            raise AssertionError(path)
+        data = scan_wallet(record, fake_get)
+        self.assertEqual(data["network"], "main")
+        self.assertEqual(data["source"], "https://mempool.space/api")
+        self.assertTrue(data["utxo_consistent"])
+        packet_data = build_unsigned_psbt(record, data, recipient, 10_000, 2, fake_get)
+        packet = psbt.PSBT.from_base64(packet_data["psbt_base64"])
+        self.assertEqual(packet.tx.vout[0].script_pubkey.address(NETWORKS["main"]), recipient)
+        self.assertEqual(packet.tx.vout[1].script_pubkey.address(NETWORKS["main"]),
+                         layout.change.derive(0).address(NETWORKS["main"]))
+        self.assertEqual(packet.fee(), packet_data["fee_sats"])
+        self.assertEqual(packet.inputs[0].partial_sigs, {})
+        with self.assertRaisesRegex(WalletError, "bc1"):
+            build_unsigned_psbt(record, data, self.receive, 10_000, 2, fake_get)
+        with self.assertRaisesRegex(WalletError, "network differ"):
+            build_unsigned_psbt(record, {**data, "network": "testnet4"},
+                                recipient, 10_000, 2, fake_get)
+        with self.assertRaisesRegex(WalletError, "disagree"):
+            build_unsigned_psbt(record, {**data, "utxo_consistent": False},
+                                recipient, 10_000, 2, fake_get)
+
+    def test_mainnet_receive_only_and_inferred_branches_cannot_prepare(self):
+        for suffix in ("/0/*", "/*"):
+            with self.subTest(suffix=suffix):
+                record = parse_bsms(mainnet_record(suffix))
+                layout = wallet_layout(record)
+                self.assertIsNone(layout.change)
+                self.assertFalse(wallet_summary(record)["can_prepare"])
+                with self.assertRaisesRegex(WalletError, "explicit 2-of-3"):
+                    build_unsigned_psbt(record, {"network": "main", "utxo_consistent": True},
+                                        record.reference_address, 1000)
+        lines = mainnet_record().splitlines()
+        other = parse_bsms(mainnet_record("/0/*"))
+        lines[3] = other.descriptor.derive(1).address(NETWORKS["main"])
+        with self.assertRaisesRegex(WalletError, "Reference address"):
+            wallet_layout(parse_bsms("\n".join(lines) + "\n"))
+        lines = mainnet_record().splitlines()
+        descriptor = lines[1].split("#")[0].replace("/48h/0h/", "/48h/1h/")
+        lines[1] = descriptor + "#" + checksum(descriptor)
+        with self.assertRaisesRegex(ProbeError, "coin type"):
+            parse_bsms("\n".join(lines) + "\n")
+
+    def test_fee_safety_stops_extreme_fee_and_flags_unusual_rates(self):
+        self.assertEqual(check_fee_safety(540, 1000, 2), "")
+        self.assertIn("Unusually high", check_fee_safety(2700, 1000, 10))
+        with self.assertRaisesRegex(WalletError, "10,000-sat"):
+            check_fee_safety(10_001, 100_000, 25)
 
 
 if __name__ == "__main__":

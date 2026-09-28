@@ -123,6 +123,10 @@ def parse_bsms(text: str) -> WalletRecord:
         key.derivation[:2] != [0x80000030, 0x80000001] for key in keys
     ):
         raise ProbeError("Test wallet signers must use BIP48 coin type 1'.")
+    if network == "main" and any(
+        key.derivation[:2] != [0x80000030, 0x80000000] for key in keys
+    ):
+        raise ProbeError("Mainnet wallet signers must use BIP48 coin type 0'.")
 
     return WalletRecord(
         descriptor=descriptor,

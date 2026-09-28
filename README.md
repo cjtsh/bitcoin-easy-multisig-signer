@@ -1,4 +1,4 @@
-# Easy Bitcoin Multisig Signer — experimental Testnet4 GUI
+# Easy Bitcoin Multisig Signer — experimental mainnet and Testnet4 GUI
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -26,9 +26,10 @@ seed words or private keys into this software. Read the full
 or a guarantee of enforceable protection; obtain qualified legal and security
 review before using software to handle real funds.
 
-Version 0.0.5 includes a local browser GUI for opening a BSMS 1.0
-wallet definition, checking public Testnet4 balances, and preparing an
-**unsigned** PSBT. It cannot sign or broadcast a transaction. It is not yet
+Version 0.0.6 includes a local browser GUI for opening a BSMS 1.0
+wallet definition, checking public mainnet or Testnet4 balances, and preparing
+an **unsigned** PSBT only where the supported receive/change paths are verified.
+It cannot sign or broadcast a transaction. It is not yet
 a finished Mac application, and no physical signer has been tested. The
 previous command-line proof remains available in `probe.py`.
 
@@ -38,7 +39,7 @@ wallet, generate keys, or ask for recovery words. This proof keeps hardware
 communication in the existing [Bitcoin Core HWI][hwi] tool and descriptor
 and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
 
-## Point-and-click Testnet4 GUI on a Mac
+## Point-and-click Testnet4 practice or mainnet viewing on a Mac
 
 1. Download the project's ZIP, unzip it, and double-click
    **Start Easy Multisig.command**. The launcher needs Python 3 installed and
@@ -47,38 +48,62 @@ and PSBT handling in [embit][embit]; it contains no USB driver or signing code.
    an unsigned downloaded launcher. Do not bypass a warning for software
    whose origin you cannot independently verify.
 2. A browser window opens on **127.0.0.1** on your Mac (not a hosted website).
-   Select Testnet4 and choose a **nonproduction BSMS 1.0** definition with
-   the file picker. It shows three public cosigners/xpubs, origin fingerprints,
+   Start with **TESTNET4** and choose a nonproduction BSMS 1.0 definition
+   with the file picker. To use **LIVE MAINNET**, switch networks and choose a
+   *different*, matching mainnet BSMS definition: a Testnet4 definition cannot
+   become a mainnet wallet by flipping the switch. The app shows public
+   cosigners/xpubs, origin fingerprints,
    the reference address, and the first receiving and change addresses.
    The file remains in process memory; it is not stored by the app.
 3. The balance check derives public addresses and sends **those addresses**
-   to the public mempool.space Testnet4 explorer. Neither BSMS nor xpubs are
-   sent. It checks receive and change branches up to 100 indices apiece,
+   to the public mempool.space explorer for the selected network. Neither BSMS
+   nor xpubs are sent. Before a mainnet import, you must explicitly acknowledge
+   that this discloses real wallet addresses/activity to a third party.
+   The wallet definition and last scan stay only in process memory until
+   you quit the local app; reloading the browser restores them. Use the
+   prominent **Refresh wallet balance** button after new deposits—no file
+   re-selection is needed. It checks supported receive and change branches
+   up to 100 indices apiece,
    stopping after a gap of 20 unused addresses. **A displayed amount is an
    explorer observation, not a proof of a complete wallet balance.** The
    interface shows when it last scanned and warns on incomplete coverage or
    inferred descriptor branches. If the explorer fails, it does *not* claim
    the wallet is empty. Each address with activity shows its own confirmed,
    pending and observed net balance; the wallet total sums scanned addresses.
-   For a size reference, the interface also fetches a public BTC/USD spot
+   For a size reference, the interface also fetches a public mainnet BTC/USD spot
    rate from mempool.space and displays approximate USD equivalents beside
    the wallet balance, individual addresses and entered send amount.
    **Testnet4 coins have no real USD value**: these are mainnet BTC price
-   comparisons, not a quote to redeem test coins. Rates can be delayed or
+   comparisons, not a quote to redeem test coins. It also fetches mainnet
+   fee-rate recommendations even while practicing on Testnet4; Testnet4
+   confirmation conditions may differ. Rates can be delayed or
    unavailable; satoshi amounts still display without a rate. No wallet
    information is included in the price request.
-4. Enter a Testnet4 destination, a whole-sat amount and fee rate to prepare
-   a PSBT from confirmed outputs. Review destination, estimated fee and
-   change; then download the unsigned `.psbt`. **Nothing signs or broadcasts.**
+4. Enter a destination on the **selected network**, a whole-sat amount and fee
+   rate to prepare a PSBT from confirmed outputs. Mainnet PSBT preparation
+   requires a 2-of-3 multisig descriptor with explicit receive/change branches
+   matching its reference address; inferred change or incomplete scans are
+   view-only. Public explorer UTXOs must agree with the confirmed balance.
+   The fee rate is limited to 1–25 sat/vB; mainnet preparation also requires a
+   fresh live fee reference, refuses rates below its economy estimate, and
+   warns with extra acknowledgement below its standard estimate. An estimated
+   fee above 10,000 sats is refused, and unusually high estimates require an
+   extra acknowledgement before download. Review destination, selected
+   sat/vB rate, **amount + estimated fee**, change,
+   and every signer display independently; then download the unsigned `.psbt`.
+   **Nothing signs or broadcasts.** A fee quote is an estimate, not a promise
+   of confirmation or a substitute for checking a final signed transaction.
    The "connect signers" step is not implemented in this version.
 
-The sample export described below uses `/*` in the descriptor, but its
+The Testnet4 sample export described below uses `/*` in the descriptor, but its
 reference address matches `/0/0`. The GUI uses that address to identify
 the receive branch, marks the `/1/*` change branch as **inferred**, and asks
 you to verify change independently before any future signing. It must never
-be treated as proof that hardware owns that branch. If the reference address
-cannot be matched, the GUI stops rather than inventing a wallet balance.
-There is no hidden server upload, wallet creation, seed entry, or mainnet mode.
+be treated as proof that hardware owns that branch. On **mainnet**, the GUI
+does not infer change: a file without declared change can show only a partial
+read-only balance. If the reference address cannot be matched, the GUI stops
+rather than inventing a wallet balance. There is no hidden hosted server
+upload, wallet creation or seed entry.
 
 ## Run the older command-line hardware proof on a Mac
 

@@ -1,4 +1,4 @@
-"""Testnet4-only, public-data wallet view and unsigned PSBT preparation.
+"""Public-data mainnet/Testnet4 wallet view and unsigned PSBT preparation.
 
 No seeds, signing keys, signing operations, or broadcast endpoints live here.
 Address queries disclose the queried addresses to the configured public explorer.
@@ -7,6 +7,7 @@ Address queries disclose the queried addresses to the configured public explorer
 from __future__ import annotations
 
 import json
+from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -20,23 +21,44 @@ from embit.networks import NETWORKS
 
 from probe import ProbeError, WalletRecord
 
-EXPLORER = "https://mempool.space/testnet4/api"
+EXPLORERS = {
+    "main": "https://mempool.space/api",
+    "testnet4": "https://mempool.space/testnet4/api",
+}
 GAP_LIMIT = 20
 MAX_INDEX = 100
 SATOSHI_DUST_FLOOR = 546
+MAX_ESTIMATED_FEE_SATS = 10_000
 
 
 class WalletError(ProbeError):
     pass
 
 
-def explorer_get(path: str, *, text: bool = False):
-    """Bounded, Testnet4-only Esplora GET. Never send xpubs or descriptors."""
+def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
+    """Hard stop on extreme fees; return an extra-review warning for unusual ones."""
+    if fee > MAX_ESTIMATED_FEE_SATS:
+        raise WalletError(
+            f"Estimated fee of {fee:,} sats exceeds the 10,000-sat safety ceiling. "
+            "Use fewer inputs or a lower sat/vB rate."
+        )
+    if fee > max(1_000, amount // 4) or fee_rate >= 10:
+        return (
+            f"Unusually high fee: {fee:,} sats at {fee_rate} sat/vB for a "
+            f"{amount:,}-sat send. Confirm the units and total before downloading."
+        )
+    return ""
+
+
+def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4"):
+    """Bounded Esplora GET on an explicit network; never send xpubs."""
+    if chain not in EXPLORERS:
+        raise WalletError("Unsupported explorer network.")
     if not path.startswith("/") or ".." in path or "?" in path:
         raise WalletError("Invalid explorer path.")
     request = Request(
-        EXPLORER + path,
-        headers={"User-Agent": "EasyMultisigTestnet4/0.0.4", "Accept": "application/json"},
+        EXPLORERS[chain] + path,
+        headers={"User-Agent": "EasyMultisig/0.0.6", "Accept": "application/json"},
     )
     try:
         with urlopen(request, timeout=12) as response:
@@ -48,9 +70,21 @@ def explorer_get(path: str, *, text: bool = False):
         return body.decode("ascii") if text else json.loads(body)
     except (HTTPError, URLError, TimeoutError, UnicodeError, ValueError) as exc:
         raise WalletError(
-            "Testnet4 explorer is unavailable or returned invalid data. "
+            "Bitcoin explorer is unavailable or returned invalid data. "
             "No zero balance is claimed; try Refresh later."
         ) from exc
+
+
+def _chain(record: WalletRecord) -> str:
+    if record.network == "main":
+        return "main"
+    if record.network == "test":
+        return "testnet4"
+    raise WalletError("Only mainnet and Testnet4 wallets are supported.")
+
+
+def _query_for(record: WalletRecord, get: Callable) -> Callable:
+    return partial(explorer_get, chain=_chain(record)) if get is explorer_get else get
 
 
 @dataclass(frozen=True)
@@ -63,8 +97,10 @@ class Layout:
 
 def wallet_layout(record: WalletRecord) -> Layout:
     """Resolve paths only when the BSMS reference address anchors receive /0."""
-    if record.network != "test" or not record.reference_address.startswith("tb1"):
-        raise WalletError("This GUI accepts Testnet4 tb1 wallet definitions only.")
+    chain = _chain(record)
+    prefix = "bc1" if chain == "main" else "tb1"
+    if not record.reference_address.startswith(prefix):
+        raise WalletError("Wallet reference address does not match its network.")
     if record.reference_status == "mismatch":
         raise WalletError(
             "Reference address does not match a supported first receive address. "
@@ -79,14 +115,25 @@ def wallet_layout(record: WalletRecord) -> Layout:
         verified = True
     elif suffixes and all(s == "/0/*" for s in suffixes):
         receive = desc
-        change = Descriptor.from_string(text.replace("/0/*", "/1/*"))
-        warning = "Change branch /1/* is inferred from the BIP48 convention, not declared in the BSMS file."
+        change = (None if chain == "main"
+                  else Descriptor.from_string(text.replace("/0/*", "/1/*")))
+        warning = (
+            "Mainnet change is not declared; balance may be incomplete and "
+            "transaction preparation is disabled."
+            if chain == "main" else
+            "Change branch /1/* is inferred from the BIP48 convention, not declared in the BSMS file."
+        )
         verified = False
     elif suffixes and all(s == "/*" for s in suffixes):
         if record.reference_status == "receive-branch-only":
             receive = Descriptor.from_string(text.replace("/*", "/0/*"))
-            change = Descriptor.from_string(text.replace("/*", "/1/*"))
+            change = (None if chain == "main"
+                      else Descriptor.from_string(text.replace("/*", "/1/*")))
             warning = (
+                "The mainnet /* descriptor does not literally match the reference. "
+                "Only the matching /0/* receive path is scanned; change is not guessed. "
+                "Balance is partial and transaction preparation is disabled."
+                if chain == "main" else
                 "The file's /* descriptor does not literally produce its reference address. "
                 "Receive /0/* matches that address; change /1/* is inferred. "
                 "Treat the displayed total as provisional until the wallet's paths are confirmed."
@@ -101,29 +148,37 @@ def wallet_layout(record: WalletRecord) -> Layout:
             verified = False
     else:
         raise WalletError("Unsupported address branches; no balance will be guessed.")
-    if receive.derive(0).address(NETWORKS["test"]) != record.reference_address:
+    network = NETWORKS[record.network]
+    if receive.derive(0).address(network) != record.reference_address:
         raise WalletError("Reference address does not match the chosen receive path.")
-    if change and change.derive(0).address(NETWORKS["test"]) == record.reference_address:
+    if change and change.derive(0).address(network) == record.reference_address:
         raise WalletError("Receive and change paths unexpectedly overlap.")
     return Layout(receive, change, warning, verified)
 
 
 def wallet_summary(record: WalletRecord) -> dict:
     layout = wallet_layout(record)
+    chain = _chain(record)
+    network = NETWORKS[record.network]
     return {
         "policy": f"{record.threshold}-of-{len(record.keys)} native-SegWit multisig",
-        "chain": "Testnet4 (selected in this app; tb1 alone cannot identify a chain)",
+        "chain": ("Bitcoin mainnet" if chain == "main" else
+                  "Testnet4 (selected in this app; tb1 alone cannot identify a chain)"),
+        "network": chain,
+        "can_prepare": (bool(layout.change_verified and layout.change
+                             and record.threshold == 2 and len(record.keys) == 3)
+                        if chain == "main" else bool(layout.change)),
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
-        "receive_address": layout.receive.derive(0).address(NETWORKS["test"]),
+        "receive_address": layout.receive.derive(0).address(network),
         "change_address": (
-            layout.change.derive(0).address(NETWORKS["test"]) if layout.change else None
+            layout.change.derive(0).address(network) if layout.change else None
         ),
         "warning": layout.warning,
         "keys": [
             {"number": i, "fingerprint": key.fingerprint.hex(),
              "origin": str(key.origin),
-             "public_key": key.key.to_base58(version=NETWORKS["test"]["xpub"]),
+             "public_key": key.key.to_base58(version=network["xpub"]),
              "suffix": key.suffix}
             for i, key in enumerate(record.keys, start=1)
         ],
@@ -157,6 +212,8 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
     later explicit previous-transaction requests go to the explorer.
     """
     layout = wallet_layout(record)
+    chain = _chain(record)
+    query = _query_for(record, get)
     addresses = []
     coverage_limited = False
     for name, branch in (("receive", layout.receive), ("change", layout.change)):
@@ -166,10 +223,10 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
         with ThreadPoolExecutor(max_workers=4) as executor:
             for start in range(0, MAX_INDEX, 10):
                 chunk = [
-                    (index, branch.derive(index).address(NETWORKS["test"]))
+                    (index, branch.derive(index).address(NETWORKS[record.network]))
                     for index in range(start, min(start + 10, MAX_INDEX))
                 ]
-                stats = list(executor.map(lambda item: _address_stats(item[1], get), chunk))
+                stats = list(executor.map(lambda item: _address_stats(item[1], query), chunk))
                 for (index, address), stat in zip(chunk, stats):
                     addresses.append(
                         {"branch": name, "index": index, "address": address, **stat}
@@ -185,7 +242,7 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
     for item in addresses:
         if not item["used"]:
             continue
-        raw = get(f"/address/{item['address']}/utxo")
+        raw = query(f"/address/{item['address']}/utxo")
         if not isinstance(raw, list):
             raise WalletError("Explorer returned malformed UTXO information.")
         for entry in raw:
@@ -209,8 +266,12 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
     confirmed = sum(item["confirmed"] for item in addresses)
     pending_delta = sum(item["pending_delta"] for item in addresses)
     return {
+        "network": chain,
         "confirmed_sats": confirmed, "pending_delta_sats": pending_delta,
         "observed_sats": confirmed + pending_delta,
+        "utxo_consistent": sum(
+            u["value"] for u in utxos if u["status"]["confirmed"]
+        ) == confirmed,
         "addresses": [
             item for item in addresses
             if item["used"] or (item["branch"] == "receive" and item["index"] == 0)
@@ -224,7 +285,7 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get) -> dict:
         "coverage_limited": coverage_limited or layout.change is None,
         "path_warning": layout.warning,
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "source": EXPLORER,
+        "source": EXPLORERS[chain],
     }
 
 
@@ -234,16 +295,30 @@ def build_unsigned_psbt(
 ) -> dict:
     """Create an unsigned PSBT with previous transactions; never sign/broadcast."""
     layout = wallet_layout(record)
+    chain = _chain(record)
+    query = _query_for(record, get)
+    if scan.get("network", chain) != chain:
+        raise WalletError("Wallet and scanned network differ; no PSBT built.")
+    if chain == "main":
+        if not layout.change_verified or record.threshold != 2 or len(record.keys) != 3:
+            raise WalletError("Mainnet PSBTs require an explicit 2-of-3 receive/change descriptor.")
+        if not scan.get("utxo_consistent", False):
+            raise WalletError(
+                "Mainnet UTXOs and confirmed balance disagree; refresh or verify with your own node."
+            )
     if layout.change is None or scan.get("coverage_limited"):
         raise WalletError("Change path or scan coverage is incomplete; no PSBT will be built.")
-    if not isinstance(recipient, str) or not recipient.startswith("tb1"):
-        raise WalletError("Testnet4 send requires a tb1 destination address.")
+    prefix = "bc1" if chain == "main" else "tb1"
+    if not isinstance(recipient, str) or not recipient.startswith(prefix):
+        raise WalletError(f"{'Mainnet' if chain == 'main' else 'Testnet4'} send requires a {prefix} destination address.")
     try:
         destination = script.address_to_scriptpubkey(recipient)
+        if destination.address(NETWORKS[record.network]) != recipient.lower():
+            raise ValueError("wrong network")
     except Exception as exc:
         raise WalletError("Destination address is invalid.") from exc
     if type(amount) is not int or amount < SATOSHI_DUST_FLOOR:
-        raise WalletError("Amount must be at least 546 test sats.")
+        raise WalletError("Amount must be at least 546 sats.")
     if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
         raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
     candidates = sorted(
@@ -259,7 +334,8 @@ def build_unsigned_psbt(
         if total >= amount + fee + SATOSHI_DUST_FLOOR:
             break
     if total < amount + fee + SATOSHI_DUST_FLOOR:
-        raise WalletError("Not enough confirmed test sats for amount, estimated fee, and change.")
+        raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
+    fee_warning = check_fee_safety(fee, amount, fee_rate)
     change_index = next(
         (i for i in range(MAX_INDEX)
          if i not in scan["used_change_indices"]),
@@ -268,7 +344,7 @@ def build_unsigned_psbt(
     if change_index is None:
         raise WalletError("No unused change index found within the scanned range.")
     change_desc = layout.change.derive(change_index)
-    change_address = change_desc.address(NETWORKS["test"])
+    change_address = change_desc.address(NETWORKS[record.network])
     outputs = [
         transaction.TransactionOutput(amount, destination),
         transaction.TransactionOutput(total - amount - fee, change_desc.script_pubkey()),
@@ -284,7 +360,7 @@ def build_unsigned_psbt(
         desc = (layout.receive if utxo["branch"] == "receive" else layout.change)
         derived = desc.derive(utxo["index"])
         try:
-            raw = get(f"/tx/{utxo['txid']}/hex", text=True)
+            raw = query(f"/tx/{utxo['txid']}/hex", text=True)
             previous = transaction.Transaction.parse(bytes.fromhex(raw))
             prevout = previous.vout[utxo["vout"]]
         except (ValueError, IndexError, TypeError) as exc:
@@ -313,6 +389,8 @@ def build_unsigned_psbt(
         "recipient": recipient,
         "amount_sats": amount,
         "fee_sats": fee,
+        "fee_warning": fee_warning,
+        "total_spend_sats": amount + fee,
         "fee_rate_estimate": fee_rate,
         "change_sats": total - amount - fee,
         "change_address": change_address,

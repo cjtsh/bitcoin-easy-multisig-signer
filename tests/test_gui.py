@@ -10,9 +10,10 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
 
-from gui import LocalApp, fetch_btc_usd
+from gui import LocalApp, fetch_btc_usd, fetch_fee_rates
 from wallet_service import WalletError
 from test_probe import test_record
+from test_wallet_service import mainnet_record
 
 
 class LocalGuiTests(unittest.TestCase):
@@ -46,6 +47,11 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('id="balance-usd"', page)
         self.assertIn('id="send-equivalent"', page)
         self.assertIn("sats at this address", page)
+        self.assertIn('value="testnet4"', page)
+        self.assertIn('value="main"', page)
+        self.assertIn('id="refresh-top"', page)
+        self.assertIn("LIVE BITCOIN NETWORK · REAL FUNDS", page)
+        self.assertIn("body.live-mode", page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
         text, _ = test_record(short_path=True)
         result = self.post("/api/import", {"chain": "testnet4", "text": text})
@@ -82,6 +88,135 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(result["confirmed_sats"], 6000)
         self.assertEqual(result["utxo_count"], 0)
         self.assertEqual(self.app.scan, fake)
+
+    def test_refresh_twice_uses_same_in_memory_wallet_definition(self):
+        text, _ = test_record()
+        self.post("/api/import", {"chain": "testnet4", "text": text})
+        record = self.app.record
+        base = {
+            "network": "testnet4", "utxo_consistent": True,
+            "confirmed_sats": 0, "pending_delta_sats": 6000,
+            "observed_sats": 6000, "addresses": [], "utxos": [],
+            "scanned": 50, "coverage_limited": False,
+            "path_warning": "", "scanned_at": "2026-09-27T00:00:00+00:00",
+            "source": "https://mempool.space/testnet4/api",
+        }
+        with patch("gui.scan_wallet", side_effect=[
+            base, {**base, "pending_delta_sats": 11_000, "observed_sats": 11_000}
+        ]) as scan:
+            first = self.post("/api/scan", {"chain": "testnet4"})
+            second = self.post("/api/scan", {"chain": "testnet4"})
+        self.assertEqual((first["observed_sats"], second["observed_sats"]), (6000, 11_000))
+        self.assertIs(self.app.record, record)
+        self.assertEqual(scan.call_count, 2)
+
+    def test_mainnet_consent_network_binding_and_restore_after_page_reload(self):
+        text = mainnet_record()
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/import", {"chain": "main", "text": text})
+        self.assertEqual(err.exception.code, 400)
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/import", {"chain": "testnet4", "text": text})
+        self.assertEqual(err.exception.code, 400)
+        result = self.post("/api/import", {"chain": "main", "text": text,
+                                           "consent_explorer": True})
+        self.assertTrue(result["can_prepare"])
+        self.assertEqual(result["network"], "main")
+        fake = {
+            "network": "main", "utxo_consistent": True,
+            "confirmed_sats": 100_000, "pending_delta_sats": 0, "observed_sats": 100_000,
+            "addresses": [], "utxos": [], "scanned": 40, "coverage_limited": False,
+            "path_warning": "", "scanned_at": "2026-09-27T00:00:00+00:00",
+            "source": "https://mempool.space/api",
+        }
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/scan", {"chain": "testnet4"})
+        self.assertEqual(err.exception.code, 400)
+        with patch("gui.scan_wallet", return_value=fake):
+            balance = self.post("/api/scan", {"chain": "main"})
+        self.assertEqual(balance["source"], "https://mempool.space/api")
+        self.assertTrue(balance["utxo_consistent"])
+        restored = self.post("/api/status", {})
+        self.assertEqual(restored["chain"], "main")
+        self.assertTrue(restored["mainnet_consent"])
+        self.assertEqual(restored["wallet"]["reference_address"], result["reference_address"])
+        self.assertEqual(restored["balance"]["observed_sats"], 100_000)
+        self.assertNotIn("utxos", restored["balance"])
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/prepare", {"chain": "testnet4", "recipient": "tb1wrong",
+                                        "amount_sats": 1000})
+        self.assertEqual(err.exception.code, 400)
+
+    def test_mainnet_fee_reference_is_public_and_cached(self):
+        quote = {"network": "main", "fastest": 4, "standard": 3, "hour": 2,
+                 "economy": 1, "minimum": 1, "checked_at": "2026-09-28T00:00:00+00:00",
+                 "source": "mempool.space mainnet"}
+        with patch("gui.fetch_fee_rates", return_value=quote) as fetch:
+            for _ in range(2):
+                with urlopen(self.base + "/api/fees", timeout=3) as response:
+                    self.assertEqual(json.load(response), quote)
+        fetch.assert_called_once_with()
+        with patch("gui.urlopen", return_value=io.BytesIO(json.dumps({
+            "fastestFee": 4, "halfHourFee": 3, "hourFee": 2,
+            "economyFee": 1, "minimumFee": 1
+        }).encode())) as upstream:
+            self.assertEqual(fetch_fee_rates()["fastest"], 4)
+        self.assertEqual(upstream.call_args.args[0].full_url,
+                         "https://mempool.space/api/v1/fees/recommended")
+        with patch("gui.urlopen", return_value=io.BytesIO(json.dumps({
+            "fastestFee": True, "halfHourFee": 3, "hourFee": 2,
+            "economyFee": 1, "minimumFee": 1
+        }).encode())):
+            with self.assertRaisesRegex(WalletError, "Fee estimates unavailable"):
+                fetch_fee_rates()
+        with patch("gui.urlopen", return_value=io.BytesIO(json.dumps({
+            "fastestFee": 1, "halfHourFee": 12, "hourFee": 2,
+            "economyFee": 1, "minimumFee": 1
+        }).encode())):
+            with self.assertRaisesRegex(WalletError, "Fee estimates unavailable"):
+                fetch_fee_rates()
+
+    def test_mainnet_prepare_refuses_missing_or_excessive_live_fee_reference(self):
+        text = mainnet_record()
+        self.post("/api/import", {"chain": "main", "text": text,
+                                  "consent_explorer": True})
+        fake = {
+            "network": "main", "utxo_consistent": True,
+            "confirmed_sats": 100_000, "pending_delta_sats": 0,
+            "observed_sats": 100_000, "addresses": [], "utxos": [],
+            "scanned": 40, "coverage_limited": False, "path_warning": "",
+            "scanned_at": "2026-09-27T00:00:00+00:00",
+            "source": "https://mempool.space/api",
+        }
+        with patch("gui.scan_wallet", return_value=fake):
+            self.post("/api/scan", {"chain": "main"})
+        request = {"chain": "main", "recipient": self.app.record.reference_address,
+                   "amount_sats": 1000, "fee_rate": 2}
+        with patch("gui.fetch_fee_rates", side_effect=WalletError("offline")):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        with patch("gui.fetch_fee_rates", return_value={"standard": 26}):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        self.app.fees = None
+        with patch("gui.fetch_fee_rates", return_value={
+            "standard": 12, "economy": 3, "checked_at": "2026-09-28T00:00:00Z"
+        }), patch("gui.build_unsigned_psbt") as builder:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        builder.assert_not_called()
+        self.app.fees = None
+        with patch("gui.fetch_fee_rates", return_value={
+            "standard": 12, "economy": 1, "checked_at": "2026-09-28T00:00:00Z"
+        }), patch("gui.build_unsigned_psbt", return_value={
+            "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540
+        }):
+            result = self.post("/api/prepare", request)
+        self.assertIn("below the current mainnet standard", result["fee_warning"])
+        self.assertEqual(result["fee_reference"]["standard"], 12)
 
     def test_public_price_endpoint_is_cached_and_independent_of_wallet(self):
         quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",
