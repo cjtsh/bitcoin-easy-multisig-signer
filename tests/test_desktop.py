@@ -11,8 +11,9 @@ from unittest.mock import patch
 
 import safe_http
 from support import real_ca_bundle
-from desktop import (DesktopBridge, check_bundle_resources, check_device_bridge,
-                     check_psbt_save, configure_packaged_tls, main, run_desktop)
+from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources,
+                     check_device_bridge, check_psbt_save, configure_packaged_tls,
+                     main, run_desktop)
 from probe import ProbeError
 from gui import LocalApp, ui_path
 
@@ -180,18 +181,38 @@ class DesktopTests(unittest.TestCase):
     def test_device_bridge_check_exercises_the_bundled_tool(self):
         """It must prove the tool ran, and fail loudly with HWI's reason when it
         could not -- this is the check that catches a broken bundled libusb."""
-        with patch("desktop.invoke_hwi", return_value=[]) as call:
+        capable = {"jade_http_relay": True, "jade_present": True}
+        with patch("desktop.bundled_capabilities", return_value=capable), \
+             patch("desktop.invoke_hwi", return_value=[]) as call:
             check_device_bridge()
         self.assertEqual(call.call_args[0][1], "testnet4")
-        with patch("desktop.invoke_hwi", return_value=[{"model": "Trezor"}]):
+        with patch("desktop.bundled_capabilities", return_value=capable), \
+             patch("desktop.invoke_hwi", return_value=[{"model": "Trezor"}]):
             check_device_bridge()
-        with patch("desktop.invoke_hwi", side_effect=ProbeError("Device not found")):
+        # A Jade could not be unlocked at all without the relay, and that failure
+        # looks like a device fault rather than a packaging omission.
+        with patch("desktop.bundled_capabilities",
+                   return_value={"jade_http_relay": False}):
+            with self.assertRaises(RuntimeError) as err:
+                check_device_bridge()
+            self.assertIn("Blockstream Jade", str(err.exception))
+        with patch("desktop.bundled_capabilities", return_value=capable), \
+             patch("desktop.invoke_hwi", side_effect=ProbeError("Device not found")):
             with self.assertRaises(RuntimeError) as err:
                 check_device_bridge()
             self.assertIn("Device not found", str(err.exception))
-        with patch("desktop.invoke_hwi", return_value={"not": "a list"}):
+        with patch("desktop.bundled_capabilities", return_value=capable), \
+             patch("desktop.invoke_hwi", return_value={"not": "a list"}):
             with self.assertRaises(RuntimeError):
                 check_device_bridge()
+
+    def test_the_jade_relay_dependency_is_installed_and_bundled(self):
+        """A Jade cannot be unlocked without it, and the failure looks like a
+        device fault rather than a missing dependency."""
+        root = Path(__file__).resolve().parents[1]
+        self.assertIn("requests", (root / "requirements-desktop.txt").read_text(encoding="utf-8"))
+        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
+        self.assertIn("--collect-all requests", build)
 
     def test_bundle_check_rejects_an_unconfigured_trust_store(self):
         """The check must fail when the app would fall back to ambient trust."""

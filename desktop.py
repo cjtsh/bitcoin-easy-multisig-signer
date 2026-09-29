@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import os
+import subprocess
 import sys
 import threading
 from http.server import ThreadingHTTPServer
@@ -12,7 +14,7 @@ from pathlib import Path
 
 import safe_http
 from gui import LocalApp, launch_url, save_prepared_psbt, ui_path
-from probe import ProbeError, invoke_hwi
+from probe import ProbeError, _hwi_path, invoke_hwi
 from wallet_service import WalletError
 
 
@@ -162,6 +164,32 @@ def check_psbt_save() -> None:
     print("Bundled unsigned-PSBT save check passed.")
 
 
+def bundled_capabilities() -> dict:
+    """Ask the bundled hardware-wallet tool what it can do.
+
+    Separated from the check itself so tests can exercise the rest without a
+    subprocess. A Jade cannot be unlocked unless the bundled library carries its
+    HTTP relay for Blockstream's pin server, so a packaging omission here silently
+    disables one whole device family.
+    """
+    try:
+        probe = subprocess.run(
+            [_hwi_path("hwi"), "--dsh-capabilities"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except Exception as exc:
+        raise RuntimeError("The bundled hardware-wallet tool could not be run.") from exc
+    try:
+        capabilities = json.loads(probe.stdout)
+    except Exception as exc:
+        raise RuntimeError(
+            "The bundled hardware-wallet tool did not report its capabilities."
+        ) from exc
+    if not isinstance(capabilities, dict):
+        raise RuntimeError("The bundled hardware-wallet tool reported nonsense.")
+    return capabilities
+
+
 def check_device_bridge() -> None:
     """Prove the bundled hardware-wallet tool runs, with no device attached.
 
@@ -172,6 +200,12 @@ def check_device_bridge() -> None:
     would be someone holding a hardware wallet and wondering why nothing happens.
     No device is required or implied.
     """
+    capabilities = bundled_capabilities()
+    if not capabilities.get("jade_http_relay"):
+        raise RuntimeError(
+            "This build cannot unlock a Blockstream Jade: the bundled library has no "
+            "HTTP relay for its PIN server. Install `requests` before building."
+        )
     try:
         devices = invoke_hwi("hwi", "testnet4", "enumerate")
     except ProbeError as exc:

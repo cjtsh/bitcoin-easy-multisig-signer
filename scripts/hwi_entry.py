@@ -45,6 +45,35 @@ def _tolerate_vanished_devices() -> None:
 
 _tolerate_vanished_devices()
 
+
+def _report_capabilities() -> int:
+    """Print what this build can actually do, and exit.
+
+    A Jade cannot be unlocked unless the bundled jade library has its HTTP relay,
+    which exists only when `requests` is importable (jadepy guards it with a try).
+    Without it HWI stops with "Use Recovery Phrase Login or QR PIN Unlock", which
+    looks like a device fault and is really a missing dependency in this bundle.
+    The app checks this at startup and the build fails if it is absent.
+    """
+    import json
+
+    try:
+        from hwilib.devices.jadepy import jade as jade_module
+    except Exception:  # pragma: no cover - depends on the bundle
+        jade_module = None
+
+    capabilities = {
+        "jade_http_relay": bool(jade_module is not None
+                                and hasattr(jade_module, "_http_request")),
+        "jade_present": jade_module is not None,
+    }
+    print(json.dumps(capabilities))
+    return 0
+
+
+if "--dsh-capabilities" in sys.argv:
+    sys.exit(_report_capabilities())
+
 from hwilib._cli import main
 
 

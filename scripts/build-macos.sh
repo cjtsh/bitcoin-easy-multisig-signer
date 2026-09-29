@@ -97,7 +97,8 @@ else
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
 fi
 hwi_args=(--noconfirm --clean --onefile --name hwi --collect-all hwilib
-          --collect-all hid --add-binary "$libusb_dylib:." --distpath dist/hwi
+          --collect-all hid --collect-all requests --collect-all urllib3
+          --collect-all certifi --add-binary "$libusb_dylib:." --distpath dist/hwi
           scripts/hwi_entry.py)
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   hwi_args+=(--codesign-identity "$MAC_SIGN_IDENTITY")
