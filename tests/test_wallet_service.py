@@ -353,17 +353,18 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
 
-    def test_receive_only_export_is_sweep_only(self):
-        """No inferred change path may receive a partial send."""
+    def test_standard_bip48_export_uses_change_on_both_wildcard_shapes(self):
+        """The one-file standard flow is shared by Testnet4 and Mutinynet."""
         for short in (False, True):
             with self.subTest(short=short):
                 record = parse_bsms(test_record(short_path=short)[0])
                 layout = wallet_layout(record)
-                self.assertIsNone(layout.change)
+                self.assertIsNotNone(layout.change)
                 summary = wallet_summary(record)
-                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["can_prepare"])
                 self.assertTrue(summary["can_send_all"])
-                self.assertIsNone(summary["change_address"])
+                self.assertTrue(summary["change_assumed"])
+                self.assertIsNotNone(summary["change_address"])
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
 
@@ -423,14 +424,15 @@ class WalletServiceTests(unittest.TestCase):
             build_unsigned_psbt(record, {**data, "utxo_consistent": False},
                                 recipient, 10_000, 2, fake_get)
 
-    def test_mainnet_receive_only_export_does_not_guess_change(self):
+    def test_mainnet_standard_bip48_export_uses_change_without_extra_file(self):
         for suffix in ("/0/*", "/*"):
             with self.subTest(suffix=suffix):
                 record = parse_bsms(mainnet_record(suffix))
                 layout = wallet_layout(record)
-                self.assertIsNone(layout.change)
+                self.assertIsNotNone(layout.change)
                 summary = wallet_summary(record)
-                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["can_prepare"])
+                self.assertTrue(summary["change_assumed"])
                 self.assertTrue(summary["can_send_all"])
         lines = mainnet_record().splitlines()
         other = parse_bsms(mainnet_record("/0/*"))

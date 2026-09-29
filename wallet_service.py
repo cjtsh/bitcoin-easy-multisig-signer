@@ -23,7 +23,7 @@ from safe_http import open_url as urlopen  # TLS-verified, never follows a redir
 from embit import psbt, script, transaction
 from embit.psbt import DerivationPath
 from embit.descriptor import Descriptor
-from embit.descriptor.miniscript import Multi
+from embit.descriptor.miniscript import Multi, Sortedmulti
 from embit.networks import NETWORKS
 
 from network_config import NETWORKS as CHAIN_CONFIGS, for_record_network
@@ -277,15 +277,26 @@ def wallet_layout(record: WalletRecord) -> Layout:
                 receive, receive_text = desc, text
         else:
             raise WalletError("Unsupported address branches; no balance will be guessed.")
-        # The BSMS restrictions line can declare both branches even when the
-        # descriptor prints only receive. An unused inferred /1/* address is
-        # never proof that the originating wallet controls change.
+        # Nunchuk's BSMS writer emits a bare /* and "No path restrictions" for
+        # ordinary BIP48 multisig. BIP48 itself defines /0/* receive and /1/*
+        # change. Support that standard layout using the one recovery file the
+        # owner has, but label the change branch as standard-derived rather
+        # than claiming it was declared by BSMS or proven by an empty history.
+        # Nonstandard/custom origins continue to fail closed.
         declared = record.restrictions == "/0/*,/1/*"
-        change = _conventional_change(receive_text, record) if declared else None
+        standard_candidate = not declared and _standard_bip48(record)
+        change = (_conventional_change(receive_text, record)
+                  if declared or standard_candidate else None)
+        assumed = bool(change and standard_candidate)
         verified = bool(change and declared)
-        warning = ("This export does not declare a change branch. Only Send All "
-                   "from scanned receiving addresses is available."
-                   if change is None else "")
+        if assumed:
+            warning = ("This wallet uses BIP48 standard change addresses. The BSMS file "
+                       "does not state them; check the change shown during signing.")
+        elif change is None:
+            warning = ("This export does not establish a supported change branch. "
+                       "Only Send All from scanned receiving addresses is available.")
+        else:
+            warning = ""
     network = NETWORKS[record.network]
     if receive.derive(0).address(network) != record.reference_address:
         raise WalletError("Reference address does not match the chosen receive path.")
@@ -298,11 +309,31 @@ _ZERO_BRANCH = re.compile(r"/0/\*")
 _BARE_WILDCARD = re.compile(r"(?<!/\d)/\*")
 
 
-def _conventional_change(receive_text: str, record: WalletRecord) -> Descriptor | None:
-    """Resolve change from the receiving descriptor after BSMS explicitly declares /1/*.
+def _standard_bip48(record: WalletRecord) -> bool:
+    """Conservative one-file BIP48 policy: native SegWit sorted 2-of-3.
 
-    Callers must prove the declaration first. Derivation alone is never evidence
-    that the originating wallet or devices recognize the resulting addresses.
+    BIP48 defines the change/index levels after the four hardened account
+    levels. The first receive address still has to match this exact BSMS file;
+    wallet_layout performs that check before any scan or transaction.
+    """
+    if (record.threshold != 2 or len(record.keys) != 3
+            or not isinstance(record.descriptor.miniscript, Sortedmulti)
+            or record.restrictions != "No path restrictions"):
+        return False
+    origins = [key.derivation for key in record.keys]
+    if any(len(origin) != 4 or origin[0] != 0x80000030
+           or origin[3] != 0x80000002
+           or origin[2] < 0x80000000 for origin in origins):
+        return False
+    return len({tuple(origin) for origin in origins}) == 1
+
+
+def _conventional_change(receive_text: str, record: WalletRecord) -> Descriptor | None:
+    """Resolve the BIP48 internal branch from the anchored external branch.
+
+    Callers must establish either an explicit BSMS declaration or the strict
+    BIP48 policy above. Derivation alone is not evidence of Nunchuk-specific
+    custom branch indices, which this one-file flow does not support.
     """
     if "/**" in receive_text or "<0;1>" in receive_text:
         return None
@@ -331,7 +362,8 @@ def wallet_summary(record: WalletRecord, chain: str | None = None) -> dict:
     config = CHAIN_CONFIGS[_chain(record, chain)]
     network = NETWORKS[record.network]
     supported_policy = record.threshold == 2 and len(record.keys) == 3
-    can_prepare = bool(layout.change and layout.change_verified and supported_policy)
+    can_prepare = bool(layout.change and (layout.change_verified or layout.change_assumed)
+                       and supported_policy)
     can_send_all = supported_policy
     if record.threshold != 2 or len(record.keys) != 3:
         prepare_reason = (
@@ -348,15 +380,14 @@ def wallet_summary(record: WalletRecord, chain: str | None = None) -> dict:
         prepare_reason = ""
     if layout.change_assumed:
         change_note = (
-            "Your wallet file lists the addresses that receive payments, but not the ones "
-            "used for change. Almost every multisig wallet uses the same standard change "
-            "addresses, so the app will use those. The change address is shown in the "
-            "review — check it on your signing device before you approve."
+            "This wallet uses the standard multisig address pattern. Any leftover "
+            "Bitcoin goes back to this wallet. Check the change shown on your "
+            "signing device before you approve."
         )
         change_detail = (
-            "Change addresses are not in your wallet file. The app is using this wallet's "
-            "standard change addresses (the .../1/* branch), which is the usual arrangement "
-            "for BIP48 multisig."
+            "The BSMS file proves the first receiving address but omits a separate "
+            "change path. This app uses BIP48's /1/* internal branch for this strict "
+            "native-SegWit 2-of-3 sorted multisig policy."
         )
     elif layout.change is not None:
         change_note = ""
@@ -679,7 +710,7 @@ def build_unsigned_psbt(
     if record.threshold != 2 or len(record.keys) != 3 or (layout.change is None and not send_all):
         raise WalletError(
             "Preparing this transaction requires a 2-of-3 wallet and, for a smaller "
-            "send, a declared change path."
+            "send, a supported BIP48 change path."
         )
     if scan.get("source") != (base_url or EXPLORERS[chain]):
         raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
