@@ -113,6 +113,27 @@ def signatures_collected(psbt) -> tuple[int, int]:
     return present, threshold
 
 
+def signed_by_signers(psbt, record) -> list[int]:
+    """The wallet's cosigners that have signed, as 1-based signer numbers.
+
+    The PSBT records the fingerprint for every public key that produced a signature,
+    so this needs no guesswork about which device did what.
+    """
+    numbers = {key.fingerprint.hex(): index
+               for index, key in enumerate(record.keys, start=1)}
+    signed: set[int] = set()
+    for scope in psbt.inputs:
+        derivations = scope.bip32_derivations or {}
+        for pubkey in (scope.partial_sigs or {}):
+            path = derivations.get(pubkey)
+            if path is None:
+                continue
+            number = numbers.get(path.fingerprint.hex())
+            if number is not None:
+                signed.add(number)
+    return sorted(signed)
+
+
 def is_complete(psbt) -> bool:
     present, threshold = signatures_collected(psbt)
     return bool(threshold) and present >= threshold

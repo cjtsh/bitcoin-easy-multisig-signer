@@ -256,6 +256,23 @@ def invoke_hwi(executable: str, chain: str, *arguments: str) -> Any:
         raise ProbeError("HWI did not return valid JSON.") from exc
 
 
+def sign_psbt_with_device(executable: str, chain: str, device_type: str,
+                          device_path: str, psbt_base64: str) -> str:
+    """Ask one hardware device to add its signature, returning the updated PSBT.
+
+    The device shows the destination, amount and fee on its own screen and the owner
+    approves it there; this app cannot bypass that, which is the point.
+    """
+    response = invoke_hwi(
+        executable, chain,
+        "--device-type", str(device_type), "--device-path", str(device_path),
+        "signtx", psbt_base64,
+    )
+    if not isinstance(response, dict) or not isinstance(response.get("psbt"), str):
+        raise ProbeError("The device did not return a signed transaction.")
+    return response["psbt"]
+
+
 def _key_origin_path(key: Any) -> str:
     parts = []
     for part in key.derivation:
@@ -342,11 +359,24 @@ def devices_need_attention(statuses: list[str]) -> bool:
     return not statuses or any(SIGNER_MATCHED not in status for status in statuses)
 
 
+def probe_devices_detailed(record: WalletRecord, executable: str, chain: str) -> dict:
+    """Enumerate devices: readable statuses, plus which ones can actually sign."""
+    detailed: dict[str, list] = {"statuses": [], "signable": []}
+    _probe_devices_into(record, executable, chain, detailed)
+    return detailed
+
+
 def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str]:
+    return probe_devices_detailed(record, executable, chain)["statuses"]
+
+
+def _probe_devices_into(record: WalletRecord, executable: str, chain: str,
+                        detailed: dict) -> None:
     devices = invoke_hwi(executable, chain, "enumerate")
     if not isinstance(devices, list):
         raise ProbeError("HWI enumeration returned an unexpected response.")
-    statuses: list[str] = []
+    statuses: list[str] = detailed["statuses"]
+    signable: list[dict] = detailed["signable"]
     for device in devices:
         if not isinstance(device, dict):
             statuses.append("Unrecognized USB response; no match claimed.")
@@ -396,12 +426,17 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
                     f"{model}: signer {index} of {len(record.keys)} {SIGNER_MATCHED} "
                     "(not a signing test)."
                 )
+                # A matched device is one that can add a signature.
+                signable.append({
+                    "type": str(dev_type), "path": str(dev_path), "model": model,
+                    "signer": index, "keys": len(record.keys),
+                    "fingerprint": fingerprint,
+                })
             else:
                 statuses.append(f"{model}: fingerprint matched, but xpub DID NOT MATCH.")
         except ProbeError as exc:
             reason = _hwi_reason(str(exc)) or "device error"
             statuses.append(f"{model}: signer {index} could not be verified ({reason}).")
-    return statuses
 
 
 def _validate_chain(record: WalletRecord, chain: str) -> None:

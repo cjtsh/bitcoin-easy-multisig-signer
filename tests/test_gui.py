@@ -130,6 +130,25 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(page.count('class="details-button"'), 2)
         self.assertIn('id="close-details"', panel)
 
+    def test_the_send_flow_offers_signing_and_broadcast(self):
+        """The owner has to be able to sign and send from this screen, and the
+        transaction id they confirm must be the one that is broadcast."""
+        page = self.get_page()
+        for element in ('id="sign-step"', 'id="sign-buttons"', 'id="sign-progress"',
+                        'id="finalize-step"', 'id="final-amount"', 'id="final-fee"',
+                        'id="final-vsize"', 'id="final-signers"', 'id="final-txid"',
+                        'id="confirm-broadcast"', 'id="broadcast"',
+                        'id="broadcast-message"'):
+            self.assertIn(element, page, f"missing {element}")
+        # Broadcasting requires the tick, and the confirmed id is what is sent.
+        self.assertIn('$("confirm-broadcast").addEventListener("change"', page)
+        self.assertIn("confirmed_txid: finalTxid", page)
+        # The broadcast button is disabled until the tick is set.
+        self.assertIn('$("broadcast").disabled = true', page)
+        self.assertIn('$("broadcast").disabled = !$("confirm-broadcast").checked', page)
+        # The old promise that nothing is ever signed is no longer true.
+        self.assertNotIn("No transaction is signed or broadcast.", page)
+
     def test_the_fee_speed_buttons_show_which_one_is_selected(self):
         """Reported bug: pressing Slow/Medium/Fast gave no confirmation at all."""
         page = self.get_page()
@@ -268,21 +287,28 @@ class LocalGuiTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as err:
             self.post("/api/devices", {"preparation_id": "stale"})
         self.assertEqual(err.exception.code, 400)
-        with patch("gui.probe_devices", return_value=["Trezor: signer 1 of 3 public xpub matched (not a signing test)."]):
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": ["Trezor: signer 1 of 3 public xpub matched (not a signing test)."],
+                "signable": [{"type": "trezor", "path": "p", "model": "Trezor",
+                              "signer": 1, "keys": 3, "fingerprint": "aa"}]}):
             result = self.post("/api/devices", {"preparation_id": "prepared-test"})
         self.assertIn("does not sign or send", result["message"])
         self.assertIn("not a signing test", result["devices"][0])
         # A pre-flight check is legitimate with no transaction at all: the open
         # wallet is enough, and the reply must say that no transaction was involved
         # so a device check can never be read as approval of a payment.
-        with patch("gui.probe_devices", return_value=["Coldcard: not a signer in this BSMS file."]):
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": ["Coldcard: not a signer in this BSMS file."],
+                "signable": []}):
             preflight = self.post("/api/devices", {})
         self.assertIn("no transaction was involved", preflight["message"])
         self.assertEqual(preflight["devices"], ["Coldcard: not a signer in this BSMS file."])
         # A device that did not match still needs the owner's attention, so the
         # interface must offer the troubleshooting list.
         self.assertTrue(preflight["attention"])
-        with patch("gui.probe_devices", return_value=["Jade: signer 1 of 3 public xpub matched (not a signing test)."]):
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": ["Jade: signer 1 of 3 public xpub matched (not a signing test)."],
+                "signable": []}):
             matched = self.post("/api/devices", {})
         self.assertFalse(matched["attention"])
 
@@ -294,14 +320,16 @@ class LocalGuiTests(unittest.TestCase):
         text, _ = test_record(short_path=True)
         self.post("/api/import", {"chain": "testnet4", "text": text,
                                   "consent_explorer": True})
-        with patch("gui.probe_devices", return_value=[]) as call:
+        with patch("gui.probe_devices_detailed",
+                   return_value={"statuses": [], "signable": []}) as call:
             self.post("/api/devices", {})
         self.assertEqual(call.call_args[0][2], "test")
 
     def test_a_mainnet_wallet_still_asks_for_mainnet(self):
         self.post("/api/import", {"chain": "main", "text": mainnet_record(),
                                   "consent_explorer": True})
-        with patch("gui.probe_devices", return_value=[]) as call:
+        with patch("gui.probe_devices_detailed",
+                   return_value={"statuses": [], "signable": []}) as call:
             self.post("/api/devices", {})
         self.assertEqual(call.call_args[0][2], "main")
 
@@ -335,7 +363,7 @@ class LocalGuiTests(unittest.TestCase):
         builder.assert_not_called()
         request["large_amount_confirmed"] = True
         with patch("gui.build_unsigned_psbt", return_value={
-            "psbt_base64": "cHNidP8=", "fee_warning": "",
+            "psbt_base64": "cHNidP8=", "fee_warning": "", "txid": "ab" * 32,
             "fee_sats": 540, "fee_rate_estimate": 2,
         }):
             result = self.post("/api/prepare", request)

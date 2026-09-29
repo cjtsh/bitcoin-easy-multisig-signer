@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**Current build:** **v0.1.23**, 28 September 2026, on the `phase2-transaction-builder`
+**Current build:** **v0.1.24**, 28 September 2026, on the `phase2-transaction-builder`
 branch. It prepares and reviews an **unsigned** transaction and performs read-only
 hardware signer recognition. **It does not sign, and it does not broadcast.**
 
@@ -31,10 +31,12 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   (`...qdvr9fn`, index `/1/1` because `/1/0` was already used) was independently
   re-derived from Sparrow's own descriptor and matched. It previously enumerated a
   Ledger Nano S Plus and correctly rejected it as a non-member device.
-- [ ] **Phase 4 — signing and broadcast.** **Not started and not authorised.** The
-  app today can identify a connected signer read-only; it cannot sign or send.
-  Starting this requires the owner to move the signing boundary explicitly and to
-  name the supported devices and workflow.
+- [x] **Phase 4 — signing and broadcast (testnet4).** Implemented at the owner's
+  request. The app asks each device to sign, finalises when the threshold is met,
+  re-displays the finalised transaction, and broadcasts to Testnet4 after an explicit
+  confirmation of that exact transaction id. **Broadcasting real Bitcoin is refused
+  outright** and stays refused until a full testnet send has been completed. What
+  remains is the owner's first live testnet send with two of the three devices.
 
 **Progress note.** The phases were fixed in sequence on this branch: the transaction
 journey was unreachable (v0.1.10); the bundled trust store was never actually used,

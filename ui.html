@@ -394,8 +394,35 @@
           <button id="check-signers" type="button">Check connected devices</button>
           <div id="signer-message" role="status" aria-live="polite"></div>
           <ul id="signer-results"></ul>
-          <p class="notice">This is device recognition only. No transaction is signed or broadcast.</p>
+          <p class="small muted">Recognition only — it reads public identities and signs nothing.</p>
         </section>
+        <div id="sign-step" hidden>
+          <h3>Sign this transaction</h3>
+          <p class="small muted">Any <strong id="sign-threshold">2</strong> of your
+            <strong id="sign-total">3</strong> devices can sign this payment. Each device shows the
+            destination and amount on its own screen — check them there and approve on the device.
+            This app cannot approve anything for you.</p>
+          <div id="sign-buttons"></div>
+          <div id="sign-progress" role="status" aria-live="polite"></div>
+          <div id="finalize-step" hidden>
+            <h3>Final check before broadcasting</h3>
+            <p class="small muted">This is the exact transaction that will be sent to the
+              network. Compare it with what your devices showed you.</p>
+            <div class="metrics">
+              <div class="metric"><b id="final-amount"></b><span>recipient receives</span></div>
+              <div class="metric"><b id="final-fee"></b><span>network fee</span></div>
+              <div class="metric"><b id="final-vsize"></b><span>transaction size (vB)</span></div>
+              <div class="metric"><b id="final-signers"></b><span>devices that signed</span></div>
+            </div>
+            <div class="kv"><b>Transaction id — the same one shown at review</b>
+              <code id="final-txid" class="mono"></code></div>
+            <label class="check"><input id="confirm-broadcast" type="checkbox">
+              <span>I checked the destination, amount and fee above, and I want to broadcast this
+                exact transaction to Testnet4. This cannot be undone.</span></label>
+            <button id="broadcast" type="button" disabled>Broadcast to Testnet4</button>
+            <div id="broadcast-message" role="status" aria-live="polite"></div>
+          </div>
+        </div>
       </div>
       </div>
     </section>
@@ -444,6 +471,8 @@
     // Which speed button the user actually chose. Rate values alone cannot
     // distinguish them: slow/medium/fast are often the same whole sat/vB.
     let selectedTier = "custom";
+    // The finalised transaction: the id the owner confirms is the id broadcast.
+    let finalTxid = null;
     let feeEstimate = null;
     let preparationId = null;
     let walletCanPrepare = false;
@@ -1061,7 +1090,8 @@
       $("signer-results").replaceChildren();
       setText("signer-message", "Connect and unlock a hardware wallet, then choose Check connected devices.");
     });
-    async function runSignerCheck(button, messageId, resultsId, preparationId, helpId) {
+    async function runSignerCheck(button, messageId, resultsId, preparationId, helpId,
+                                  signStepId) {
       button.disabled = true;
       setBusy("Looking for connected signing devices…");
       setText(messageId, "Checking connected devices. This is read-only…");
@@ -1079,6 +1109,8 @@
         // Show the troubleshooting list whenever a device needs the owner to do
         // something: none found, one that could not be read, or one that did not match.
         if (helpId) $(helpId).hidden = !result.attention;
+        // Devices that matched are the ones that can actually sign.
+        if (signStepId) renderSignable(result.signable || [], signStepId);
       } catch (e) {
         setText(messageId, e.message || "Hardware wallet recognition is unavailable.");
       } finally { button.disabled = false; setBusy(""); }
@@ -1089,7 +1121,87 @@
         "preflight-help"));
     // At the end of a payment: the same check, tied to the review on screen.
     $("check-signers").addEventListener("click", () =>
-      runSignerCheck($("check-signers"), "signer-message", "signer-results", preparationId));
+      runSignerCheck($("check-signers"), "signer-message", "signer-results", preparationId,
+        null, "sign-step"));
+    function renderSignable(signable, signStepId) {
+      const step = $(signStepId), buttons = $("sign-buttons");
+      step.hidden = !signable.length;
+      buttons.replaceChildren();
+      $("finalize-step").hidden = true;
+      finalTxid = null;
+      if (!signable.length) return;
+      setText("sign-threshold", String(signable[0].threshold || 2));
+      setText("sign-total", String(signable[0].keys || signable.length));
+      for (const device of signable) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "secondary";
+        button.textContent = "Sign with " + device.model + " (signer " + device.signer + ")";
+        button.addEventListener("click", () => signWith(device, button));
+        buttons.append(button);
+      }
+      setText("sign-progress", "Waiting for a signature. Approve the transaction on the device screen.");
+      step.scrollIntoView({behavior:"smooth", block:"start"});
+    }
+    async function signWith(device, button) {
+      button.disabled = true;
+      setBusy("Waiting for the device to sign…");
+      setText("sign-progress", "Approve the transaction on the device screen.");
+      try {
+        const result = await post("/api/sign", {preparation_id: preparationId,
+          device_type: device.type, device_path: device.path});
+        const who = result.signers && result.signers.length ?
+          " Signer" + (result.signers.length > 1 ? "s " : " ") + result.signers.join(" and ") + " signed." : "";
+        setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
+          " collected." + who);
+        if (result.complete) await showFinal();
+        else setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
+          " collected." + who + " Sign with another device to reach " + result.threshold + ".");
+      } catch (e) {
+        setText("sign-progress", (e && e.message) || "The device did not sign this transaction.");
+      } finally { button.disabled = false; setBusy(""); }
+    }
+    async function showFinal() {
+      try {
+        const final = await post("/api/finalize", {preparation_id: preparationId});
+        finalTxid = final.txid;
+        setText("final-amount", btc(final.amount_sats) + " BTC");
+        setText("final-fee", fmt(final.fee_sats) + " sats");
+        setText("final-vsize", fmt(final.vsize));
+        setText("final-signers", (final.signers || []).join(", "));
+        setText("final-txid", final.txid);
+        $("confirm-broadcast").checked = false;
+        $("broadcast").disabled = true;
+        $("finalize-step").hidden = false;
+        $("finalize-step").scrollIntoView({behavior:"smooth", block:"start"});
+      } catch (e) {
+        setText("sign-progress", (e && e.message) || "Could not finish the transaction.");
+      }
+    }
+    $("confirm-broadcast").addEventListener("change", () => {
+      $("broadcast").disabled = !$("confirm-broadcast").checked || !finalTxid;
+    });
+    $("broadcast").addEventListener("click", async () => {
+      if (!finalTxid || $("broadcast").disabled) return;
+      $("broadcast").disabled = true;
+      setBusy("Sending the transaction to the network…");
+      try {
+        const sent = await post("/api/broadcast", {preparation_id: preparationId,
+          confirm: true, confirmed_txid: finalTxid});
+        const holder = $("broadcast-message");
+        holder.className = "success";
+        const link = document.createElement("a");
+        link.href = sent.explorer; link.target = "_blank"; link.rel = "noopener noreferrer";
+        link.textContent = "watch it confirm";
+        holder.replaceChildren(document.createTextNode(
+          "Sent. Transaction " + sent.txid + " is on its way — "), link,
+          document.createTextNode(". A payment is not finished until it is confirmed."));
+      } catch (e) {
+        const holder = $("broadcast-message");
+        holder.className = "error";
+        setText("broadcast-message", (e && e.message) || "The transaction was not broadcast.");
+      } finally { setBusy(""); }
+    });
     $("download").addEventListener("click", async () => {
       if (!currentPsbt || $("download").disabled) return;
       $("download").disabled = true;

@@ -24,6 +24,9 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
+from embit.networks import NETWORKS
+from embit.psbt import PSBT
+
 from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from network_config import NETWORKS as CHAIN_CONFIGS
@@ -33,9 +36,11 @@ from network_settings import (
 )
 from version import APP_VERSION
 from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsms,
-                   probe_devices)
-from wallet_service import (WalletError, build_unsigned_psbt, estimate_fee_preview,
-                            scan_wallet, wallet_summary)
+                   probe_devices_detailed, sign_psbt_with_device)
+from signing import (SigningError, finalize_multisig, is_complete,
+                     signatures_collected, signed_by_signers)
+from wallet_service import (WalletError, broadcast_transaction, build_unsigned_psbt,
+                            estimate_fee_preview, scan_wallet, wallet_summary)
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
 PRICE_URL = "https://mempool.space/api/v1/prices"
@@ -197,6 +202,10 @@ class LocalApp:
         self.scan = None
         self.prepared_psbt = None
         self.prepared_id = None
+        # The transaction id shown at review time. SegWit keeps signatures outside
+        # it, so it must be identical before signing and after. It is the thread that
+        # ties what the owner confirmed to what would actually be broadcast.
+        self.prepared_txid = None
         self.revision = 0
         self.scan_generation = 0
         self.price = None
@@ -319,6 +328,12 @@ class LocalApp:
                         self._prepare(request)
                     elif self.path == "/api/save":
                         self._save(request)
+                    elif self.path == "/api/sign":
+                        self._sign(request)
+                    elif self.path == "/api/finalize":
+                        self._finalize(request)
+                    elif self.path == "/api/broadcast":
+                        self._broadcast(request)
                     elif self.path == "/api/devices":
                         self._devices(request)
                     elif self.path == "/api/estimate":
@@ -352,6 +367,7 @@ class LocalApp:
                     state.scan = None
                     state.prepared_psbt = None
                     state.prepared_id = None
+                    state.prepared_txid = None
                     state.revision += 1
                     state.scan_generation += 1
                     revision = state.revision
@@ -380,6 +396,7 @@ class LocalApp:
                     state.scan = None
                     state.prepared_psbt = None
                     state.prepared_id = None
+                    state.prepared_txid = None
                     state.scan_generation += 1
                     generation = state.scan_generation
                 if record is None:
@@ -423,15 +440,128 @@ class LocalApp:
                 # type, and testnet and testnet4 share the tpub version bytes and the
                 # tb1 address prefix, so the xpub comparison is byte-exact either way.
                 hwi_chain = "main" if chain == "main" else "test"
-                statuses = probe_devices(record, "hwi", hwi_chain)
+                detailed = probe_devices_detailed(record, "hwi", hwi_chain)
+                statuses = detailed["statuses"]
                 self._send(200, {
                     "devices": statuses,
+                    "signable": detailed["signable"],
                     "attention": devices_need_attention(statuses),
                     "message": ("No compatible hardware signer detected." if not statuses
                                 else ("Device check complete. This check does not sign or send."
                                       if supplied else
                                       "Device check complete. This reads public identities only; "
                                       "no transaction was involved.")),
+                })
+
+            def _current_prepared(self, data, action: str):
+                """The prepared transaction, but only the one the owner reviewed."""
+                with state.lock:
+                    record, chain = state.record, state.chain
+                    prepared, preparation_id = state.prepared_psbt, state.prepared_id
+                    txid = state.prepared_txid
+                if record is None or chain is None or not prepared:
+                    raise WalletError(f"Prepare and review a transaction before {action}.")
+                if not preparation_id or data.get("preparation_id") != preparation_id:
+                    raise WalletError(f"Review the current transaction before {action}.")
+                return record, chain, prepared, preparation_id, txid
+
+            def _sign(self, data):
+                record, chain, prepared, preparation_id, txid = self._current_prepared(
+                    data, "signing it")
+                device_type = str(data.get("device_type") or "")
+                device_path = str(data.get("device_path") or "")
+                if not device_type or not device_path:
+                    raise WalletError("Choose a connected device to sign with.")
+                hwi_chain = "main" if chain == "main" else "test"
+                before = PSBT.from_base64(prepared)
+                try:
+                    updated = sign_psbt_with_device(
+                        "hwi", hwi_chain, device_type, device_path, prepared)
+                except ProbeError as exc:
+                    raise WalletError(str(exc)) from exc
+                try:
+                    after = PSBT.from_base64(updated)
+                except Exception as exc:
+                    raise WalletError("The device returned a file this app cannot read.") from exc
+                if after.tx.txid().hex() != before.tx.txid().hex():
+                    raise WalletError(
+                        "The device returned a different transaction, so it was refused. "
+                        "Nothing was signed into the reviewed transaction."
+                    )
+                with state.lock:
+                    if state.prepared_id != preparation_id:
+                        raise WalletError("The transaction changed while signing. Start again.")
+                    state.prepared_psbt = updated
+                present, threshold = signatures_collected(after)
+                self._send(200, {
+                    "signatures": present,
+                    "threshold": threshold,
+                    "signers": signed_by_signers(after, record),
+                    "complete": is_complete(after),
+                    "key_count": len(record.keys),
+                })
+
+            def _finalize(self, data):
+                record, _chain, prepared, _prep, txid = self._current_prepared(
+                    data, "finishing it")
+                packet = PSBT.from_base64(prepared)
+                # Read the signers first: finalising clears the partial signatures.
+                signers = signed_by_signers(packet, record)
+                try:
+                    final = finalize_multisig(packet, txid)
+                except SigningError as exc:
+                    raise WalletError(str(exc)) from exc
+                self._send(200, {
+                    "txid": final["txid"],
+                    "vsize": final["vsize"],
+                    "fee_sats": final["fee_sats"],
+                    "signers": signers,
+                    "destination": packet.tx.vout[0].script_pubkey.address(
+                        NETWORKS[record.network]),
+                    "amount_sats": packet.tx.vout[0].value,
+                    "change_sats": (packet.tx.vout[1].value
+                                    if len(packet.tx.vout) > 1 else 0),
+                })
+
+            def _broadcast(self, data):
+                _record, chain, prepared, _prep, txid = self._current_prepared(
+                    data, "broadcasting it")
+                # Broadcasting real Bitcoin is not enabled in this build. A completed
+                # testnet send comes first, and switching this on must be a deliberate
+                # change rather than a setting anyone can flip by accident.
+                if chain == "main":
+                    raise WalletError(
+                        "Broadcasting real Bitcoin is not enabled in this build. "
+                        "Testnet4 only, until a full testnet send has been completed."
+                    )
+                if data.get("confirm") is not True:
+                    raise WalletError("Confirm the final transaction before broadcasting it.")
+                if str(data.get("confirmed_txid") or "") != (txid or ""):
+                    raise WalletError(
+                        "The confirmed transaction is not the one prepared. Nothing was sent."
+                    )
+                with state.lock:
+                    broadcaster = state.servers[chain]["broadcaster"]
+                packet = PSBT.from_base64(prepared)
+                try:
+                    final = finalize_multisig(packet, txid)
+                except SigningError as exc:
+                    raise WalletError(str(exc)) from exc
+                sent = broadcast_transaction(final["raw_transaction_hex"], chain, broadcaster)
+                if sent != txid:
+                    raise WalletError(
+                        "The server reported a different transaction id than the one "
+                        "confirmed. Check the explorer before assuming anything was sent."
+                    )
+                with state.lock:
+                    # The funds are spent now, so anything cached is stale.
+                    state.prepared_psbt = None
+                    state.prepared_id = None
+                    state.prepared_txid = None
+                    state.scan = None
+                self._send(200, {
+                    "txid": sent,
+                    "explorer": CHAIN_CONFIGS[chain].web_url + "/tx/" + sent,
                 })
 
             def _save(self, data):
@@ -495,6 +625,7 @@ class LocalApp:
                 with state.lock:
                     state.prepared_psbt = None
                     state.prepared_id = None
+                    state.prepared_txid = None
                     record, scan, revision, chain = (
                         state.record, state.scan, state.revision, state.chain
                     )
@@ -587,6 +718,7 @@ class LocalApp:
                         raise WalletError("Wallet or balance changed; review and prepare again.")
                     state.prepared_psbt = result["psbt_base64"]
                     state.prepared_id = secrets.token_urlsafe(18)
+                    state.prepared_txid = result.get("txid")
                     result["preparation_id"] = state.prepared_id
                 self._send(200, result)
 

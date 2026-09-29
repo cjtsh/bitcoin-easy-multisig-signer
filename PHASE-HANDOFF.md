@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.23
+# Project status and handoff — v0.1.24
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.23`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.24`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.23-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.24-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Immediate next step (updated 28 September, 22:15)
@@ -11,14 +11,14 @@ workflow derives the tag, the artifact names and the release title from it.
 **Phase 3 is complete.** The owner's Trezor Safe 3 matched signer 2 of 3 on the
 real wallet on 28 September, which was the last acceptance item.
 
-**Next: Phase 4, signing and broadcast — the owner has asked to begin.** It starts
-with the three decisions recorded in `ROADMAP.md` (sign and broadcast in-app, the
-safety interlocks, and which devices are supported), then implementation on
-testnet4 only.
+**Phase 4 is implemented (28 Sep, v0.1.24):** the app signs with the devices, finalises
+when the threshold is met, re-displays the finalised transaction, and broadcasts to
+Testnet4 after the owner confirms that exact transaction id. Broadcasting real Bitcoin
+is refused outright. What remains is the owner's first live testnet send.
 
 1. The owner creates a new 2-of-3 multisig on the three physical devices and exports
    its BSMS file.
-2. In **v0.1.23**: Testnet4 -> choose that file -> **Open wallet & check balance**.
+2. In **v0.1.24**: Testnet4 -> choose that file -> **Open wallet & check balance**.
 3. **3. Check your hardware wallets** -> **Look for my hardware wallets**. One device
    at a time, unlocked on the device itself. No funding is needed for this step.
 4. Report the exact lines. `"not a signer in this BSMS file"` and `"fingerprint

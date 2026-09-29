@@ -56,6 +56,50 @@ def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
     return ""
 
 
+def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
+                          base_url: str | None = None) -> str:
+    """Submit a finalised transaction to an Esplora endpoint and return its txid.
+
+    Redirects are refused and TLS is verified, exactly as for every other outbound
+    request. The endpoint's own rejection reason is surfaced, because "bad-txns-..."
+    from the node is far more useful than a generic failure.
+    """
+    if chain not in EXPLORERS:
+        raise WalletError("Unsupported broadcast network.")
+    raw = (raw_transaction_hex or "").strip().lower()
+    if len(raw) < 100 or len(raw) > 2_000_000 or len(raw) % 2:
+        raise WalletError("The finalised transaction is not a usable size.")
+    try:
+        bytes.fromhex(raw)
+    except ValueError as exc:
+        raise WalletError("The finalised transaction is not valid hex.") from exc
+    base = validate_esplora_url(base_url) if base_url is not None else EXPLORERS[chain]
+    request = Request(base + "/tx", data=raw.encode("ascii"), method="POST", headers={
+        "User-Agent": f"EasyMultisig/{APP_VERSION}",
+        "Content-Type": "text/plain",
+    })
+    try:
+        with urlopen(request, timeout=20) as response:
+            body = response.read(4096).decode("ascii", "replace").strip()
+    except HTTPError as exc:
+        try:
+            detail = exc.read(2048).decode("utf-8", "replace").strip()
+        except Exception:
+            detail = ""
+        raise WalletError(
+            "The network refused this transaction"
+            + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
+        ) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise WalletError("Could not reach the broadcast server.") from exc
+    if len(body) != 64 or any(char not in "0123456789abcdef" for char in body.lower()):
+        raise WalletError(
+            "The broadcast server did not return a transaction id, so it is unknown "
+            "whether anything was sent. Check the explorer before retrying."
+        )
+    return body.lower()
+
+
 def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
                  base_url: str | None = None):
     """Bounded Esplora GET on an explicit network; never send xpubs."""
