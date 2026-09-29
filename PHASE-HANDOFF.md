@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.24
+# Project status and handoff — v0.1.25
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.24`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.25`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.24-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.25-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Immediate next step (updated 28 September, 22:15)
@@ -11,7 +11,36 @@ workflow derives the tag, the artifact names and the release title from it.
 **Phase 3 is complete.** The owner's Trezor Safe 3 matched signer 2 of 3 on the
 real wallet on 28 September, which was the last acceptance item.
 
-**Phase 4 is implemented (28 Sep, v0.1.24):** the app signs with the devices, finalises
+**First real testnet send (28 Sep, v0.1.24):** a 2-of-3 payment was prepared,
+signed by the Jade and the Trezor Safe 3, broadcast to Testnet4, and appeared as
+pending in the receiving wallet. The change returned to the wallet's own change
+branch. That is the project's goal met on real hardware.
+
+**Why a Ledger would not sign (28 Sep).** The device was recognised — fingerprint and
+xpub both matched — but pressing "Sign with Ledger Nano S Plus" produced no prompt on
+the device and no signature. hwilib's Ledger path rebuilds the wallet policy from the
+PSBT's **global xpubs** (`PSBT_GLOBAL_XPUB`, key type `0x01`):
+
+    for xpub_bytes, xpub_origin in psbt2.xpub.items(): ...
+    else:
+        # No xpub, Ledger will not accept this multisig
+        ok = False
+    if not ok:
+        continue        # no error, no prompt, input skipped
+
+embit supports these entries (`PSBT.xpubs`), but `build_unsigned_psbt` never
+populated them, so the Ledger had nothing to rebuild the policy from and skipped every
+input **silently**. Trezor and Jade do not need them, which is why this only surfaced
+when a Ledger was asked to sign. The builder now publishes each cosigner's account
+xpub and origin, and a test replays hwilib's own acceptance condition so it cannot
+regress.
+
+The lesson for "device agnostic": the PSBT is a common format but vendors disagree
+about which optional metadata they require. Being agnostic means publishing
+everything a wallet is entitled to, not the minimum that happens to satisfy the
+devices already tested.
+
+**Phase 4 was implemented in v0.1.24:** the app signs with the devices, finalises
 when the threshold is met, re-displays the finalised transaction, and broadcasts to
 Testnet4 after the owner confirms that exact transaction id. Broadcasting real Bitcoin
 is refused outright. What remains is the owner's first live testnet send.

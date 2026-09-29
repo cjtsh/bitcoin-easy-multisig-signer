@@ -21,6 +21,7 @@ from urllib.request import Request
 from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from embit import psbt, script, transaction
+from embit.psbt import DerivationPath
 from embit.descriptor import Descriptor
 from embit.descriptor.miniscript import Multi
 from embit.networks import NETWORKS
@@ -653,6 +654,13 @@ def build_unsigned_psbt(
         vout=outputs,
     )
     packet = psbt.PSBT(tx)
+    # Publish the wallet's account xpubs in the PSBT's global scope. A Ledger
+    # refuses to sign a multisig spend without them: hwilib rebuilds the wallet
+    # policy from these entries, and when it cannot it skips the input with no
+    # error and no prompt on the device at all. Trezor and Jade do not need them,
+    # which is why this went unnoticed until a Ledger was asked to sign.
+    for key in record.keys:
+        packet.xpubs[key.key] = DerivationPath(key.origin.fingerprint, key.origin.derivation)
     for scope, utxo in zip(packet.inputs, chosen):
         desc = (layout.receive if utxo["branch"] == "receive" else layout.change)
         derived = desc.derive(utxo["index"])

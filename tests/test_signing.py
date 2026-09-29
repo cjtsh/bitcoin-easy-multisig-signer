@@ -123,6 +123,27 @@ class FinalizeTests(unittest.TestCase):
                     break
         return found
 
+    def test_the_built_psbt_publishes_the_cosigner_xpubs(self):
+        """A Ledger will not sign a multisig spend without these.
+
+        hwilib rebuilds the wallet policy from the PSBT's global xpubs. Without
+        them it skips every input silently: no error, no prompt on the device, and
+        the PSBT comes back unchanged. Trezor and Jade do not need them, so this
+        only appears when a Ledger is asked to sign.
+        """
+        packet, _keys, _ = prepared_psbt()
+        self.assertEqual(len(packet.xpubs), 3)
+        # hwilib's own requirement: the global origin must match the input key's
+        # fingerprint and be a prefix of its derivation path.
+        for scope in packet.inputs:
+            for _pubkey, origin in scope.bip32_derivations.items():
+                accepted = any(
+                    global_origin.fingerprint == origin.fingerprint
+                    and global_origin.derivation == origin.derivation[:len(global_origin.derivation)]
+                    for global_origin in packet.xpubs.values()
+                )
+                self.assertTrue(accepted, "a Ledger would silently skip this input")
+
     def test_an_under_signed_psbt_is_refused(self):
         packet, keys, _ = prepared_psbt()
         sign(packet, keys[:1])

@@ -403,6 +403,7 @@
             destination and amount on its own screen — check them there and approve on the device.
             This app cannot approve anything for you.</p>
           <div id="sign-buttons"></div>
+          <button id="check-more-devices" type="button" class="secondary">Look for more devices</button>
           <div id="sign-progress" role="status" aria-live="polite"></div>
           <div id="finalize-step" hidden>
             <h3>Final check before broadcasting</h3>
@@ -1123,13 +1124,16 @@
     $("check-signers").addEventListener("click", () =>
       runSignerCheck($("check-signers"), "signer-message", "signer-results", preparationId,
         null, "sign-step"));
-    function renderSignable(signable, signStepId) {
+    function renderSignable(signable, signStepId, reset = true) {
       const step = $(signStepId), buttons = $("sign-buttons");
       step.hidden = !signable.length;
       buttons.replaceChildren();
-      $("finalize-step").hidden = true;
-      finalTxid = null;
-      if (!signable.length) return;
+      if (reset) { $("finalize-step").hidden = true; finalTxid = null; }
+      if (!signable.length) {
+        setText("sign-progress", "No signing device is readable right now. Unlock the device, "
+          + "open its Bitcoin app if it has one, then look again.");
+        return;
+      }
       setText("sign-threshold", String(signable[0].threshold || 2));
       setText("sign-total", String(signable[0].keys || signable.length));
       for (const device of signable) {
@@ -1143,6 +1147,21 @@
       setText("sign-progress", "Waiting for a signature. Approve the transaction on the device screen.");
       step.scrollIntoView({behavior:"smooth", block:"start"});
     }
+    async function refreshSignable() {
+      // The owner should not have to know to press a check button again after
+      // connecting the next device; the list refreshes itself.
+      try {
+        const result = await post("/api/devices", {preparation_id: preparationId});
+        renderSignable(result.signable || [], "sign-step", false);
+      } catch (_) { /* keep whatever buttons are already there */ }
+    }
+    $("check-more-devices").addEventListener("click", async () => {
+      $("check-more-devices").disabled = true;
+      setBusy("Looking for connected signing devices…");
+      setText("sign-progress", "Looking for devices…");
+      try { await refreshSignable(); }
+      finally { $("check-more-devices").disabled = false; setBusy(""); }
+    });
     async function signWith(device, button) {
       button.disabled = true;
       setBusy("Waiting for the device to sign…");
@@ -1154,8 +1173,11 @@
           " Signer" + (result.signers.length > 1 ? "s " : " ") + result.signers.join(" and ") + " signed." : "";
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
           " collected." + who);
-        if (result.complete) await showFinal();
-        else setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
+        if (result.complete) { await showFinal(); return; }
+        // Refresh first, so the next device's button is already there, then say
+        // where things stand.
+        await refreshSignable();
+        setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
           " collected." + who + " Sign with another device to reach " + result.threshold + ".");
       } catch (e) {
         setText("sign-progress", (e && e.message) || "The device did not sign this transaction.");
