@@ -6,10 +6,15 @@ workflow derives the tag, the artifact names and the release title from it.
 **Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.20-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
-## Immediate next step (updated 28 September, 20:05)
+## Immediate next step (updated 28 September, 22:15)
 
-**Testing hardware-wallet recognition with physical signers.** Everything else in
-Phase 3 is done and evidenced; this is the last item.
+**Phase 3 is complete.** The owner's Trezor Safe 3 matched signer 2 of 3 on the
+real wallet on 28 September, which was the last acceptance item.
+
+**Next: Phase 4, signing and broadcast — the owner has asked to begin.** It starts
+with the three decisions recorded in `ROADMAP.md` (sign and broadcast in-app, the
+safety interlocks, and which devices are supported), then implementation on
+testnet4 only.
 
 1. The owner creates a new 2-of-3 multisig on the three physical devices and exports
    its BSMS file.
@@ -78,7 +83,7 @@ wallet, never asks for seed words or a PIN, and cannot sign or send.
 | Review: destination, amount, fee, total, change, final transaction id, explorer link | Works |
 | Save the unsigned `.psbt` into the Downloads folder | Works, and a saved file was decoded independently and matched the review |
 | Show progress while the blockchain scan runs | Works |
-| Recognise a connected hardware signer, read-only | **Proven on real hardware for a non-member device** (a Ledger Nano S Plus was enumerated, its fingerprint read, and correctly rejected); a *matching* signer has not yet been seen |
+| Recognise a connected hardware signer, read-only | **Proven on real hardware.** A Ledger Nano S Plus was enumerated and correctly rejected as a non-member; a **Trezor Safe 3 matched signer 2 of 3** on the owner's real wallet, with the xpub verified byte-identical to the BSMS cosigner |
 
 **What does not exist yet**
 

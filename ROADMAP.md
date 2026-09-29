@@ -14,8 +14,8 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   usual change addresses itself rather than asking the owner to confirm a detail
   they have no way to check, and reports whether the wallet's own history supports
   them.
-- [x] **Phase 3 — prepare, review and save an unsigned transaction.** Complete for
-  what it claims, exercised by the owner on Apple Silicon: destination and amount,
+- [x] **Phase 3 — prepare, review and save an unsigned transaction.** **Complete:
+  acceptance gate passed.** Exercised by the owner on Apple Silicon: destination and amount,
   or Send All with the fee deducted; live fee tiers with a visible selected state;
   size and fee computed from the inputs actually selected; the change address shown
   in the review; the final transaction id and a public explorer link; a
@@ -24,11 +24,13 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   and no sign of progress during a slow scan — were fixed in v0.1.14. Step 3, a
   pre-flight check of the hardware wallets, was added in v0.1.15 so a missing or
   mismatched device is discovered before a payment is built.
-  **Independently verified** (see the verification record below). **Hardware
-  recognition is proven for a non-member device:** the shipped app enumerated a
-  physical Ledger Nano S Plus over USB, read its fingerprint and correctly reported
-  that it is not a signer in the BSMS file. The gate itself still needs a **match**,
-  which requires the wallet's own signing devices.
+  **Gate passed on real hardware (28 Sep):** with the owner's own wallet open, the
+  app reported *"Trezor Safe 3: signer 2 of 3 public xpub matched (not a signing
+  test)"*, and the xpub it verified was confirmed byte-identical to the cosigner
+  declared in the BSMS file. The change address it proposed
+  (`...qdvr9fn`, index `/1/1` because `/1/0` was already used) was independently
+  re-derived from Sparrow's own descriptor and matched. It previously enumerated a
+  Ledger Nano S Plus and correctly rejected it as a non-member device.
 - [ ] **Phase 4 — signing and broadcast.** **Not started and not authorised.** The
   app today can identify a connected signer read-only; it cannot sign or send.
   Starting this requires the owner to move the signing boundary explicitly and to
@@ -105,8 +107,7 @@ jargon and the return of the confirmation checkbox on the main screen.
 
 ## Phase 3 — Produce and independently verify a Testnet4 unsigned transaction
 
-**Status: complete for what it claims** — owner-exercised on Apple Silicon, with the
-two unproven items noted below.
+**Status: complete — all acceptance evidence obtained.**
 
 *Evidence:* the owner reached the send step, chose a fee tier, prepared and reviewed
 a transaction, and reports the journey working in v0.1.13/v0.1.14. The engine is
@@ -123,9 +124,10 @@ live quote was 1 / 2 / 2), and a slow scan looked like a dead app.
 *Independently verified:* a PSBT saved from the owner's real wallet was decoded by
   two independent implementations that agreed on every material value, and the change
   output was rebuilt from its declared keys and matched the wallet's own change
-  branch. See the verification record below. *Hardware recognition, partly:* the shipped app read a physical device's
-  fingerprint over USB and correctly rejected it as a non-member. A **match** against
-  this wallet's own cosigners has not yet been seen.
+  branch. See the verification record below. *Hardware recognition:* **proven.** The shipped
+  app enumerated a Ledger Nano S Plus and correctly rejected it as a non-member, then
+  matched a Trezor Safe 3 to signer 2 of 3 on the owner's real wallet, with the
+  verified xpub confirmed byte-identical to the BSMS cosigner.
 
 **Goal:** With verified 2-of-3 receive/change paths and a consistent confirmed scan, the user can prepare and review a partial or Send All transaction, see live slow/medium/fast fee choices with sats and USD estimates, catch a high-dollar amount, save an unsigned PSBT, then reach an HWI device-recognition screen that identifies matching signers. The v0.1.9 Mac app must be ready for physical keys to be plugged in for this recognition check. **Do not sign or broadcast.**
 
@@ -185,9 +187,23 @@ stated rather than glossed.
 
 ## Phase 4 — Decide the signing boundary, complete the send, and review the whole tool
 
-**Status: not started, and deliberately not authorised.** The read-only recognition
-screen exists from Phase 3; signing and broadcast do not. This is the next phase and
-its first step is an owner decision, not code.
+**Status: the owner has asked to begin it (28 September).** The read-only recognition
+screen exists from Phase 3; signing and broadcast do not. Phase 4 begins with the
+owner's answers to the decisions below, then implementation on **testnet4 only**,
+with mainnet broadcast gated behind a separate explicit opt-in after a complete
+testnet cycle.
+
+**Decisions this phase needs from the owner**
+
+1. Does the app sign **and** broadcast, or sign only and hand over a signed
+   transaction for another wallet to broadcast? (Recommendation: both, because the
+   intended user should not have to leave the tool.)
+2. Confirm the safety interlocks: the finalised transaction is decoded and shown for
+   confirmation before broadcast; a changed transaction id aborts; mainnet broadcast
+   stays disabled until deliberately switched on; nothing is ever broadcast
+   automatically.
+3. Which devices must be supported first, and in what order the signatures are
+   collected.
 
 **Goal:** Move from a proven unsigned Testnet4 PSBT to an **owner-approved** end-to-end Testnet4 prototype: hardware signers review and sign, the app verifies the finalized payment, and only an explicit user action submits it. Then run an independent full-tool review. This is **future scope**, not existing functionality. `replit.md` currently says no signing or broadcasting; do not implement this phase until the owner explicitly approves changing that boundary, the supported devices, and the intended send workflow. If the owner instead chooses external signing/broadcast, document and validate that handoff as the agreed prototype endpoint; do not claim the app itself sends Bitcoin.
 
