@@ -229,7 +229,9 @@ jobs:
           The owner's prior Mutinynet Ledger + Jade payment confirmed. This patch
           tightens one ambiguous BSMS change-path case; the supplied Sparrow and
           Nunchuk files still import through their intended branches. A physical
-          check of this exact patch has not yet occurred. Verify every address,
+          check of this exact patch has not yet occurred. The two supplied exports
+          describe one practice wallet and derive identical change scripts at
+          indices 0–19. Verify every address,
           amount and fee on your signers. No mainnet broadcast is available.
           EOF
           # A published version is never rebuilt. Overwriting one silently changes the
