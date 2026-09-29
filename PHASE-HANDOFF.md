@@ -6,6 +6,26 @@ workflow derives the tag, the artifact names and the release title from it.
 **Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.17-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
+## Immediate next step (updated 28 September, 20:05)
+
+**Testing hardware-wallet recognition with physical signers.** Everything else in
+Phase 3 is done and evidenced; this is the last item.
+
+1. The owner creates a new 2-of-3 multisig on the three physical devices and exports
+   its BSMS file.
+2. In **v0.1.17**: Testnet4 -> choose that file -> **Open wallet & check balance**.
+3. **3. Check your hardware wallets** -> **Look for my hardware wallets**. One device
+   at a time, unlocked on the device itself. No funding is needed for this step.
+4. Report the exact lines. `"not a signer in this BSMS file"` and `"fingerprint
+   matched, but xpub DID NOT MATCH"` mean different things; HWI's own reason text is
+   now included, which identifies plumbing problems.
+
+Already proven in the shipped app, so a failure is the device and not the packaging:
+`--check-devices` runs the bundled HWI, loads the bundled libusb and parses its JSON.
+
+**Signing and broadcasting do not exist and are not authorised.** Phase 4 begins with
+an owner decision, not code.
+
 ## Where this stands
 
 **What the tool is.** A small Mac app that lets someone who is not a Bitcoiner — a
