@@ -2,7 +2,7 @@
 
 ## Status
 
-This is the 0.3.2 candidate. The owner installed 0.3.0 and 0.3.1 but could not enter a custom amount with their Nunchuk Mutinynet BSMS. **No 0.3.x Mutinynet transaction has yet been signed or broadcast by the owner.** Do not claim physical acceptance based on automated checks. Mainnet broadcasting stays disabled.
+Version [0.3.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.2) is published as an Apple Silicon test build. The owner installed 0.3.0 and 0.3.1 but could not enter a custom amount with their Nunchuk Mutinynet BSMS. **No 0.3.x Mutinynet transaction has yet been signed or broadcast by the owner.** Do not claim physical acceptance based on automated checks. Mainnet broadcasting stays disabled.
 
 ## Owner requirement
 
@@ -30,4 +30,10 @@ After publication, the owner should install **one** 0.3.2 DMG and run a small cu
 
 ## Release evidence
 
-Pending manual GitHub workflow and downloaded-asset verification.
+The manual [GitHub workflow](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36611530169) succeeded in all five jobs and published [v0.3.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.2) from merge commit `b654d9e99b058f2179236b659d523a98d8f8d7ba`. The checkout and extracted source each passed 166 Python tests (8 skipped) and both Node UI tests. GitHub's Apple Silicon job ran the tests, built the DMG, verified the bundled app and ad-hoc signature, inventoried dependencies, then published the source, DMG, SBOM and checksums. Independently downloaded release assets all matched `SHA256SUMS`; `hdiutil verify` confirmed the downloaded DMG image. SHA-256 values:
+
+```text
+9681f03fb7c18747fd4e3c5c4a124ec8a6f63c2c58d455d5b5e189ad04cf37e6  bitcoin-easy-multisig-signer-v0.3.2.tar.gz
+79e537512822099b8e25e84e039b7322fff9a11e857c9a77983a89b0c68d07d0  Bitcoin-Easy-Signer-v0.3.2-UNSIGNED-TEST.dmg
+9923b0f91d18febca8b667570fd8129de13ca201a22c0131571a7e79d48db0b9  BUILD-SBOM.json
+```
