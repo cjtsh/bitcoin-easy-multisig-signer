@@ -62,6 +62,13 @@ not supported.** The separate Python source archive can also be used on Linux.
 
 Each test release attaches **two matching-version files**:
 
+Mac security: these builds are **ad-hoc signed, not notarized**, because the Apple
+Developer Program enrolment needed to do that properly is still being confirmed. macOS
+therefore warns on first launch — right-click the app → **Open**, once. Once the
+enrolment lands, the app will be signed with a Developer ID and notarized, the warning
+will stop, and the `UNSIGNED-TEST` suffix will come off. See `PHASE-HANDOFF.md`,
+*Standing by on the owner*.
+
 - `Bitcoin-Easy-Signer-vX.Y.Z-UNSIGNED-TEST.dmg`: the Mac `.app`, containing its
   Python runtime, dependencies, bundled HWI device interface, existing wallet engine, and a small native
   WebKit window. A user opens the app without installing Python or using

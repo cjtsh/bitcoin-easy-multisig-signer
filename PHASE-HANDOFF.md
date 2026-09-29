@@ -38,6 +38,35 @@ a send flow; every wallet path, xpub and address lives behind **See wallet detai
 signs, finalises and broadcasts, and two real Testnet4 payments have confirmed.
 **Phase 5 is the only work outstanding**; section 5 lays it out as X, Y and Z.
 
+### Standing by on the owner — not a coding task
+
+**The owner is waiting for Apple Developer Program confirmation.** Until it arrives the
+app cannot be signed with a Developer ID or notarized, so the released DMG still trips
+macOS security and the user must right-click → Open. Enrolment is in progress; the
+outcome is a human dependency, not something an agent can resolve by writing code.
+
+Do **not** work around it: no self-signing tricks, no instructing users to disable
+Gatekeeper globally, no renaming the artifact to look official. The current
+right-click → Open instruction in `README.md` is the honest interim position.
+
+When confirmation arrives, the work is Phase 5, item Z. It needs, in order:
+
+1. A **Developer ID Application** certificate, and the app built with the hardened
+   runtime.
+2. `CFBundleIdentifier` changed from `Bitcoin Easy Signer` to a reverse-DNS identifier
+   — notarisation rejects the spaced form.
+3. Every nested Mach-O signed individually with the Developer ID, including the bundled
+   `hwi` and `libusb`. The build already signs nested binaries individually before
+   sealing the bundle (it must not use `codesign --deep`), so this is mostly a change of
+   identity rather than of structure. Expect to need an entitlement or two so the
+   bundled Python runtime loads — `allow-unsigned-executable-memory` and possibly
+   `disable-library-validation` are the usual ones to try.
+4. The app **and** the DMG notarized with `notarytool`, then the ticket stapled.
+5. **Signing secrets added to the GitHub repository by the owner** — certificate,
+   password and an App Store Connect API key. CI cannot sign without them, so this is a
+   second thing only the owner can do.
+6. The artifact name drops `UNSIGNED-TEST` once it is genuinely signed.
+
 | Capability | State |
 | --- | --- |
 | Open a BSMS wallet, scan the balance, explain coverage in plain words | Works, on the owner's real wallet |
@@ -133,7 +162,9 @@ Only after X, and only on the owner's explicit instruction:
 
 - **Developer ID signing + notarisation**, so the DMG opens with a double-click. The
   current Gatekeeper warning is precisely the friction that stops a non-technical user.
-  Requires an Apple Developer account (~$99/yr) — the owner's decision.
+  **Blocked on a human dependency:** the owner is awaiting Apple Developer Program
+  confirmation, and CI will also need signing secrets that only the owner can add. See
+  *Standing by on the owner* in section 2 for the full sequence.
 - **Fix `CFBundleIdentifier`** to a reverse-DNS identifier first.
 - **A one-page plain-language guide**: what the wallet is, the three devices, why a
   test payment is recommended, what to do when a device is not found, and that a

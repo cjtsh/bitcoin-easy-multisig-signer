@@ -281,6 +281,14 @@ reverse-DNS `CFBundleIdentifier` first; and a one-page plain-language guide cove
 the three devices, the recommended test payment, what a missing device looks like, and
 that a payment is not finished until it confirms.
 
+**Standing by on the owner.** The owner is awaiting Apple Developer Program
+confirmation, so this step cannot start yet; signing secrets must also be added to the
+GitHub repository by the owner before CI can sign. This is a human dependency, not a
+coding task, and no workaround should be attempted. The full sequence, including why
+the bundle must not be sealed with `codesign --deep` and which entitlements the bundled
+Python runtime is likely to need, is recorded in `PHASE-HANDOFF.md` under *Standing by
+on the owner*.
+
 **Acceptance.** A mainnet dry run whose decoded transaction matches the review on every
 value and whose device screens showed the same destination, amount and fee; then, only
 if authorised, one completed mainnet send verified independently. A non-technical user
