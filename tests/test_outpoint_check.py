@@ -30,33 +30,54 @@ class OutpointCheckTests(unittest.TestCase):
         packet = packet_with_one_input()
         with patch("gui.verify_esplora") as genesis, patch(
             "gui.check_selected_outpoints"
-        ) as check:
+        ) as check, patch("gui.explorer_get", side_effect=["900000\n", "900001"]) as heights:
             verify_selected_outpoints(packet.to_base64(), "main", PRIMARY)
         genesis.assert_called_once_with("main", SECONDARY)
+        self.assertEqual(heights.call_count, 2)
         self.assertEqual(check.call_args.args[1:], ("main", PRIMARY, SECONDARY))
+
+    def test_divergent_or_malformed_chain_tip_fails_closed(self):
+        for heights in (("900000", "899990"), ("900000", "unknown")):
+            with self.subTest(heights=heights), patch("gui.verify_esplora"), patch(
+                "gui.explorer_get", side_effect=heights
+            ), patch("gui.check_selected_outpoints") as check:
+                with self.assertRaises(WalletError):
+                    verify_selected_outpoints(packet_with_one_input(), "main", PRIMARY)
+                check.assert_not_called()
 
     def test_both_sources_must_report_unspent(self):
         seen = []
 
         def get(path, *, chain, base_url):
             seen.append((path, chain, base_url))
-            return {"spent": False}
+            return {"confirmed": True} if path.endswith("/status") else {"spent": False}
 
         check_selected_outpoints(packet_with_one_input(), "main", PRIMARY,
                                  SECONDARY, get)
         self.assertEqual(seen, [
+            ("/tx/" + bytes(range(32)).hex() + "/status", "main", PRIMARY),
             ("/tx/" + bytes(range(32)).hex() + "/outspend/1", "main", PRIMARY),
+            ("/tx/" + bytes(range(32)).hex() + "/status", "main", SECONDARY),
             ("/tx/" + bytes(range(32)).hex() + "/outspend/1", "main", SECONDARY),
         ])
 
     def test_spent_or_unclear_status_fails_closed(self):
         for reply in ({"spent": True}, {"spent": "false"}, {}, []):
             with self.subTest(reply=reply):
+                def get(path, **_kwargs):
+                    return {"confirmed": True} if path.endswith("/status") else reply
                 with self.assertRaises(WalletError):
                     check_selected_outpoints(
                         packet_with_one_input(), "main", PRIMARY, SECONDARY,
-                        lambda _path, **_kwargs: reply,
+                        get,
                     )
+
+    def test_unconfirmed_funding_is_refused_even_if_outspend_is_false(self):
+        with self.assertRaisesRegex(WalletError, "no longer confirmed"):
+            check_selected_outpoints(
+                packet_with_one_input(), "main", PRIMARY, SECONDARY,
+                lambda _path, **_kwargs: {"confirmed": False},
+            )
 
     def test_outage_and_same_source_fail_closed(self):
         with self.assertRaisesRegex(WalletError, "separate valid source"):

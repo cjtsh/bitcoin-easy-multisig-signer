@@ -13,6 +13,7 @@ import base64
 import json
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -76,7 +77,8 @@ class ApiTestCase(unittest.TestCase):
     def _patch(self):
         for target, value in (
             ("load_servers", gui.default_servers),
-            ("scan_wallet", lambda record, base_url=None: real_scan(record, self.explorer)),
+            ("scan_wallet", lambda record, base_url=None, chain=None:
+             real_scan(record, self.explorer, chain=chain)),
             ("build_unsigned_psbt",
              lambda record, scan, recipient, amount, fee_rate=2, **kw:
                  real_build(record, scan, recipient, amount, fee_rate,
@@ -153,6 +155,27 @@ class LocalServerAccessTests(ApiTestCase):
 
 
 class TransactionJourneyTests(ApiTestCase):
+    def test_mutinynet_uses_same_builder_with_distinct_network_selection(self):
+        self.state.mutinynet_fees = {**FEE_QUOTE, "network": "mutinynet"}
+        self.state.mutinynet_fees_checked = time.monotonic()
+        with patch.object(gui, "verify_esplora") as verify:
+            status, wallet = self.import_wallet("mutinynet")
+            self.assertEqual(status, 200)
+            self.assertEqual(wallet["network"], "mutinynet")
+            status, scan = self.post("/api/scan", {"chain": "mutinynet"})
+            self.assertEqual(status, 200)
+            self.assertEqual(scan["network"], "mutinynet")
+            recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
+            status, prepared = self.post("/api/prepare", {
+                "chain": "mutinynet", "recipient": recipient,
+                "amount_sats": 100_000, "send_all": False, "fee_rate": 5,
+            })
+            self.assertEqual(status, 200, prepared)
+            self.assertEqual(prepared["network"], "mutinynet")
+            self.assertEqual(psbt.PSBT.from_base64(prepared["psbt_base64"]).tx.txid().hex(),
+                             prepared["txid"])
+            verify.assert_any_call("mutinynet", "https://mutinynet.com/api")
+
     def test_outpoint_check_can_stop_preparation_after_scan(self):
         self.import_wallet()
         self.post("/api/scan", {"chain": "testnet4"})
@@ -165,7 +188,7 @@ class TransactionJourneyTests(ApiTestCase):
             })
         self.assertEqual(status, 400)
         self.assertIn("spent", body["error"])
-        self.assertIsNone(self.state.prepared_psbt)
+        self.assertIsNone(self.state.prepared)
 
     def test_receive_only_wallet_reaches_the_send_form_with_a_plain_note(self):
         """An undeclared change path permits only the no-change sweep."""
@@ -271,7 +294,7 @@ class TransactionJourneyTests(ApiTestCase):
 
         # Refuse a mismatched network, and refuse when nothing is prepared.
         self.assertEqual(self.post("/api/save", {"chain": "main"})[0], 400)
-        self.state.prepared_psbt = None
+        self.state.prepared = None
         status, body = self.post("/api/save", {"chain": "testnet4"})
         self.assertEqual(status, 400)
         self.assertIn("Prepare and review", body["error"])
@@ -293,11 +316,10 @@ class TransactionJourneyTests(ApiTestCase):
             "amount_sats": 1_000, "send_all": False, "fee_rate": 5,
         })
         self.assertEqual(status, 200)
-        self.assertIsNotNone(self.state.prepared_psbt)
+        self.assertIsNotNone(self.state.prepared)
         # Changing the explorer for this chain must drop the prepared PSBT.
         self.post("/api/settings", {"chain": "testnet4", "action": "reset"})
-        self.assertIsNone(self.state.prepared_psbt)
-        self.assertIsNone(self.state.prepared_id)
+        self.assertIsNone(self.state.prepared)
 
 
 class LargeAmountGateTests(ApiTestCase):

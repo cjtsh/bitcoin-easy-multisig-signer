@@ -12,12 +12,22 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
+from embit import psbt, transaction
+from embit.script import Script
 
-from gui import LocalApp, fetch_btc_usd, fetch_fee_rates
+from gui import (LocalApp, PreparedPayment, fetch_btc_usd, fetch_fee_rates,
+                 fetch_mutinynet_fee_rates)
 from version import APP_VERSION
 from wallet_service import WalletError
 from test_probe import test_record
 from test_wallet_service import mainnet_record
+
+SYNTHETIC_TX = transaction.Transaction(
+    vin=[transaction.TransactionInput(bytes(32), 0)],
+    vout=[transaction.TransactionOutput(1000, Script(b"\x6a"))],
+)
+SYNTHETIC_PSBT = psbt.PSBT(SYNTHETIC_TX).to_base64()
+SYNTHETIC_TXID = SYNTHETIC_TX.txid().hex()
 
 
 class LocalGuiTests(unittest.TestCase):
@@ -97,6 +107,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("Other wallet addresses beyond the scan gap may still hold funds.", page)
         self.assertIn("sats at this address", page)
         self.assertIn('value="testnet4"', page)
+        self.assertIn('value="mutinynet"', page)
         self.assertIn('value="main"', page)
         self.assertIn('id="refresh-top"', page)
         self.assertIn('id="pending-payment"', page)
@@ -290,8 +301,9 @@ class LocalGuiTests(unittest.TestCase):
         text, _ = test_record(short_path=True)
         self.post("/api/import", {"chain": "testnet4", "text": text,
                                   "consent_explorer": True})
-        self.app.prepared_psbt = "cHNidP8="
-        self.app.prepared_id = "prepared-test"
+        self.app.prepared = PreparedPayment(
+            self.app.record, "testnet4", self.app.scan_generation,
+            "prepared-test", "cHNidP8=", "", (), ())
         with self.assertRaises(HTTPError) as err:
             self.post("/api/devices", {"preparation_id": "stale"})
         self.assertEqual(err.exception.code, 400)
@@ -371,7 +383,7 @@ class LocalGuiTests(unittest.TestCase):
         builder.assert_not_called()
         request["large_amount_confirmed"] = True
         with patch("gui.build_unsigned_psbt", return_value={
-            "psbt_base64": "cHNidP8=", "fee_warning": "", "txid": "ab" * 32,
+            "psbt_base64": SYNTHETIC_PSBT, "fee_warning": "", "txid": SYNTHETIC_TXID,
             "fee_sats": 540, "fee_rate_estimate": 2,
             "recipient": request["recipient"], "amount_sats": request["amount_sats"],
             "change_sats": 1000, "change_address": request["recipient"],
@@ -570,6 +582,18 @@ class LocalGuiTests(unittest.TestCase):
             with self.assertRaisesRegex(WalletError, "Fee estimates unavailable"):
                 fetch_fee_rates()
 
+    def test_mutinynet_fee_quote_is_network_specific_and_validated(self):
+        values = {"1": 3.2, "3": 2.2, "6": 2.1, "144": 1.1, "1008": 1.0}
+        with patch("gui.urlopen", return_value=io.BytesIO(json.dumps(values).encode())) as upstream:
+            quote = fetch_mutinynet_fee_rates()
+        self.assertEqual((quote["network"], quote["standard"]), ("mutinynet", 3))
+        self.assertEqual(upstream.call_args.args[0].full_url,
+                         "https://mutinynet.com/api/fee-estimates")
+        with patch("gui.urlopen", return_value=io.BytesIO(json.dumps(
+                {**values, "1": True}).encode())):
+            with self.assertRaisesRegex(WalletError, "Mutinynet fee estimates unavailable"):
+                fetch_mutinynet_fee_rates()
+
     def test_mainnet_prepare_refuses_missing_or_excessive_live_fee_reference(self):
         text = mainnet_record()
         self.post("/api/import", {"chain": "main", "text": text,
@@ -610,8 +634,8 @@ class LocalGuiTests(unittest.TestCase):
             "checked_at": "2026-09-28T00:00:00Z"
         }), patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
-            "psbt_base64": "cHNidP8=",
-            "txid": "ab" * 32, "recipient": request["recipient"],
+            "psbt_base64": SYNTHETIC_PSBT,
+            "txid": SYNTHETIC_TXID, "recipient": request["recipient"],
             "amount_sats": request["amount_sats"], "change_sats": 1000,
             "change_address": request["recipient"], "send_all": False,
         }):
@@ -655,8 +679,8 @@ class LocalGuiTests(unittest.TestCase):
             "checked_at": "2026-09-28T00:00:00Z"
         }), patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
-            "psbt_base64": "cHNidP8=",
-            "txid": "ab" * 32, "recipient": request["recipient"],
+            "psbt_base64": SYNTHETIC_PSBT,
+            "txid": SYNTHETIC_TXID, "recipient": request["recipient"],
             "amount_sats": request["amount_sats"], "change_sats": 1000,
             "change_address": request["recipient"], "send_all": False,
         }):
@@ -665,8 +689,8 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(result["fee_reference"]["network"], "main")
         with patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 12, "fee_sats": 2640,
-            "psbt_base64": "cHNidP8=", "send_all": True,
-            "txid": "ab" * 32, "recipient": wallet["receive_address"],
+            "psbt_base64": SYNTHETIC_PSBT, "send_all": True,
+            "txid": SYNTHETIC_TXID, "recipient": wallet["receive_address"],
             "amount_sats": 1000, "change_sats": 0, "change_address": None,
         }) as builder:
             swept = self.post("/api/prepare", {

@@ -15,7 +15,8 @@ from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources
                      check_device_bridge, check_psbt_save, configure_packaged_tls,
                      main, run_desktop)
 from probe import ProbeError
-from gui import LocalApp, ui_path
+from gui import LocalApp, PreparedPayment, ui_path
+from dataclasses import replace
 
 
 class DesktopTests(unittest.TestCase):
@@ -30,7 +31,8 @@ class DesktopTests(unittest.TestCase):
         self.state.chain = "testnet4"
         self.raw = b"psbt\xff" + b"synthetic test data"
         self.encoded = base64.b64encode(self.raw).decode()
-        self.state.prepared_psbt = self.encoded
+        self.state.prepared = PreparedPayment(
+            None, "testnet4", 0, "test", self.encoded, "", (), ())
         self.url = "http://127.0.0.1:54321/"
 
     def _bridge(self, current_url=None):
@@ -74,17 +76,17 @@ class DesktopTests(unittest.TestCase):
                 bridge.save_psbt(base64.b64encode(b"psbt\xffother").decode(), "testnet4")
             with self.assertRaisesRegex(ValueError, "changed"):
                 bridge.save_psbt(self.encoded, "main")
-            original = self.state.prepared_psbt
-            self.state.prepared_psbt = None
+            original = self.state.prepared
+            self.state.prepared = None
             with self.assertRaisesRegex(ValueError, "changed"):
                 bridge.save_psbt(self.encoded, "testnet4")
-            self.state.prepared_psbt = original
+            self.state.prepared = original
             with self.assertRaisesRegex(ValueError, "local app URL"):
                 self._bridge(current_url="https://example.org/").save_psbt(
                     self.encoded, "testnet4")
             # A payload that matches the prepared one but is not a PSBT.
             not_psbt = base64.b64encode(b"not a psbt at all").decode()
-            self.state.prepared_psbt = not_psbt
+            self.state.prepared = replace(original, psbt_base64=not_psbt)
             with self.assertRaisesRegex(ValueError, "not valid"):
                 bridge.save_psbt(not_psbt, "testnet4")
 

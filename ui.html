@@ -178,12 +178,14 @@
       <p class="muted">Choose your wallet file—not a recovery phrase or private key.</p>
       <div class="grid">
         <div><label for="chain">Bitcoin network</label>
-          <select id="chain"><option value="testnet4">TESTNET4 · practice with test coins</option>
+          <select id="chain"><option value="testnet4">TESTNET4 · existing test wallets</option>
+            <option value="mutinynet">MUTINYNET · fast practice network</option>
             <option value="main">LIVE MAINNET · real BTC</option></select></div>
         <div id="wallet-input">
           <label for="wallet-file">BSMS wallet file</label>
           <input id="wallet-file" type="file"></div>
       </div>
+      <p class="small muted">Mutinynet and Testnet4 are separate networks. A Testnet4 wallet needs a new Mutinynet wallet and test coins.</p>
       <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
         <span id="explorer-consent-text">I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
@@ -199,16 +201,16 @@
       <input id="explorer-url" type="text" inputmode="url" autocomplete="off"
         spellcheck="false" placeholder="https://example.com/api">
       <p class="small muted">Used for address balances, confirmed outputs and transaction data.
-        Custom servers are checked against this network's genesis block before use.
+        Custom servers are checked against this network's genesis and, on Mutinynet, a fork checkpoint before use.
         A server can still return inaccurate data; verify independently.</p>
       <label for="broadcaster-url">Broadcast server · Esplora HTTP API base</label>
       <input id="broadcaster-url" type="text" inputmode="url" autocomplete="off"
         spellcheck="false" placeholder="https://example.com/api">
-      <p class="small muted">Testnet4 broadcasting uses this server after two device
+      <p class="small muted">Practice-network broadcasting uses this server after two device
         signatures and your final confirmation. Mainnet broadcasting is disabled.
         Electrum TLS servers use a different protocol and cannot be entered here.</p>
       <button id="save-servers" class="action">Save these server URLs</button>
-      <button id="reset-servers" class="secondary">Restore mempool.space defaults</button>
+      <button id="reset-servers" class="secondary">Restore network defaults</button>
       <div id="settings-message" role="status" aria-live="polite"></div>
     </details>
 
@@ -308,7 +310,7 @@
       <p class="muted">First prepare and review the transaction. Nothing is signed or sent here.</p>
       <div id="send-choice" role="group" aria-label="Choose whether to prepare a transaction">
         <h3>Would you like to prepare a Bitcoin transaction?</h3>
-        <p class="small muted">Enter the destination and amount, review every output, then approve signing on two hardware devices. Testnet4 payments can then be broadcast.</p>
+        <p class="small muted">Enter the destination and amount, review every output, then approve signing on two hardware devices. Practice-network payments can then be broadcast.</p>
         <div id="test-send-tip" class="tip"><strong>Recommended: send a small test amount first.</strong>
           Confirm that a small payment arrives before you move a large amount. Nothing here is
           forced — a test transaction is simply the cheapest insurance there is.</div>
@@ -382,7 +384,7 @@
           <ol class="small">
             <li>Save the unsigned file to your Downloads folder.</li>
             <li>Continue below to approve signing on two hardware devices. The saved file is an optional backup.</li>
-            <li>On Testnet4, confirm the final transaction and broadcast it. Mainnet broadcast remains disabled.</li>
+            <li>On a practice network, confirm the final transaction and broadcast it. Mainnet broadcast remains disabled.</li>
           </ol></div>
         <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
           <details class="context-help"><summary aria-label="What is change in a Bitcoin transaction?">?</summary>
@@ -435,8 +437,8 @@
               <code id="final-txid" class="mono"></code></div>
             <label class="check"><input id="confirm-broadcast" type="checkbox">
               <span>I checked the destination, amount and fee above, and I want to broadcast this
-                exact transaction to Testnet4. This cannot be undone.</span></label>
-            <button id="broadcast" type="button" disabled>Broadcast to Testnet4</button>
+                exact transaction to the selected practice network. This cannot be undone.</span></label>
+            <button id="broadcast" type="button" disabled>Broadcast payment</button>
             <div id="broadcast-message" role="status" aria-live="polite"></div>
           </div>
         </div>
@@ -511,21 +513,25 @@
     const selectedChain = () => $("chain").value;
     function updateNetworkUI() {
       const main = selectedChain() === "main";
+      const name = main ? "mainnet" : (selectedChain() === "mutinynet" ? "Mutinynet" : "Testnet4");
       setText("network-badge", main ? "● MAINNET · REAL BITCOIN" :
-        "● TESTNET4 · NO REAL BITCOIN");
+        "● " + name.toUpperCase() + " · NO REAL BITCOIN");
       $("network-badge").classList.toggle("live", main);
       document.body.classList.toggle("live-mode", main);
       $("live-banner").hidden = !main;
       setText("explorer-consent-text",
         "I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.");
-      setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
-      setText("balance-unit", main ? "Satoshi balance" : "Testnet4 satoshi balance");
-      setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
+      setText("balance-title", "2. " + name + " balance");
+      setText("balance-unit", main ? "Satoshi balance" : name + " satoshi balance");
+      setText("destination-label", "Send to " + name + " address");
       $("destination").placeholder = main ? "bc1…" : "tb1…";
       setText("send-price-note", main ?
         "BTC/USD and fee suggestions are mainnet references, not guarantees." :
-        "BTC/USD and fee suggestions use mainnet as a reference. Testnet4 coins have no cash value.");
-      setText("settings-network", main ? "mainnet" : "Testnet4");
+        (selectedChain() === "mutinynet" ?
+          "BTC/USD is a mainnet reference. Fee suggestions come from Mutinynet; practice coins have no cash value." :
+          "BTC/USD and fee suggestions use mainnet as a reference. Practice coins have no cash value."));
+      setText("settings-network", name);
+      setText("broadcast", main ? "Broadcast payment" : "Broadcast to " + name);
       renderPrice();
       renderFeeGuidance();
     }
@@ -569,7 +575,7 @@
         if (chain !== selectedChain()) return;
         $("explorer-url").value = settings.explorer_url;
         $("broadcaster-url").value = settings.broadcaster_url;
-        lastScan = null; currentPsbt = null;
+        lastScan = null; invalidateReview();
         $("balance-card").hidden = true; $("send-card").hidden = true;
         msg("settings-message", "Server URLs saved on this Mac. Broadcasting remains unavailable.");
         if (!$("wallet-card").hidden) {
@@ -697,10 +703,21 @@
       feeEstimateTimer = setTimeout(loadFeeEstimate, 250);
     }
     function invalidateReview() {
+      // A browser page can survive multiple payments. Retire every visible and
+      // actionable part of the previous review before a new request starts.
       sendActionId++;
-      currentPsbt = null; preparationId = null; reviewAmountSats = null; reviewFeeSats = null;
+      currentPsbt = null; preparationId = null; finalTxid = null;
+      reviewAmountSats = null; reviewFeeSats = null;
       $("review").hidden = true; $("download").disabled = true;
       $("next-signers").disabled = true; $("signer-step").hidden = true;
+      $("sign-step").hidden = true; $("finalize-step").hidden = true;
+      $("sign-buttons").replaceChildren(); $("signer-results").replaceChildren();
+      setText("signer-message", ""); setText("sign-progress", "");
+      setText("broadcast-message", "");
+      for (const id of ["final-amount", "final-fee", "final-network",
+                        "final-destination", "final-change", "final-fee-rate",
+                        "final-vsize", "final-signers", "final-txid"]) setText(id, "");
+      $("confirm-broadcast").checked = false; $("broadcast").disabled = true;
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
     }
     function updateSendMode() {
@@ -710,19 +727,20 @@
       updateSendEquivalent();
     }
     function resetSendChoice() {
+      invalidateReview();
       $("send-choice").hidden = false;
       $("send-flow").hidden = true;
       $("review").hidden = true;
       msg("send-message", "");
     }
     function renderPrice() {
-      const test = selectedChain() === "testnet4";
+      const test = selectedChain() !== "main";
       setText("price-note", rate ?
         "Mainnet BTC/USD spot: " + fmt(rate.usd_per_btc) + " USD/BTC · " +
         rate.source + " · " + new Date(rate.as_of).toLocaleString() +
-        (test ? ". Testnet4 coins have no cash value." : ". Indicative quote, not a sale price.") :
+        (test ? ". Practice coins have no cash value." : ". Indicative quote, not a sale price.") :
         "BTC/USD rate unavailable. Satoshi balances still display." +
-        (test ? " Testnet4 coins have no cash value." : ""));
+        (test ? " Practice coins have no cash value." : ""));
       if (lastScan) {
         setText("balance-usd", usdLabel(lastScan.observed_sats));
         showAddresses(lastScan);
@@ -779,22 +797,23 @@
     function renderFeeGuidance() {
       const value = Number($("fee-rate").value);
       setText("fee-guidance", feeQuote ?
-        "Current mainnet guidance: slow " + Math.ceil(feeQuote.hour) + ", medium " +
+        "Current " + (feeQuote.network === "mutinynet" ? "Mutinynet" : "mainnet") +
+        " guidance: slow " + Math.ceil(feeQuote.hour) + ", medium " +
         Math.ceil(feeQuote.standard) + ", fast " + Math.ceil(feeQuote.fastest) + " sat/vB. " +
         (feeQuote.fastest > 25 ? "Fast exceeds this app's safety cap; it is not selected. " : "") +
         "Checked " + new Date(feeQuote.checked_at).toLocaleString() +
-        ". Estimates, not guarantees." +
-        (selectedChain() === "testnet4" ? " Testnet4 fees may differ." : "") :
+        ". Safety limits: 25 sat/vB and 10,000 sats total. Estimates, not guarantees." +
+        (selectedChain() === "testnet4" ? " Testnet4 fees may differ from this mainnet reference." : "") :
         "Live fee guidance unavailable. Transaction preparation is paused until rates can be checked.");
       renderSpeedButtons();
       renderFeePreview();
       const warn = !Number.isInteger(value) || value < 1 || value > 25 ?
         "Fee rate must be a whole number from 1 to 25 sat/vB. Values such as 500 are blocked." :
         feeQuote && value < feeQuote.economy ?
-        "Below the live mainnet economy estimate of " + feeQuote.economy +
+        "Below the live network economy estimate of " + feeQuote.economy +
         " sat/vB. Transaction preparation is blocked at this rate." :
         feeQuote && value < feeQuote.standard ?
-        "Below the live mainnet standard estimate of " + feeQuote.standard +
+        "Below the live network standard estimate of " + feeQuote.standard +
         " sat/vB. Confirmation may be slower; review this rate carefully." :
         feeTooHighForNetwork(value) ?
         "This is much higher than the available network estimate. Check that you entered sat/vB, not dollars." : "";
@@ -808,11 +827,13 @@
     }
     async function loadFees() {
       const requestId = ++feeRequestId;
+      const chain = selectedChain();
       try {
-        const response = await fetch("/api/fees", {cache:"no-store"});
+        const response = await fetch(chain === "mutinynet" ?
+          "/api/fees?chain=mutinynet" : "/api/fees", {cache:"no-store"});
         if (!response.ok) throw new Error("Fee feed unavailable");
         const quote = await response.json();
-        if (requestId === feeRequestId) {
+        if (requestId === feeRequestId && chain === selectedChain()) {
           feeQuote = quote;
           if (!feeRateCustomized) {
             if ($("fee-rate").value !== String(Math.ceil(quote.standard))) invalidateReview();
@@ -820,7 +841,7 @@
             selectedTier = "medium";
           }
         }
-      } catch (_) { if (requestId === feeRequestId) feeQuote = null; }
+      } catch (_) { if (requestId === feeRequestId && chain === selectedChain()) feeQuote = null; }
       renderFeeGuidance();
     }
     function showWallet(data) {
@@ -948,7 +969,7 @@
         "The network has received your payment. It is waiting to be added to a block. You can make another payment from this wallet after one confirmation.");
       setText("pending-advice", unknown ?
         "Check the payment on the explorer or ask for help. Use Check again after its status is clear." :
-        "This can take a while. Your wallet is still working; check again later to see whether it has confirmed.");
+        "Your wallet is still working. Use Check again later. If the payment stays pending, view it on the explorer and ask for help with the original wallet; this app does not retry or raise its fee automatically.");
       const link = $("pending-explorer");
       link.hidden = !pendingExplorerUrl;
       if (pendingExplorerUrl) link.href = pendingExplorerUrl;
@@ -956,6 +977,7 @@
     }
     async function refresh() {
       const started = walletActionId, chain = selectedChain();
+      invalidateReview();
       $("balance-card").hidden = true; $("send-card").hidden = true;
       lastScan = null;
       feeEstimate = null;
@@ -986,6 +1008,7 @@
         msg("message", "Confirm that the public explorer may see your derived wallet addresses.", true);
         return false;
       }
+      invalidateReview();
       $("open").disabled = true;
       $("wallet-card").hidden = true; $("signers-card").hidden = true;
       showPendingPayment(false);
@@ -1026,7 +1049,7 @@
     $("chain").addEventListener("change", () => {
       walletActionId++;
       walletCanPrepare = false; walletCanSendAll = false; lastScan = null;
-      feeEstimate = null;
+      feeEstimate = null; feeQuote = null;
       $("explorer-consent").checked = false;
       currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       $("destination").value = ""; $("amount").value = "";
@@ -1041,6 +1064,7 @@
       msg("message", "Choose a BSMS definition for the selected network to continue.");
       updateNetworkUI();
       loadServerSettings();
+      loadFees();
     });
     $("amount").addEventListener("input", () => {
       invalidateReview(); updateSendEquivalent(); renderFeeGuidance(); scheduleFeeEstimate();
@@ -1069,7 +1093,8 @@
       });
     }
     $("prepare").addEventListener("click", async () => {
-      const started = ++sendActionId, walletStarted = walletActionId, chain = selectedChain();
+      invalidateReview();
+      const started = sendActionId, walletStarted = walletActionId, chain = selectedChain();
       const sendAll = $("send-all").checked;
       const amount = sendAll ? null : btcToSats($("amount").value);
       const fee = Number($("fee-rate").value);
@@ -1077,8 +1102,6 @@
           !Number.isSafeInteger(fee) || fee < 1 || fee > 25) {
         msg("send-message", "Enter at least 0.00000546 BTC (up to 8 decimal places), or select Send all. Check the network fee setting.", true); return;
       }
-      $("review").hidden = true; currentPsbt = null;
-      reviewAmountSats = null; reviewFeeSats = null;
       preparing = true;
       $("prepare").disabled = true; msg("send-message", "Checking confirmed outputs and preparing your unsigned transaction file…");
       try {
@@ -1150,8 +1173,9 @@
       $("signer-results").replaceChildren();
       setText("signer-message", "Connect and unlock a hardware wallet, then choose Check connected devices.");
     });
-    async function runSignerCheck(button, messageId, resultsId, preparationId, helpId,
+    async function runSignerCheck(button, messageId, resultsId, reviewId, helpId,
                                   signStepId) {
+      const actionId = sendActionId;
       const originalLabel = button.textContent;
       button.disabled = true;
       button.classList.add("searching");
@@ -1161,7 +1185,8 @@
       $(resultsId).replaceChildren();
       try {
         const result = await post("/api/devices",
-          preparationId ? {preparation_id: preparationId} : {});
+          reviewId ? {preparation_id: reviewId} : {});
+        if (signStepId && (actionId !== sendActionId || reviewId !== preparationId)) return;
         for (const status of result.devices) {
           const item = document.createElement("li");
           item.textContent = status;
@@ -1175,7 +1200,8 @@
         // Devices that matched are the ones that can actually sign.
         if (signStepId) renderSignable(result.signable || [], signStepId);
       } catch (e) {
-        setText(messageId, e.message || "Hardware wallet recognition is unavailable.");
+        if (!signStepId || (actionId === sendActionId && reviewId === preparationId))
+          setText(messageId, e.message || "Hardware wallet recognition is unavailable.");
       } finally {
         button.textContent = originalLabel;
         button.classList.remove("searching");
@@ -1217,8 +1243,10 @@
     async function refreshSignable() {
       // The owner should not have to know to press a check button again after
       // connecting the next device; the list refreshes itself.
+      const reviewId = preparationId, actionId = sendActionId;
       try {
-        const result = await post("/api/devices", {preparation_id: preparationId});
+        const result = await post("/api/devices", {preparation_id: reviewId});
+        if (actionId !== sendActionId || reviewId !== preparationId) return;
         renderSignable(result.signable || [], "sign-step", false);
       } catch (_) { /* keep whatever buttons are already there */ }
     }
@@ -1239,36 +1267,45 @@
       }
     });
     async function signWith(device, button) {
+      const reviewId = preparationId, actionId = sendActionId;
+      if (!reviewId) return;
       button.disabled = true;
       setBusy("Waiting for the device to sign…");
       $("sign-progress").className = "";
       setText("sign-progress", "Approve the transaction on the device screen.");
       try {
-        const result = await post("/api/sign", {preparation_id: preparationId,
+        const result = await post("/api/sign", {preparation_id: reviewId,
           device_type: device.type, device_path: device.path});
+        if (actionId !== sendActionId || reviewId !== preparationId) return;
         const who = result.signers && result.signers.length ?
           " Signer" + (result.signers.length > 1 ? "s " : " ") + result.signers.join(" and ") + " signed." : "";
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
           " collected." + who);
-        if (result.complete) { await showFinal(); return; }
+        if (result.complete) { await showFinal(reviewId); return; }
         // Refresh first, so the next device's button is already there, then say
         // where things stand.
         setBusy("Signature received. Searching for another device; this can take 10–15 seconds…");
         await refreshSignable();
+        if (actionId !== sendActionId || reviewId !== preparationId) return;
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
           " collected." + who + " Sign with another device to reach " + result.threshold + ".");
       } catch (e) {
-        msg("sign-progress", (e && e.message) || "The device did not sign this transaction.", true);
-        $("sign-progress").scrollIntoView({behavior:"smooth", block:"center"});
+        if (actionId === sendActionId && reviewId === preparationId) {
+          msg("sign-progress", (e && e.message) || "The device did not sign this transaction.", true);
+          $("sign-progress").scrollIntoView({behavior:"smooth", block:"center"});
+        }
       } finally { button.disabled = false; setBusy(""); }
     }
-    async function showFinal() {
+    async function showFinal(reviewId) {
+      const actionId = sendActionId;
       try {
-        const final = await post("/api/finalize", {preparation_id: preparationId});
+        const final = await post("/api/finalize", {preparation_id: reviewId});
+        if (actionId !== sendActionId || reviewId !== preparationId) return;
         finalTxid = final.txid;
         setText("final-amount", btc(final.amount_sats) + " BTC");
         setText("final-fee", fmt(final.fee_sats) + " sats");
-        setText("final-network", final.network === "main" ? "MAINNET · REAL BITCOIN" : "TESTNET4");
+        setText("final-network", final.network === "main" ? "MAINNET · REAL BITCOIN" :
+          final.network.toUpperCase() + " · PRACTICE COINS");
         setText("final-destination", final.destination);
         setText("final-change", final.change_address ?
           final.change_address + " · " + btc(final.change_sats) + " BTC" : "None — Send All");
@@ -1286,7 +1323,8 @@
         $("finalize-step").hidden = false;
         $("finalize-step").scrollIntoView({behavior:"smooth", block:"start"});
       } catch (e) {
-        setText("sign-progress", (e && e.message) || "Could not finish the transaction.");
+        if (actionId === sendActionId && reviewId === preparationId)
+          setText("sign-progress", (e && e.message) || "Could not finish the transaction.");
       }
     }
     $("confirm-broadcast").addEventListener("change", () => {
@@ -1294,11 +1332,13 @@
     });
     $("broadcast").addEventListener("click", async () => {
       if (!finalTxid || $("broadcast").disabled) return;
+      const reviewId = preparationId, actionId = sendActionId;
       $("broadcast").disabled = true;
       setBusy("Checking that the selected Bitcoin is still available, then sending…");
       try {
-        const sent = await post("/api/broadcast", {preparation_id: preparationId,
+        const sent = await post("/api/broadcast", {preparation_id: reviewId,
           confirm: true, confirmed_txid: finalTxid});
+        if (actionId !== sendActionId || reviewId !== preparationId) return;
         const holder = $("broadcast-message");
         holder.className = "success";
         const link = document.createElement("a");
@@ -1313,6 +1353,7 @@
         setText("balance-send-status", "This wallet is waiting for one confirmation before another payment.");
         $("pending-payment").scrollIntoView({behavior:"smooth", block:"start"});
       } catch (e) {
+        if (actionId !== sendActionId || reviewId !== preparationId) return;
         if (e.outcomeUnknown) {
           showPendingPayment(true, e.explorer, true);
           $("send-card").hidden = true;
