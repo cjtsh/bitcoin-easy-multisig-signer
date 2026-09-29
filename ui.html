@@ -1237,8 +1237,8 @@
       button.disabled = true;
       button.classList.add("searching");
       button.textContent = "Searching for devices…";
-      setBusy("Please wait while we search for your device. This often takes 10–15 seconds, but can take up to a minute…");
-      setText(messageId, "Searching for connected devices. Please wait; this is read-only.");
+      setBusy("Please wait while we search for your device. Jade may ask for PINs and take several minutes; take your time on the device…");
+      setText(messageId, "Searching for connected devices. If Jade asks for PINs, finish them carefully; this check signs nothing.");
       $(resultsId).replaceChildren();
       try {
         const result = await post("/api/devices",
@@ -1313,8 +1313,8 @@
       button.disabled = true;
       button.classList.add("searching");
       button.textContent = "Searching for devices…";
-      setBusy("Please wait while we search for your device. This often takes 10–15 seconds, but can take up to a minute…");
-      setText("sign-progress", "Searching for connected devices. Please wait.");
+      setBusy("Please wait while we search for your device. Jade may ask for PINs and take several minutes; take your time on the device…");
+      setText("sign-progress", "Searching for connected devices. If Jade asks for PINs, finish them carefully.");
       try { await refreshSignable(); }
       finally {
         button.textContent = originalLabel;
@@ -1345,7 +1345,7 @@
         if (result.complete) { await showFinal(reviewId); return; }
         // Refresh first, so the next device's button is already there, then say
         // where things stand.
-        setBusy("Signature received. Searching for another device; this often takes 10–15 seconds, but can take up to a minute…");
+        setBusy("Signature received. Searching for another device; Jade PIN entry may take several minutes…");
         await refreshSignable();
         if (actionId !== sendActionId || reviewId !== preparationId) return;
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +

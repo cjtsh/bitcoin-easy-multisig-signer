@@ -227,7 +227,7 @@ class LocalGuiTests(unittest.TestCase):
         for message in ("Reading your wallet file",
                         "Checking the blockchain for your balance",
                         "Please wait while we search for your device",
-                        "10–15 seconds"):
+                        "Jade may ask for PINs and take several minutes"):
             self.assertIn(message, page, f"missing progress message: {message}")
         self.assertIn("background:#ffd447", page)
 

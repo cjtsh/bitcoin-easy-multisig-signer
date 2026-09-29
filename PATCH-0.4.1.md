@@ -28,4 +28,6 @@ The manual [GitHub workflow](https://github.com/cjtsh/bitcoin-easy-multisig-sign
 1b2fd716be75c79ae88d8d4a2045d3fe2dc44795833416f3ea8abb85a86a035d  BUILD-SBOM.json
 ```
 
-The physical Jade/Ledger correction remains **unverified** until the owner completes a practice-network signer walkthrough on the installed 0.4.1 app. Do not treat release checks as device acceptance or enable mainnet broadcast on their basis.
+## Owner acceptance after publication
+
+The owner later reported that both Ledger and Jade signed and a Mutinynet payment was broadcast from the installed 0.4.1 app. The privacy-limited diagnostic report independently records two `signer_response: verified` events, `final_transaction: verified` and `broadcast: accepted`. A read-only query of the owner-supplied public transaction on Mutinynet's Esplora API returned `confirmed: true`. The report omits device identities and transaction bytes, so device pairing is owner-reported; no wallet data or transaction identifier is committed here. This establishes a successful practice-network walkthrough of the 0.4.1 signing path, not mainnet acceptance. The owner also found that Jade authorization during device discovery can take longer than 0.4.1's one-minute limit; see `PATCH-0.4.2.md`.

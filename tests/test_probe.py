@@ -154,11 +154,13 @@ class ProbeTests(unittest.TestCase):
         fp = roots[0].my_fingerprint.hex()
         correct = roots[0].derive("m/48h/1h/0h/2h").to_public().to_base58()
 
-        def fake_hwi(_executable, chain, *args):
+        def fake_hwi(_executable, chain, *args, **options):
             self.assertEqual(chain, "testnet4")
             if args == ("enumerate",):
+                self.assertEqual(options["timeout_seconds"], 180)
                 return [{"type": "jade", "model": "Jade", "path": "test-port", "fingerprint": fp}]
             self.assertEqual(args[-2:], ("getxpub", "m/48h/1h/0h/2h"))
+            self.assertEqual(options["timeout_seconds"], 180)
             return {"xpub": correct}
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
@@ -175,8 +177,9 @@ class ProbeTests(unittest.TestCase):
         real = ("Could not open client or get fingerprint information: "
                 "Ledger is not in either the Bitcoin or Bitcoin Testnet app")
 
-        def fake_hwi(_executable, _chain, *args):
+        def fake_hwi(_executable, _chain, *args, **options):
             self.assertEqual(args, ("enumerate",))
+            self.assertEqual(options["timeout_seconds"], 180)
             return [{"type": "ledger", "model": "ledger_nano_s_plus",
                      "path": "DevSrvsID:1", "error": real, "code": -3}]
 
@@ -222,9 +225,11 @@ class ProbeTests(unittest.TestCase):
         fp = roots[0].my_fingerprint.hex()
         wrong = roots[1].derive("m/48h/1h/0h/2h").to_public().to_base58()
 
-        def fake_hwi(_executable, _chain, *args):
+        def fake_hwi(_executable, _chain, *args, **options):
             if args == ("enumerate",):
+                self.assertEqual(options["timeout_seconds"], 180)
                 return [{"type": "ledger", "path": "test-port", "fingerprint": fp}]
+            self.assertEqual(options["timeout_seconds"], 180)
             return {"xpub": wrong}
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):

@@ -202,6 +202,9 @@ def _hwi_path(executable: str) -> str:
 
 
 _PATH_LIKE = re.compile(r"(/\S+|[A-Za-z]:\\\S+)")
+DEFAULT_HWI_TIMEOUT_SECONDS = 60
+DEVICE_AUTH_TIMEOUT_SECONDS = 180
+SIGN_TIMEOUT_SECONDS = 600
 
 
 def _hwi_reason(text: str) -> str:
@@ -230,7 +233,7 @@ def _hwi_reason(text: str) -> str:
 
 def invoke_hwi(executable: str, chain: str, *arguments: str,
                stdin_command: str | None = None,
-               timeout_seconds: int = 60) -> Any:
+               timeout_seconds: int = DEFAULT_HWI_TIMEOUT_SECONDS) -> Any:
     """Run HWI without a shell; optionally send a sensitive command on stdin.
 
     HWI 3.2.0's --stdin mode appends a shlex-parsed command from standard input.
@@ -279,7 +282,7 @@ def sign_psbt_with_device(executable: str, chain: str, device_type: str,
         executable, chain,
         "--device-type", str(device_type), "--device-path", str(device_path),
         "--stdin", stdin_command="signtx " + psbt_base64 + "\n",
-        timeout_seconds=600,
+        timeout_seconds=SIGN_TIMEOUT_SECONDS,
     )
     if not isinstance(response, dict) or not isinstance(response.get("psbt"), str):
         raise ProbeError("The device did not return a signed transaction.")
@@ -387,7 +390,11 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
 
 def _probe_devices_into(record: WalletRecord, executable: str, chain: str,
                         detailed: dict) -> None:
-    devices = invoke_hwi(executable, chain, "enumerate")
+    # HWI's Jade enumeration constructs JadeClient and runs auth_user(), which
+    # can require two PIN interactions on the small device screen. The normal
+    # one-minute transport bound would interrupt a careful operator mid-PIN.
+    devices = invoke_hwi(executable, chain, "enumerate",
+                         timeout_seconds=DEVICE_AUTH_TIMEOUT_SECONDS)
     if not isinstance(devices, list):
         raise ProbeError("HWI enumeration returned an unexpected response.")
     statuses: list[str] = detailed["statuses"]
@@ -433,6 +440,7 @@ def _probe_devices_into(record: WalletRecord, executable: str, chain: str,
                 str(dev_path),
                 "getxpub",
                 _key_origin_path(key),
+                timeout_seconds=DEVICE_AUTH_TIMEOUT_SECONDS,
             )
             if not isinstance(response, dict) or not isinstance(response.get("xpub"), str):
                 statuses.append(f"{model}: signer {index} could not be verified.")
