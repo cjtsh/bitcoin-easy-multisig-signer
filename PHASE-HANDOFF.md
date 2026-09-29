@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.26
+# Project status and handoff — v0.1.27
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.26`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.27`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.26-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.27-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Immediate next step (updated 28 September, 22:15)
@@ -15,6 +15,15 @@ real wallet on 28 September, which was the last acceptance item.
 signed by the Jade and the Trezor Safe 3, broadcast to Testnet4, and appeared as
 pending in the receiving wallet. The change returned to the wallet's own change
 branch. That is the project's goal met on real hardware.
+
+**Transactions were not replaceable (28 Sep).** The owner's second testnet send
+sat unconfirmed. The transaction was valid, in the mempool, in no conflict, paying
+3.02 sat/vB against a recommended 1, with locktime 0 — and nothing could be done,
+because it was built with the default nSequence 0xffffffff, which means final. Five
+consecutive testnet4 blocks then turned out to contain **no transactions at all**
+(coinbase only), so nothing was confirming for anyone; but the lesson stands.
+Transactions now signal replaceability (0xFFFFFFFD) so a stuck payment can be spent
+again at a higher fee. A test asserts every input is replaceable.
 
 **A pending spend looked like corruption (28 Sep).** After the first send, the app
 refused to prepare another transaction and hid the prepare card entirely, with

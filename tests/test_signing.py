@@ -123,6 +123,19 @@ class FinalizeTests(unittest.TestCase):
                     break
         return found
 
+    def test_transactions_signal_replaceability(self):
+        """A non-replaceable payment that gets stuck cannot be fee-bumped.
+
+        nSequence 0xffffffff means final: the owner's second testnet send sat
+        unconfirmed with no remedy. Below 0xfffffffe the same coins can be spent
+        again with a higher fee if that is ever needed.
+        """
+        packet, _keys, _ = prepared_psbt()
+        for index, vin in enumerate(packet.tx.vin, start=1):
+            self.assertLess(vin.sequence, 0xFFFFFFFE,
+                            f"input {index} is not replaceable")
+            self.assertEqual(vin.sequence, 0xFFFFFFFD)
+
     def test_the_built_psbt_publishes_the_cosigner_xpubs(self):
         """A Ledger will not sign a multisig spend without these.
 

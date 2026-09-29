@@ -672,7 +672,14 @@ def build_unsigned_psbt(
         outputs.append(transaction.TransactionOutput(change_sats, change_desc.script_pubkey()))
     tx = transaction.Transaction(
         version=2,
-        vin=[transaction.TransactionInput(bytes.fromhex(u["txid"]), u["vout"])
+        # Signal replaceability (BIP125) rather than finality. A transaction built
+        # with the default 0xffffffff cannot be fee-bumped at all, so a payment that
+        # sits in a quiet or hostile mempool is simply stuck: the owner's own second
+        # testnet send did exactly that, and nothing could be done but wait. A
+        # sequence below 0xfffffffe lets the same coins be spent again with a higher
+        # fee if it ever becomes necessary.
+        vin=[transaction.TransactionInput(bytes.fromhex(u["txid"]), u["vout"],
+                                          sequence=0xFFFFFFFD)
              for u in chosen],
         vout=outputs,
     )
