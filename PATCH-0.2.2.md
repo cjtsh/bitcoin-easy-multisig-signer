@@ -13,10 +13,12 @@ After the first accepted 0.2.1 Testnet4 payment, the owner observed that the nex
 
 ## Verification and limits
 
-- Synthetic tests cover a pending spend with another confirmed UTXO, the fee/build/API gates, the gap between broadcast acceptance and mempool visibility, and unlocking after explicit confirmation. The full suite, source archive suite, JS syntax, and Mac package checks are required before release.
+- Synthetic tests cover a pending spend with another confirmed UTXO, the fee/build/API gates, the gap between broadcast acceptance and mempool visibility, explorer failure, and unlocking after explicit confirmation. Python 3.12 local and source-archive suites passed: 146 tests, 8 expected skips. JavaScript and Bash syntax checks passed.
+- The [manual GitHub build](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36585936648) succeeded from commit `a97b0e4192c716c487023e69fb47049fcb33bc28`, including the Apple Silicon package, bundled HWI/device/HTTPS checks, source archive tests, SBOM, and checksum publication. The [v0.2.2 release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.2.2) targets that commit. Downloaded assets passed `shasum -a 256 -c SHA256SUMS`; `hdiutil verify` reported a valid DMG.
+- Published SHA-256: DMG `a6ba3658d84f9153449440fcee2b00f4ff4cd9db5338f9e89d5f5b60f7e02faf`; source `bb6a5aac00ef10bd234e43971a63093dbf8c741dfbf9d6077ffbe04a20b21045`; SBOM `d74ddb823efa58aae2119900fcc5f380e542b5a78635d721dbf96d2cf5abddc7`.
 - A public explorer is an observation, not a consensus node. A stale explorer may leave the app paused longer. A dropped or replaced unconfirmed payment is not handled with fee bump or cancellation tools in this version. Do not assume a transaction confirmed solely because it was broadcast.
 - No private wallet material or real transaction identifier is placed in this document, the source archive, or diagnostics.
 
-## Owner walkthrough
+## Owner testing and install timing
 
-After the pending Testnet4 payment receives one confirmation, install the published 0.2.2 DMG once and make one small self-owned Testnet4 payment with Trezor plus an already verified signer. Check each device's destination and amount. After broadcast, confirm the yellow notice and disabled next-send path; later use **Check again** after a block. Send the opt-in diagnostic report only if something fails. This is not a mainnet send authorization.
+No separate owner install or payment is required for this small patch. The owner may complete the planned Trezor plus already verified signer check in the existing 0.2.1 app after the earlier Testnet4 payment receives one confirmation. The 0.2.2 DMG is available for a later install; its yellow notice can be observed during the next ordinary payment, with **Check again** after a block. Save the opt-in diagnostic report only if something fails. This is not a mainnet send authorization.
