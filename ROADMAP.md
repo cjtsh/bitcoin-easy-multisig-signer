@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**0.4.3 change-path correction in source:** a bare wildcard that directly matches a first address does not authorize BIP48 inferred change. See `CHANGE-ADDRESS-REVIEW.md`. Mainnet broadcast remains disabled.
+**0.4.3 change-path correction published:** a bare wildcard that directly matches a first address does not authorize BIP48 inferred change. See `CHANGE-ADDRESS-REVIEW.md`. Mainnet broadcast remains disabled.
 
 **0.4.2 Jade authorization wait published; 0.4.1 signed and broadcast:** installed 0.4.0 rejected a Jade signer response after approval. See `PATCH-0.4.1.md` for diagnostic evidence, the signature-only import boundary, automated tests and the completed Ledger + Jade Mutinynet walkthrough. See `PATCH-0.4.2.md` for the longer Jade device-authorization wait still needing physical confirmation. Do not infer a cause from the visual refresh. Do not proceed to a mainnet live-send gate until this is checked.
 

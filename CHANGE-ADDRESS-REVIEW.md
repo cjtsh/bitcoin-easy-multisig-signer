@@ -25,3 +25,9 @@ A bare `/*` descriptor can itself match a first address at `xpub/0`. That is *no
 ## Remaining mainnet gate
 
 One BSMS file with `No path restrictions` cannot independently prove an undisclosed custom change branch. Before enabling mainnet broadcast, the owner and an independent reviewer should verify the exact live-wallet change policy against the wallet and signers, including the first *unused* change address and its full script/derivation, then perform a bounded live send and confirm the change is recognized and subsequently spendable. The recovery operator must not be asked to resolve paths or supply a second database file. If that verification cannot be automated or established during setup, the product should retain a clear limitation for partial sends from ambiguous wallet exports.
+
+## 0.4.3 release evidence
+
+- The [manual GitHub workflow](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36642041787) passed source archive tests, Apple Silicon tests, DMG verification, dependency inventory, checksum generation, and release publication from commit `e7f97ac1c45081cbeabeea6b29941e05ac6bce78`.
+- Downloaded [v0.4.3 release assets](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.3) all matched `SHA256SUMS`; `hdiutil verify` also accepted the DMG. SHA-256: DMG `e4e93be88c2c5a13aa12c2158db0f554cb2682ed13f55abe24f568594edccc58`, source `8edb917920cc59a9320cc7d4f3bb8ab9f1b8a5f4d468a38885cde4e711f83a19`, SBOM `a276fc1ecb802687f2527cbf4a4669c54f3d850e3e58af2e0653b4374a38896a`.
+- A prior 0.4.3 workflow was cancelled before release when the second owner note established that the two exports are one wallet; the source review was corrected and tested before this published run. No physical payment is needed solely to exercise the new fail-closed branch. This exact build has not been physically used yet; mainnet broadcast remains disabled.
