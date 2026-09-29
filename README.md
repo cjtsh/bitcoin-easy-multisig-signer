@@ -6,11 +6,13 @@ Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical p
 
 The release evidence and one focused owner test are in [`PATCH-0.3.0.md`](PATCH-0.3.0.md). Mutinynet needs a funded 2-of-3 BSMS wallet; existing Testnet4 coins cannot move between networks. The installed 0.2.1 app can show stale signing/final details when a new payment is prepared: **close it before installing 0.3.0, and never broadcast from a screen that mixes two payments**.
 
+**0.3.1 correction in progress:** the first 0.3.0 Mutinynet import exposed a receive-only Nunchuk BSMS export. The app safely refused a smaller payment but preselected Send All. Do not send a sweep to work around this. The 0.3.1 candidate leaves Send All unchecked, explains the missing change path beside the amount, opens on Mutinynet, and keeps custom amounts blocked when change is absent from the wallet definition. The current Nunchuk BSMS export lacks that policy. See [`PATCH-0.3.1.md`](PATCH-0.3.1.md).
+
 ## What this version does
 
 - Imports a BSMS 1.0 definition for a 2-of-3 native-SegWit multisig wallet. The app checks its reference receive address, public cosigner identities, and selected network.
-- Scans receive and declared change branches through a selected Esplora server. A gap-limited scan is an observation, not proof of a complete balance. Derived addresses are disclosed to that server after consent; seeds and private keys remain on hardware.
-- Builds a PSBT from confirmed, independently checked previous outputs. Partial sends require a change branch established by the descriptor or the BSMS path restrictions. A receive-only export can **Send All confirmed outputs found on its scanned receiving addresses**, producing no change output. The app does not guess change ownership.
+- Scans receive and established change branches through a selected Esplora server. A gap-limited scan is an observation, not proof of a complete balance. Derived addresses are disclosed to that server after consent; seeds and private keys remain on hardware.
+- Builds a PSBT from confirmed, independently checked previous outputs. Partial sends require a change branch established by the BSMS descriptor or path restrictions. If an export establishes neither declared nor guarded standard change, the owner can explicitly choose **Send All confirmed outputs found on scanned receiving addresses**, producing no change. The app does not infer change from BIP48 origins alone.
 - Checks connected hardware signers through bundled Bitcoin Core HWI, asks them to sign, rejects a returned PSBT that changes reviewed wallet data, and verifies each signature before finalization. Each device must display the intended payment; the person using the app must check its screen.
 - Shows the destination, amount, network, every change output, fee, effective fee rate, and transaction ID together at the final confirmation. Practice-network broadcast requires a separate explicit action. Mainnet broadcast remains disabled.
 - After an outgoing payment is accepted, shows a prominent notice that it is waiting for one confirmation and offers **Check again**. Another payment from that wallet is paused until the refreshed explorer state confirms it. Pending incoming funds alone do not pause confirmed outputs.
@@ -22,9 +24,9 @@ The app uses **one** wallet/PSBT/signing engine. [`network_config.py`](network_c
 
 The published DMG is for Apple Silicon. Until Developer ID enrollment and notarization are complete, it is ad-hoc signed and macOS requires **right-click → Open** on first launch. Verify the download against the release's `SHA256SUMS` before opening it. Do not disable Gatekeeper globally.
 
-The next owner install is v0.3.0 for one focused Mutinynet walkthrough after a 2-of-3 wallet is funded. The prior Testnet4 payment confirmed; the next Trezor result has not been reported. Verify a second review clears the first payment's signing/final details. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Do not send wallet files, xpubs, addresses, PSBTs, or raw signed transactions to an agent.
+The next owner install should wait until a safe same-wallet change-policy route is settled. The already-funded Nunchuk BSMS alone cannot prepare a smaller payment; do not sweep merely to test the interface. The prior Testnet4 payment confirmed; the next Trezor result has not been reported. Verify a second review clears the first payment's signing/final details. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Keep wallet files, xpubs, addresses, PSBTs, and raw signed transactions out of public issue reports and the repository.
 
-If the import is receive-only, the app offers a no-change Send All path instead of guessing a change branch. **Do not sweep a real wallet merely to test this feature.**
+If neither declared nor guarded standard change is available, the app offers a no-change Send All path. **Do not sweep a real wallet merely to test this feature.**
 
 ## Supported scope and limitations
 
