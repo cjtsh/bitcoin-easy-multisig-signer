@@ -60,6 +60,25 @@ from the checkout, never from the archive. The archive now ships every root modu
 carries the test helpers, fails the build if a module is missing, and CI runs the
 tests from the extracted tarball.
 
+**The Jade could not be unlocked (28 Sep).** HWI said to use the Jade's own
+"Recovery Phrase Login" or "QR PIN Unlock", which reads like a device fault. It was a
+missing dependency: the jade library HWI vendors exposes its HTTP relay only when
+`requests` is importable, and the build did not install `requests`. Without the relay
+HWI cannot pass the Jade's encrypted messages to Blockstream's pin server, so the
+device can never be unlocked. **The PIN still never leaves the device** — HWI's Jade
+client refuses to accept one from the host (`send_pin` raises "Blockstream Jade does
+not need a PIN sent from the host"); the host only relays ciphertext.
+
+`requests` is now installed and bundled, and the bundled tool answers a new
+`--dsh-capabilities` probe whose `jade_http_relay` flag the app checks on every build,
+so this cannot silently return. Verified by building the tool and confirming the flag
+flips from absent to true.
+
+**The three devices (28 Sep):** a **Trezor Safe 3** (matched signer 2 of 3 on the
+owner's real wallet), a **Ledger Nano S Plus** (recognised once its Bitcoin Testnet app
+is open; error `0x5515` means it is locked and must be unlocked on the device), and a
+**Blockstream Jade**.
+
 **Signing and broadcasting do not exist and are not authorised.** Phase 4 begins with
 an owner decision, not code.
 
