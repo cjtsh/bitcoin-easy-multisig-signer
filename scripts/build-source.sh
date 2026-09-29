@@ -18,7 +18,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
 cp README.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md \
-  PROJECT-HISTORY.md SECURITY-REVIEW-0.2.0.md \
+  PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md SECURITY-REVIEW-0.2.0.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   signing.py wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
@@ -37,7 +37,7 @@ fi
 cp tests/test_*.py tests/support.py tests/fake_explorer.py "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
-cp scripts/build-source.sh scripts/build-macos.sh scripts/hwi_entry.py \
+cp scripts/build-source.sh scripts/build-macos.sh scripts/build-sbom.py scripts/hwi_entry.py \
   scripts/make-icon.sh "$stage/$root/scripts/"
 if [[ -f ci/build-candidate.yml ]]; then
   workflow=ci/build-candidate.yml

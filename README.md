@@ -37,7 +37,7 @@ If the import is receive-only, the app offers a no-change Send All path instead 
 
 ## Developer and reviewer entry point
 
-Read [`AGENTS.md`](AGENTS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), and [`SECURITY-REVIEW-0.2.0.md`](SECURITY-REVIEW-0.2.0.md) before editing. [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) preserves earlier decisions; [`ROADMAP.md`](ROADMAP.md) preserves phase acceptance history. Current behavior in source and tests takes precedence over historical descriptions.
+Read [`AGENTS.md`](AGENTS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), the [original audit](AUDIT-BASELINE-0.1.27.md), and the [0.2.0 fix record](SECURITY-REVIEW-0.2.0.md) before editing. [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) preserves earlier decisions; [`ROADMAP.md`](ROADMAP.md) preserves phase acceptance history. Current behavior in source and tests takes precedence over historical descriptions.
 
 Use Python 3.12 for the Mac build (HWI 3.2.0 does not support 3.13+). Source tests:
 
@@ -47,7 +47,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m unittest discover -s tests -q
 ```
 
-The Mac build installs [`requirements-desktop.lock`](requirements-desktop.lock) with hashes. A reviewed `LIBUSB_SHA256` is mandatory. [`scripts/build-source.sh`](scripts/build-source.sh) creates the source archive; [`scripts/build-macos.sh`](scripts/build-macos.sh) creates the DMG on Apple Silicon. The GitHub workflow is **manual dispatch only** and publishes an immutable version after its tests, bundled checks, and checksum job pass. Never republish under an existing version; use 0.2.1 for a correction after 0.2.0 is published.
+The Mac build installs [`requirements-desktop.lock`](requirements-desktop.lock) with hashes. A reviewed `LIBUSB_SHA256` is mandatory. [`scripts/build-source.sh`](scripts/build-source.sh) creates the source archive; [`scripts/build-macos.sh`](scripts/build-macos.sh) creates the DMG on Apple Silicon. The GitHub workflow is **manual dispatch only** and publishes an immutable version with `BUILD-SBOM.json` and `SHA256SUMS` after its tests and bundled checks pass. Never republish under an existing version; use 0.2.1 for a correction after 0.2.0 is published.
 
 ## External components
 

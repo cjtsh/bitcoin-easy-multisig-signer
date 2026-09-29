@@ -4,7 +4,7 @@
 
 1. `README.md` for current user-visible behavior and supported scope.
 2. `PHASE-HANDOFF.md` for current status, version gates and owner test.
-3. `SECURITY-REVIEW-0.2.0.md` for the audit finding-to-fix map and evidence.
+3. `AUDIT-BASELINE-0.1.27.md` for the independent pre-fix findings, then `SECURITY-REVIEW-0.2.0.md` for the finding-to-fix map and evidence.
 4. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture
@@ -22,6 +22,6 @@ One engine serves Testnet4 and mainnet. `probe.py` parses BSMS and checks public
 
 ## Development and release
 
-Use Python 3.12 for HWI 3.2.0. Run the full suite, JS syntax, `bash -n`, source archive tests and packaged Apple Silicon checks. Dependency locks are hash-verified. `LIBUSB_SHA256` is mandatory for the Mac build. The GitHub workflow is manually dispatched; pushes alone must not publish. Never replace an existing release's assets. Use 0.2.x for hot-fix corrections, 0.3.0 for warm items, and 0.4.0 for nice-to-have items.
+Use Python 3.12 for HWI 3.2.0. Run the full suite, JS syntax, `bash -n`, source archive tests and packaged Apple Silicon checks. Dependency locks are hash-verified. `LIBUSB_SHA256` is mandatory for the Mac build. Publish the CycloneDX `BUILD-SBOM.json` with the DMG and include it in `SHA256SUMS`. The GitHub workflow is manually dispatched; pushes alone must not publish. Never replace an existing release's assets. Use 0.2.x for hot-fix corrections, 0.3.0 for warm items, and 0.4.0 for nice-to-have items.
 
 Keep the nontechnical operator's screen simple. Make technical checks automatic and explain unsupported conditions in plain English. The owner wants one Mac install and transaction walkthrough per milestone after extensive automation, not repeated manual tests for small revisions. No agent may claim 0.2.0 hardware acceptance before the owner reports it.

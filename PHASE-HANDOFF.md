@@ -1,6 +1,6 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Start here for any agent or independent reviewer.** Read `AGENTS.md`, then this file, `SECURITY-REVIEW-0.2.0.md`, and the current code. `PROJECT-HISTORY.md` and the older phase text in `ROADMAP.md` are historical evidence, not current capability claims.
+**Start here for any agent or independent reviewer.** Read `AGENTS.md`, then this file, `AUDIT-BASELINE-0.1.27.md`, `SECURITY-REVIEW-0.2.0.md`, and the current code. `PROJECT-HISTORY.md` and the older phase text in `ROADMAP.md` are historical evidence, not current capability claims.
 
 ## Status and version policy
 
@@ -25,12 +25,12 @@ The user is a spouse, lawyer, accountant, or estate planner with little Bitcoin 
 - Challenge the BSMS branch declaration logic, especially exports whose descriptor and restrictions disagree. Confirm that a receive-only import cannot construct a change output.
 - Challenge signer response binding. A different txid, changed prevout/script/derivation/global xpub/output map, removed prior signature, bad DER/ECDSA signature, or non-ALL sighash must fail. Confirm legitimate HWI responses from **each** supported physical model still pass; strict PSBT metadata comparison may reveal device-specific additions and require a narrowly justified 0.2.1 fix.
 - Verify the final review screen against the exact finalized transaction. Check no stale API request can alter a broadcast in flight. Mainnet broadcast refusal must hold at the API level.
-- Verify the diagnostic report's privacy by inspecting the saved file. Check build locks, mandatory `LIBUSB_SHA256`, signed bundle structure, test archive, source/DMG hashes and immutable tag.
+- Verify the diagnostic report's privacy by inspecting the saved file. Check build locks, mandatory `LIBUSB_SHA256`, CycloneDX `BUILD-SBOM.json`, signed bundle structure, test archive, source/DMG hashes and immutable tag.
 - Distinguish unit/integration results from a real device walkthrough. A passing test suite cannot establish firmware display behavior.
 
 ## Build and owner test
 
-Use Python 3.12; run `python -m unittest discover -s tests -q`, JavaScript syntax checking, Bash syntax checking, source archive tests, and the packaged Mac self-checks. The GitHub workflow is manual dispatch only. It installs hash-locked dependencies, requires an expected libusb digest, builds the Apple Silicon DMG, verifies the extracted bundle, writes `SHA256SUMS`, and publishes a new tag only if none exists. Record the workflow run, commit, artifact hashes and result in `SECURITY-REVIEW-0.2.0.md` after completion.
+Use Python 3.12; run `python -m unittest discover -s tests -q`, JavaScript syntax checking, Bash syntax checking, source archive tests, and the packaged Mac self-checks. The GitHub workflow is manual dispatch only. It installs hash-locked dependencies, requires an expected libusb digest, builds the Apple Silicon DMG, verifies the extracted bundle, inventories its dependencies in `BUILD-SBOM.json`, writes `SHA256SUMS`, and publishes a new tag only if none exists. Record the workflow run, commit, artifact hashes and result in `SECURITY-REVIEW-0.2.0.md` after completion.
 
 For the owner, ask for **one** controlled Testnet4 partial payment to a self-owned address using a wallet export that declares change; check both device screens, the final output summary and confirmation, and then wait for an independently observed confirmation. If a device refuses the new strict PSBT check, stop; ask only for the diagnostic report and a plain-language description of its screen. Do not ask for the BSMS or signed bytes. If the app fails, fix and release 0.2.1 after automated checks, then request one focused retry.
 

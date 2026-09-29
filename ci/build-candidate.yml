@@ -112,10 +112,18 @@ jobs:
           echo "Re-checking HTTPS with the ambient trust store removed:"
           env -u SSL_CERT_FILE SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
           SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
+      - name: Inventory the built dependencies
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
+        run: |
+          .build-venv/bin/python scripts/build-sbom.py \
+            --libusb-sha "$LIBUSB_SHA256" --output dist/BUILD-SBOM.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-dmg
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/BUILD-SBOM.json
           if-no-files-found: error
 
   checksums:
@@ -134,7 +142,7 @@ jobs:
       - name: Write SHA256SUMS
         run: |
           cd dist
-          shasum -a 256 *.tar.gz *.dmg > SHA256SUMS
+          shasum -a 256 *.tar.gz *.dmg BUILD-SBOM.json > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -187,6 +195,7 @@ jobs:
           Downloads: \`Bitcoin-Easy-Signer-v${VERSION}-UNSIGNED-TEST.dmg\` (Apple Silicon) and
           \`bitcoin-easy-multisig-signer-v${VERSION}.tar.gz\` (source).
           Verify either file against \`SHA256SUMS\`.
+          \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
 
           Experimental test build: the 0.2.0 checks need a physical-device
           walkthrough. Verify every address, amount and fee on your signers.
