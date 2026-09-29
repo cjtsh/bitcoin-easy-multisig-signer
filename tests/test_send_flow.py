@@ -29,10 +29,11 @@ from embit.networks import NETWORKS  # noqa: E402
 from urllib.request import Request  # noqa: E402
 
 from fake_explorer import three_output_wallet  # noqa: E402
-from gui import LocalApp  # noqa: E402
+from gui import LocalApp, PreparedPayment  # noqa: E402
 from probe import parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
+from wallet_service import BroadcastOutcomeUnknown, WalletError  # noqa: E402
 
 
 class SendFlowTests(unittest.TestCase):
@@ -45,6 +46,9 @@ class SendFlowTests(unittest.TestCase):
         self.settings_patch.start()
         self.addCleanup(self.settings_patch.stop)
         self.app = LocalApp()
+        self.outpoint_patch = patch("gui.verify_selected_outpoints")
+        self.outpoint_check = self.outpoint_patch.start()
+        self.addCleanup(self.outpoint_patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.app.handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -77,12 +81,12 @@ class SendFlowTests(unittest.TestCase):
                                   "consent_explorer": True})
         self.app.record = record
         self.app.chain = chain
-        self.app.prepared_psbt = result["psbt_base64"]
-        self.app.prepared_id = "reviewed-1"
-        self.app.prepared_txid = result["txid"]
-        self.app.prepared_review = {key: result[key] for key in (
+        review = {key: result[key] for key in (
             "txid", "recipient", "amount_sats", "fee_sats", "change_sats",
             "change_address", "send_all")}
+        self.app.prepared = PreparedPayment.create(
+            record, chain, self.app.scan_generation, "reviewed-1",
+            result["psbt_base64"], review)
         keys = [root.derive("m/48h/1h/0h/2h/0/0") for root in roots]
         return result, keys
 
@@ -136,6 +140,25 @@ class SendFlowTests(unittest.TestCase):
         # What was broadcast is the finalised transaction, not the unsigned one.
         self.assertGreater(len(send.call_args[0][0]), 200)
 
+    def test_mutinynet_broadcast_uses_selected_chain_and_checks_checkpoint(self):
+        result, keys = self.prepare_a_reviewed_transaction(chain="mutinynet")
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                           ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        final = self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        self.assertEqual(final["network"], "mutinynet")
+        with patch("gui.verify_esplora") as verify, patch(
+            "gui.broadcast_transaction", return_value=result["txid"]
+        ) as send:
+            sent = self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                                "confirm": True,
+                                                "confirmed_txid": result["txid"]})
+        verify.assert_called_once_with("mutinynet", "https://mutinynet.com/api")
+        self.assertEqual(send.call_args.args[1], "mutinynet")
+        self.assertIn("mutinynet.com", sent["explorer"])
+
     def test_signing_requires_the_reviewed_transaction(self):
         self.prepare_a_reviewed_transaction()
         for bad in ("", "stale-id", None):
@@ -181,6 +204,69 @@ class SendFlowTests(unittest.TestCase):
                 self.assertEqual(err.exception.code, 400)
             send.assert_not_called()
 
+    def test_unknown_broadcast_result_locks_the_payment_from_retry(self):
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                           ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.broadcast_transaction", side_effect=BroadcastOutcomeUnknown(
+                "The broadcast result is unknown.")) as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(err.exception.code, 409)
+            body = json.load(err.exception)
+            self.assertTrue(body["outcome_unknown"])
+            self.assertIn(txid, body["explorer"])
+            with self.assertRaises(HTTPError) as repeat:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(repeat.exception.code, 400)
+            send.assert_called_once()
+        self.assertIsNone(self.app.prepared)
+        self.assertEqual(self.app.pending_broadcast_txid, txid)
+        self.assertTrue(self.app.pending_broadcast_unknown)
+
+        # Reopening the same file in this session cannot erase the uncertainty.
+        text, _ = test_record(bsms_template=True)
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        self.assertEqual(self.app.pending_broadcast_txid, txid)
+        self.assertTrue(self.app.pending_broadcast_unknown)
+
+    def test_device_response_after_balance_refresh_cannot_attach_signature(self):
+        _result, keys = self.prepare_a_reviewed_transaction()
+
+        def refresh_while_device_signs(*args):
+            self.app.scan_generation += 1
+            return self.signing_device(keys[0])(*args)
+
+        with patch("gui.sign_psbt_with_device", side_effect=refresh_while_device_signs):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/x"})
+        self.assertEqual(err.exception.code, 400)
+        self.assertEqual(self.app.prepared.checked_psbt().inputs[0].partial_sigs, {})
+
+    def test_spent_output_is_refused_before_broadcast_request(self):
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                           ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.outpoint_check.side_effect = WalletError("A selected output was spent.")
+        with patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": result["txid"]})
+            self.assertEqual(err.exception.code, 400)
+            send.assert_not_called()
+
     def test_broadcasting_real_bitcoin_is_not_enabled(self):
         """The mainnet lock is the most important refusal in this file.
 
@@ -189,13 +275,13 @@ class SendFlowTests(unittest.TestCase):
         """
         self.prepare_a_reviewed_transaction()
         self.app.chain = "main"
-        with patch("gui.broadcast_transaction", return_value=self.app.prepared_txid) as send:
+        with patch("gui.broadcast_transaction", return_value=self.app.prepared.txid) as send:
             with self.assertRaises(HTTPError) as err:
                 self.post("/api/broadcast", {"preparation_id": "reviewed-1",
                                              "confirm": True,
-                                             "confirmed_txid": self.app.prepared_txid})
+                                             "confirmed_txid": self.app.prepared.txid})
             self.assertEqual(err.exception.code, 400)
-            self.assertIn("not enabled", err.exception.read().decode())
+            self.assertIn("wallet or balance changed", err.exception.read().decode())
         send.assert_not_called()
 
     def test_wallet_import_waits_until_broadcast_submission_finishes(self):

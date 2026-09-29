@@ -37,6 +37,7 @@ jobs:
       # here rather than added to the application's dependency list.
       - run: python -m pip install --quiet pyyaml
       - run: python -m unittest discover -s tests -q
+      - run: node tests/ui_state_reuse.cjs
       - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
       # Run the tests FROM the archive. An archive missing a test helper still
       # builds and still uploads, so nothing caught it until the tests were run
@@ -48,6 +49,7 @@ jobs:
           tar xzf "dist/bitcoin-easy-multisig-signer-v${version}.tar.gz" -C "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/bitcoin-easy-multisig-signer-v${version}"
           python -m unittest discover -s tests -q
+          node tests/ui_state_reuse.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: source-archive
@@ -80,6 +82,7 @@ jobs:
           test "$expected" = "$actual" || { echo 'Unexpected libusb binary; refusing the build.' >&2; exit 1; }
       - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m unittest discover -s tests -q
+      - run: node tests/ui_state_reuse.cjs
       - name: Build the DMG
         # Mandatory integrity gate: build-macos.sh refuses an unset/mismatched digest.
         env:
@@ -95,6 +98,10 @@ jobs:
           test -f "$app/Contents/Info.plist"
           test -x "$app/Contents/MacOS/hwi"
           "$app/Contents/MacOS/hwi" --help >/dev/null
+          # 0.3.0 sends signing commands through stdin; prove the packaged HWI
+          # parses that path, without needing a real signer on the CI runner.
+          printf '%s\n' 'enumerate' | "$app/Contents/MacOS/hwi" --chain test --stdin > "$RUNNER_TEMP/hwi-stdin.json"
+          python3 -m json.tool "$RUNNER_TEMP/hwi-stdin.json" >/dev/null
           # The bundle must carry the icon, not PyInstaller's stock one.
           icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")"
           test -n "$icon_name"
@@ -182,16 +189,23 @@ jobs:
           cat > notes.md <<EOF
           ## v${VERSION} — Apple Silicon test build
 
-          Unsigned, unnotarized test build from the \`phase2-transaction-builder\` branch,
+          Unsigned, unnotarized test build from the \`${GITHUB_REF_NAME}\` branch,
           commit \`${GITHUB_SHA:0:12}\`.
 
           - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
           - Prepares a partial send only with a declared change branch. A receive-only
             export can Send All without change. Shows full final outputs and fee.
-          - Uses bundled HWI 3.2.0 to request two hardware signatures, rejects PSBT
+          - Uses bundled HWI 3.2.0 over stdin to request two hardware signatures, rejects PSBT
             metadata changes while allowing field reordering, verifies signatures
             and finalizes the transaction.
-          - Broadcasts on Testnet4 after a separate confirmation. Mainnet broadcast
+          - Offers Testnet4 and Mutinynet practice networks through one engine. A
+            custom-Signet checkpoint distinguishes Mutinynet from ordinary Signet.
+            A new Mutinynet wallet and practice coins are required; Testnet4 coins
+            do not transfer across networks.
+          - Clears old signer/final details whenever a new payment is prepared.
+            Rechecks selected confirmed outputs before preparation and broadcast;
+            a lost broadcast response is treated as outcome unknown, never retried.
+          - Broadcasts on practice networks after a separate confirmation. Mainnet broadcast
             remains disabled. It never asks for a PIN or seed.
           - Saves an optional unsigned PSBT and an opt-in privacy-limited diagnostic
             report. Dependencies are hash-locked; native libusb digest is required.
@@ -201,8 +215,9 @@ jobs:
           Verify either file against \`SHA256SUMS\`.
           \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
 
-          Experimental test build: the v${VERSION} checks need a physical-device
-          walkthrough. Verify every address, amount and fee on your signers.
+          Experimental test build: Mutinynet wallet/device compatibility and the
+          v${VERSION} signing path need an owner walkthrough. Verify every address,
+          amount and fee on your signers. No mainnet broadcast is available.
           EOF
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which

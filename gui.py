@@ -1,4 +1,4 @@
-"""Local-only mainnet/Testnet4 wallet viewer and unsigned PSBT prototype.
+"""Local-only Bitcoin wallet, PSBT signing and practice-network broadcast.
 
 Run on the user's own computer. BSMS data and unsigned PSBTs stay in memory;
 only derived addresses and requested previous transactions contact the selected
@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hmac
+import hashlib
 import json
 import math
 import os
@@ -18,6 +19,7 @@ import sys
 import threading
 import time
 import webbrowser
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,7 +31,7 @@ from embit.psbt import PSBT
 
 from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
-from network_config import NETWORKS as CHAIN_CONFIGS
+from network_config import NETWORKS as CHAIN_CONFIGS, SECONDARY_EXPLORERS
 from network_settings import (
     SettingsError, default_servers, load_servers, save_servers,
     validate_esplora_url, verify_esplora,
@@ -39,7 +41,8 @@ from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsm
                    probe_devices_detailed, sign_psbt_with_device)
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
-from wallet_service import (WalletError, broadcast_transaction, build_unsigned_psbt,
+from wallet_service import (BroadcastOutcomeUnknown, WalletError, broadcast_transaction,
+                            build_unsigned_psbt, check_selected_outpoints,
                             estimate_fee_preview, explorer_get, scan_wallet, wallet_summary)
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
@@ -57,7 +60,7 @@ DIAGNOSTIC_STAGES = frozenset({
 })
 DIAGNOSTIC_OUTCOMES = frozenset({
     "passed", "declared", "missing", "complete", "incomplete",
-    "consistent", "inconsistent", "verified", "rejected", "accepted",
+    "consistent", "inconsistent", "verified", "rejected", "accepted", "unknown",
 })
 
 
@@ -133,6 +136,35 @@ def fetch_fee_rates() -> dict:
         raise WalletError("Fee estimates unavailable; the 1–25 sat/vB safety limit remains.") from exc
 
 
+def fetch_mutinynet_fee_rates() -> dict:
+    """Mutinynet Esplora rates, queried without wallet identifiers."""
+    request = Request(CHAIN_CONFIGS["mutinynet"].explorer_url + "/fee-estimates",
+                      headers={"User-Agent": f"EasyMultisig/{APP_VERSION}",
+                               "Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=7) as response:
+            body = response.read(4097)
+        if len(body) > 4096:
+            raise ValueError("oversized fee response")
+        data = json.loads(body)
+        keys = ("1", "3", "6", "144", "1008")
+        if not isinstance(data, dict) or not all(
+            type(data.get(key)) in (int, float) and math.isfinite(data[key])
+            and 0 < data[key] <= 1000 for key in keys
+        ):
+            raise ValueError("invalid fee quote")
+        rates = [math.ceil(data[key]) for key in keys]
+        if not rates[4] <= rates[3] <= rates[2] <= rates[1] <= rates[0]:
+            raise ValueError("invalid fee quote")
+        return {"fastest": rates[0], "standard": rates[1], "hour": rates[2],
+                "economy": rates[3], "minimum": rates[4],
+                "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "network": "mutinynet", "source": "mutinynet.com Esplora"}
+    except (HTTPError, URLError, TimeoutError, UnicodeError, ValueError,
+            KeyError, TypeError) as exc:
+        raise WalletError("Mutinynet fee estimates unavailable; preparation is paused.") from exc
+
+
 def public_scan(result: dict) -> dict:
     """Only summary fields cross the local API; UTXO internals stay in process."""
     return {
@@ -140,6 +172,7 @@ def public_scan(result: dict) -> dict:
         "confirmed_sats": result["confirmed_sats"],
         "pending_delta_sats": result["pending_delta_sats"],
         "pending_outgoing": result.get("pending_outgoing", False),
+        "broadcast_outcome_unknown": result.get("broadcast_outcome_unknown", False),
         "observed_sats": result["observed_sats"],
         "addresses": result["addresses"],
         "utxo_count": len(result["utxos"]),
@@ -154,6 +187,89 @@ def public_scan(result: dict) -> dict:
     }
 
 
+def wallet_identity(record, chain: str) -> bytes:
+    """Session-only key for a pending broadcast, including the chosen chain.
+
+    A reimport of the same BSMS file must not erase an uncertain broadcast and
+    allow a duplicate payment before the explorer has caught up.
+    """
+    material = json.dumps([chain, record.descriptor_text,
+                           record.reference_address], separators=(",", ":"))
+    return hashlib.sha256(material.encode("utf-8")).digest()
+
+
+def independent_explorer(chain: str, primary: str) -> str | None:
+    """Choose a distinct public backend for mainnet outpoint cross-checks."""
+    secondary = SECONDARY_EXPLORERS.get(chain)
+    if secondary == primary:
+        secondary = CHAIN_CONFIGS[chain].explorer_url
+    return secondary
+
+
+def verify_selected_outpoints(packet: PSBT | str, chain: str, primary: str) -> None:
+    """One fail-closed gate used at preparation and immediately before submit."""
+    secondary = independent_explorer(chain, primary)
+    if secondary:
+        verify_esplora(chain, secondary)
+        heights = []
+        for base in (primary, secondary):
+            raw = explorer_get("/blocks/tip/height", text=True, chain=chain,
+                               base_url=base)
+            if (not isinstance(raw, str) or not raw.strip().isdecimal()
+                    or len(raw.strip()) > 10):
+                raise WalletError("An explorer gave an unclear blockchain height; no payment was prepared or sent.")
+            heights.append(int(raw.strip()))
+        if abs(heights[0] - heights[1]) > 2:
+            raise WalletError(
+                "The two blockchain sources disagree or one is behind. "
+                "Wait and refresh before preparing or sending."
+            )
+    try:
+        parsed = PSBT.from_base64(packet) if isinstance(packet, str) else packet
+    except Exception as exc:
+        raise WalletError("The prepared transaction cannot be checked.") from exc
+    check_selected_outpoints(parsed, chain, primary, secondary)
+
+
+@dataclass(frozen=True)
+class PreparedPayment:
+    """One reviewed payment; signing replaces this whole value atomically.
+
+    The record identity and scan generation prevent a signature returned after
+    import or refresh from being attached to a different wallet or balance.
+    Review values and selected outpoints are immutable snapshots. The PSBT may
+    gain signatures, but accept_signature_update checks every unsigned field.
+    """
+    wallet: object
+    chain: str
+    scan_generation: int
+    review_id: str
+    psbt_base64: str
+    txid: str
+    review_items: tuple[tuple[str, object], ...]
+    outpoints: tuple[tuple[str, int], ...]
+
+    @classmethod
+    def create(cls, wallet, chain, generation, review_id, encoded, review):
+        packet = PSBT.from_base64(encoded)
+        txid = packet.tx.txid().hex()
+        if txid != review.get("txid"):
+            raise WalletError("The reviewed transaction ID is inconsistent.")
+        return cls(wallet, chain, generation, review_id, encoded, txid,
+                   tuple(review.items()),
+                   tuple((vin.txid.hex(), vin.vout) for vin in packet.tx.vin))
+
+    def checked_psbt(self) -> PSBT:
+        packet = PSBT.from_base64(self.psbt_base64)
+        if (packet.tx.txid().hex() != self.txid or
+            tuple((vin.txid.hex(), vin.vout) for vin in packet.tx.vin) != self.outpoints):
+            raise WalletError("The prepared transaction changed. Review it again.")
+        return packet
+
+    def review(self) -> dict:
+        return dict(self.review_items)
+
+
 def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> dict:
     """Write the app's currently prepared PSBT into the user's Downloads folder.
 
@@ -162,7 +278,7 @@ def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> 
     never replaced: each save gets a new name.
     """
     with state.lock:
-        prepared = state.prepared_psbt
+        prepared = state.prepared.psbt_base64 if state.prepared else None
         active = state.chain
     if not prepared or chain != active:
         raise WalletError("Prepare and review a transaction before saving it.")
@@ -248,13 +364,9 @@ class LocalApp:
         # Session-only bridge between broadcast and explorer mempool propagation.
         # Never infer confirmation merely because an address scan misses the tx.
         self.pending_broadcast_txid = None
-        self.prepared_psbt = None
-        self.prepared_id = None
-        # The transaction id shown at review time. SegWit keeps signatures outside
-        # it, so it must be identical before signing and after. It is the thread that
-        # ties what the owner confirmed to what would actually be broadcast.
-        self.prepared_txid = None
-        self.prepared_review = None
+        self.pending_broadcast_unknown = False
+        self.pending_by_wallet: dict[bytes, tuple[str, bool]] = {}
+        self.prepared: PreparedPayment | None = None
         self.diagnostic_events = []
         self.revision = 0
         self.scan_generation = 0
@@ -262,6 +374,8 @@ class LocalApp:
         self.price_checked = 0.0
         self.fees = None
         self.fees_checked = 0.0
+        self.mutinynet_fees = None
+        self.mutinynet_fees_checked = 0.0
         try:
             self.servers = load_servers()
             self.settings_error = ""
@@ -344,20 +458,28 @@ class LocalApp:
                             state.price = cached
                             state.price_checked = time.monotonic()
                     self._send(200, cached)
-                elif self.path == "/api/fees":
+                elif self.path in ("/api/fees", "/api/fees?chain=mutinynet"):
+                    mutinynet = self.path.endswith("chain=mutinynet")
                     with state.lock:
-                        cached = (state.fees if state.fees is not None
-                                  and time.monotonic() - state.fees_checked < FEES_CACHE_SECONDS
-                                  else None)
+                        value = state.mutinynet_fees if mutinynet else state.fees
+                        checked = (state.mutinynet_fees_checked if mutinynet
+                                   else state.fees_checked)
+                        cached = value if (value is not None and
+                                           time.monotonic() - checked < FEES_CACHE_SECONDS) else None
                     if cached is None:
                         try:
-                            cached = fetch_fee_rates()
+                            cached = (fetch_mutinynet_fee_rates() if mutinynet
+                                      else fetch_fee_rates())
                         except WalletError as exc:
                             self._send(503, {"error": str(exc)})
                             return
                         with state.lock:
-                            state.fees = cached
-                            state.fees_checked = time.monotonic()
+                            if mutinynet:
+                                state.mutinynet_fees = cached
+                                state.mutinynet_fees_checked = time.monotonic()
+                            else:
+                                state.fees = cached
+                                state.fees_checked = time.monotonic()
                     self._send(200, cached)
                 else:
                     self._send(404, {"error": "Not found."})
@@ -410,6 +532,16 @@ class LocalApp:
                         self._send(200, save_diagnostic_report(state))
                     else:
                         self._send(404, {"error": "Not found."})
+                except BroadcastOutcomeUnknown as exc:
+                    state.note("broadcast", "unknown")
+                    with state.lock:
+                        txid = state.pending_broadcast_txid
+                        chain = state.chain
+                    self._send(409, {
+                        "error": str(exc), "outcome_unknown": True,
+                        "explorer": (CHAIN_CONFIGS[chain].web_url + "/tx/" + txid
+                                     if txid and chain in CHAIN_CONFIGS else None),
+                    })
                 except (ProbeError, WalletError, SettingsError) as exc:
                     stage = self.path.removeprefix("/api/")
                     state.note(stage if stage in DIAGNOSTIC_STAGES else "request", "rejected")
@@ -422,7 +554,7 @@ class LocalApp:
             def _import(self, data):
                 chain = data.get("chain")
                 if chain not in CHAIN_CONFIGS or not isinstance(data.get("text"), str):
-                    raise WalletError("Select mainnet or Testnet4 and choose a BSMS file.")
+                    raise WalletError("Select a supported network and choose a BSMS file.")
                 if data.get("consent_explorer") is not True:
                     raise WalletError("Confirm public-explorer address disclosure before opening a wallet.")
                 with state.lock:
@@ -431,22 +563,23 @@ class LocalApp:
                     state.explorer_consent = False
                     state.scan = None
                     state.pending_broadcast_txid = None
-                    state.prepared_psbt = None
-                    state.prepared_id = None
-                    state.prepared_txid = None
-                    state.prepared_review = None
+                    state.pending_broadcast_unknown = False
+                    state.prepared = None
                     state.revision += 1
                     state.scan_generation += 1
                     revision = state.revision
                 record = parse_bsms(data["text"])
                 if record.network != CHAIN_CONFIGS[chain].record_network:
                     raise WalletError("BSMS wallet address does not match the selected network.")
-                summary = wallet_summary(record)
+                summary = wallet_summary(record, chain)
                 with state.lock:
                     if revision != state.revision:
                         raise WalletError("Wallet changed; import it again.")
                     state.record = record
                     state.chain = chain
+                    pending = state.pending_by_wallet.get(wallet_identity(record, chain))
+                    if pending:
+                        state.pending_broadcast_txid, state.pending_broadcast_unknown = pending
                     state.explorer_consent = True
                     state.note("wallet_import", "passed")
                     state.note("change_path", "declared" if summary["can_prepare"] else "missing")
@@ -456,6 +589,7 @@ class LocalApp:
                 with state.lock:
                     record, revision, chain = state.record, state.revision, state.chain
                     pending_txid = state.pending_broadcast_txid
+                    pending_unknown = state.pending_broadcast_unknown
                     if data.get("chain") != chain or chain not in CHAIN_CONFIGS:
                         raise WalletError("Selected network does not match the open wallet.")
                     if not state.explorer_consent:
@@ -464,17 +598,17 @@ class LocalApp:
                         raise WalletError(state.settings_error)
                     explorer = state.servers[chain]["explorer"]
                     state.scan = None
-                    state.prepared_psbt = None
-                    state.prepared_id = None
-                    state.prepared_txid = None
-                    state.prepared_review = None
+                    state.prepared = None
                     state.scan_generation += 1
                     generation = state.scan_generation
                 if record is None:
                     raise WalletError("Import a BSMS wallet first.")
-                if explorer != CHAIN_CONFIGS[chain].explorer_url:
+                if (explorer != CHAIN_CONFIGS[chain].explorer_url or
+                    CHAIN_CONFIGS[chain].checkpoint_height is not None):
+                    # Custom Signet shares the standard Signet genesis block.
+                    # Verify its fork checkpoint even for the built-in URL.
                     verify_esplora(chain, explorer)
-                result = scan_wallet(record, base_url=explorer)
+                result = scan_wallet(record, base_url=explorer, chain=chain)
                 if pending_txid:
                     # A newly broadcast tx may not yet appear in address statistics.
                     # Fail closed on a missing/invalid status until a block confirms it.
@@ -486,32 +620,39 @@ class LocalApp:
                     except WalletError:
                         confirmed = False
                     result["pending_outgoing"] = result.get("pending_outgoing", False) or not confirmed
+                    result["broadcast_outcome_unknown"] = (
+                        pending_unknown and not confirmed)
                 with state.lock:
                     if revision != state.revision or generation != state.scan_generation:
                         raise WalletError("Wallet or balance changed during scan; refresh again.")
                     state.scan = result
                     if pending_txid and pending_txid == state.pending_broadcast_txid and confirmed:
+                        state.pending_by_wallet.pop(wallet_identity(record, chain), None)
                         state.pending_broadcast_txid = None
+                        state.pending_broadcast_unknown = False
                     state.note("wallet_scan", "consistent" if result["utxo_consistent"] else "inconsistent")
                     state.note("wallet_scan", "incomplete" if result["coverage_limited"] else "complete")
                 self._send(200, public_scan(result))
 
             def _status(self):
                 with state.lock:
-                    wallet = wallet_summary(state.record) if state.record else None
+                    wallet = wallet_summary(state.record, state.chain) if state.record else None
                     balance = public_scan(state.scan) if state.scan else None
                     pending_txid = state.pending_broadcast_txid
+                    pending_unknown = state.pending_broadcast_unknown
                     chain = state.chain
                     consent = state.explorer_consent
                 self._send(200, {"wallet": wallet, "balance": balance,
                                  "chain": chain, "explorer_consent": consent,
                                  "pending_broadcast_explorer": (
                                      CHAIN_CONFIGS[chain].web_url + "/tx/" + pending_txid
-                                     if pending_txid and chain in CHAIN_CONFIGS else None)})
+                                     if pending_txid and chain in CHAIN_CONFIGS else None),
+                                 "broadcast_outcome_unknown": pending_unknown})
 
             def _devices(self, data):
                 with state.lock:
-                    record, chain, preparation_id = state.record, state.chain, state.prepared_id
+                    record, chain = state.record, state.chain
+                    preparation_id = state.prepared.review_id if state.prepared else None
                 if record is None or chain is None:
                     raise WalletError("Open a wallet before checking for signers.")
                 # Two legitimate uses. A pre-flight check needs only an open wallet
@@ -548,26 +689,30 @@ class LocalApp:
                 """The prepared transaction, but only the one the owner reviewed."""
                 with state.lock:
                     record, chain = state.record, state.chain
-                    prepared, preparation_id = state.prepared_psbt, state.prepared_id
-                    txid = state.prepared_txid
-                if record is None or chain is None or not prepared:
+                    payment = state.prepared
+                    generation = state.scan_generation
+                if record is None or chain is None or payment is None:
                     raise WalletError(f"Prepare and review a transaction before {action}.")
-                if not preparation_id or data.get("preparation_id") != preparation_id:
+                if (payment.wallet is not record or payment.chain != chain
+                    or payment.scan_generation != generation):
+                    raise WalletError("The wallet or balance changed. Review the payment again.")
+                if data.get("preparation_id") != payment.review_id:
                     raise WalletError(f"Review the current transaction before {action}.")
-                return record, chain, prepared, preparation_id, txid
+                payment.checked_psbt()
+                return record, chain, payment
 
             def _sign(self, data):
-                record, chain, prepared, preparation_id, txid = self._current_prepared(
+                record, chain, payment = self._current_prepared(
                     data, "signing it")
                 device_type = str(data.get("device_type") or "")
                 device_path = str(data.get("device_path") or "")
                 if not device_type or not device_path:
                     raise WalletError("Choose a connected device to sign with.")
                 hwi_chain = "main" if chain == "main" else "test"
-                before = PSBT.from_base64(prepared)
+                before = payment.checked_psbt()
                 try:
                     updated = sign_psbt_with_device(
-                        "hwi", hwi_chain, device_type, device_path, prepared)
+                        "hwi", hwi_chain, device_type, device_path, payment.psbt_base64)
                 except ProbeError as exc:
                     raise WalletError(str(exc)) from exc
                 try:
@@ -585,9 +730,9 @@ class LocalApp:
                     state.note("signer_response", "rejected")
                     raise WalletError(str(exc)) from exc
                 with state.lock:
-                    if state.prepared_id != preparation_id:
+                    if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The transaction changed while signing. Start again.")
-                    state.prepared_psbt = updated
+                    state.prepared = replace(payment, psbt_base64=updated)
                     state.note("signer_response", "verified")
                 present, threshold = signatures_collected(after)
                 self._send(200, {
@@ -599,18 +744,16 @@ class LocalApp:
                 })
 
             def _finalize(self, data):
-                record, _chain, prepared, _prep, txid = self._current_prepared(
+                record, _chain, payment = self._current_prepared(
                     data, "finishing it")
-                with state.lock:
-                    review = dict(state.prepared_review or {})
-                packet = PSBT.from_base64(prepared)
+                packet = payment.checked_psbt()
                 # Read the signers first: finalising clears the partial signatures.
                 signers = signed_by_signers(packet, record)
                 try:
-                    final = finalize_multisig(packet, txid)
+                    final = finalize_multisig(packet, payment.txid)
                 except SigningError as exc:
                     raise WalletError(str(exc)) from exc
-                self._check_final_review(record, packet, final, review)
+                self._check_final_review(record, packet, final, payment.review())
                 state.note("final_transaction", "verified")
                 self._send(200, {
                     "txid": final["txid"],
@@ -644,15 +787,16 @@ class LocalApp:
                     raise WalletError("The final transaction differs from the reviewed payment.")
 
             def _broadcast(self, data):
-                _record, chain, prepared, _prep, txid = self._current_prepared(
+                _record, chain, payment = self._current_prepared(
                     data, "broadcasting it")
+                txid = payment.txid
                 # Broadcasting real Bitcoin is not enabled in this build. Enabling
                 # it needs a deliberate review and separate release, rather than
                 # a setting anyone can flip by accident.
                 if chain == "main":
                     raise WalletError(
                         "Broadcasting real Bitcoin is not enabled in this build. "
-                        "Testnet4 broadcast only in this release."
+                        "Only practice-network broadcast is available in this release."
                     )
                 if data.get("confirm") is not True:
                     raise WalletError("Confirm the final transaction before broadcasting it.")
@@ -664,29 +808,45 @@ class LocalApp:
                 # A concurrent refresh/import/settings edit must not invalidate
                 # the reviewed payment during the irreversible submit call.
                 with state.lock:
-                    if state.prepared_id != data.get("preparation_id"):
+                    if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The payment changed before broadcast.")
                     broadcaster = state.servers[chain]["broadcaster"]
-                    packet = PSBT.from_base64(state.prepared_psbt)
+                    packet = payment.checked_psbt()
                     try:
                         final = finalize_multisig(packet, txid)
                     except SigningError as exc:
                         raise WalletError(str(exc)) from exc
-                    self._check_final_review(state.record, packet, final,
-                                             state.prepared_review or {})
-                    sent = broadcast_transaction(final["raw_transaction_hex"], chain, broadcaster)
-                    if sent != txid:
-                        raise WalletError(
-                            "The server reported a different transaction id than the one "
-                            "confirmed. Check the explorer before assuming anything was sent."
-                        )
+                    self._check_final_review(state.record, packet, final, payment.review())
+                    # A scan can become stale while the owner reviews devices.
+                    # Recheck the exact chosen coins before submitting anything.
+                    primary = state.servers[chain]["explorer"]
+                    verify_selected_outpoints(packet, chain, primary)
+                    if CHAIN_CONFIGS[chain].checkpoint_height is not None:
+                        verify_esplora(chain, broadcaster)
+                    try:
+                        sent = broadcast_transaction(final["raw_transaction_hex"], chain,
+                                                     broadcaster)
+                        if sent != txid:
+                            raise BroadcastOutcomeUnknown(
+                                "The server reported a different transaction ID. The result "
+                                "is unknown. Do not send again; check an explorer first."
+                            )
+                    except BroadcastOutcomeUnknown:
+                        # The network request may have succeeded before its response
+                        # was lost. Retrying the reviewed payment is unsafe until a
+                        # person independently checks the expected txid.
+                        state.prepared = None
+                        state.scan = None
+                        state.pending_broadcast_txid = txid
+                        state.pending_broadcast_unknown = True
+                        state.pending_by_wallet[wallet_identity(state.record, chain)] = (txid, True)
+                        raise
                     # The funds are spent now, so anything cached is stale.
-                    state.prepared_psbt = None
-                    state.prepared_id = None
-                    state.prepared_txid = None
-                    state.prepared_review = None
+                    state.prepared = None
                     state.scan = None
                     state.pending_broadcast_txid = sent
+                    state.pending_broadcast_unknown = False
+                    state.pending_by_wallet[wallet_identity(state.record, chain)] = (sent, False)
                     state.note("broadcast", "accepted")
                 self._send(200, {
                     "txid": sent,
@@ -715,7 +875,7 @@ class LocalApp:
             def _settings(self, data):
                 chain = data.get("chain")
                 if chain not in CHAIN_CONFIGS:
-                    raise WalletError("Select mainnet or Testnet4 for server settings.")
+                    raise WalletError("Select a supported network for server settings.")
                 action = data.get("action")
                 if action not in ("read", "save", "reset"):
                     raise WalletError("Server settings action is invalid.")
@@ -736,9 +896,7 @@ class LocalApp:
                         state.settings_error = ""
                         if chain == state.chain:
                             state.scan = None
-                            state.prepared_psbt = None
-                            state.prepared_id = None
-                            state.prepared_review = None
+                            state.prepared = None
                             state.scan_generation += 1
                 with state.lock:
                     active = dict(state.servers[chain])
@@ -753,10 +911,7 @@ class LocalApp:
 
             def _prepare(self, data):
                 with state.lock:
-                    state.prepared_psbt = None
-                    state.prepared_id = None
-                    state.prepared_txid = None
-                    state.prepared_review = None
+                    state.prepared = None
                     record, scan, revision, chain = (
                         state.record, state.scan, state.revision, state.chain
                     )
@@ -771,26 +926,36 @@ class LocalApp:
                     raise WalletError("Selected network does not match the open wallet.")
                 if scan.get("source") != explorer:
                     raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
-                if explorer != CHAIN_CONFIGS[chain].explorer_url:
+                if (explorer != CHAIN_CONFIGS[chain].explorer_url or
+                    CHAIN_CONFIGS[chain].checkpoint_height is not None):
                     verify_esplora(chain, explorer)
                 with state.lock:
-                    fee_quote = (state.fees if state.fees is not None
-                                 and time.monotonic() - state.fees_checked < FEES_CACHE_SECONDS
-                                 else None)
+                    mutinynet = chain == "mutinynet"
+                    fee_value = state.mutinynet_fees if mutinynet else state.fees
+                    fee_checked = (state.mutinynet_fees_checked if mutinynet
+                                   else state.fees_checked)
+                    fee_quote = (fee_value if fee_value is not None
+                                 and time.monotonic() - fee_checked < FEES_CACHE_SECONDS else None)
                 if fee_quote is None:
                     try:
-                        fee_quote = fetch_fee_rates()
+                        fee_quote = (fetch_mutinynet_fee_rates() if mutinynet
+                                     else fetch_fee_rates())
                     except WalletError as exc:
                         raise WalletError(
-                            "Live mainnet fee reference is unavailable; "
+                            "Live network fee reference is unavailable; "
                             "no unsigned transaction file will be prepared."
                         ) from exc
                     with state.lock:
-                        state.fees = fee_quote
-                        state.fees_checked = time.monotonic()
+                        if mutinynet:
+                            state.mutinynet_fees = fee_quote
+                            state.mutinynet_fees_checked = time.monotonic()
+                        else:
+                            state.fees = fee_quote
+                            state.fees_checked = time.monotonic()
+                fee_source_name = "Mutinynet" if mutinynet else "mainnet"
                 if fee_quote["standard"] > 25:
                     raise WalletError(
-                        "Current mainnet standard fee exceeds this app's 25 sat/vB "
+                        f"Current {fee_source_name} standard fee exceeds this app's 25 sat/vB "
                         "safety cap. Wait or use an established wallet."
                     )
                 if chain == "main":
@@ -822,7 +987,7 @@ class LocalApp:
                     raise WalletError("Fee rate must be a whole number from 1 to 25 sat/vB.")
                 if requested_rate < fee_quote["economy"]:
                     raise WalletError(
-                        f"{requested_rate} sat/vB is below the live mainnet economy "
+                        f"{requested_rate} sat/vB is below the live {fee_source_name} economy "
                         f"reference of {fee_quote['economy']} sat/vB. Choose a current "
                         "suggestion or wait."
                     )
@@ -830,9 +995,12 @@ class LocalApp:
                     record, scan, data.get("recipient"), data.get("amount_sats"),
                     requested_rate, base_url=explorer, send_all=data.get("send_all", False),
                 )
+                # Verify the selected historical outputs remain unspent. Only
+                # their public transaction IDs go to a second mainnet provider.
+                verify_selected_outpoints(result["psbt_base64"], chain, explorer)
                 if requested_rate < fee_quote["standard"]:
                     low_warning = (
-                        f"{requested_rate} sat/vB is below the current mainnet "
+                        f"{requested_rate} sat/vB is below the current {fee_source_name} "
                         f"standard reference of {fee_quote['standard']} sat/vB. "
                         "Confirmation may take longer; check the rate again."
                     )
@@ -849,15 +1017,15 @@ class LocalApp:
                 with state.lock:
                     if revision != state.revision or scan is not state.scan:
                         raise WalletError("Wallet or balance changed; review and prepare again.")
-                    state.prepared_psbt = result["psbt_base64"]
-                    state.prepared_id = secrets.token_urlsafe(18)
-                    state.prepared_txid = result.get("txid")
-                    state.prepared_review = {
+                    review = {
                         key: result[key] for key in (
                             "txid", "recipient", "amount_sats", "fee_sats",
                             "change_sats", "change_address", "send_all")
                     }
-                    result["preparation_id"] = state.prepared_id
+                    state.prepared = PreparedPayment.create(
+                        record, chain, state.scan_generation, secrets.token_urlsafe(18),
+                        result["psbt_base64"], review)
+                    result["preparation_id"] = state.prepared.review_id
                     state.note("transaction_prepare", "passed")
                 self._send(200, result)
 
@@ -870,7 +1038,7 @@ def main():
     port = server.server_address[1]
     # Printed without the token so it stays out of terminal scrollback and logs.
     display_url = f"http://127.0.0.1:{port}/"
-    print("Bitcoin Easy Signer — local mainnet/Testnet4 GUI")
+    print("Bitcoin Easy Signer — local network-selected GUI")
     print("No wallet file is uploaded to a hosted server.")
     print(f"Opening {display_url} in your browser. Close this window to stop the app.")
     threading.Timer(0.5, lambda: webbrowser.open(launch_url(port, state.token))).start()

@@ -228,15 +228,23 @@ def _hwi_reason(text: str) -> str:
     return reason[:160]
 
 
-def invoke_hwi(executable: str, chain: str, *arguments: str) -> Any:
-    """Run HWI without a shell, and keep its own reason for a failure."""
+def invoke_hwi(executable: str, chain: str, *arguments: str,
+               stdin_command: str | None = None) -> Any:
+    """Run HWI without a shell; optionally send a sensitive command on stdin.
+
+    HWI 3.2.0's --stdin mode appends a shlex-parsed command from standard input.
+    A signing PSBT must stay out of argv, where same-user process listings can
+    expose it. Only the fixed 'signtx <base64>' form is sent by this app.
+    """
     try:
+        options = {"input": stdin_command} if stdin_command is not None else {}
         result = subprocess.run(
             [_hwi_path(executable), "--chain", chain, *arguments],
             capture_output=True,
             text=True,
             timeout=45,
             check=False,
+            **options,
         )
         if result.returncode != 0:
             reason = _hwi_reason(result.stderr) or _hwi_reason(result.stdout)
@@ -263,10 +271,13 @@ def sign_psbt_with_device(executable: str, chain: str, device_type: str,
     The device shows the destination, amount and fee on its own screen and the owner
     approves it there; this app cannot bypass that, which is the point.
     """
+    if (not isinstance(psbt_base64, str) or len(psbt_base64) > 2_000_000
+            or not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", psbt_base64)):
+        raise ProbeError("The transaction sent to the device is malformed.")
     response = invoke_hwi(
         executable, chain,
         "--device-type", str(device_type), "--device-path", str(device_path),
-        "signtx", psbt_base64,
+        "--stdin", stdin_command="signtx " + psbt_base64 + "\n",
     )
     if not isinstance(response, dict) or not isinstance(response.get("psbt"), str):
         raise ProbeError("The device did not return a signed transaction.")

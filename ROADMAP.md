@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**Current work:** 0.2.2 adds an explicit payment-confirmation wait and send pause after the first 0.2.1 Testnet4 broadcast. Read `PHASE-HANDOFF.md`, `SECURITY-REVIEW-0.2.0.md`, and `PATCH-0.2.2.md` for current behavior and acceptance. The detailed phase text below preserves earlier decisions and may describe older releases.
+**Current work:** [v0.3.0](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.0) is published as an Apple Silicon **test build**. It fixes the reported stale signing/final panel, adds Mutinynet as the owner's faster practice path through the same engine, and completes the bounded warm safety changes. Testnet4 stays available for the old wallet; mainnet broadcast remains disabled. Automated and packaged checks passed, but physical Mutinynet device/wallet acceptance and a second-payment panel reset still require one owner walkthrough. See `PATCH-0.3.0.md` for release evidence and the test checklist, `PLAN-0.3.0.md` for scope, and `PHASE-HANDOFF.md` for current risk boundaries. The detailed phase text below preserves earlier decisions and may describe older releases.
 
 ## Planned 0.4.0 visual refresh
 

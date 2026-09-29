@@ -68,13 +68,14 @@ def load_servers() -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
         if (not isinstance(data, dict) or data.get("version") != 1
             or not isinstance(data.get("servers"), dict)
-            or set(data["servers"]) != set(NETWORKS)):
+            or not {"main", "testnet4"}.issubset(data["servers"])
+            or not set(data["servers"]).issubset(NETWORKS)):
             raise SettingsError("Saved server settings have an unsupported format.")
         return {
-            chain: {
+            chain: ({
                 key: validate_esplora_url(data["servers"][chain][key])
                 for key in ("explorer", "broadcaster")
-            }
+            } if chain in data["servers"] else default_servers()[chain])
             for chain in NETWORKS
         }
     except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
@@ -105,24 +106,29 @@ def save_servers(servers: dict) -> None:
 
 
 def verify_esplora(chain: str, base_url: str) -> None:
-    """Check the actual genesis block before trusting a custom endpoint."""
+    """Check genesis and any chain-specific checkpoint before trusting a server."""
     if chain not in NETWORKS:
         raise SettingsError("Unsupported Bitcoin network.")
     base = validate_esplora_url(base_url)
-    request = Request(
-        base + "/block-height/0",
-        headers={"User-Agent": f"EasyMultisig/{APP_VERSION}", "Accept": "text/plain"},
-    )
     try:
-        with urlopen(request, timeout=8) as response:
-            if response.length is not None and response.length > 80:
-                raise SettingsError("Explorer returned an invalid genesis block.")
-            body = response.read(81)
-        genesis = body.decode("ascii").strip().lower()
-        if not re.fullmatch(r"[0-9a-f]{64}", genesis):
-            raise SettingsError("Explorer did not return an Esplora genesis hash.")
-        if genesis != NETWORKS[chain].genesis_hash:
-            raise SettingsError("Explorer is on the wrong Bitcoin network; settings were not changed.")
+        config = NETWORKS[chain]
+        points = [(0, config.genesis_hash)]
+        if config.checkpoint_height is not None:
+            points.append((config.checkpoint_height, config.checkpoint_hash))
+        for height, expected in points:
+            request = Request(
+                base + f"/block-height/{height}",
+                headers={"User-Agent": f"EasyMultisig/{APP_VERSION}", "Accept": "text/plain"},
+            )
+            with urlopen(request, timeout=8) as response:
+                if response.length is not None and response.length > 80:
+                    raise SettingsError("Explorer returned an invalid block hash.")
+                body = response.read(81)
+            found = body.decode("ascii").strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", found):
+                raise SettingsError("Explorer did not return an Esplora block hash.")
+            if found != expected:
+                raise SettingsError("Explorer is on the wrong Bitcoin network; settings were not changed.")
     except (HTTPError, URLError, TimeoutError, UnicodeError, ValueError) as exc:
         raise SettingsError(
             "Could not verify this Esplora server's network. Check its /api URL and availability."

@@ -63,7 +63,8 @@ class DesktopBridge:
         if not isinstance(encoded, str) or len(encoded) > 2_800_000:
             raise ValueError("Unsigned transaction file is missing or too large.")
         with self.state.lock:
-            if chain != self.state.chain or encoded != self.state.prepared_psbt:
+            if (chain != self.state.chain or self.state.prepared is None
+                    or encoded != self.state.prepared.psbt_base64):
                 raise ValueError("Wallet or unsigned transaction changed; prepare and review it again.")
         try:
             return save_prepared_psbt(self.state, chain)
@@ -118,14 +119,17 @@ def configure_packaged_tls() -> None:
 
 
 def check_testnet4_network() -> None:
-    """Headless probe of the same HTTPS client used by wallet balance scans."""
+    """Headless HTTPS probe of both practice-network backends."""
     from network_config import NETWORKS
+    from network_settings import verify_esplora
     from wallet_service import explorer_get
 
     genesis = explorer_get("/block-height/0", text=True, chain="testnet4").strip().lower()
     if genesis != NETWORKS["testnet4"].genesis_hash:
         raise RuntimeError("Testnet4 explorer returned the wrong network's genesis block.")
     print("Bundled Testnet4 explorer HTTPS check passed.")
+    verify_esplora("mutinynet", NETWORKS["mutinynet"].explorer_url)
+    print("Bundled Mutinynet genesis and fork-checkpoint HTTPS checks passed.")
 
 
 def check_psbt_save() -> None:
@@ -139,7 +143,7 @@ def check_psbt_save() -> None:
 
     from embit import psbt, script, transaction
 
-    from gui import LocalApp, save_prepared_psbt
+    from gui import LocalApp, PreparedPayment, save_prepared_psbt
 
     tx = transaction.Transaction(
         vin=[transaction.TransactionInput(bytes(32), 0)],
@@ -147,7 +151,8 @@ def check_psbt_save() -> None:
     )
     state = LocalApp(desktop=True)
     state.chain = "testnet4"
-    state.prepared_psbt = psbt.PSBT(tx).to_base64()
+    state.prepared = PreparedPayment(None, "testnet4", 0, "self-check",
+                                     psbt.PSBT(tx).to_base64(), "", (), ())
     with tempfile.TemporaryDirectory() as folder:
         first = save_prepared_psbt(state, "testnet4", Path(folder))
         # A second save must produce a new file, never replace the first.

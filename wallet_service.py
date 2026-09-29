@@ -1,4 +1,4 @@
-"""Public-data mainnet/Testnet4 wallet view and unsigned PSBT preparation.
+"""Public-data wallet view and unsigned PSBT preparation for selected networks.
 
 No seeds, signing keys, signing operations, or broadcast endpoints live here.
 Address queries disclose the queried addresses to the configured public explorer.
@@ -40,6 +40,10 @@ MAX_ESTIMATED_FEE_SATS = 10_000
 
 class WalletError(ProbeError):
     pass
+
+
+class BroadcastOutcomeUnknown(WalletError):
+    """The submit request left this app, but acceptance was not established."""
 
 
 def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
@@ -92,11 +96,14 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
             + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
         ) from exc
     except (URLError, TimeoutError, OSError) as exc:
-        raise WalletError("Could not reach the broadcast server.") from exc
+        raise BroadcastOutcomeUnknown(
+            "The broadcast result is unknown. Do not send this payment again. "
+            "Check the transaction on an explorer or ask for help before proceeding."
+        ) from exc
     if len(body) != 64 or any(char not in "0123456789abcdef" for char in body.lower()):
-        raise WalletError(
-            "The broadcast server did not return a transaction id, so it is unknown "
-            "whether anything was sent. Check the explorer before retrying."
+        raise BroadcastOutcomeUnknown(
+            "The broadcast result is unknown because the server did not return a "
+            "transaction ID. Do not send this payment again; check an explorer first."
         )
     return body.lower()
 
@@ -151,15 +158,75 @@ def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
             ) from exc
 
 
-def _chain(record: WalletRecord) -> str:
+def check_selected_outpoints(packet: psbt.PSBT, chain: str, primary_base: str,
+                             secondary_base: str | None = None,
+                             get: Callable = explorer_get) -> None:
+    """Recheck selected coins just before use, against a second source when set.
+
+    Only public transaction IDs and output numbers are sent. A second Esplora
+    lowers the risk of trusting one stale or manipulated index but is not a
+    consensus proof; a user-run node is stronger. The caller verifies each
+    source's genesis before using it and never silently changes sources.
+    """
+    if chain not in EXPLORERS or secondary_base == primary_base:
+        raise WalletError("Independent output check has no separate valid source.")
+    if not packet.tx.vin:
+        raise WalletError("The transaction has no inputs to verify.")
+    checked_funding = set()
+    for vin in packet.tx.vin:
+        txid, vout = vin.txid.hex(), vin.vout
+        if len(txid) != 64 or type(vout) is not int or vout < 0:
+            raise WalletError("A transaction input cannot be checked.")
+        for base in (primary_base, secondary_base):
+            if base is None:
+                continue
+            if (base, txid) not in checked_funding:
+                try:
+                    funding = get(f"/tx/{txid}/status", chain=chain,
+                                  base_url=base)
+                except WalletError as exc:
+                    raise WalletError(
+                        "Could not confirm that the selected Bitcoin is still available. "
+                        "Refresh and try again, or ask for help."
+                    ) from exc
+                if (not isinstance(funding, dict)
+                        or funding.get("confirmed") is not True):
+                    raise WalletError(
+                        "A selected Bitcoin output is no longer confirmed. "
+                        "Refresh your balance before preparing or sending."
+                    )
+                checked_funding.add((base, txid))
+            try:
+                status = get(f"/tx/{txid}/outspend/{vout}", chain=chain,
+                             base_url=base)
+            except WalletError as exc:
+                raise WalletError(
+                    "Could not confirm that the selected Bitcoin is still available. "
+                    "Refresh and try again, or ask for help."
+                ) from exc
+            if not isinstance(status, dict) or type(status.get("spent")) is not bool:
+                raise WalletError("An explorer gave an unclear output status; no payment was sent.")
+            if status["spent"]:
+                raise WalletError(
+                    "A selected Bitcoin output was already spent. Refresh your balance "
+                    "before preparing or sending another payment."
+                )
+
+
+def _chain(record: WalletRecord, selected: str | None = None) -> str:
+    if selected is not None:
+        if selected not in CHAIN_CONFIGS or CHAIN_CONFIGS[selected].record_network != record.network:
+            raise WalletError("Wallet and scanned network differ; no transaction was prepared.")
+        return selected
     try:
         return for_record_network(record.network).chain
     except ValueError as exc:
         raise WalletError(str(exc)) from exc
 
 
-def _query_for(record: WalletRecord, get: Callable, base_url: str | None) -> Callable:
-    return (partial(explorer_get, chain=_chain(record), base_url=base_url)
+def _query_for(record: WalletRecord, get: Callable, base_url: str | None,
+               chain: str | None = None) -> Callable:
+    return (partial(explorer_get, chain=_chain(record, chain), base_url=base_url)
             if get is explorer_get else get)
 
 
@@ -259,9 +326,9 @@ def _conventional_change(receive_text: str, record: WalletRecord) -> Descriptor 
     return candidate
 
 
-def wallet_summary(record: WalletRecord) -> dict:
+def wallet_summary(record: WalletRecord, chain: str | None = None) -> dict:
     layout = wallet_layout(record)
-    config = CHAIN_CONFIGS[_chain(record)]
+    config = CHAIN_CONFIGS[_chain(record, chain)]
     network = NETWORKS[record.network]
     supported_policy = record.threshold == 2 and len(record.keys) == 3
     can_prepare = bool(layout.change and layout.change_verified and supported_policy)
@@ -370,15 +437,15 @@ def _utxos_agree_with_totals(confirmed_from_totals: int, confirmed_utxos: int,
 
 
 def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
-                *, base_url: str | None = None) -> dict:
+                *, base_url: str | None = None, chain: str | None = None) -> dict:
     """Scan both branches until 20 unused addresses after the last used (max 100).
 
     The wallet file remains in local process memory. Only derived addresses and
     later explicit previous-transaction requests go to the explorer.
     """
     layout = wallet_layout(record)
-    chain = _chain(record)
-    query = _query_for(record, get, base_url)
+    chain = _chain(record, chain)
+    query = _query_for(record, get, base_url, chain)
     addresses = []
     coverage_limited = False
     for name, branch in (("receive", layout.receive), ("change", layout.change)):
@@ -603,8 +670,8 @@ def build_unsigned_psbt(
 ) -> dict:
     """Create an unsigned PSBT with previous transactions; never sign/broadcast."""
     layout = wallet_layout(record)
-    chain = _chain(record)
-    query = _query_for(record, get, base_url)
+    chain = _chain(record, scan.get("network"))
+    query = _query_for(record, get, base_url, chain)
     if scan.get("network") != chain:
         raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
     if scan.get("pending_outgoing"):
@@ -733,6 +800,7 @@ def build_unsigned_psbt(
         raise WalletError("Transaction fee check failed; no unsigned transaction was prepared.")
     return {
         "psbt_base64": packet.to_base64(),
+        "network": chain,
         # For segwit the witness is not part of the txid, so this id is already
         # final: the same id will appear on the explorer once it is broadcast.
         "txid": packet.tx.txid().hex(),
