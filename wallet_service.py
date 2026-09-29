@@ -357,9 +357,8 @@ def _utxos_agree_with_totals(confirmed_from_totals: int, confirmed_utxos: int,
 
     They legitimately differ while a payment is unconfirmed. An output that an
     unconfirmed transaction is spending still counts in the address totals -- the
-    spend is not confirmed -- but it is already gone from the UTXO list. Treating
-    that as corruption blocked every further transaction until the pending spend
-    confirmed, which for the owner meant the app looked frozen after one send.
+    spend is not confirmed -- but it is already gone from the UTXO list. This is
+    an accounting exception, independent of the one-payment-at-a-time send rule.
 
     A shortfall is therefore fine when unconfirmed spends account for it. UTXOs
     exceeding the totals is not: that would mean the explorer reports money it does
@@ -434,6 +433,7 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
     return {
         "network": chain,
         "confirmed_sats": confirmed, "pending_delta_sats": pending_delta,
+        "pending_outgoing": any(item["pending_spent"] > 0 for item in addresses),
         "observed_sats": confirmed + pending_delta,
         "utxo_consistent": _utxos_agree_with_totals(
             confirmed, sum(u["value"] for u in utxos if u["status"]["confirmed"]),
@@ -532,6 +532,8 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
     (or for send-all) every confirmed scanned output is used, which is the
     conservative upper bound.
     """
+    if scan.get("pending_outgoing"):
+        raise WalletError("A payment from this wallet is waiting for one confirmation. Check again later before preparing another payment.")
     layout = wallet_layout(record)
     if layout.change is None and not send_all:
         raise WalletError(
@@ -605,6 +607,8 @@ def build_unsigned_psbt(
     query = _query_for(record, get, base_url)
     if scan.get("network") != chain:
         raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
+    if scan.get("pending_outgoing"):
+        raise WalletError("A payment from this wallet is waiting for one confirmation. Check again later before preparing another payment.")
     if record.threshold != 2 or len(record.keys) != 3 or (layout.change is None and not send_all):
         raise WalletError(
             "Preparing this transaction requires a 2-of-3 wallet and, for a smaller "

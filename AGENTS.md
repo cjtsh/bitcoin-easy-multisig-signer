@@ -4,7 +4,7 @@
 
 1. `README.md` for current user-visible behavior and supported scope.
 2. `PHASE-HANDOFF.md` for current status, version gates and owner test.
-3. `AUDIT-BASELINE-0.1.27.md` for the independent pre-fix findings, `SECURITY-REVIEW-0.2.0.md` for the finding-to-fix map, then `PATCH-0.2.1.md` for the physical-signing regression and correction.
+3. `AUDIT-BASELINE-0.1.27.md` for the independent pre-fix findings, `SECURITY-REVIEW-0.2.0.md` for the finding-to-fix map, then `PATCH-0.2.1.md` and `PATCH-0.2.2.md` for subsequent corrections.
 4. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture
@@ -18,10 +18,11 @@ One engine serves Testnet4 and mainnet. `probe.py` parses BSMS and checks public
 - A PSBT input must match an independently fetched historical transaction and the wallet's derived script/value. A signer may add valid partial signatures but may not change the reviewed PSBT metadata or remove prior signatures. PSBT map entry order is irrelevant; HWI rewrites it.
 - Before broadcast, verify every signature, witness/prevout, output, fee and txid against immutable reviewed state. The final screen must show the same fields. A concurrent request must not change the payment during submission.
 - Treat public explorers and fee quotes as observations. Never call a gap-limited scan a complete wallet sweep. Never silently fall back to a different server.
+- After an outgoing Testnet4 broadcast, keep a session-only transaction ID and pause another payment until the explorer reports one confirmation. An address scan's mempool spent total also pauses sends, including after a restart. A missing transaction status is not confirmation. Incoming pending funds alone do not pause confirmed outputs.
 - Do not commit or emit BSMS records, xpubs, addresses, PSBTs, raw transactions, settings, device paths, or real wallet/test artifacts. Diagnostic reports use only fixed codes and timestamps.
 
 ## Development and release
 
-Use Python 3.12 for HWI 3.2.0. Run the full suite, JS syntax, `bash -n`, source archive tests and packaged Apple Silicon checks. Dependency locks are hash-verified. `LIBUSB_SHA256` is mandatory for the Mac build. Publish the CycloneDX `BUILD-SBOM.json` with the DMG and include it in `SHA256SUMS`. The GitHub workflow is manually dispatched; pushes alone must not publish. Never replace an existing release's assets. Use 0.2.x for hot-fix corrections, 0.3.0 for warm items, and 0.4.0 for nice-to-have items.
+Use Python 3.12 because bundled downstream dependency Bitcoin Core HWI 3.2.0 declares `Requires-Python >=3.9,<3.13`; Python 3.14 is outside that range. The desktop build script rejects unsupported versions, both workflow jobs pin 3.12, and both hash lock files were generated for 3.12. Upgrade HWI, regenerate/test locks, and change all pins together before considering a newer Python. Run the full suite, JS syntax, `bash -n`, source archive tests and packaged Apple Silicon checks. Dependency locks are hash-verified. `LIBUSB_SHA256` is mandatory for the Mac build. Publish the CycloneDX `BUILD-SBOM.json` with the DMG and include it in `SHA256SUMS`. The GitHub workflow is manually dispatched; pushes alone must not publish. Never replace an existing release's assets. Use 0.2.x for hot-fix corrections, 0.3.0 for warm items, and 0.4.0 for nice-to-have items.
 
-Keep the nontechnical operator's screen simple. Make technical checks automatic and explain unsupported conditions in plain English. The owner wants one Mac install and transaction walkthrough per milestone after extensive automation, not repeated manual tests for small revisions. Do not recommend 0.2.0 for signing: Jade and Ledger responses were rejected by its field-order check. No agent may claim 0.2.1 hardware acceptance before the owner reports it.
+Keep the nontechnical operator's screen simple. Make technical checks automatic and explain unsupported conditions in plain English. The owner wants one Mac install and transaction walkthrough per milestone after extensive automation, not repeated manual tests for small revisions. Do not recommend 0.2.0 for signing: Jade and Ledger responses were rejected by its field-order check. The first 0.2.1 Testnet4 broadcast had two verified signatures, but Trezor in this build and full final acceptance still need the owner's check. Do not claim 0.2.2 physical acceptance from automated tests alone.

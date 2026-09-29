@@ -96,6 +96,9 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('value="testnet4"', page)
         self.assertIn('value="main"', page)
         self.assertIn('id="refresh-top"', page)
+        self.assertIn('id="pending-payment"', page)
+        self.assertIn('id="pending-check"', page)
+        self.assertIn("waiting for one confirmation", page)
         self.assertIn("LIVE BITCOIN NETWORK · REAL FUNDS", page)
         self.assertIn("body.live-mode", page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
@@ -407,6 +410,37 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(result["confirmed_sats"], 6000)
         self.assertEqual(result["utxo_count"], 0)
         self.assertEqual(self.app.scan, fake)
+
+    def test_recent_broadcast_stays_paused_until_explorer_confirms_it(self):
+        text, _ = test_record()
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        txid = "ab" * 32
+        self.app.pending_broadcast_txid = txid
+        fake = {
+            "network": "testnet4", "utxo_consistent": True,
+            "confirmed_sats": 6000, "pending_delta_sats": 0,
+            "observed_sats": 6000, "pending_outgoing": False,
+            "addresses": [], "utxos": [], "scanned": 40,
+            "coverage_limited": False, "path_warning": "",
+            "scanned_at": "2026-09-29T00:00:00+00:00",
+            "source": "https://mempool.space/testnet4/api",
+        }
+        with patch("gui.scan_wallet", side_effect=lambda *_args, **_kwargs: dict(fake)), \
+             patch("gui.explorer_get", side_effect=[{"confirmed": False},
+                                                    WalletError("Explorer unavailable"),
+                                                    {"confirmed": True}]) as status:
+            waiting = self.post("/api/scan", {"chain": "testnet4"})
+            self.assertTrue(waiting["pending_outgoing"])
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", {"chain": "testnet4"})
+            self.assertEqual(err.exception.code, 400)
+            still_waiting = self.post("/api/scan", {"chain": "testnet4"})
+            self.assertTrue(still_waiting["pending_outgoing"])
+            ready = self.post("/api/scan", {"chain": "testnet4"})
+        self.assertFalse(ready["pending_outgoing"])
+        self.assertIsNone(self.app.pending_broadcast_txid)
+        self.assertEqual(status.call_count, 3)
 
     def test_refresh_twice_uses_same_in_memory_wallet_definition(self):
         text, _ = test_record()

@@ -37,14 +37,7 @@ def mainnet_record(suffix="/<0;1>/*"):
 
 
 class PendingSpendTests(unittest.TestCase):
-    """A confirmed output spent by an unconfirmed transaction is normal.
-
-    The address totals still count it, because the spend is not confirmed, while the
-    UTXO list already excludes it. Reading that as corruption hid the whole prepare
-    card and locked the owner out of his own wallet after one send, until the pending
-    spend confirmed. Sparrow shows the same wallet the same way: confirmed balance,
-    minus the mempool figure, equals what is spendable.
-    """
+    """Mempool spends explain UTXO totals but pause the next payment."""
 
     def setUp(self):
         self.text, _ = test_record(bsms_template=True)
@@ -73,8 +66,30 @@ class PendingSpendTests(unittest.TestCase):
     def test_a_confirmed_output_spent_in_the_mempool_is_not_corruption(self):
         result = scan_wallet(self.wallet, self.stub(mempool_spent=6000, utxos=[]))
         self.assertTrue(result["utxo_consistent"])
+        self.assertTrue(result["pending_outgoing"])
         self.assertEqual(result["confirmed_sats"], 6000)
         self.assertEqual(result["pending_delta_sats"], -6000)
+
+    def test_pending_outgoing_pauses_preview_and_prepare_even_with_other_utxos(self):
+        result = scan_wallet(self.wallet, self.stub(mempool_spent=1000, utxos=[
+            {"txid": "aa" * 32, "vout": 0, "value": 5000,
+             "status": {"confirmed": True}},
+        ]))
+        self.assertTrue(result["utxo_consistent"])
+        self.assertTrue(result["pending_outgoing"])
+        with self.assertRaisesRegex(WalletError, "waiting for one confirmation"):
+            estimate_fee_preview(self.wallet, result, True)
+        with self.assertRaisesRegex(WalletError, "waiting for one confirmation"):
+            build_unsigned_psbt(self.wallet, result, self.receive, None,
+                                get=self.stub(mempool_spent=1000, utxos=[]),
+                                send_all=True)
+
+    def test_pending_incoming_does_not_pause_an_existing_confirmed_output(self):
+        result = scan_wallet(self.wallet, self.stub(mempool_spent=0, utxos=[
+            {"txid": "aa" * 32, "vout": 0, "value": 6000,
+             "status": {"confirmed": True}},
+        ]))
+        self.assertFalse(result["pending_outgoing"])
 
     def test_utxos_exceeding_the_totals_is_still_refused(self):
         # The address totals say 6,000 but the UTXO list offers 12,000: the explorer

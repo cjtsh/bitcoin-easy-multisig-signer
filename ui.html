@@ -20,6 +20,10 @@
     .network.live { border:3px solid #ff9e2c; background:#ffdc99; color:#48260a; }
     .live-banner { background:#ffde9d; border:3px solid #de6f0b; border-radius:12px;
       color:#552806; font-weight:800; padding:15px 18px; margin:0 0 19px; font-size:17px; }
+    .pending-banner { background:#fff0c6; border:2px solid #d69b27; border-radius:12px;
+      color:#49350e; padding:17px 19px; margin:0 0 19px; }
+    .pending-banner h2 { margin:0 0 5px; }
+    .pending-banner p { margin:0 0 12px; }
     body.live-mode { background:#fff5e3; }
     body.live-mode .top { background:#332713; border-bottom:8px solid #db7918; }
     body.live-mode .top small { color:#ffd38c; }
@@ -157,6 +161,14 @@
     <div id="live-banner" class="live-banner" role="alert" hidden>
       ⚠ LIVE BITCOIN NETWORK · REAL FUNDS. Check the wallet file, destination and fee before proceeding.
     </div>
+    <section id="pending-payment" class="pending-banner" role="status" aria-live="polite" hidden>
+      <h2>Payment sent · waiting for confirmation</h2>
+      <p>The network has received your payment. It is waiting to be added to a block.
+        You can make another payment from this wallet after one confirmation.</p>
+      <p>This can take a while. Your wallet is still working; check again later to see whether it has confirmed.</p>
+      <button id="pending-check" class="secondary" type="button">↻ Check again</button>
+      <a id="pending-explorer" target="_blank" rel="noopener noreferrer" hidden>View payment on explorer</a>
+    </section>
 
     <section class="card" aria-labelledby="open-title">
       <div class="with-help"><h2 id="open-title">1. Open your existing wallet</h2>
@@ -482,6 +494,7 @@
     let finalTxid = null;
     let feeEstimate = null;
     let preparationId = null;
+    let pendingExplorerUrl = null;
     let walletCanPrepare = false;
     let walletCanSendAll = false;
     let changeAssumed = false;
@@ -853,7 +866,10 @@
     function showBalance(data) {
       $("balance-card").hidden = false;
       let sendBlockReason = "";
-      if (!walletCanSendAll) {
+      showPendingPayment(data.pending_outgoing, data.pending_outgoing ? pendingExplorerUrl : null);
+      if (data.pending_outgoing) {
+        sendBlockReason = "A payment from this wallet is waiting for one confirmation. Use Check again above before making another payment.";
+      } else if (!walletCanSendAll) {
         sendBlockReason = "This wallet definition does not meet the transaction policy shown above.";
       } else if (data.utxo_consistent === false) {
         sendBlockReason = "Explorer UTXOs and confirmed balance disagree. Refresh the balance; if the mismatch remains, verify with your own node before preparing a transaction.";
@@ -914,6 +930,14 @@
       renderFeeGuidance();
       loadFeeEstimate();
     }
+    function showPendingPayment(waiting, explorerUrl=null) {
+      $("pending-payment").hidden = !waiting;
+      pendingExplorerUrl = waiting ? explorerUrl : null;
+      const link = $("pending-explorer");
+      link.hidden = !pendingExplorerUrl;
+      if (pendingExplorerUrl) link.href = pendingExplorerUrl;
+      else link.removeAttribute("href");
+    }
     async function refresh() {
       const started = walletActionId, chain = selectedChain();
       $("balance-card").hidden = true; $("send-card").hidden = true;
@@ -948,6 +972,7 @@
       }
       $("open").disabled = true;
       $("wallet-card").hidden = true; $("signers-card").hidden = true;
+      showPendingPayment(false);
       $("balance-card").hidden = true; $("send-card").hidden = true;
       $("refresh-top").hidden = true;
       lastScan = null; currentPsbt = null;
@@ -1266,6 +1291,11 @@
         holder.replaceChildren(document.createTextNode(
           "Sent. Transaction " + sent.txid + " is on its way — "), link,
           document.createTextNode(". A payment is not finished until it is confirmed."));
+        showPendingPayment(true, sent.explorer);
+        $("send-card").hidden = true;
+        $("balance-send-status").hidden = false;
+        setText("balance-send-status", "This wallet is waiting for one confirmation before another payment.");
+        $("pending-payment").scrollIntoView({behavior:"smooth", block:"start"});
       } catch (e) {
         const holder = $("broadcast-message");
         holder.className = "error";
@@ -1286,6 +1316,7 @@
           "Could not save the unsigned transaction file.", true);
       } finally { updateDownload(); }
     });
+    $("pending-check").addEventListener("click", refresh);
     $("save-diagnostics").addEventListener("click", async () => {
       $("save-diagnostics").disabled = true;
       try {
@@ -1327,6 +1358,7 @@
           $("explorer-consent").checked = true;
         }
         showWallet(saved.wallet);
+        if (saved.pending_broadcast_explorer) showPendingPayment(true, saved.pending_broadcast_explorer);
         if (saved.balance) showBalance(saved.balance);
         msg("message", "Wallet still open in this local app. Use Refresh balance for new transactions.");
       } catch (_) { /* A newly started or stopped app has no wallet to restore. */ }
