@@ -19,7 +19,7 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
 cp README.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md \
   PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md SECURITY-REVIEW-0.2.0.md \
-  PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md \
+  PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md PATCH-0.4.0.md \
   PLAN-0.3.0.md MUTINYNET-0.3.0.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
