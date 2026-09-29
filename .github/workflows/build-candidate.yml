@@ -196,19 +196,21 @@ jobs:
           commit \`${GITHUB_SHA:0:12}\`.
 
           - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
-          - Prepares a partial send only with a declared change branch. A receive-only
-            export can Send All without change. Shows full final outputs and fee.
-          - Uses bundled HWI 3.2.0 over stdin to request two hardware signatures, rejects PSBT
-            metadata changes while allowing field reordering, verifies signatures
-            and finalizes the transaction.
+          - Prepares a partial send with a declared change branch or the guarded
+            standard BIP48 /1/* branch anchored by the BSMS first receive address.
+            Unsupported layouts can explicitly Send All without change. Shows final outputs and fee.
+          - Uses bundled HWI 3.2.0 over stdin to request two hardware signatures.
+            Only signatures verifying against the reviewed PSBT are retained;
+            signer-returned metadata is discarded before finalization.
+          - Gives device discovery up to one minute and deliberate on-device signing
+            up to ten minutes, including Ledger's multiple review screens.
           - Offers Testnet4 and Mutinynet practice networks through one engine. A
             custom-Signet checkpoint distinguishes Mutinynet from ordinary Signet.
             A new Mutinynet wallet and practice coins are required; Testnet4 coins
             do not transfer across networks.
-          - Mutinynet is the opening network. A receive-only BSMS export now explains
-            why a smaller payment is unavailable and never preselects Send All;
-            the owner must choose a sweep explicitly. A smaller payment needs
-            a wallet definition that establishes the change branch.
+          - Mutinynet is the opening network. Send All is never preselected;
+            a nonstandard wallet without an established change branch explains
+            why a smaller payment is unavailable.
           - Clears old signer/final details whenever a new payment is prepared.
             Rechecks selected confirmed outputs before preparation and broadcast;
             a lost broadcast response is treated as outcome unknown, never retried.

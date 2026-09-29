@@ -16,4 +16,16 @@ Version 0.4.1 allows up to 600 seconds for an explicit signing request while all
 
 ## Verification and physical gate
 
-Unit tests simulate signer-added or rewritten PSBT metadata, invalid signatures, changed unsigned outputs, the signing-only timeout and the Ledger open-failure guidance. The local API test simulates a Jade-like response with altered metadata, then adds a second signer and finalizes the original reviewed transaction. These tests establish the boundary in code, not actual device behavior. Record CI, DMG verification and any owner hardware result here after release. The requested owner check is one small Mutinynet payment with Jade plus one other signer, checking destination, amount, fee and change on both devices and checking the final review before broadcast. If Ledger again says “open failed,” close other wallet apps using it, reconnect, unlock, open Bitcoin Testnet, and run device search again. Do not send live Bitcoin to test this correction.
+Unit tests simulate signer-added or rewritten PSBT metadata, invalid signatures, changed unsigned outputs, the signing-only timeout and the Ledger open-failure guidance. The local API test simulates a Jade-like response with altered metadata, then adds a second signer and finalizes the original reviewed transaction. These tests establish the boundary in code, not actual device behavior. The requested owner check is one small Mutinynet payment using Ledger and Jade, with Trezor available as a fallback if either cannot finish. Check destination, amount, fee and change on both devices and the final review before broadcast. If Ledger again says “open failed,” close other wallet apps using it, reconnect, unlock, open Bitcoin Testnet, and run device search again. Do not send live Bitcoin to test this correction.
+
+## Release evidence
+
+The manual [GitHub workflow](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36624835443) passed all five jobs and published [v0.4.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.1) from merge commit `1f8e7066c37006444906f910add576be32cde0e1`. The full local suite passed 170 Python tests (8 skipped); GitHub ran tests in the checkout, source archive and Apple Silicon build, plus bundle, HWI, HTTPS, code signature and DMG checks. Independently downloaded release files matched `SHA256SUMS`, and `hdiutil verify` accepted the downloaded DMG. SHA-256 values:
+
+```text
+8b4628817dbfa1a252c8a8df506477d9d53ac092b463a18f81a2790da550f3c0  bitcoin-easy-multisig-signer-v0.4.1.tar.gz
+76182be6ec7a37d41f9f8376944dd01eeb054a9364a37594830495356bcb8566  Bitcoin-Easy-Signer-v0.4.1-UNSIGNED-TEST.dmg
+1b2fd716be75c79ae88d8d4a2045d3fe2dc44795833416f3ea8abb85a86a035d  BUILD-SBOM.json
+```
+
+The physical Jade/Ledger correction remains **unverified** until the owner completes a practice-network signer walkthrough on the installed 0.4.1 app. Do not treat release checks as device acceptance or enable mainnet broadcast on their basis.
