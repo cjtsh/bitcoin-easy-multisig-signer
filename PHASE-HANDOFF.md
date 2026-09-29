@@ -4,7 +4,7 @@
 
 ## Status and version policy
 
-The shared wallet/signing engine has completed Phases 1–4 on Testnet4. Earlier versions produced two confirmed Testnet4 payments with Jade + Trezor Safe 3 and Jade + Ledger Nano S Plus. Version **0.2.0** addresses the hot audit findings and requires a fresh one-session owner walkthrough on an Apple Silicon Mac. Do not say its physical-device behavior has been verified until that walkthrough is recorded. Mainnet broadcast remains refused. No mainnet payment has been prepared, signed, or broadcast as of this handoff.
+The shared wallet/signing engine has completed Phases 1–4 on Testnet4. Earlier versions produced two confirmed Testnet4 payments with Jade + Trezor Safe 3 and Jade + Ledger Nano S Plus. Version **0.2.0** [is published](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.2.0); its automated release checks and downloaded checksums passed. It addresses the hot audit findings and still requires a fresh one-session owner walkthrough on an Apple Silicon Mac. Do not say its physical-device behavior has been verified until that walkthrough is recorded. Mainnet broadcast remains refused. No mainnet payment has been prepared, signed, or broadcast as of this handoff.
 
 Version scheme: **0.2.0 hot fixes**, **0.2.x corrections found after publication**, **0.3.0 warm fixes**, **0.4.0 nice-to-have improvements**. The owner does not want to install every minor CI revision. Finish automated and bundled checks before asking for a Mac installation; request one walkthrough per milestone unless a defect demands a patch release.
 

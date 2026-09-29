@@ -2,7 +2,7 @@
 
 Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** 2-of-3 multisig wallet. It does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on two hardware devices, and confirm the final transaction.
 
-**Version 0.2.0 is an experimental test build.** Testnet4 signing and broadcast were demonstrated in earlier versions with Jade, Trezor Safe 3, and Ledger Nano S Plus; two transactions confirmed. The new 0.2.0 safeguards require a fresh Mac and device walkthrough. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
+**[Version 0.2.0](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.2.0) is an experimental test build.** Testnet4 signing and broadcast were demonstrated in earlier versions with Jade, Trezor Safe 3, and Ledger Nano S Plus; two transactions confirmed. The new 0.2.0 safeguards require a fresh Mac and device walkthrough. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
 
 ## What this version does
 
