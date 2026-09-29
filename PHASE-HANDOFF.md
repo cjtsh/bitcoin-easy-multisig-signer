@@ -1,542 +1,236 @@
-# Project status and handoff — v0.1.27
+# Handoff — Bitcoin Easy Multisig Signer
 
-**Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.27`. `version.py` is the single source of the version; the
-workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.27-UNSIGNED-TEST.dmg`
-**Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
+**Read this file first.** It carries the current state, what is proven, what is not,
+and the next work in priority order. The detailed records from earlier phases are in
+`PROJECT-HISTORY.md`, which is an archive rather than a starting point.
 
-## Immediate next step (updated 28 September, 22:15)
-
-**Phase 3 is complete.** The owner's Trezor Safe 3 matched signer 2 of 3 on the
-real wallet on 28 September, which was the last acceptance item.
-
-**First real testnet send (28 Sep, v0.1.24):** a 2-of-3 payment was prepared,
-signed by the Jade and the Trezor Safe 3, broadcast to Testnet4 **and confirmed in
-block 154322**. The change returned to the wallet's own change branch.
-
-**Second send, and Phase 4 acceptance (29 Sep, v0.1.25+):** a second 2-of-3 payment,
-signed this time by the **Jade and the Ledger Nano S Plus**, was **confirmed in block
-154330** with the change returned again. Phase 4 is therefore accepted on hardware:
-two payments, both confirmed, between them using **all three devices** — Jade, Trezor
-Safe 3 and Ledger Nano S Plus. The Ledger signed only after the global-xpub fix below,
-so that fix is now proven against the device it was written for, not just against
-hwilib's acceptance logic.
-
-Both transactions were independently verified after broadcast by decoding the raw
-transaction and checking each signature against the wallet's own witness script; the
-second is recorded here as `493bddeda158b0ad04cac4c74ae6c3408bd97e1f88f792e1e7fd8c9642f6a825`.
-
-**Why testnet confirmations stall (28-29 Sep).** The second payment sat unconfirmed
-for over an hour while block after block was mined empty. That was not the wallet,
-the app or the devices: testnet4's difficulty was sitting at its floor of 1, and its
-min-difficulty rule allows a difficulty-1 block once 20 minutes have passed. Miners
-race that window and deliberately publish **empty** blocks, because an empty block
-propagates faster and wins the race. An independent write-up describes ~85-90% of
-blocks being CPU-mined min-difficulty blocks for this reason, and a soft fork to cap
-block timestamps has been proposed but not adopted. Practical consequences for this
-project: testnet confirms on someone else's schedule, raising the fee cannot help
-while nobody is selecting transactions, and testnet timing says nothing about mainnet
-— where blocks are full and fees are the miners' business.
-
-**Transactions were not replaceable (28 Sep).** The owner's second testnet send
-sat unconfirmed. The transaction was valid, in the mempool, in no conflict, paying
-3.02 sat/vB against a recommended 1, with locktime 0 — and nothing could be done,
-because it was built with the default nSequence 0xffffffff, which means final. Five
-consecutive testnet4 blocks then turned out to contain **no transactions at all**
-(coinbase only), so nothing was confirming for anyone; but the lesson stands.
-Transactions now signal replaceability (0xFFFFFFFD) so a stuck payment can be spent
-again at a higher fee. A test asserts every input is replaceable.
-
-**A pending spend looked like corruption (28 Sep).** After the first send, the app
-refused to prepare another transaction and hid the prepare card entirely, with
-"Explorer UTXOs and confirmed balance disagree". Nothing was wrong: a confirmed
-output had been spent by a transaction that was still unconfirmed, so mempool.space's
-address totals still counted it while its UTXO list had already dropped it. The
-consistency check compared those two numbers directly and treated the normal
-difference as corruption, which blocked the owner until the spend confirmed.
-
-Sparrow showed the same wallet the same way — confirmed balance, a mempool figure of
--2,570, and 18,174 spendable — and our numbers now agree with it exactly. The check
-now allows a shortfall that unconfirmed spends account for, and still refuses UTXOs
-that exceed the totals or a shortfall nothing explains. A test covers all three.
-
-**Why a Ledger would not sign (28 Sep).** The device was recognised — fingerprint and
-xpub both matched — but pressing "Sign with Ledger Nano S Plus" produced no prompt on
-the device and no signature. hwilib's Ledger path rebuilds the wallet policy from the
-PSBT's **global xpubs** (`PSBT_GLOBAL_XPUB`, key type `0x01`):
-
-    for xpub_bytes, xpub_origin in psbt2.xpub.items(): ...
-    else:
-        # No xpub, Ledger will not accept this multisig
-        ok = False
-    if not ok:
-        continue        # no error, no prompt, input skipped
-
-embit supports these entries (`PSBT.xpubs`), but `build_unsigned_psbt` never
-populated them, so the Ledger had nothing to rebuild the policy from and skipped every
-input **silently**. Trezor and Jade do not need them, which is why this only surfaced
-when a Ledger was asked to sign. The builder now publishes each cosigner's account
-xpub and origin, and a test replays hwilib's own acceptance condition so it cannot
-regress.
-
-The lesson for "device agnostic": the PSBT is a common format but vendors disagree
-about which optional metadata they require. Being agnostic means publishing
-everything a wallet is entitled to, not the minimum that happens to satisfy the
-devices already tested.
-
-**Phase 4 was implemented in v0.1.24:** the app signs with the devices, finalises
-when the threshold is met, re-displays the finalised transaction, and broadcasts to
-Testnet4 after the owner confirms that exact transaction id. Broadcasting real Bitcoin
-is refused outright. What remains is the owner's first live testnet send.
-
-1. The owner creates a new 2-of-3 multisig on the three physical devices and exports
-   its BSMS file.
-2. In **v0.1.24**: Testnet4 -> choose that file -> **Open wallet & check balance**.
-3. **3. Check your hardware wallets** -> **Look for my hardware wallets**. One device
-   at a time, unlocked on the device itself. No funding is needed for this step.
-4. Report the exact lines. `"not a signer in this BSMS file"` and `"fingerprint
-   matched, but xpub DID NOT MATCH"` mean different things; HWI's own reason text is
-   now included, which identifies plumbing problems.
-
-Already proven in the shipped app, so a failure is the device and not the packaging:
-`--check-devices` runs the bundled HWI, loads the bundled libusb and parses its JSON.
-
-**A locked device used to kill the whole check (28 Sep):** hwilib's Trezor
-backend opens every device it finds and closes it again. A Trezor that locks on a
-timeout re-enumerates its USB connection, so that close raises
-usb1.USBErrorNotFound, nothing catches it, and HWI exits 1 with a traceback and NO
-output -- hiding the Ledger, Coldcard and BitBox results too, and making it look as
-though nothing was connected. The bundled tool now tolerates releasing an interface
-on a device that is no longer there. HWI's own traceback is also never repeated to
-the owner any more: the app names the final exception line instead.
-
-**Lesson that cost time (28 Sep):** Sparrow writes the descriptor *without* a checksum and
-states the derivation restrictions on their own line, with the paths already in the
-descriptor as `<0;1>/*`; Nunchuk writes a checksum and the words "No path
-restrictions". Both are valid and both are now accepted. The checksum is optional
-because the reference address must still derive from the descriptor and a mismatch
-stops the wallet outright — which catches the same transcription errors, against an
-independently supplied address. The app also computes and displays the descriptor
-checksum so the owner can compare it with their wallet software's backup: the
-owner's Sparrow file yields `dvthsm8x`, exactly what Sparrow's own PDF prints.
-
-**Lesson that cost time (28 Sep):** a Ledger must be *unlocked and* have the
-Bitcoin app open — and for this wallet, the **Bitcoin Testnet** app. Entering the PIN
-alone is not enough, and the app initially hid HWI's own explanation; v0.1.18 repeats
-HWI's words verbatim instead of guessing. Keep every device in the network app
-matching the wallet at both creation and check time.
-
-**The source archive was not runnable (28 Sep).** `scripts/build-source.sh`
-omitted `safe_http.py`, so the published source tarball could not be imported, and
-it also left out the test helpers, so only 26 of the tests ran. CI ran the tests
-from the checkout, never from the archive. The archive now ships every root module,
-carries the test helpers, fails the build if a module is missing, and CI runs the
-tests from the extracted tarball.
-
-**The Jade could not be unlocked (28 Sep).** HWI said to use the Jade's own
-"Recovery Phrase Login" or "QR PIN Unlock", which reads like a device fault. It was a
-missing dependency: the jade library HWI vendors exposes its HTTP relay only when
-`requests` is importable, and the build did not install `requests`. Without the relay
-HWI cannot pass the Jade's encrypted messages to Blockstream's pin server, so the
-device can never be unlocked. **The PIN still never leaves the device** — HWI's Jade
-client refuses to accept one from the host (`send_pin` raises "Blockstream Jade does
-not need a PIN sent from the host"); the host only relays ciphertext.
-
-`requests` is now installed and bundled, and the bundled tool answers a new
-`--dsh-capabilities` probe whose `jade_http_relay` flag the app checks on every build,
-so this cannot silently return. Verified by building the tool and confirming the flag
-flips from absent to true.
-
-**The Jade needed a chain it knows (28 Sep).** With the relay in place the Jade
-still failed, now with `Unhandled network: testnet4`. hwilib's Jade client keeps a
-strict map -- `{MAIN: 'mainnet', TEST: 'testnet', SIGNET: 'testnet', REGTEST:
-'localtest'}` -- that predates testnet4, and its own comment already says signet is
-"the same as far as Jade is concerned". The device check now asks HWI for **`test`**,
-never `testnet4`: the Trezor sets `coin_name = 'Testnet'` for every non-mainnet chain
-and the Ledger derives the same coin type, while testnet and testnet4 share the tpub
-version bytes and the `tb1` prefix, so the xpub comparison stays byte-exact. Verified
-against the real Jade: fingerprint `a54cf273`, and its xpub at `m/48h/1h/0h/2h` came
-back identical to the cosigner declared in the BSMS file.
-
-**The three devices (28 Sep):** a **Trezor Safe 3** (matched signer 2 of 3 on the
-owner's real wallet), a **Ledger Nano S Plus** (recognised once its Bitcoin Testnet app
-is open; error `0x5515` means it is locked and must be unlocked on the device), and a
-**Blockstream Jade**.
-
-**Signing and broadcasting do not exist and are not authorised.** Phase 4 begins with
-an owner decision, not code.
-
-## Where this stands
-
-**What the tool is.** A small Mac app that lets someone who is not a Bitcoiner — a
-lawyer, a bank officer, a family member — send Bitcoin from an **existing** 2-of-3
-multisig wallet. It opens a BSMS wallet file, shows the balance, prepares an
-**unsigned** transaction, and saves it for hardware signing. It never creates a
-wallet, never asks for seed words or a PIN, and cannot sign or send.
-
-**What works, as exercised by the owner on the real Mac**
-
-| Step | State |
+| | |
 | --- | --- |
-| Open the wallet file and check the balance | Works |
-| Explain what the app assumed about change addresses, in plain words, without a checkbox | Works |
-| Check the hardware wallets *before* building a payment (step 3) | Works — reads public identities only, no transaction |
-| Reach "Prepare a send"; enter a destination and amount, or Send All | Works |
-| Live slow/medium/fast fee tiers, with the chosen one visibly marked | Works |
-| Review: destination, amount, fee, total, change, final transaction id, explorer link | Works |
-| Save the unsigned `.psbt` into the Downloads folder | Works, and a saved file was decoded independently and matched the review |
-| Show progress while the blockchain scan runs | Works |
-| Recognise a connected hardware signer, read-only | **Proven on real hardware.** A Ledger Nano S Plus was enumerated and correctly rejected as a non-member; a **Trezor Safe 3 matched signer 2 of 3** on the owner's real wallet, with the xpub verified byte-identical to the BSMS cosigner |
+| Repository | `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder` |
+| Version | `0.1.27` — `version.py` is the single source; CI derives tag and artifact names from it |
+| Artifact | `~/Downloads/Bitcoin-Easy-Signer-v0.1.27-UNSIGNED-TEST.dmg`, sha256 `52185c46c853a29677102b81a42ff84f4b67b95018d7114ea69d45e6c5a99df3` |
+| Tests | 135, all passing (`python -m unittest discover -s tests`) |
+| Proven on | the owner's Apple Silicon Mac, three hardware wallets, GitHub Actions CI |
+| Last updated | 29 September 2026 |
 
-**What does not exist yet**
+## 1. What this is
 
-- **Signing and broadcasting.** The app cannot sign a transaction or send Bitcoin.
-  That is deliberate: it is Phase 4 in `ROADMAP.md`, and starting it needs the owner
-  to move that boundary explicitly, naming the supported devices and workflow.
-- ~~Independent decoding of a PSBT saved from the owner's real wallet.~~ **Done in
-  v0.1.14:** a saved PSBT was decoded by two independent implementations that agreed
-  on every material value, the change output was rebuilt from its declared keys and
-  confirmed to land on the wallet's own change branch, and the fee matched the
-  reviewed rate times the reviewed size exactly. No wallet material is recorded and
-  the file was not committed. See `ROADMAP.md`, *Verification record*.
-- **Physical signer recognition** has never been exercised.
+A small Mac app that lets someone who is not a Bitcoiner — a lawyer, a bank officer, a
+family member, possibly under stress — send Bitcoin from an **existing** 2-of-3
+multisig wallet. It opens a BSMS wallet file, shows the balance, prepares a
+transaction, gets it signed on hardware devices, and broadcasts it.
 
-**Limits worth repeating**
+It never creates a wallet, never asks for seed words or a PIN, and has no access to
+private keys. The design criterion is the owner's: the main screen shows a balance and
+a send flow; every wallet path, xpub and address lives behind **See wallet details**.
 
-- Experimental, unaudited software that handles real money. Verify every address,
-  amount, fee and change on the signing devices.
-- The DMG is unsigned and unnotarized, so Gatekeeper blocks a double-click launch:
-  right-click → Open the first time.
-- Complete the recommended small test payment before moving a large amount.
+## 2. Where it stands
 
-Everything below is the detailed record: what was wrong, what changed, the security
-findings and their dispositions, the evidence, and the delivery rules.
+**Phases 1 to 4 are complete and accepted on real hardware.** The app prepares,
+signs, finalises and broadcasts, and two real Testnet4 payments have confirmed.
 
----
+| Capability | State |
+| --- | --- |
+| Open a BSMS wallet, scan the balance, explain coverage in plain words | Works, on the owner's real wallet |
+| Check the hardware devices *before* building a payment | Works |
+| Prepare a payment, live fee tiers, Send All | Works |
+| Review: destination, amount, fee, change, final txid, explorer link | Works |
+| Sign with the devices, finalise at threshold, re-check the final transaction | Works, proven with all three devices |
+| Broadcast to Testnet4 | Works, two confirmed sends |
+| Broadcast to mainnet | **Refused in code, deliberately** (`gui.py`, `_broadcast`) |
 
-## 1. The blockage, and what actually fixed it
+## 3. What is proven, and how
 
-The reported symptom was that the app "provided no functionality to actually
-construct a transaction". That was not accurate about the code: the wallet/PSBT
-engine and the entire send UI (`ui.html`, `/api/prepare`) already existed and
-worked. This was verified by building a transaction with the real engine, signing
-it with 2 of 3 synthetic keys, finalizing it, and measuring it.
+**Two confirmed Testnet4 payments, using three different devices between them.**
 
-The real cause was a single eligibility gate. `can_prepare` required a BSMS export
-that proves **both** a receive and a change path. A `/*` export marked
-`No path restrictions` proves only receive (`reference_status ==
-"receive-branch-only"`), so the app classified the wallet as **view-only by
-design** and never rendered the send card at all. Retrying could never help, which
-is why it read as missing functionality.
+| Send | Devices | Result |
+| --- | --- | --- |
+| 28 Sep, v0.1.24 | Jade + Trezor Safe 3 | **Confirmed in block 154322**, change returned to the wallet's own change branch |
+| 29 Sep, v0.1.25+ | Jade + Ledger Nano S Plus | **Confirmed in block 154330**, txid `493bddeda158b0ad04cac4c74ae6c3408bd97e1f88f792e1e7fd8c9642f6a825` |
 
-**Change:** an owner-confirmed change branch.
+Both were verified **after broadcast, without trusting the app**: the raw transaction
+was fetched and every signature checked against the wallet's own witness script. The
+second decode also identified which cosigner produced which signature, confirming the
+pair the owner reported.
 
-- `probe.declare_change_branch()` derives `/0/*` and `/1/*` from the owner's own
-  descriptor. It refuses anything that is not a plain `/*` on every key, and the
-  existing parser checks the change descriptor uses exactly the same multisig
-  cosigners, threshold and policy as receive.
-- `parse_bsms(text, declared_change=...)` only applies it for the
-  `No path restrictions` + bare `/*` case. Everywhere else the flag is ignored,
-  so a redundant confirmation can never break a valid wallet.
-- `wallet_service.can_declare_change()` gates the offer to 2-of-3 wallets whose
-  receive path is already anchored.
-- **Superseded in v0.1.13.** That control asked the owner to assert a derivation
-  detail they had no way to check, and a lawyer or a spouse could not answer it.
-  The app now *resolves* the wallet's usual change addresses itself, reports
-  whether the wallet's own history supports them, keeps the change address visible
-  in the review, and recommends a test payment when it is unconfirmed. No checkbox.
+The Ledger signed only after the global-xpub fix (section 7), so that fix is proven
+against the device it was written for — not merely against hwilib's acceptance logic.
 
-The app still never silently guesses: it states plainly what it has assumed, shows
-the resulting address, and tells you what would confirm it.
+The app's own figures were cross-checked against **Sparrow** on the same wallet and
+agreed exactly: confirmed balance 20,744, mempool −2,570, spendable 18,174.
 
-## 2. Fee preview now matches the transaction that is built
+## 4. What is deliberately NOT done
 
-The live preview sized the transaction using **all** confirmed scanned outputs. In
-the verification fixture that reported 412 vB where the transaction actually built
-at 307 vB — a 34% overstatement, so the previewed fee did not match the review.
+- **No mainnet transaction has ever been prepared or signed.** Everything proven is
+  Testnet4. Note that only *broadcast* refuses mainnet: prepare, sign and finalise all
+  work on mainnet today, which is why a dry run needs no code change (section 5).
+- **The DMG is unsigned and unnotarized.** Gatekeeper blocks a double-click launch;
+  the user must right-click → Open. `CFBundleIdentifier` is `Bitcoin Easy Signer`
+  (with spaces) rather than a reverse-DNS identifier, which blocks notarisation.
+- **No fee-bump flow in the app.** Transactions signal replaceability (BIP125), so a
+  stuck payment *can* be replaced, but only from another wallet that supports it.
+- **Not audited.** Experimental software handling real money.
+- **macOS only.** No Windows or Linux build exists.
+- **The testnet4 node and mining helper are side projects**, documented in section 10
+  because they exist on the machine, not because the app depends on them.
 
-**Change:** `wallet_service._select_inputs()` is now the single source of truth for
-input selection and fee, used by both `estimate_fee_preview()` and
-`build_unsigned_psbt()`. The preview takes the requested amount, fee rate and
-destination, so it selects exactly the inputs the builder will select. Preview and
-build are asserted equal at multiple amounts in the test suite.
+## 5. Next work, in priority order
 
-Send All already deducted the fee correctly; that is now pinned by tests
-(`total_spend == confirmed balance`, no change output, `remaining == 0`).
+### X. Mainnet dry run — no broadcast, no code change, highest value
 
-## 3. The high-value confirmation no longer trusts a remote price
+The app has never touched real Bitcoin. Prepare a real mainnet payment, sign it with
+two devices, finalise it in memory, and verify the result independently.
 
-The ≥$10,000 gate was computed only from mempool.space's BTC/USD quote, so a
-misreporting or compromised feed could suppress the prompt.
+1. Load a **mainnet** 2-of-3 BSMS (a real wallet holding a small balance). The app
+   refuses a cross-network wallet by design, so a Testnet4 file will not do.
+2. Prepare a small payment **to one of the owner's own addresses**.
+3. Sign with two devices. **Read both device screens**: destination, amount and fee
+   must match what the app displayed.
+4. Finalise and verify independently (see below).
+5. **Do not broadcast.** The app cannot broadcast mainnet, which is the point.
 
-**Change:** the gate also fires on an absolute local floor,
-`LARGE_AMOUNT_SATS_FLOOR = 10_000_000` (0.1 BTC), enforced in `gui.py` and mirrored
-in the UI. Tested with a deliberately lying price feed.
+Verification, without trusting the app: decode the raw transaction; check each input's
+witness against the wallet's own witness script; compare every output, the change
+address and the fee against the review screen; and confirm the txid shown *before*
+signing equals the txid after signing (for SegWit the witness is not part of the txid,
+so it cannot change). The method used for the Testnet4 send is described in section 3.
 
----
+**Treat a signed-but-unbroadcast mainnet transaction as sensitive:** anyone holding
+those bytes can broadcast them.
 
-## 4. Security findings and dispositions
+### Y. Real Bitcoin: the deliberate switch
 
-Two independent review passes covered the whole codebase. Only findings that could
-plausibly cause fund loss, code injection, or meaningful disclosure were actioned.
+Only after X, and only on the owner's explicit instruction:
 
-| # | Severity | Finding | Disposition |
-|---|---|---|---|
-| 1 | High | `urllib` followed 30x redirects, so an explorer could **downgrade HTTPS to plaintext** or move the request to another host, defeating the HTTPS-only rule and exposing derived addresses | **Fixed.** New `safe_http.py` refuses every redirect and asserts the final URL is unchanged; TLS verification stays on. `wallet_service`, `gui` and `network_settings` all use it |
-| 2 | High | CI published an unsigned DMG as the repository's **"Latest" release on every branch push**, with `--clobber`, no checksum and no review gate | **Fixed.** Branch pushes build artifacts only; releases are gated on a `v*` tag; `SHA256SUMS` emitted; `--clobber` removed; unsigned test builds now use `--latest=false --prerelease` |
-| 3 | High | Build-time Python dependencies and the bundled native `libusb` dylib were unverified before being code-signed and notarized | **Fixed.** `certifi` pinned exactly (it *is* the app's CA trust store); `LIBUSB_SHA256` integrity gate aborts the build on mismatch and warns loudly when unset |
-| 4 | High | `codesign --deep` re-signs nested code, so anything injected into the bundle would inherit the Developer ID signature and notarization | **Fixed.** Nested Mach-O signed individually, `hwi` required, `.app` sealed without `--deep`, then `codesign --verify --strict` |
-| 5 | Medium | The local API token was embedded in an **unauthenticated** `GET /` response; any local process could read it and then drive the wallet API | **Fixed.** The token now travels in the URL fragment (never sent to the server) and the page contains no token; comparison uses `hmac.compare_digest` |
-| 6 | Medium | GitHub Actions pinned to mutable tags; a stale `.build-venv` was reused across builds | **Fixed.** All 12 actions pinned to commit SHAs; venv rebuilt from scratch each build |
-| 7 | Medium | The genesis-hash check is one-shot and a malicious custom explorer can echo the public constant | **Accepted, documented.** Fund loss is already blocked: every previous transaction is re-fetched and required to match the wallet's derived script and value, and `utxo_consistent` ties balance to UTXOs. Residual risk is privacy and misleading balances, not fabricated amounts |
-| 8 | Low | "Same user on this machine" is the residual trust boundary for the local API | **Accepted, documented.** |
-| 9 | **High** | **Regression introduced during this work, caught only by testing the shipped artifact:** the bundled `certifi` CA store was never actually used. `build_opener()` constructs an `SSLContext` eagerly at import time, but the packaged app sets its bundle later, inside `main()`. HTTPS therefore depended on whatever CA files the host machine happened to have — the build self-check passed on the runner and the app failed on the owner's Mac | **Fixed.** The HTTP opener is now built on first use and the bundle is loaded explicitly (`safe_http.set_trust_bundle`); the packaged self-check asserts the configured store *is* the bundled one; and CI re-runs the network check with the ambient trust paths removed so this cannot regress silently |
+- **Open mainnet broadcast behind a deliberate opt-in** — per transaction, visibly
+  distinct, naming mainnet. Keep the refusal as the default, keep the network checks,
+  and keep the rule that the confirmed txid must equal the prepared one. Tests must
+  prove mainnet broadcast is impossible without the opt-in.
+- **Settle the fee behaviour.** Live mainnet fee guidance already exists
+  (`fetch_fee_rates`, labelled `mempool.space mainnet`), but the user's rate is bounded
+  to **1–25 sat/vB** (`wallet_service.py`). In a busy mempool the recommended fastest
+  rate can exceed 25, so the app would clamp or refuse exactly when the user needs to
+  pay more. Decide deliberately — raise the bound, surface the recommendation, or
+  explain the limit — and test the busy-mempool path with a stubbed high quote.
+- **Decide about fee bumping.** Either implement a replacement (same inputs, higher
+  fee, re-signed on the devices) or state plainly that a stuck payment must be bumped
+  in another wallet.
+- **Acceptance:** a completed mainnet send, verified independently, with the owner's
+  authorisation recorded in this file.
 
-Two review passes agreed the following were already clean: loopback-only bind with
-an ephemeral port, Host and Origin checks, `nosniff`/CSP/no-store headers, TLS
-verification never disabled, no `shell=True`/`eval`/`exec`/`pickle`/archive
-extraction, no request field reaching a filesystem path or subprocess, atomic
-`0600` settings writes, `O_EXCL` PSBT save that refuses to overwrite, no
-signing or broadcast endpoint, and no xpub, descriptor, fingerprint or origin ever
-leaving the machine (only derived addresses and public txids, and only to the
-configured explorer, after explicit consent).
+### Z. Make it safe to hand to the person it is for
 
-### Post-mortem: the trust-store regression (finding 9)
+- **Developer ID signing + notarisation**, so the DMG opens with a double-click. The
+  current Gatekeeper warning is precisely the friction that stops a non-technical user.
+  Requires an Apple Developer account (~$99/yr) — the owner's decision.
+- **Fix `CFBundleIdentifier`** to a reverse-DNS identifier first.
+- **A one-page plain-language guide**: what the wallet is, the three devices, why a
+  test payment is recommended, what to do when a device is not found, and that a
+  payment is not finished until it confirms.
 
-Worth recording because the *verification* failed, not just the code.
+### Smaller, ready when wanted
 
-The previous self-check only asked "did an HTTPS request succeed?". On the GitHub
-runner that was true — the runner has ambient CA files where OpenSSL looks — so
-the check passed while the app was ignoring the CA store it ships. On a Mac
-without that ambient configuration, every HTTPS request failed with
-`CERTIFICATE_VERIFY_FAILED`, which would have broken balance scans, fee quotes and
-price quotes: the app would have looked completely dead.
+Cut **v1.0.0** (the owner's stated criterion was a completed send; there are two, with
+all three devices). Refresh the pinned GitHub Actions (Node 20 → 24 deprecation).
+Bring the stale `main` branch current. Decide whether the testnet4 node and mining
+helper stay as project tools.
 
-The replacement check asserts the *configured* store is the bundled one and that
-it contributes trusted CAs, and CI additionally repeats the network check with
-`SSL_CERT_FILE`/`SSL_CERT_DIR` pointed at nonexistent paths. That last step is the
-one that actually distinguishes "HTTPS works here" from "HTTPS will work
-anywhere", and it is reproducible locally:
+## 6. Rules that must not be broken
 
-```sh
-SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs \
-  "dist/Bitcoin Easy Signer.app/Contents/MacOS/Bitcoin Easy Signer" --check-network
-```
+1. **A local, existing-wallet app.** No seed words, no private-key entry, no hosted
+   upload, no silent background signing, no wallet creation.
+2. **Never commit wallet data** — BSMS exports, xpubs, addresses, PSBTs, settings,
+   credentials. Redact sensitive values from issues, logs, screenshots and CI output.
+   No log files are written, by design.
+3. **Testnet4 for live development** unless the owner explicitly authorises a specific
+   mainnet operation. Never silently switch networks or explorers, and never fall back
+   from a failed custom endpoint to a public one without telling the user.
+4. **Broadcasting real Bitcoin is refused** until the owner changes that boundary
+   deliberately. It is a code change, not a setting.
+5. **Every published build carries a new version.** CI refuses to overwrite a
+   published tag, which is what caught a near-miss where a fix would have been shipped
+   under an already-published version.
+6. **Never claim hardware verification that has not happened.** The evidence in
+   section 3 is what was exercised; keep it that way.
 
-Verified: the fixed build passes that command; the previously published v0.1.11
-artifact built by CI fails it.
+## 7. Decisions and their reasons — do not silently undo
 
----
+| Decision | Why |
+| --- | --- |
+| Every input signals replaceability (`nSequence 0xFFFFFFFD`) | A payment built with `0xffffffff` is final: the owner's second send sat stuck with no remedy available to anyone. A test asserts it. |
+| The PSBT publishes every cosigner's **global xpub and origin** | A Ledger rebuilds the wallet policy from them. Without them hwilib skips every input **silently** — no error, no prompt. Trezor and Jade do not need them, so only a Ledger exposes the omission. |
+| The balance check allows a shortfall that unconfirmed spends explain | A confirmed output spent by an unconfirmed transaction still counts in the explorer's address totals but is gone from its UTXO list. Calling that corruption hid the whole prepare card and locked the owner out of his own wallet until the spend confirmed. Genuine disagreements are still refused. |
+| HWI is asked for chain **`test`**, never `testnet4` | Jade's client has no testnet4 entry and errors with `Unhandled network: testnet4`. Testnet and testnet4 share the `tpub` version bytes and `tb1` prefix, so the xpub comparison stays byte-exact. Trezor and Ledger treat any non-mainnet chain as testnet. |
+| A descriptor **checksum is optional** | Sparrow writes the descriptor without one and states restrictions separately; Nunchuk writes one and says "No path restrictions". Both are valid. The reference address is the real integrity check, and the app computes and prints the checksum for the owner to compare. |
+| The app **resolves** the change branch instead of asking the owner to declare it | The earlier control asked a non-technical owner to assert a derivation detail they had no way to check. The change address stays visible in the review and a test payment is recommended while it is unconfirmed. |
+| `_select_inputs` is the single source of truth for preview and build | The live preview once overstated the size by 34%, so the previewed fee did not match the transaction actually built. |
+| The high-value prompt also fires on a local absolute floor (0.1 BTC) | A misreporting or compromised price feed must not be able to suppress it. |
+| `safe_http.py` refuses every redirect and keeps TLS verification on | Otherwise an explorer could downgrade HTTPS to plaintext or move the request to another host, exposing derived addresses. |
+| The local API token travels in the URL fragment | It must never be sent to the server or be readable by another local process from an unauthenticated `GET /`. |
+| HWI's own error text is shown verbatim | Guessing at device faults wasted time twice; the device's own words identify plumbing problems. |
 
-## 5. Evidence
+## 8. How to build, verify and release
 
-- `python -m unittest discover -s tests -q` → **88 tests pass** (was 51).
-  New: `test_gui_integration.py` (real loopback HTTP server: import → scan →
-  estimate → prepare → PSBT, plus token/Origin/Host rejection), 
-  `test_declared_change.py` (change-branch derivation and preview/builder
-  agreement), `test_safe_http.py` (redirect refusal, TLS verification),
-  `fake_explorer.py`.
-- **Independent verification**: a separate harness builds a transaction with the
-  engine, then *signs it for real* with 2 of 3 synthetic keys and finalizes it.
-  Result: amount exact, `packet.fee()` matches, change lands on the wallet's own
-  change branch, **305 vB actual vs 307 vB estimated** (conservative), effective
-  **5.033 sat/vB against a requested 5** — i.e. no underpayment.
-- Send All: 175,000 − 1,845 fee = 173,155 sats, one output, no change,
-  `remaining == 0`.
-- Every boundary case rejected: rate 0 and 26, amount 545 (below dust), amount
-  above balance, mainnet destination on Testnet4, prepare before a scan, and
-  settings changes invalidating a prepared review.
-- Workflow YAML parses; `scripts/build-macos.sh` and `build-source.sh` pass
-  `bash -n`; the two workflow copies are byte-identical; inline UI JavaScript
-  passes `node --check`.
+1. **Bump `version.py`.** Required for any publish; CI refuses an existing tag.
+2. **Push to `phase2-transaction-builder`.** GitHub Actions builds the Apple Silicon
+   DMG plus the source archive and `SHA256SUMS`, runs the tests **from the extracted
+   archive**, and publishes the release. The workflow ignores `**/*.md`, so a
+   docs-only commit does not trigger a build.
+3. **Verify the artifact as a user receives it** — not merely that CI was green:
+   download it, `shasum -a 256 -c SHA256SUMS`, mount with `hdiutil`, copy the app out,
+   `xattr -cr`, confirm `CFBundleShortVersionString`, and run the bundle's own
+   `--check-bundle`. Also run `--check-network` **with `SSL_CERT_FILE` pointed at a
+   nonexistent path**, which is the only check that distinguishes "HTTPS works here"
+   from "HTTPS will work anywhere" (see the trust-store regression in
+   `PROJECT-HISTORY.md`).
+4. **Keep the archive complete.** `scripts/build-source.sh` fails the build if a root
+   module is missing; that guard exists because the published tarball was once
+   unimportable.
 
-## 6. What is deliberately NOT verified
+## 9. Hardware devices — what each one needs
 
-Synthetic fixtures prove code paths, not your wallet. Still unverified:
+| Device | Signer | Notes |
+| --- | --- | --- |
+| Blockstream Jade | 1 (`a54cf273`) | Needs the HTTP relay, so `requests` must be bundled; the guard is the bundled tool's `--dsh-capabilities` (`jade_http_relay`). PIN and passphrase are entered **on the device**; HWI never accepts a PIN from the host. |
+| Trezor Safe 3 | 2 (`20616230`) | Unlock it first. A Trezor that locks on a timeout re-enumerates USB, and the failed close used to abort the whole device scan (patched in `scripts/hwi_entry.py`). |
+| Ledger Nano S Plus | 3 (`66a53fec`) | Must be unlocked **and** have the Bitcoin Testnet app open for a testnet wallet. Error `0x5515` means locked. Requires the PSBT global xpubs (section 7). |
 
-1. **No Apple Silicon window walkthrough.** Nobody has driven the native WebKit
-   window through import → refresh → send form → save.
-2. **Partially resolved.** The control did appear for the owner's real wallet and
-   they used it successfully (see the observations below). What has *not* been
-   checked is the change-branch evidence line against a wallet that has spent
-   before, and the review/save steps.
-3. **No hardware signer.** HWI recognition has never run against a physical
-   device; signing and broadcast remain unimplemented by design.
-4. **The token-in-fragment change needs one browser check.** If the fragment did
-   not survive the window load, the page now fails loudly with "could not read its
-   local access token" instead of silently doing nothing. Watch for that text on
-   first launch.
-5. **No macOS bundle build has been executed successfully in this session** (see
-   below). The PyInstaller/codesign/hdiutil path is verified only by `bash -n`,
-   stubbed unit checks of the extracted logic, and the fact that v0.1.9/v0.1.10
-   previously built on CI.
+All three were verified byte-identical to the cosigner xpubs in the owner's
+`3HWKeys.bsms` (a Sparrow-created 2-of-3 Testnet4 wallet, descriptor checksum
+`dvthsm8x`). That file is wallet data and must never be committed.
 
-### Observed on the real Mac (owner report, v0.1.11 DMG)
+Diagnosing a device means running the **bundled** HWI directly, because no log files
+are written. That is deliberate: no wallet data in logs.
 
-This is the first evidence from the native app with a real wallet rather than
-synthetic fixtures.
+## 10. Environment facts
 
-- The owner imported their wallet on Apple Silicon. The app showed the
-  send-eligibility blockage together with the change-branch confirmation control,
-  which **confirms the diagnosis in section 1 against the real file**: the wallet
-  is the receive-only `/*` form, so `can_prepare` was false and the send screen
-  could never appear before this work.
-- After confirming the control, the send flow became available and the owner
-  reached the "prepare a send" screen. That is the Phase 2 acceptance-gate
-  behaviour — a receive-only wallet explains itself, offers the control, and a
-  confirmed wallet reaches the send form — observed in the shipped app.
-- **Reported friction:** the owner did not understand *why* they were being asked
-  to confirm. That is a genuine usability finding from first live use, and the
-  wording has been rewritten in plain language as a result. The control is a
-  safety gate for how change is addressed, so it must be understood, not clicked
-  through.
-- **Second real-Mac finding: the save button did nothing.** Two fragile
-  dependencies were involved. The page silently fell back to a browser blob
-  download, which WKWebView ignores without any error, and the native save dialog
-  could return nothing while reporting no error either. Saving now goes through
-  `POST /api/save` — the same local API every other action in that window already
-  uses, so it cannot depend on the pywebview bridge being injected. It writes a
-  new file into the user's **Downloads** folder and names the full path on screen.
-  The bytes come from server-side state, so nothing the page sends can influence
-  what is written or where, and an existing file is never replaced. The pywebview
-  bridge remains only as a fallback path and shares the same implementation.
-- Still unobserved: the hardware signer screen.
+- **App repository:** `~/Documents/deepseek-harness/default-workspace/bitcoin-easy-multisig-signer`.
+  The built DMG is staged in `~/Downloads`.
+- **A synced Testnet4 node exists on this machine** (Bitcoin Core 31.1), datadir on the
+  Thunderbolt drive at `/Volumes/TBolt-1TB-Fun/Testnet4`, config at
+  `~/.bitcoin/bitcoin.conf`, RPC on `127.0.0.1:48332`. This matters for the project's
+  own rule — *verify with your own node rather than trusting an explorer* — and it is
+  the fastest way to check a transaction or a balance independently.
+- **Mining helper (not part of the app):** `~/bitcoin-testnet-miner.sh` is a menu over
+  `~/mine-testnet4.sh`; the miner binary is `~/bin/cpuminer`. The miner is **stopped**.
+- **Why Testnet4 mining was abandoned**, recorded so nobody restarts it hopefully: the
+  min-difficulty rule allows a difficulty-1 block once 20 minutes have passed since the
+  parent, and the miners winning that race future-date their blocks roughly 115 minutes
+  ahead of real time. A node with a correct clock therefore only ever offers
+  **full** difficulty, which is ~651 years per block on this Mac. The winning behaviour
+  depends on a forged clock. A [proposed soft fork](https://batmanbytes.github.io/testnet4-softfork/)
+  would invalidate those blocks and has passed its activation height without being
+  adopted.
+- **Operational note that cost time:** match processes by exact name (`pgrep -x`), not
+  by command-line substring. `pgrep -f cpuminer` matched a helper script that merely
+  mentioned the word, which made the miner look like it was already running. Related:
+  editing a shell script while a process is reading it can kill that process — read the
+  file, then restart the process.
 
+## 11. Archive
 
-### Interface simplification (owner request)
-
-The owner's standing design criterion is that this is **not** a wallet for a
-Bitcoiner: it is a guided "send from an existing wallet" tool for a lawyer, a bank
-officer, or a family member, possibly under stress. The first live build had drifted
-into showing the policy, reference/receive/change addresses, three cosigner xpubs
-with derivation paths, scan statistics and a full per-address activity list all on
-the main screen.
-
-- All of that now lives behind a **See wallet details** button, which opens a
-  panel. Two entry points (the wallet card and the balance card) open one dialog.
-- The main screen shows: network, balance in BTC with satoshis and an approximate
-  dollar line, one short coverage sentence, and the send flow.
-- The four step chips are gone (the cards are numbered), the duplicated Refresh
-  button is down to one, several paragraphs of small print were cut, and the
-  "Signer Signer" typo from the repository rename is fixed.
-- **Nothing safety-critical was hidden.** Destination, amount, fee and the change
-  address remain visible in the review, as do errors, warnings, the high-value
-  confirmation and the change-branch confirmation.
-
-Alongside it, two safety-ergonomics additions the owner asked for:
-
-- The send step recommends a **small test transaction first** — advisory, never
-  blocking.
-- The review shows the **final transaction ID** (for segwit the witness is not part
-  of the txid, so it is already known before signing) plus a **public explorer
-  link**, and explains that the app does not broadcast, so the link is how the
-  result is confirmed afterwards.
-
-Verified by rendering the real page in headless Chrome and inspecting it, since the
-native window cannot be driven from here.
-
-### Two usability bugs found in live use (v0.1.14)
-
-Both were reported by the owner from screenshots of the real app.
-
-1. **The fee-speed buttons gave no confirmation of the choice.** `aria-pressed` was
-   set on two of the three buttons and had **no CSS at all**, so pressing Slow /
-   Medium / Fast changed the rate with no visible effect. Worse, selection was
-   inferred by comparing rate *values*, and on a quiet mempool Slow/Medium/Fast are
-   often the same whole sat/vB (the owner's live quote was 1 / 2 / 2), so the
-   comparison could not tell them apart even in principle.
-   Fixed: selection is tracked as an explicit tier, the chosen button is filled
-   green with a check mark, and a line under the buttons states it in words —
-   `Selected: Fast · 3 sat/vB`, or `Custom` when the rate is typed by hand.
-2. **A slow scan looked like a dead app.** Loading a wallet scans up to a hundred
-   addresses per branch over HTTP, which takes seconds. The only feedback was a
-   line of text that is often below the fold. Fixed: a spinner bar is pinned to the
-   top of the window whenever work is in progress, with what it is doing
-   ("Reading your wallet file…", "Checking the blockchain for your balance — this
-   can take a few seconds…", "Looking for connected signing devices…"), and the page
-   is padded so the bar never covers content.
-
-Both are covered by page tests. Verified by rendering the page in headless Chrome
-with a deterministic fee quote and forcing the busy state on.
-
----
-
-## 7. Build status
-
-**The GitHub Actions DMG is built, published and verified.** Release `v0.1.11` is
-the repository's current release, carrying the Apple Silicon DMG, the matching
-source archive, and `SHA256SUMS`.
-
-- Final workflow run for the save fix `36453605797` — **all five jobs green** on the current
-  commit: read version (5s), source archive and tests (25s), Apple Silicon DMG
-  (2m1s), SHA256SUMS (5s), publish release (15s). CI runs the full suite on
-  Python 3.12, so the tests are verified on Linux and macOS, not only this Mac.
-- The published DMG was then downloaded and verified as a user would receive it:
-  its SHA-256 matches the published `SHA256SUMS` (`hdiutil verify`: VALID); the
-  app inside is valid under `codesign --verify --strict`; `CFBundleShortVersionString`
-  reads `0.1.11`; and both self-checks pass.
-- **The decisive check passes on the published artifact**: `--check-network`
-  succeeds with `SSL_CERT_FILE` unset *and* with it pointed at a nonexistent
-  path, with `SSL_CERT_DIR` nonexistent, which proves the shipped app trusts the
-  CA store it carries rather than the host's configuration. The same command
-  failed on the artifact built before the fix and on the artifact CI published
-  from the previous commit.
-- The downloaded DMG matches its published `SHA256SUMS` digest, `hdiutil verify`
-  reports the checksum VALID, and the app inside is valid under
-  `codesign --verify --strict` with `CFBundleShortVersionString` correctly
-  recorded as `0.1.11`.
-- A local build was also produced and verified end to end on this Mac
-  (Apple Silicon, macOS 27). That is what exposed the trust-store regression:
-  every CI check was green while the app could not verify any certificate here.
-
-**The workflow is deliberately simple**, per the owner's request: pushing to
-`phase2-transaction-builder` builds the app, verifies it, and publishes an
-ordinary (non-pre-release) release. The version and tag are read from
-`version.py`, no version number is hardcoded, and re-running for an existing
-version replaces that release, so iterating is a single push.
-
-### Two build bugs found by running the build for real
-
-1. **Wrong Python.** `hwi 3.2.0` declares `Requires-Python >=3.9,<3.13`. On this
-   Mac `python3` is 3.14, so the build died deep inside pip with an unreadable
-   error. The script now fails immediately with the required range and the fix.
-   This is also why the CI workflow is genuinely necessary here: it pins 3.12.
-2. **Stray extended attributes.** macOS FileProvider (this repo lives in
-   `~/Documents`) attaches `com.apple.FinderInfo` to bundle contents, and
-   `codesign --verify --strict` rejects that as unsealed "detritus". The build now
-   strips xattrs before signing and again on the staged copy. A CI runner would
-   not have hit this; a local build did.
-
-### Remaining non-blocking notes
-
-- `main` is still at `version.py 0.1.6` and its copy of the workflow is a
-  *different, older* file named "Build release candidate (no publishing)". That
-  stale name is what GitHub displays in the workflow list. `main` should be
-  brought current as part of any release tidy-up.
-- GitHub reports a deprecation notice: the pinned actions target Node 20 and are
-  being forced onto Node 24. Harmless today; the pins will need refreshing.
-- `CFBundleIdentifier` is still `Bitcoin Easy Signer` (with spaces) rather than a
-  reverse-DNS identifier. Cosmetic for an ad-hoc-signed local build, but it should
-  be fixed before any notarized distribution.
-- The release DMG is unsigned and unnotarized, so Gatekeeper blocks a
-  double-click launch. The user must right-click → Open, or allow it once in
-  System Settings → Privacy & Security.
-
-## 8. Next phase entry point
-
-Per `ROADMAP.md`, the acceptance gates that remain require the owner:
-
-- **Phase 2 gate:** on the Mac, import the real Testnet4 BSMS, confirm Refresh
-  still works, and record what the wallet card and send-eligibility notice say.
-  A receive-only wallet must explain itself and offer the change-branch control;
-  a wallet with declared paths must reach the send form.
-- **Phase 3 gate:** complete import → fresh scan → partial or Send All → live fee
-  and dollar review → high-value confirmation where applicable → **save the
-  `.psbt`** → reach the signer-recognition screen. Then decode the saved PSBT with
-  an independent tool and compare network, inputs, outputs, change and fee.
-- **Phase 4** (signing and broadcast) remains explicitly **not authorised**. Do not
-  implement it without the owner changing that boundary.
-
-Hardware keys are expected this afternoon; the signer-recognition screen is the
-first thing to try once the DMG is in hand.
+`PROJECT-HISTORY.md` holds the detailed records: the security findings and their
+dispositions, the trust-store regression post-mortem, the build bugs found by running
+the build for real, the usability bugs found in live use, and the phase-by-phase
+narrative. Read it when you need the reasoning behind something in section 7, or when
+you want to know what was already tried.

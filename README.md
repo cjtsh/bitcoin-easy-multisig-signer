@@ -38,15 +38,22 @@ not sign or broadcast a transaction.
 
 The Mac app, named **Bitcoin Easy Signer** in Applications, gives a family member a short flow for **sending from an existing
 multisig wallet**. It will not create a wallet, generate keys, or ask for
-recovery words. The [Bitcoin Core HWI][hwi] tool is bundled for read-only device
-recognition; descriptor and PSBT handling use [embit][embit]. Signing and
-broadcast code are not included.
+recovery words. The [Bitcoin Core HWI][hwi] tool is bundled and is used both to read
+device identity and to **ask the devices to sign**; descriptor and PSBT handling use
+[embit][embit]. It finalises at the wallet's threshold and broadcasts to **Testnet4**,
+where two real payments have confirmed. **Broadcasting real Bitcoin is refused in
+code**, deliberately: opening that is a code change, not a setting.
 
 ## Development roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the current checkpoint, three ordered
-development phases, acceptance gates, and handoff instructions for the
-next coding agent.
+**Starting work on this project? Read [PHASE-HANDOFF.md](PHASE-HANDOFF.md) first** —
+it carries the current state, what is proven and how, the next work in priority order,
+and the decisions that must not be silently undone. [ROADMAP.md](ROADMAP.md) holds the
+five ordered phases with their acceptance gates, and
+[PROJECT-HISTORY.md](PROJECT-HISTORY.md) archives the detailed records behind them.
+
+Phases 1–4 are complete and accepted on real hardware. **Phase 5 — real Bitcoin — has
+not started:** no mainnet transaction has ever been prepared or signed.
 
 ## Mac test releases
 

@@ -1,8 +1,10 @@
 # Roadmap and agent handoff
 
-**Current build:** **v0.1.27**, 28 September 2026, on the `phase2-transaction-builder`
-branch. It prepares and reviews an **unsigned** transaction and performs read-only
-hardware signer recognition. **It does not sign, and it does not broadcast.**
+**Current build:** **v0.1.27**, 29 September 2026, on the `phase2-transaction-builder`
+branch. It prepares, reviews, **signs with hardware devices, finalises and broadcasts
+to Testnet4**. Two real Testnet4 payments have confirmed, between them using all three
+devices. **Broadcasting real Bitcoin is refused in code**, deliberately, and opening it
+is a code change rather than a setting (Phase 5).
 
 ## Status at a glance
 
@@ -39,6 +41,17 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   (blocks 154322 and 154330), between them signed by all three devices — Jade,
   Trezor Safe 3, and Ledger Nano S Plus. Mainnet broadcast remains refused until the
   owner authorises it deliberately.
+- [ ] **Phase 5 — Real Bitcoin: dry run first, then the deliberate switch.** Not
+  started. Everything proven so far is Testnet4; the app has never prepared or signed
+  a mainnet transaction. Only `_broadcast` refuses mainnet today, so a mainnet **dry
+  run** — prepare, sign with two devices, finalise in memory, verify independently,
+  never broadcast — needs no code change. Only afterwards, and only on the owner's
+  explicit instruction, open mainnet broadcast behind a deliberate per-transaction
+  opt-in, and settle the fee behaviour: the live mainnet fee reference is bounded to
+  1–25 sat/vB, which a busy mempool can exceed. Distribution hardening — Developer ID
+  signing and notarisation so the DMG opens without a Gatekeeper warning — belongs in
+  this phase, because it is what makes the tool usable by the person it is designed
+  for.
 
 **Progress note.** The phases were fixed in sequence on this branch: the transaction
 journey was unreachable (v0.1.10); the bundled trust store was never actually used,
@@ -225,6 +238,57 @@ testnet cycle.
 **Acceptance gate:** The owner-approved prototype endpoint is completed with evidence from the actual Mac and Testnet4 signers, and the independent review has no unresolved high-risk correctness or key-handling findings. The README accurately distinguishes implemented capabilities from future ones. A mainnet sending release, signed/notarized Mac distribution, and broad wallet/device support are **separate decisions**, not consequences of a passing Testnet4 demo.
 
 **Final handoff:** Provide the supported wallet/signers/network matrix, reproducible non-sensitive test procedure, reviewed source and release identifiers, security findings and dispositions, manual Mac results, remaining limitations, and a precise list of operations still prohibited. If there is no owner approval for signing/broadcast, close this phase as *not authorized*, not *complete*.
+
+## Phase 5 — Real Bitcoin: dry run first, then the deliberate switch
+
+**Status: not started. This is the only phase that touches real money.**
+
+**Goal.** Prove the whole pipeline on mainnet without risking funds, then — as a
+separate, explicitly authorised act — make a real send possible, and make the app
+trustworthy in the hands of a non-technical user.
+
+**Why the dry run comes first.** Every value verified to date was verified on Testnet4.
+The app has never derived a mainnet address from a real wallet, never had a real mainnet
+payment approved on a device screen, and never had its mainnet fee guidance exercised
+against a busy mempool. A dry run finds all of that with nothing at stake, because the
+one thing that could lose money — broadcast — is already refused by code.
+
+**Step 1, the dry run (no code change).**
+Load a mainnet 2-of-3 BSMS, prepare a small payment to one of the owner's own
+addresses, sign with two devices, finalise in memory, and verify independently: decode
+the raw transaction, check each input's witness against the wallet's own witness
+script, compare every output, the change address and the fee against the review screen,
+and confirm the txid shown before signing equals the txid after signing. **Never
+broadcast.** Treat the signed bytes as sensitive: anyone holding them can broadcast.
+
+**Step 2, the switch (owner's explicit authorisation required).**
+Open mainnet broadcast behind a deliberate, visible, per-transaction opt-in that names
+mainnet. Keep the refusal as the default, keep the network and reference checks, and
+keep the rule that the confirmed transaction id must equal the prepared one. Tests must
+prove mainnet broadcast is impossible without the opt-in.
+
+**Step 3, fees on mainnet.**
+Live guidance already exists and is labelled `mempool.space mainnet`, but the user's
+rate is bounded to 1–25 sat/vB. In a busy mempool the recommended fastest rate exceeds
+that, so the app would clamp or refuse exactly when the user needs to pay more. Decide
+deliberately and test the busy path with a stubbed high quote. Decide also whether the
+app implements fee bumping (the replacement is possible: every input already signals
+RBF) or states plainly that a stuck payment must be bumped elsewhere.
+
+**Step 4, make it usable by the person it is for.**
+Developer ID signing and notarisation so the DMG opens with a double-click; a
+reverse-DNS `CFBundleIdentifier` first; and a one-page plain-language guide covering
+the three devices, the recommended test payment, what a missing device looks like, and
+that a payment is not finished until it confirms.
+
+**Acceptance.** A mainnet dry run whose decoded transaction matches the review on every
+value and whose device screens showed the same destination, amount and fee; then, only
+if authorised, one completed mainnet send verified independently. A non-technical user
+can install the DMG without a Gatekeeper warning.
+
+**Constraints.** No wallet data in the repository. No mainnet broadcast without the
+deliberate opt-in. No seed words, ever. Do not describe mainnet as tested until a real
+transaction has confirmed.
 
 ## Delivery discipline for any agent working from this roadmap
 
