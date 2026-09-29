@@ -14,7 +14,7 @@ from embit.networks import NETWORKS
 
 from probe import ProbeError, load_bsms, parse_bsms
 from network_config import NETWORKS as CHAIN_CONFIGS
-from test_probe import test_record
+from test_probe import sparrow_record, test_record
 from wallet_service import (
     BroadcastOutcomeUnknown, WalletError, broadcast_transaction, build_unsigned_psbt,
     check_fee_safety, estimate_fee_preview,
@@ -367,6 +367,19 @@ class WalletServiceTests(unittest.TestCase):
                 self.assertIsNotNone(summary["change_address"])
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
+
+    def test_equivalent_nunchuk_and_sparrow_exports_derive_same_change(self):
+        # Synthetic versions of the owner's two encodings of one wallet.
+        nunchuk = wallet_layout(parse_bsms(test_record(short_path=True)[0]))
+        sparrow = wallet_layout(parse_bsms(sparrow_record()[0]))
+        self.assertTrue(nunchuk.change_assumed)
+        self.assertTrue(sparrow.change_declared)
+        for index in range(20):
+            with self.subTest(index=index):
+                self.assertEqual(nunchuk.receive.derive(index).script_pubkey(),
+                                 sparrow.receive.derive(index).script_pubkey())
+                self.assertEqual(nunchuk.change.derive(index).script_pubkey(),
+                                 sparrow.change.derive(index).script_pubkey())
 
     def test_mainnet_explicit_branches_build_only_unsigned_psbt(self):
         record = parse_bsms(mainnet_record())
