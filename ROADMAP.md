@@ -1,6 +1,16 @@
 # Roadmap and agent handoff
 
-**Current 0.2.0 work:** The hot audit fixes are being implemented on `phase2-transaction-builder`. Read `PHASE-HANDOFF.md` and `SECURITY-REVIEW-0.2.0.md` for current behavior and acceptance. The detailed phase text below preserves earlier decisions and may describe older releases.
+**Current work:** 0.2.2 adds an explicit payment-confirmation wait and send pause after the first 0.2.1 Testnet4 broadcast. Read `PHASE-HANDOFF.md`, `SECURITY-REVIEW-0.2.0.md`, and `PATCH-0.2.2.md` for current behavior and acceptance. The detailed phase text below preserves earlier decisions and may describe older releases.
+
+## Planned 0.4.0 visual refresh
+
+The owner requested a slightly more modern interface for the spouse, lawyer, or accountant who may have no Bitcoin experience. This is a **future design task**, not part of the 0.2.2 patch or the 0.3.0 safety work. Preserve the approved simple step-by-step recovery flow, the BTC/sats/USD balance, and all review and hardware-device safety gates.
+
+- Improve typography, spacing, contrast, and card hierarchy with a calm, contemporary visual style. Avoid decorative motion or dense technical panels.
+- Give Open → Review → Sign → Sent a compact, readable progress indicator. Show each hardware signer’s connected/matched/signed state at a glance without requiring the person to understand xpubs or PSBTs.
+- Keep waiting states obvious: blockchain scan, device search, hardware approval, broadcast, and one-block confirmation. Every disabled next action needs a plain-language reason and a next step.
+- Keep wallet policy and technical evidence available in optional details. Do not hide destination, amount, change, fee, network, or final confirmation behind visual polish.
+- Review the design with the owner before implementation; then test the real Apple Silicon window at ordinary and smaller sizes, keyboard focus, text scaling, contrast, and the full two-device journey. Do not ask for extra payment tests solely to evaluate styling.
 
 **Previous build:** **v0.1.27**, 29 September 2026, on the `phase2-transaction-builder`
 branch. It prepares, reviews, **signs with hardware devices, finalises and broadcasts

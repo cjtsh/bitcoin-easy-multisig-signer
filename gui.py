@@ -40,7 +40,7 @@ from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsm
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
 from wallet_service import (WalletError, broadcast_transaction, build_unsigned_psbt,
-                            estimate_fee_preview, scan_wallet, wallet_summary)
+                            estimate_fee_preview, explorer_get, scan_wallet, wallet_summary)
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
 PRICE_URL = "https://mempool.space/api/v1/prices"
@@ -139,6 +139,7 @@ def public_scan(result: dict) -> dict:
         "network": result["network"],
         "confirmed_sats": result["confirmed_sats"],
         "pending_delta_sats": result["pending_delta_sats"],
+        "pending_outgoing": result.get("pending_outgoing", False),
         "observed_sats": result["observed_sats"],
         "addresses": result["addresses"],
         "utxo_count": len(result["utxos"]),
@@ -244,6 +245,9 @@ class LocalApp:
         self.chain = None
         self.explorer_consent = False
         self.scan = None
+        # Session-only bridge between broadcast and explorer mempool propagation.
+        # Never infer confirmation merely because an address scan misses the tx.
+        self.pending_broadcast_txid = None
         self.prepared_psbt = None
         self.prepared_id = None
         # The transaction id shown at review time. SegWit keeps signatures outside
@@ -426,6 +430,7 @@ class LocalApp:
                     state.chain = None
                     state.explorer_consent = False
                     state.scan = None
+                    state.pending_broadcast_txid = None
                     state.prepared_psbt = None
                     state.prepared_id = None
                     state.prepared_txid = None
@@ -450,6 +455,7 @@ class LocalApp:
             def _scan(self, data):
                 with state.lock:
                     record, revision, chain = state.record, state.revision, state.chain
+                    pending_txid = state.pending_broadcast_txid
                     if data.get("chain") != chain or chain not in CHAIN_CONFIGS:
                         raise WalletError("Selected network does not match the open wallet.")
                     if not state.explorer_consent:
@@ -469,10 +475,23 @@ class LocalApp:
                 if explorer != CHAIN_CONFIGS[chain].explorer_url:
                     verify_esplora(chain, explorer)
                 result = scan_wallet(record, base_url=explorer)
+                if pending_txid:
+                    # A newly broadcast tx may not yet appear in address statistics.
+                    # Fail closed on a missing/invalid status until a block confirms it.
+                    try:
+                        status = explorer_get(f"/tx/{pending_txid}/status", chain=chain,
+                                              base_url=explorer)
+                        confirmed = (isinstance(status, dict)
+                                     and status.get("confirmed") is True)
+                    except WalletError:
+                        confirmed = False
+                    result["pending_outgoing"] = result.get("pending_outgoing", False) or not confirmed
                 with state.lock:
                     if revision != state.revision or generation != state.scan_generation:
                         raise WalletError("Wallet or balance changed during scan; refresh again.")
                     state.scan = result
+                    if pending_txid and pending_txid == state.pending_broadcast_txid and confirmed:
+                        state.pending_broadcast_txid = None
                     state.note("wallet_scan", "consistent" if result["utxo_consistent"] else "inconsistent")
                     state.note("wallet_scan", "incomplete" if result["coverage_limited"] else "complete")
                 self._send(200, public_scan(result))
@@ -481,10 +500,14 @@ class LocalApp:
                 with state.lock:
                     wallet = wallet_summary(state.record) if state.record else None
                     balance = public_scan(state.scan) if state.scan else None
+                    pending_txid = state.pending_broadcast_txid
                     chain = state.chain
                     consent = state.explorer_consent
                 self._send(200, {"wallet": wallet, "balance": balance,
-                                 "chain": chain, "explorer_consent": consent})
+                                 "chain": chain, "explorer_consent": consent,
+                                 "pending_broadcast_explorer": (
+                                     CHAIN_CONFIGS[chain].web_url + "/tx/" + pending_txid
+                                     if pending_txid and chain in CHAIN_CONFIGS else None)})
 
             def _devices(self, data):
                 with state.lock:
@@ -663,6 +686,7 @@ class LocalApp:
                     state.prepared_txid = None
                     state.prepared_review = None
                     state.scan = None
+                    state.pending_broadcast_txid = sent
                     state.note("broadcast", "accepted")
                 self._send(200, {
                     "txid": sent,
@@ -741,6 +765,8 @@ class LocalApp:
                     explorer = state.servers[chain]["explorer"] if chain else None
                 if record is None or scan is None:
                     raise WalletError("Open a wallet and refresh its balance before preparing an unsigned transaction.")
+                if scan.get("pending_outgoing"):
+                    raise WalletError("A payment from this wallet is waiting for one confirmation. Check again later before preparing another payment.")
                 if data.get("chain") != chain:
                     raise WalletError("Selected network does not match the open wallet.")
                 if scan.get("source") != explorer:

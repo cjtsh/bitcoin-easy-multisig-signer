@@ -2,7 +2,7 @@
 
 Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** 2-of-3 multisig wallet. It does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on two hardware devices, and confirm the final transaction.
 
-**[Version 0.2.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.2.1) is an experimental test build.** Testnet4 signing and broadcast were demonstrated in earlier versions with Jade, Trezor Safe 3, and Ledger Nano S Plus; two transactions confirmed. The 0.2.0 build rejected legitimate Jade and Ledger signing responses because HWI reordered PSBT fields. Version 0.2.1 corrects that comparison and requires a fresh Mac and device walkthrough. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
+**Version 0.2.2 is an experimental test build.** Testnet4 signing and broadcast were demonstrated in earlier versions with Jade, Trezor Safe 3, and Ledger Nano S Plus; two transactions confirmed. The 0.2.0 build rejected legitimate Jade and Ledger signing responses because HWI reordered PSBT fields. Version 0.2.1 repaired that comparison and broadcast another Testnet4 payment after two verified signatures. Version 0.2.2 adds a clear waiting-for-confirmation notice and pauses the next payment until one block confirms the prior outgoing payment. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
 
 ## What this version does
 
@@ -11,6 +11,7 @@ Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical p
 - Builds a PSBT from confirmed, independently checked previous outputs. Partial sends require a change branch established by the descriptor or the BSMS path restrictions. A receive-only export can **Send All confirmed outputs found on its scanned receiving addresses**, producing no change output. The app does not guess change ownership.
 - Checks connected hardware signers through bundled Bitcoin Core HWI, asks them to sign, rejects a returned PSBT that changes reviewed wallet data, and verifies each signature before finalization. Each device must display the intended payment; the person using the app must check its screen.
 - Shows the destination, amount, network, every change output, fee, effective fee rate, and transaction ID together at the final confirmation. Testnet4 broadcast requires a separate explicit action. Mainnet broadcast remains disabled.
+- After an outgoing payment is accepted, shows a prominent notice that it is waiting for one confirmation and offers **Check again**. Another payment from that wallet is paused until the refreshed explorer state confirms it. Pending incoming funds alone do not pause confirmed outputs.
 - Can save an unsigned PSBT and, on request, a privacy-limited diagnostic report in Downloads. The report has fixed pass/fail codes and timestamps, without wallet identifiers, balances, transaction bytes, or device paths.
 
 The app uses **one** wallet/PSBT/signing engine for both networks. [`network_config.py`](network_config.py) supplies the address prefix, BIP48 coin type, Esplora endpoint, and genesis hash. `gui.py` retains explicit mainnet safety gates; there is no separate mainnet transaction implementation.
@@ -19,7 +20,7 @@ The app uses **one** wallet/PSBT/signing engine for both networks. [`network_con
 
 The published DMG is for Apple Silicon. Until Developer ID enrollment and notarization are complete, it is ad-hoc signed and macOS requires **right-click → Open** on first launch. Verify the download against the release's `SHA256SUMS` before opening it. Do not disable Gatekeeper globally.
 
-For the 0.2.1 owner check, use a controlled **Testnet4** wallet and a small self-owned destination. Open the wallet, refresh, prepare a partial send only if the wallet export declares change, inspect the full review, sign on two devices, inspect the final review, then explicitly broadcast. Wait for confirmation. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Do not send wallet files, xpubs, addresses, PSBTs, or raw signed transactions to an agent.
+For the 0.2.2 owner check, wait until the prior Testnet4 payment has one confirmation, then use a small self-owned destination with Trezor plus an already verified signer. Open the wallet, refresh, prepare a partial send only if the wallet export declares change, inspect the full review, sign on two devices, inspect the final review, then explicitly broadcast. The yellow notice should explain the wait and **Check again** should refresh it. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Do not send wallet files, xpubs, addresses, PSBTs, or raw signed transactions to an agent.
 
 If the import is receive-only, the app offers a no-change Send All path instead of guessing a change branch. **Do not sweep a real wallet merely to test this feature.**
 
@@ -37,7 +38,7 @@ If the import is receive-only, the app offers a no-change Send All path instead 
 
 ## Developer and reviewer entry point
 
-Read [`AGENTS.md`](AGENTS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), the [original audit](AUDIT-BASELINE-0.1.27.md), the [0.2.0 fix record](SECURITY-REVIEW-0.2.0.md), and [the 0.2.1 patch record](PATCH-0.2.1.md) before editing. [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) preserves earlier decisions; [`ROADMAP.md`](ROADMAP.md) preserves phase acceptance history. Current behavior in source and tests takes precedence over historical descriptions.
+Read [`AGENTS.md`](AGENTS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), the [original audit](AUDIT-BASELINE-0.1.27.md), the [0.2.0 fix record](SECURITY-REVIEW-0.2.0.md), [the 0.2.1 patch record](PATCH-0.2.1.md), and [the 0.2.2 patch record](PATCH-0.2.2.md) before editing. [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) preserves earlier decisions; [`ROADMAP.md`](ROADMAP.md) preserves phase acceptance history. Current behavior in source and tests takes precedence over historical descriptions.
 
 Use Python 3.12 for the Mac build (HWI 3.2.0 does not support 3.13+). Source tests:
 
@@ -47,7 +48,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m unittest discover -s tests -q
 ```
 
-The Mac build installs [`requirements-desktop.lock`](requirements-desktop.lock) with hashes. A reviewed `LIBUSB_SHA256` is mandatory. [`scripts/build-source.sh`](scripts/build-source.sh) creates the source archive; [`scripts/build-macos.sh`](scripts/build-macos.sh) creates the DMG on Apple Silicon. The GitHub workflow is **manual dispatch only** and publishes an immutable version with `BUILD-SBOM.json` and `SHA256SUMS` after its tests and bundled checks pass. Never republish under an existing version; use 0.2.2 for any correction after 0.2.1 is published.
+The Mac build installs [`requirements-desktop.lock`](requirements-desktop.lock) with hashes. A reviewed `LIBUSB_SHA256` is mandatory. [`scripts/build-source.sh`](scripts/build-source.sh) creates the source archive; [`scripts/build-macos.sh`](scripts/build-macos.sh) creates the DMG on Apple Silicon. The GitHub workflow is **manual dispatch only** and publishes an immutable version with `BUILD-SBOM.json` and `SHA256SUMS` after its tests and bundled checks pass. Never republish under an existing version; use 0.2.3 for any correction after 0.2.2 is published.
 
 ## External components
 
