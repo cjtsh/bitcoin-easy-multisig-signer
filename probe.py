@@ -212,14 +212,20 @@ def _hwi_reason(text: str) -> str:
     It never carries keys, but it can carry paths, so collapse anything that
     looks like a path, drop control characters and cap the length.
     """
-    for line in (text or "").splitlines():
-        line = " ".join(line.split())
-        if not line:
-            continue
-        line = _PATH_LIKE.sub("<path>", line)
-        line = "".join(char for char in line if char.isprintable())
-        return line[:160]
-    return ""
+    lines = [" ".join(line.split()) for line in (text or "").splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+    if lines[0].startswith("Traceback (most recent call last)"):
+        # A crash rather than a device message. Only the final line names the
+        # fault; repeating "Traceback (most recent call last):" tells nobody
+        # anything, and that is exactly what a locked Trezor used to produce.
+        reason = lines[-1]
+    else:
+        reason = lines[0]
+    reason = _PATH_LIKE.sub("<path>", reason)
+    reason = "".join(char for char in reason if char.isprintable())
+    return reason[:160]
 
 
 def invoke_hwi(executable: str, chain: str, *arguments: str) -> Any:

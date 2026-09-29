@@ -20,7 +20,12 @@ except ImportError:  # pragma: no cover - depends on the environment
     yaml = None
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# The source archive keeps the workflow at ci/build-candidate.yml; the checkout
+# keeps it under .github. Pick whichever exists so these checks also run against
+# the archived source, which is where an incomplete archive shows up.
 ACTIVE = ROOT / ".github/workflows/build-candidate.yml"
+if not ACTIVE.is_file():
+    ACTIVE = ROOT / "ci/build-candidate.yml"
 STAGED = ROOT / "ci/build-candidate.yml"
 
 

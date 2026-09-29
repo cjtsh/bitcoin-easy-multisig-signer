@@ -47,6 +47,16 @@ jobs:
       - run: python -m pip install --quiet pyyaml
       - run: python -m unittest discover -s tests -q
       - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
+      # Run the tests FROM the archive. An archive missing a test helper still
+      # builds and still uploads, so nothing caught it until the tests were run
+      # out of the extracted tarball.
+      - name: Run the tests from the archive itself
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          tar xzf "dist/bitcoin-easy-multisig-signer-v${version}.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/bitcoin-easy-multisig-signer-v${version}"
+          python -m unittest discover -s tests -q
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: source-archive

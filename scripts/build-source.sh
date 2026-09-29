@@ -18,9 +18,21 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
 cp README.md DISCLAIMER.md replit.md requirements.txt requirements-desktop.txt version.py \
-  gui.py desktop.py network_config.py network_settings.py probe.py \
+  gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
-cp tests/test_*.py "$stage/$root/tests/"
+
+# Every root module must ship. Omitting safe_http.py produced an archive whose own
+# code could not import, and nothing noticed because CI ran the tests from the
+# checkout rather than from the archive.
+missing=()
+for file in ./*.py; do
+  [[ -f "$stage/$root/$(basename "$file")" ]] || missing+=("$(basename "$file")")
+done
+if (( ${#missing[@]} )); then
+  echo "Source archive is incomplete; missing: ${missing[*]}" >&2
+  exit 1
+fi
+cp tests/test_*.py tests/support.py tests/fake_explorer.py "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
 cp scripts/build-source.sh scripts/build-macos.sh scripts/hwi_entry.py \

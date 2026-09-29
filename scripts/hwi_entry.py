@@ -14,6 +14,37 @@ if getattr(sys, "frozen", False):
         )
         ctypes.CDLL(str(bundled_libusb))
 
+def _tolerate_vanished_devices() -> None:
+    """Stop one stale device from taking the whole enumeration down with it.
+
+    hwilib's Trezor backend opens every device it finds and closes it again. If the
+    device has gone away in between -- which is exactly what a Trezor does when it
+    locks on a timeout and re-enumerates its USB connection -- the close raises
+    usb1.USBErrorNotFound, nothing catches it, and HWI exits 1 with a traceback and
+    NO output. The Ledger, Coldcard and BitBox results are lost along with it, so a
+    single locked device makes it look as though no wallet is connected at all.
+
+    Releasing an interface on a device that is no longer present is not something
+    anyone can act on, so it is tolerated here, in the tool we build ourselves.
+    """
+    try:
+        import usb1
+    except Exception:  # A build without the USB stack has nothing to guard.
+        return
+
+    original = usb1.USBDeviceHandle.releaseInterface
+
+    def releaseInterface(self, interface):  # noqa: N802 -- the library's own name
+        try:
+            return original(self, interface)
+        except usb1.USBErrorNotFound:
+            return None
+
+    usb1.USBDeviceHandle.releaseInterface = releaseInterface
+
+
+_tolerate_vanished_devices()
+
 from hwilib._cli import main
 
 
