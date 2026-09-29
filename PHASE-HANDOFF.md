@@ -26,8 +26,17 @@ a send flow; every wallet path, xpub and address lives behind **See wallet detai
 
 ## 2. Where it stands
 
+| Phase (see `ROADMAP.md`) | Status |
+| --- | --- |
+| 1 — Framework and balance view | **Complete** — owner-approved |
+| 2 — Send eligibility explained and unblocked | **Complete** |
+| 3 — Prepare, review and save an unsigned transaction | **Complete** — accepted on the owner's Mac |
+| 4 — Signing and broadcast (Testnet4) | **Complete** — accepted on hardware, two confirmed payments |
+| 5 — Real Bitcoin: dry run, then the deliberate switch | **NOT STARTED** |
+
 **Phases 1 to 4 are complete and accepted on real hardware.** The app prepares,
 signs, finalises and broadcasts, and two real Testnet4 payments have confirmed.
+**Phase 5 is the only work outstanding**; section 5 lays it out as X, Y and Z.
 
 | Capability | State |
 | --- | --- |
@@ -75,6 +84,8 @@ agreed exactly: confirmed balance 20,744, mempool −2,570, spendable 18,174.
   because they exist on the machine, not because the app depends on them.
 
 ## 5. Next work, in priority order
+
+**This section is Phase 5 of `ROADMAP.md`** — the only phase not yet complete.
 
 ### X. Mainnet dry run — no broadcast, no code change, highest value
 
