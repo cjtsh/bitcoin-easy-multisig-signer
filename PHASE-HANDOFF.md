@@ -12,9 +12,32 @@ workflow derives the tag, the artifact names and the release title from it.
 real wallet on 28 September, which was the last acceptance item.
 
 **First real testnet send (28 Sep, v0.1.24):** a 2-of-3 payment was prepared,
-signed by the Jade and the Trezor Safe 3, broadcast to Testnet4, and appeared as
-pending in the receiving wallet. The change returned to the wallet's own change
-branch. That is the project's goal met on real hardware.
+signed by the Jade and the Trezor Safe 3, broadcast to Testnet4 **and confirmed in
+block 154322**. The change returned to the wallet's own change branch.
+
+**Second send, and Phase 4 acceptance (29 Sep, v0.1.25+):** a second 2-of-3 payment,
+signed this time by the **Jade and the Ledger Nano S Plus**, was **confirmed in block
+154330** with the change returned again. Phase 4 is therefore accepted on hardware:
+two payments, both confirmed, between them using **all three devices** — Jade, Trezor
+Safe 3 and Ledger Nano S Plus. The Ledger signed only after the global-xpub fix below,
+so that fix is now proven against the device it was written for, not just against
+hwilib's acceptance logic.
+
+Both transactions were independently verified after broadcast by decoding the raw
+transaction and checking each signature against the wallet's own witness script; the
+second is recorded here as `493bddeda158b0ad04cac4c74ae6c3408bd97e1f88f792e1e7fd8c9642f6a825`.
+
+**Why testnet confirmations stall (28-29 Sep).** The second payment sat unconfirmed
+for over an hour while block after block was mined empty. That was not the wallet,
+the app or the devices: testnet4's difficulty was sitting at its floor of 1, and its
+min-difficulty rule allows a difficulty-1 block once 20 minutes have passed. Miners
+race that window and deliberately publish **empty** blocks, because an empty block
+propagates faster and wins the race. An independent write-up describes ~85-90% of
+blocks being CPU-mined min-difficulty blocks for this reason, and a soft fork to cap
+block timestamps has been proposed but not adopted. Practical consequences for this
+project: testnet confirms on someone else's schedule, raising the fee cannot help
+while nobody is selecting transactions, and testnet timing says nothing about mainnet
+— where blocks are full and fees are the miners' business.
 
 **Transactions were not replaceable (28 Sep).** The owner's second testnet send
 sat unconfirmed. The transaction was valid, in the mempool, in no conflict, paying

@@ -35,8 +35,10 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   request. The app asks each device to sign, finalises when the threshold is met,
   re-displays the finalised transaction, and broadcasts to Testnet4 after an explicit
   confirmation of that exact transaction id. **Broadcasting real Bitcoin is refused
-  outright** and stays refused until a full testnet send has been completed. What
-  remains is the owner's first live testnet send with two of the three devices.
+  outright.** Accepted on hardware 29 September: two payments confirmed on Testnet4
+  (blocks 154322 and 154330), between them signed by all three devices — Jade,
+  Trezor Safe 3, and Ledger Nano S Plus. Mainnet broadcast remains refused until the
+  owner authorises it deliberately.
 
 **Progress note.** The phases were fixed in sequence on this branch: the transaction
 journey was unreachable (v0.1.10); the bundled trust store was never actually used,
