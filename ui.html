@@ -1327,9 +1327,13 @@
       const reviewId = preparationId, actionId = sendActionId;
       if (!reviewId) return;
       button.disabled = true;
-      setBusy("Waiting for the device to sign…");
+      const ledger = String(device.type || "").toLowerCase().includes("ledger");
+      setBusy(ledger ? "Ledger may show many small review screens, sometimes twice. Take your time checking them; the app will wait up to 10 minutes…" :
+        "Waiting for the device to sign…");
       $("sign-progress").className = "";
-      setText("sign-progress", "Approve the transaction on the device screen.");
+      setText("sign-progress", ledger ?
+        "Read each Ledger screen carefully. Check the destination, amount and fee each time, then wait for the app to confirm the signature. There is no need to rush." :
+        "Approve the transaction on the device screen.");
       try {
         const result = await post("/api/sign", {preparation_id: reviewId,
           device_type: device.type, device_path: device.path});

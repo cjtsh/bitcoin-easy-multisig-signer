@@ -229,7 +229,8 @@ def _hwi_reason(text: str) -> str:
 
 
 def invoke_hwi(executable: str, chain: str, *arguments: str,
-               stdin_command: str | None = None) -> Any:
+               stdin_command: str | None = None,
+               timeout_seconds: int = 45) -> Any:
     """Run HWI without a shell; optionally send a sensitive command on stdin.
 
     HWI 3.2.0's --stdin mode appends a shlex-parsed command from standard input.
@@ -242,7 +243,7 @@ def invoke_hwi(executable: str, chain: str, *arguments: str,
             [_hwi_path(executable), "--chain", chain, *arguments],
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=timeout_seconds,
             check=False,
             **options,
         )
@@ -278,6 +279,7 @@ def sign_psbt_with_device(executable: str, chain: str, device_type: str,
         executable, chain,
         "--device-type", str(device_type), "--device-path", str(device_path),
         "--stdin", stdin_command="signtx " + psbt_base64 + "\n",
+        timeout_seconds=600,
     )
     if not isinstance(response, dict) or not isinstance(response.get("psbt"), str):
         raise ProbeError("The device did not return a signed transaction.")
