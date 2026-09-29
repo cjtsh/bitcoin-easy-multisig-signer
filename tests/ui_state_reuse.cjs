@@ -70,4 +70,17 @@ assert.equal(elements.get('confirm-broadcast').checked, false);
 assert.equal(elements.get('broadcast').disabled, true);
 assert.equal(vm.runInContext('finalTxid', context), null);
 assert.equal(vm.runInContext('preparationId', context), null);
+// A quick confirmation hides the pending banner, but the last-payment link
+// remains visible as a receipt until the wallet/network changes.
+vm.runInContext(`
+  showReceipt('https://mutinynet.com/tx/synthetic-test-id', true);
+  showPendingPayment(false);
+  showReceipt(receiptExplorerUrl, false);
+`, context);
+assert.equal(elements.get('pending-payment').hidden, true);
+assert.equal(elements.get('payment-receipt').hidden, false);
+assert.equal(elements.get('receipt-explorer').href,
+  'https://mutinynet.com/tx/synthetic-test-id');
+elements.get('chain').listeners.change();
+assert.equal(elements.get('payment-receipt').hidden, true);
 console.log('Preparing a new payment hides and clears the previous signing/final state.');
