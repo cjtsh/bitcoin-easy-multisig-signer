@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.18
+# Project status and handoff — v0.1.19
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.18`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.19`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.18-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.19-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Immediate next step (updated 28 September, 20:05)
@@ -13,7 +13,7 @@ Phase 3 is done and evidenced; this is the last item.
 
 1. The owner creates a new 2-of-3 multisig on the three physical devices and exports
    its BSMS file.
-2. In **v0.1.18**: Testnet4 -> choose that file -> **Open wallet & check balance**.
+2. In **v0.1.19**: Testnet4 -> choose that file -> **Open wallet & check balance**.
 3. **3. Check your hardware wallets** -> **Look for my hardware wallets**. One device
    at a time, unlocked on the device itself. No funding is needed for this step.
 4. Report the exact lines. `"not a signer in this BSMS file"` and `"fingerprint
@@ -22,6 +22,16 @@ Phase 3 is done and evidenced; this is the last item.
 
 Already proven in the shipped app, so a failure is the device and not the packaging:
 `--check-devices` runs the bundled HWI, loads the bundled libusb and parses its JSON.
+
+**BSMS dialects (28 Sep):** Sparrow writes the descriptor *without* a checksum and
+states the derivation restrictions on their own line, with the paths already in the
+descriptor as `<0;1>/*`; Nunchuk writes a checksum and the words "No path
+restrictions". Both are valid and both are now accepted. The checksum is optional
+because the reference address must still derive from the descriptor and a mismatch
+stops the wallet outright — which catches the same transcription errors, against an
+independently supplied address. The app also computes and displays the descriptor
+checksum so the owner can compare it with their wallet software's backup: the
+owner's Sparrow file yields `dvthsm8x`, exactly what Sparrow's own PDF prints.
 
 **Lesson that cost time (28 Sep):** a Ledger must be *unlocked and* have the
 Bitcoin app open — and for this wallet, the **Bitcoin Testnet** app. Entering the PIN
