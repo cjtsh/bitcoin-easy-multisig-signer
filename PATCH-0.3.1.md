@@ -17,4 +17,12 @@ A custom amount from the owner's current Nunchuk BSMS requires an independent sa
 
 ## Release and owner gate
 
-Automated and release evidence will be recorded after the manual 0.3.1 workflow if this patch is published. Do not ask the owner to install or sweep merely to verify a UI correction. The physical Mutinynet signing/broadcast and second-payment screen-reset checks remain open. Mainnet broadcast remains disabled pending a separate live-network safety gate.
+The manual [GitHub workflow](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36605051264) passed all five jobs and published [v0.3.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.1) from commit `b623c0dbe546510d9241f47b1a7fcabe739185e3`. The checkout and extracted source archive each passed 164 Python tests (8 skipped) plus both Node UI tests. GitHub verified the Apple Silicon DMG, ad-hoc signature, bundled HWI and its stdin path, libusb hash, frozen self-checks and trust store. The source, DMG and SBOM assets were downloaded independently and matched `SHA256SUMS`; `hdiutil verify` passed on the downloaded DMG. The published SHA-256 values are:
+
+```text
+94455a1e0265a93a4ad6ca027a32a7558c9dda42a5c461e4d6cc0180b71c62de  bitcoin-easy-multisig-signer-v0.3.1.tar.gz
+5a1569b6f2a9931cd7ddb8233659ba8d61b4c8e69aa213aaad447d5ec7b0fb7c  Bitcoin-Easy-Signer-v0.3.1-UNSIGNED-TEST.dmg
+e5811e7bd7f9d0ac06f260a78162d407bd520383c3c3eb1ec937b166d7767397  BUILD-SBOM.json
+```
+
+Do not ask the owner to install or sweep merely to verify a UI correction. The physical Mutinynet signing/broadcast and second-payment screen-reset checks remain open. Mainnet broadcast remains disabled pending a separate live-network safety gate.
