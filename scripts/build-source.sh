@@ -19,7 +19,7 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
 cp README.md DISCLAIMER.md replit.md requirements.txt requirements-desktop.txt version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
-  wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
+  signing.py wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
 
 # Every root module must ship. Omitting safe_http.py produced an archive whose own
 # code could not import, and nothing noticed because CI ran the tests from the
