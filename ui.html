@@ -867,7 +867,10 @@
       $("send-all").checked = false;
       $("amount").value = "";
       setText("available-btc", "Confirmed BTC found by scan: " + btc(data.confirmed_sats) +
-        (data.pending_delta_sats ? " · pending Bitcoin is not spendable yet." : "."));
+        (data.pending_delta_sats < 0 ?
+          " · a payment you already made is still confirming." :
+         data.pending_delta_sats > 0 ?
+          " · incoming Bitcoin is not spendable until it confirms." : "."));
       updateSendMode();
       invalidateReview();
       setText("observed-btc", btc(data.observed_sats));
@@ -891,6 +894,9 @@
         "Partial coverage: do not treat this as a complete wallet balance." :
         "Balance from a standard gap scan; older or unusual addresses may be missed.") +
         (selectedChain() === "main" ? " Explorer data can be stale." : "") +
+        (data.pending_delta_sats < 0 ?
+          " A payment is still confirming: the spendable amount is lower than the" +
+          " confirmed balance until it settles." : "") +
         changeEvidence);
       renderPrice();
       renderFeeGuidance();

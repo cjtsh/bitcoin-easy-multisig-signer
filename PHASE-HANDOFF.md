@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.25
+# Project status and handoff — v0.1.26
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.25`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.26`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.25-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.26-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Immediate next step (updated 28 September, 22:15)
@@ -15,6 +15,19 @@ real wallet on 28 September, which was the last acceptance item.
 signed by the Jade and the Trezor Safe 3, broadcast to Testnet4, and appeared as
 pending in the receiving wallet. The change returned to the wallet's own change
 branch. That is the project's goal met on real hardware.
+
+**A pending spend looked like corruption (28 Sep).** After the first send, the app
+refused to prepare another transaction and hid the prepare card entirely, with
+"Explorer UTXOs and confirmed balance disagree". Nothing was wrong: a confirmed
+output had been spent by a transaction that was still unconfirmed, so mempool.space's
+address totals still counted it while its UTXO list had already dropped it. The
+consistency check compared those two numbers directly and treated the normal
+difference as corruption, which blocked the owner until the spend confirmed.
+
+Sparrow showed the same wallet the same way — confirmed balance, a mempool figure of
+-2,570, and 18,174 spendable — and our numbers now agree with it exactly. The check
+now allows a shortfall that unconfirmed spends account for, and still refuses UTXOs
+that exceed the totals or a shortfall nothing explains. A test covers all three.
 
 **Why a Ledger would not sign (28 Sep).** The device was recognised — fingerprint and
 xpub both matched — but pressing "Sign with Ledger Nano S Plus" produced no prompt on

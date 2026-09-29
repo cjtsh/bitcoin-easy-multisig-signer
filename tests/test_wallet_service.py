@@ -36,6 +36,60 @@ def mainnet_record(suffix="/<0;1>/*"):
     return f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\nNo path restrictions\n{receive}\n"
 
 
+class PendingSpendTests(unittest.TestCase):
+    """A confirmed output spent by an unconfirmed transaction is normal.
+
+    The address totals still count it, because the spend is not confirmed, while the
+    UTXO list already excludes it. Reading that as corruption hid the whole prepare
+    card and locked the owner out of his own wallet after one send, until the pending
+    spend confirmed. Sparrow shows the same wallet the same way: confirmed balance,
+    minus the mempool figure, equals what is spendable.
+    """
+
+    def setUp(self):
+        self.text, _ = test_record(bsms_template=True)
+        self.wallet = parse_bsms(self.text)
+        self.layout = wallet_layout(self.wallet)
+        self.receive = self.layout.receive.derive(0).address(NETWORKS["test"])
+
+    def stub(self, *, mempool_spent, utxos):
+        def get(path, *, text=False):
+            if path == f"/address/{self.receive}/utxo":
+                return utxos
+            if path.endswith("/utxo"):
+                return []
+            if path.startswith("/address/"):
+                used = path == f"/address/{self.receive}"
+                return {
+                    "chain_stats": {"funded_txo_sum": 6000 if used else 0,
+                                    "spent_txo_sum": 0, "tx_count": 1 if used else 0},
+                    "mempool_stats": {"funded_txo_sum": 0,
+                                      "spent_txo_sum": mempool_spent if used else 0,
+                                      "tx_count": 1 if (used and mempool_spent) else 0},
+                }
+            raise AssertionError(path)
+        return get
+
+    def test_a_confirmed_output_spent_in_the_mempool_is_not_corruption(self):
+        result = scan_wallet(self.wallet, self.stub(mempool_spent=6000, utxos=[]))
+        self.assertTrue(result["utxo_consistent"])
+        self.assertEqual(result["confirmed_sats"], 6000)
+        self.assertEqual(result["pending_delta_sats"], -6000)
+
+    def test_utxos_exceeding_the_totals_is_still_refused(self):
+        # The address totals say 6,000 but the UTXO list offers 12,000: the explorer
+        # is reporting money it does not count, and nothing should be built on it.
+        result = scan_wallet(self.wallet, self.stub(
+            mempool_spent=0,
+            utxos=[{"txid": "aa" * 32, "vout": 0, "value": 12_000,
+                    "status": {"confirmed": True}}]))
+        self.assertFalse(result["utxo_consistent"])
+
+    def test_an_unexplained_shortfall_is_still_refused(self):
+        result = scan_wallet(self.wallet, self.stub(mempool_spent=100, utxos=[]))
+        self.assertFalse(result["utxo_consistent"])
+
+
 class WalletServiceTests(unittest.TestCase):
     def setUp(self):
         # Exercise the standard BSMS descriptor-template form used to declare

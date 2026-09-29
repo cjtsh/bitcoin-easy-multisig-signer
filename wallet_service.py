@@ -340,10 +340,32 @@ def _address_stats(address: str, get: Callable) -> dict:
         return {
             "confirmed": confirmed["funded_txo_sum"] - confirmed["spent_txo_sum"],
             "pending_delta": pending["funded_txo_sum"] - pending["spent_txo_sum"],
+            # Outputs being spent by a transaction that is not confirmed yet. The
+            # address totals still count them; the UTXO list already excludes them.
+            "pending_spent": pending["spent_txo_sum"],
             "used": confirmed["tx_count"] > 0 or pending["tx_count"] > 0,
         }
     except (KeyError, TypeError, ValueError) as exc:
         raise WalletError("Explorer returned malformed address statistics.") from exc
+
+
+def _utxos_agree_with_totals(confirmed_from_totals: int, confirmed_utxos: int,
+                             pending_spent: int) -> bool:
+    """Do the address totals and the UTXO list describe the same money?
+
+    They legitimately differ while a payment is unconfirmed. An output that an
+    unconfirmed transaction is spending still counts in the address totals -- the
+    spend is not confirmed -- but it is already gone from the UTXO list. Treating
+    that as corruption blocked every further transaction until the pending spend
+    confirmed, which for the owner meant the app looked frozen after one send.
+
+    A shortfall is therefore fine when unconfirmed spends account for it. UTXOs
+    exceeding the totals is not: that would mean the explorer reports money it does
+    not count, and no transaction should be built on it.
+    """
+    if confirmed_utxos > confirmed_from_totals:
+        return False
+    return (confirmed_from_totals - confirmed_utxos) <= pending_spent
 
 
 def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
@@ -411,9 +433,10 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
         "network": chain,
         "confirmed_sats": confirmed, "pending_delta_sats": pending_delta,
         "observed_sats": confirmed + pending_delta,
-        "utxo_consistent": sum(
-            u["value"] for u in utxos if u["status"]["confirmed"]
-        ) == confirmed,
+        "utxo_consistent": _utxos_agree_with_totals(
+            confirmed, sum(u["value"] for u in utxos if u["status"]["confirmed"]),
+            sum(item.get("pending_spent", 0) for item in addresses),
+        ),
         "addresses": [
             item for item in addresses
             if item["used"] or (item["branch"] == "receive" and item["index"] == 0)
