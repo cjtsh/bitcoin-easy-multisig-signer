@@ -38,6 +38,7 @@ jobs:
       - run: python -m pip install --quiet pyyaml
       - run: python -m unittest discover -s tests -q
       - run: node tests/ui_state_reuse.cjs
+      - run: node tests/ui_send_mode.cjs
       - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
       # Run the tests FROM the archive. An archive missing a test helper still
       # builds and still uploads, so nothing caught it until the tests were run
@@ -50,6 +51,7 @@ jobs:
           cd "$RUNNER_TEMP/bitcoin-easy-multisig-signer-v${version}"
           python -m unittest discover -s tests -q
           node tests/ui_state_reuse.cjs
+          node tests/ui_send_mode.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: source-archive
@@ -83,6 +85,7 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m unittest discover -s tests -q
       - run: node tests/ui_state_reuse.cjs
+      - run: node tests/ui_send_mode.cjs
       - name: Build the DMG
         # Mandatory integrity gate: build-macos.sh refuses an unset/mismatched digest.
         env:
@@ -202,6 +205,10 @@ jobs:
             custom-Signet checkpoint distinguishes Mutinynet from ordinary Signet.
             A new Mutinynet wallet and practice coins are required; Testnet4 coins
             do not transfer across networks.
+          - Mutinynet is the opening network. A receive-only BSMS export now explains
+            why a smaller payment is unavailable and never preselects Send All;
+            the owner must choose a sweep explicitly. A smaller payment needs
+            a wallet definition that establishes the change branch.
           - Clears old signer/final details whenever a new payment is prepared.
             Rechecks selected confirmed outputs before preparation and broadcast;
             a lost broadcast response is treated as outcome unknown, never retried.

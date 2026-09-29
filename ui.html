@@ -154,7 +154,7 @@
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Your wallet, before the keys.</h1>
     <p>Open an existing multisig wallet, check its balance, and review an unsigned send.</p>
-    <div id="network-badge" class="network">● TESTNET4 · NO REAL BITCOIN</div>
+    <div id="network-badge" class="network">● MUTINYNET · NO REAL BITCOIN</div>
     <div><button id="refresh-top" class="secondary" hidden>↻ Refresh balance</button></div>
   </header>
   <main>
@@ -178,8 +178,8 @@
       <p class="muted">Choose your wallet file—not a recovery phrase or private key.</p>
       <div class="grid">
         <div><label for="chain">Bitcoin network</label>
-          <select id="chain"><option value="testnet4">TESTNET4 · existing test wallets</option>
-            <option value="mutinynet">MUTINYNET · fast practice network</option>
+          <select id="chain"><option value="mutinynet">MUTINYNET · fast practice network</option>
+            <option value="testnet4">TESTNET4 · existing test wallets</option>
             <option value="main">LIVE MAINNET · real BTC</option></select></div>
         <div id="wallet-input">
           <label for="wallet-file">BSMS wallet file</label>
@@ -326,6 +326,7 @@
         <div><label for="amount">Amount to receive (BTC)</label>
           <label class="check"><input id="send-all" type="checkbox">
             <span>Send all confirmed Bitcoin found by this scan</span></label>
+          <p id="send-mode-note" class="notice" role="status" hidden></p>
           <p id="available-btc" class="small muted"></p>
           <input id="amount" type="text" inputmode="decimal" placeholder="Calculated after fee" autocomplete="off" disabled>
           <p id="send-equivalent" class="small equivalent" aria-live="polite"></p></div>
@@ -640,6 +641,10 @@
           "Refresh the wallet to calculate the confirmed balance.");
         return;
       }
+      if (!walletCanPrepare) {
+        setText("send-equivalent", "To send a smaller amount, open a wallet file that includes its change addresses.");
+        return;
+      }
       const sats = btcToSats($("amount").value);
       setText("send-equivalent", sats !== null && sats >= 546 ?
         fmt(sats) + " sats · " + usdLabel(sats) :
@@ -721,9 +726,11 @@
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
     }
     function updateSendMode() {
-      if (!walletCanPrepare) $("send-all").checked = true;
-      $("amount").disabled = $("send-all").checked;
-      $("amount").placeholder = $("send-all").checked ? "Calculated after fee" : "e.g. 0.00100000";
+      // Missing change ownership makes partial sends unsafe, but must never
+      // silently select a sweep. The owner must choose Send All explicitly.
+      $("amount").disabled = !walletCanPrepare || $("send-all").checked;
+      $("amount").placeholder = !walletCanPrepare ? "Change addresses required for a smaller send" :
+        ($("send-all").checked ? "Calculated after fee" : "e.g. 0.00100000");
       updateSendEquivalent();
     }
     function resetSendChoice() {
@@ -872,6 +879,12 @@
       setText("send-unavailable", walletCanPrepare ? "" :
         (data.prepare_reason ||
          "This wallet's type is not supported for preparing a transaction."));
+      $("send-mode-note").hidden = walletCanPrepare || !walletCanSendAll;
+      setText("send-mode-note", walletCanPrepare || !walletCanSendAll ? "" :
+        "A smaller payment needs a verified change address. This wallet file does not provide one, " +
+        "so the amount box is unavailable. Open a wallet export that explicitly includes " +
+        "both receiving and change addresses to send a smaller amount. " +
+        "Send All remains available only if you choose it yourself.");
       changeAssumed = Boolean(data.change_assumed);
       $("change-note").hidden = !data.change_note;
       setText("change-note", data.change_note || "");
@@ -920,8 +933,8 @@
       setText("balance-send-status", sendBlockReason);
       $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       lastScan = data;
-      $("send-all").checked = !walletCanPrepare;
-      $("send-all").disabled = !walletCanPrepare;
+      $("send-all").checked = false;
+      $("send-all").disabled = !walletCanSendAll;
       $("amount").value = "";
       setText("available-btc", "Confirmed BTC found by scan: " + btc(data.confirmed_sats) +
         (data.pending_delta_sats < 0 ?

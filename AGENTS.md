@@ -4,7 +4,7 @@
 
 1. `README.md` for current user-visible behavior and supported scope.
 2. `PHASE-HANDOFF.md` for current status, version gates and owner test.
-3. `PATCH-0.3.0.md` for release evidence and pending owner acceptance, then `AUDIT-BASELINE-0.1.27.md` and `SECURITY-REVIEW-0.2.0.md` for the original findings. Read `PLAN-0.3.0.md` and `MUTINYNET-0.3.0.md` for the warm-work design and limits.
+3. `PATCH-0.3.1.md` for the Send All correction, `PATCH-0.3.0.md` for release evidence and pending owner acceptance, then `AUDIT-BASELINE-0.1.27.md` and `SECURITY-REVIEW-0.2.0.md` for the original findings. Read `PLAN-0.3.0.md` and `MUTINYNET-0.3.0.md` for the warm-work design and limits.
 4. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture
@@ -14,7 +14,8 @@ One engine serves Testnet4, Mutinynet and mainnet. `probe.py` parses BSMS and ch
 ## Invariants
 
 - No seed, PIN or private key input, wallet creation, silent signing, or unapproved mainnet broadcast.
-- A receive-only reference address proves only receive. Partial sends need declared change ownership. Without it, only a no-change Send All of confirmed outputs found by the scan is available.
+- A receive-only reference address proves only receive. Partial sends need a declared change policy. Nunchuk’s ordinary BSMS uses `/*` with `No path restrictions`; its writer uses that shape even if a wallet has custom branch indices. A first `/0/0` match does not prove `/1/*` change. Do not infer change or claim Nunchuk custom-send support from that file alone. Keep the same guard for every network. Without declared or guarded change, only a deliberate no-change Send All of confirmed outputs found by the scan is available.
+- Never preselect Send All when change ownership is missing. Explain the missing change branch next to the amount choice, and require a deliberate Send All checkbox action before review. Mutinynet is the opening network; all networks remain selectable.
 - A PSBT input must match an independently fetched historical transaction and the wallet's derived script/value. A signer may add valid partial signatures but may not change the reviewed PSBT metadata or remove prior signatures. PSBT map entry order is irrelevant; HWI rewrites it.
 - Before broadcast, verify every signature, witness/prevout, output, fee and txid against immutable reviewed state. The final screen must show the same fields. A concurrent request must not change the payment during submission.
 - Treat public explorers and fee quotes as observations. Never call a gap-limited scan a complete wallet sweep. Never silently fall back to a different server.
