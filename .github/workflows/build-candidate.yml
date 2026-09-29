@@ -202,7 +202,7 @@ jobs:
           - Uses bundled HWI 3.2.0 over stdin to request two hardware signatures.
             Only signatures verifying against the reviewed PSBT are retained;
             signer-returned metadata is discarded before finalization.
-          - Gives device discovery up to one minute and deliberate on-device signing
+          - Gives each device discovery and authorization check up to three minutes and deliberate on-device signing
             up to ten minutes, including Ledger's multiple review screens.
           - Offers Testnet4 and Mutinynet practice networks through one engine. A
             custom-Signet checkpoint distinguishes Mutinynet from ordinary Signet.
