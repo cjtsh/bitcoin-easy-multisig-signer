@@ -59,7 +59,7 @@ DIAGNOSTIC_STAGES = frozenset({
     "request",
 })
 DIAGNOSTIC_OUTCOMES = frozenset({
-    "passed", "declared", "missing", "complete", "incomplete",
+    "passed", "declared", "standard", "missing", "complete", "incomplete",
     "consistent", "inconsistent", "verified", "rejected", "accepted", "unknown",
 })
 
@@ -582,7 +582,8 @@ class LocalApp:
                         state.pending_broadcast_txid, state.pending_broadcast_unknown = pending
                     state.explorer_consent = True
                     state.note("wallet_import", "passed")
-                    state.note("change_path", "declared" if summary["can_prepare"] else "missing")
+                    state.note("change_path", "standard" if summary["change_assumed"]
+                               else "declared" if summary["can_prepare"] else "missing")
                 self._send(200, summary)
 
             def _scan(self, data):

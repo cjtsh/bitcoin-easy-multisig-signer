@@ -1,11 +1,11 @@
-"""Change is used only when the wallet export declares it.
+"""BIP48 standard change works from one BSMS file; nonstandard paths fail closed.
 
 Synthetic keys only; no wallet export is ever checked in.
 """
 
 import unittest
 
-from embit import psbt
+from embit import bip32, psbt
 from embit.descriptor import Descriptor
 from embit.descriptor.checksum import checksum
 from embit.networks import NETWORKS
@@ -20,26 +20,35 @@ from wallet_service import (
 
 
 class ChangeBranchTests(unittest.TestCase):
-    """A receive-only export must not demand a technical assertion from the owner."""
+    """A standard export requires no second file or technical assertion."""
 
-    def test_receive_only_wallet_only_allows_no_change_send_all(self):
+    def test_nunchuk_shape_uses_standard_bip48_change(self):
         record = parse_bsms(test_record(short_path=True)[0])  # bare /* export
         layout = wallet_layout(record)
         summary = wallet_summary(record)
-        self.assertFalse(summary["can_prepare"])
+        self.assertTrue(summary["can_prepare"])
         self.assertTrue(summary["can_send_all"])
-        self.assertIsNone(layout.change)
-        self.assertIsNone(summary["change_address"])
-        self.assertIn("send all", summary["prepare_reason"].lower())
+        self.assertTrue(summary["change_assumed"])
+        self.assertEqual([key.suffix for key in layout.change.keys], ["/1/*"] * 3)
+        self.assertNotEqual(summary["receive_address"], summary["change_address"])
 
-    def test_path_qualified_receive_only_wallet_does_not_guess_change(self):
+    def test_path_qualified_standard_wallet_uses_same_bip48_change(self):
         record = parse_bsms(test_record()[0])  # /0/* only
         summary = wallet_summary(record)
-        self.assertFalse(summary["can_prepare"])
-        self.assertIsNone(wallet_layout(record).change)
+        self.assertTrue(summary["can_prepare"])
+        self.assertEqual([key.suffix for key in wallet_layout(record).change.keys],
+                         ["/1/*"] * 3)
 
-    def test_receive_only_wallet_can_sweep_without_creating_change(self):
-        record = parse_bsms(test_record(short_path=True)[0])
+    def test_nonstandard_wallet_can_only_sweep_without_creating_change(self):
+        roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
+        keys = [f"[{root.my_fingerprint.hex()}/48h/1h/0h/3h]"
+                f"{root.derive('m/48h/1h/0h/3h').to_public().to_base58()}/*"
+                for root in roots]
+        descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
+        reference = Descriptor.from_string(descriptor.replace("/*", "/0/*"))
+        address = reference.derive(0).address(NETWORKS["test"])
+        record = parse_bsms(
+            f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\nNo path restrictions\n{address}\n")
         layout = wallet_layout(record)
         network = NETWORKS["test"]
         receive = layout.receive.derive(0).address(network)
@@ -53,8 +62,21 @@ class ChangeBranchTests(unittest.TestCase):
                                     explorer, send_all=True)
         self.assertEqual(built["change_sats"], 0)
         self.assertEqual(len(psbt.PSBT.from_base64(built["psbt_base64"]).tx.vout), 1)
-        with self.assertRaisesRegex(WalletError, "declared change"):
+        with self.assertRaisesRegex(WalletError, "supported BIP48 change"):
             build_unsigned_psbt(record, scan, recipient, 1_000, 2, explorer)
+
+    def test_nunchuk_shape_builds_custom_amount_with_change_from_one_file(self):
+        record = parse_bsms(test_record(short_path=True)[0])
+        layout = wallet_layout(record)
+        explorer = three_output_wallet(layout, NETWORKS["test"])
+        scan = scan_wallet(record, explorer)
+        recipient = layout.receive.derive(8).address(NETWORKS["test"])
+        built = build_unsigned_psbt(record, scan, recipient, 1_000, 2, explorer)
+        packet = psbt.PSBT.from_base64(built["psbt_base64"])
+        self.assertGreater(built["change_sats"], 0)
+        self.assertEqual(len(packet.tx.vout), 2)
+        self.assertEqual(packet.tx.vout[1].script_pubkey.address(NETWORKS["test"]),
+                         built["change_address"])
 
     def test_declared_paths_are_trusted_and_not_called_an_assumption(self):
         for label, kwargs in (("multipath", {"dual_branch": True}),

@@ -4,6 +4,8 @@
 
 **0.3.1 correction published:** the owner encountered a receive-only BSMS export on Mutinynet. Keep the prohibition on partial sends without a verified declared change path, but never preselect a Send All sweep. Show the reason beside the amount and default the opening network to Mutinynet. `PATCH-0.3.1.md` records the fix and owner path. Do not ask for another transaction merely to verify the UI; Nunchuk's BSMS omits change restrictions; its first receive address alone cannot establish its internal branch. Find a same-wallet public policy proof accepted by the owner before a custom-send walkthrough.
 
+**0.3.2 current candidate supersedes that last sentence:** the recovery operator will have **only a BSMS file**. The owner rejected a separate Nunchuk database import. BIP48 defines standard `/0/*` receive and `/1/*` change, and Nunchuk's own BSMS importer defaults an unspecified branch pair to `{0,1}`. For a strict 2-of-3 sorted native-SegWit BIP48 policy with an anchored first receive address, enable a custom amount from the BSMS alone and label change standard-derived. A custom branch layout remains unsupported. The owner still needs to sign and broadcast a Mutinynet payment after the 0.3.2 DMG is published; do not claim 0.3.x physical acceptance yet. See `PATCH-0.3.2.md`.
+
 ## Planned 0.4.0 visual refresh
 
 The owner requested a slightly more modern interface for the spouse, lawyer, or accountant who may have no Bitcoin experience. This is a **future design task**, not part of the 0.2.2 patch or the 0.3.0 safety work. Preserve the approved simple step-by-step recovery flow, the BTC/sats/USD balance, and all review and hardware-device safety gates.

@@ -1,5 +1,5 @@
-// An import without declared change must not preselect a full-wallet sweep.
-// The owner must choose Send All explicitly or import a fuller BSMS export.
+// A nonstandard wallet must not preselect a sweep. A standard BIP48 wallet
+// must allow a custom amount from its single BSMS file.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -66,4 +66,18 @@ assert.match(get('send-mode-note').textContent, /both receiving and change addre
 get('send-all').checked = true;
 get('send-all').listeners.change();
 assert.equal(get('prepare').disabled, false, 'explicit sweep choice should proceed');
-console.log('Missing change requires an explicit Send All choice; Mutinynet defaults.');
+vm.runInContext(`
+  showWallet({network:'mutinynet', can_prepare:true, can_send_all:true,
+    change_assumed:true, change_note:'Standard multisig change',
+    policy_short:'2-of-3', chain_short:'Mutinynet', policy:'2-of-3 multisig',
+    chain:'Mutinynet', reference_address:'test', receive_address:'test',
+    change_address:'standard-change', keys:[]});
+  showBalance({pending_outgoing:false, utxo_consistent:true, range_limited:false,
+    confirmed_sats:110000, observed_sats:110000, utxo_count:1,
+    pending_delta_sats:0, scanned:40, source:'https://mutinynet.com/api',
+    scanned_at:'2026-09-29T12:00:00Z', addresses:[]});
+`, context);
+assert.equal(get('send-all').checked, false, 'sweep must never be preselected');
+assert.equal(get('amount').disabled, false, 'BIP48 custom amount must be available');
+assert.equal(get('send-mode-note').hidden, true);
+console.log('Standard BIP48 custom amount works; nonstandard change requires an explicit sweep.');

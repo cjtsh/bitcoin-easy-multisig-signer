@@ -191,14 +191,40 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertIsNone(self.state.prepared)
 
     def test_receive_only_wallet_reaches_the_send_form_with_a_plain_note(self):
-        """An undeclared change path permits only the no-change sweep."""
+        """The ordinary Nunchuk BSMS opens the standard custom-amount flow."""
         text, _ = test_record(short_path=True)
         status, summary = self.post("/api/import", {
             "chain": "testnet4", "text": text, "consent_explorer": True})
         self.assertEqual(status, 200)
-        self.assertFalse(summary["can_prepare"])
+        self.assertTrue(summary["can_prepare"])
         self.assertTrue(summary["can_send_all"])
-        self.assertIn("send all", summary["prepare_reason"].lower())
+        self.assertTrue(summary["change_assumed"])
+        self.assertIn("standard multisig", summary["change_note"])
+
+    def test_nunchuk_shape_prepares_custom_amount_with_one_file(self):
+        text, _ = test_record(short_path=True)
+        status, summary = self.post("/api/import", {
+            "chain": "mutinynet", "text": text, "consent_explorer": True})
+        self.assertEqual(status, 200)
+        self.assertTrue(summary["can_prepare"])
+        self.assertIn({"stage": "change_path", "outcome": "standard"},
+                      [{"stage": item["stage"], "outcome": item["outcome"]}
+                       for item in self.state.diagnostic_events])
+        status, balance = self.post("/api/scan", {"chain": "mutinynet"})
+        self.assertEqual(status, 200)
+        self.assertFalse(balance["coverage_limited"])
+        recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
+        status, preview = self.post("/api/estimate", {
+            "chain": "mutinynet", "send_all": False, "amount_sats": 10_000,
+            "fee_rate": 2, "recipient": recipient,
+        })
+        self.assertEqual(status, 200)
+        status, prepared = self.post("/api/prepare", {
+            "chain": "mutinynet", "recipient": recipient,
+            "amount_sats": 10_000, "send_all": False, "fee_rate": 2,
+        })
+        self.assertEqual(status, 200)
+        self.assertGreater(prepared["change_sats"], 0)
 
     def test_wallet_reaches_a_reviewable_psbt(self):
         status, summary = self.import_wallet()
