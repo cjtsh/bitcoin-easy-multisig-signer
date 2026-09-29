@@ -23,6 +23,12 @@ Phase 3 is done and evidenced; this is the last item.
 Already proven in the shipped app, so a failure is the device and not the packaging:
 `--check-devices` runs the bundled HWI, loads the bundled libusb and parses its JSON.
 
+**Lesson that cost time (28 Sep):** a Ledger must be *unlocked and* have the
+Bitcoin app open — and for this wallet, the **Bitcoin Testnet** app. Entering the PIN
+alone is not enough, and the app initially hid HWI's own explanation; v0.1.18 repeats
+HWI's words verbatim instead of guessing. Keep every device in the network app
+matching the wallet at both creation and check time.
+
 **Signing and broadcasting do not exist and are not authorised.** Phase 4 begins with
 an owner decision, not code.
 
@@ -46,7 +52,7 @@ wallet, never asks for seed words or a PIN, and cannot sign or send.
 | Review: destination, amount, fee, total, change, final transaction id, explorer link | Works |
 | Save the unsigned `.psbt` into the Downloads folder | Works, and a saved file was decoded independently and matched the review |
 | Show progress while the blockchain scan runs | Works |
-| Recognise a connected hardware signer, read-only | Implemented, **never run against a physical device** |
+| Recognise a connected hardware signer, read-only | **Proven on real hardware for a non-member device** (a Ledger Nano S Plus was enumerated, its fingerprint read, and correctly rejected); a *matching* signer has not yet been seen |
 
 **What does not exist yet**
 

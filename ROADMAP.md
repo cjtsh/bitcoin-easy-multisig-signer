@@ -24,8 +24,11 @@ hardware signer recognition. **It does not sign, and it does not broadcast.**
   and no sign of progress during a slow scan — were fixed in v0.1.14. Step 3, a
   pre-flight check of the hardware wallets, was added in v0.1.15 so a missing or
   mismatched device is discovered before a payment is built.
-  **Independently verified** (see the verification record below). **Still not
-  evidenced:** recognition of a physical hardware signer.
+  **Independently verified** (see the verification record below). **Hardware
+  recognition is proven for a non-member device:** the shipped app enumerated a
+  physical Ledger Nano S Plus over USB, read its fingerprint and correctly reported
+  that it is not a signer in the BSMS file. The gate itself still needs a **match**,
+  which requires the wallet's own signing devices.
 - [ ] **Phase 4 — signing and broadcast.** **Not started and not authorised.** The
   app today can identify a connected signer read-only; it cannot sign or send.
   Starting this requires the owner to move the signing boundary explicitly and to
@@ -120,8 +123,9 @@ live quote was 1 / 2 / 2), and a slow scan looked like a dead app.
 *Independently verified:* a PSBT saved from the owner's real wallet was decoded by
   two independent implementations that agreed on every material value, and the change
   output was rebuilt from its declared keys and matched the wallet's own change
-  branch. See the verification record below. *Still not evidenced:* recognition of a
-  physical hardware signer.
+  branch. See the verification record below. *Hardware recognition, partly:* the shipped app read a physical device's
+  fingerprint over USB and correctly rejected it as a non-member. A **match** against
+  this wallet's own cosigners has not yet been seen.
 
 **Goal:** With verified 2-of-3 receive/change paths and a consistent confirmed scan, the user can prepare and review a partial or Send All transaction, see live slow/medium/fast fee choices with sats and USD estimates, catch a high-dollar amount, save an unsigned PSBT, then reach an HWI device-recognition screen that identifies matching signers. The v0.1.9 Mac app must be ready for physical keys to be plugged in for this recognition check. **Do not sign or broadcast.**
 
