@@ -199,7 +199,8 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertTrue(summary["can_prepare"])
         self.assertTrue(summary["can_send_all"])
         self.assertTrue(summary["change_assumed"])
-        self.assertIn("standard multisig", summary["change_note"])
+        self.assertIn("standard change path", summary["change_note"])
+        self.assertIn("file does not state that path", summary["change_note"])
 
     def test_nunchuk_shape_prepares_custom_amount_with_one_file(self):
         text, _ = test_record(short_path=True)

@@ -199,6 +199,8 @@ jobs:
           - Prepares a partial send with a declared change branch or the guarded
             standard BIP48 /1/* branch anchored by the BSMS first receive address.
             Unsupported layouts can explicitly Send All without change. Shows final outputs and fee.
+          - Refuses inferred change when a bare wildcard matches the first address
+            directly instead of anchoring the BIP48 /0/0 receiving branch.
           - Uses bundled HWI 3.2.0 over stdin to request two hardware signatures.
             Only signatures verifying against the reviewed PSBT are retained;
             signer-returned metadata is discarded before finalization.
@@ -224,8 +226,10 @@ jobs:
           Verify either file against \`SHA256SUMS\`.
           \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
 
-          Experimental test build: Mutinynet wallet/device compatibility and the
-          v${VERSION} signing path need an owner walkthrough. Verify every address,
+          The owner's prior Mutinynet Ledger + Jade payment confirmed. This patch
+          tightens one ambiguous BSMS change-path case; the supplied Sparrow and
+          Nunchuk files still import through their intended branches. A physical
+          check of this exact patch has not yet occurred. Verify every address,
           amount and fee on your signers. No mainnet broadcast is available.
           EOF
           # A published version is never rebuilt. Overwriting one silently changes the
