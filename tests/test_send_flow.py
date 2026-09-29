@@ -30,7 +30,7 @@ from urllib.request import Request  # noqa: E402
 
 from fake_explorer import three_output_wallet  # noqa: E402
 from gui import LocalApp, PreparedPayment  # noqa: E402
-from probe import parse_bsms  # noqa: E402
+from probe import ProbeError, parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
 from wallet_service import BroadcastOutcomeUnknown, WalletError  # noqa: E402
@@ -159,6 +159,32 @@ class SendFlowTests(unittest.TestCase):
         self.assertEqual(send.call_args.args[1], "mutinynet")
         self.assertIn("mutinynet.com", sent["explorer"])
 
+    def test_jade_style_metadata_rewrite_keeps_only_verified_signatures(self):
+        result, keys = self.prepare_a_reviewed_transaction(chain="mutinynet")
+        original = E.PSBT.from_base64(self.app.prepared.psbt_base64)
+
+        def rewrite_metadata(_executable, _chain, _type, _path, psbt_base64):
+            packet = E.PSBT.from_base64(psbt_base64)
+            packet.sign_with(keys[0])
+            packet.inputs[0].witness_utxo.value += 1
+            packet.outputs[0].unknown[b"\xfcdevice"] = b"untrusted"
+            return packet.to_base64()
+
+        with patch("gui.sign_psbt_with_device", side_effect=rewrite_metadata):
+            first = self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                             "device_type": "jade", "device_path": "/dev/x"})
+        self.assertEqual(first["signers"], [1])
+        retained = E.PSBT.from_base64(self.app.prepared.psbt_base64)
+        self.assertEqual(retained.inputs[0].witness_utxo.value,
+                         original.inputs[0].witness_utxo.value)
+        self.assertEqual(retained.outputs[0].unknown, original.outputs[0].unknown)
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[1])):
+            second = self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                              "device_type": "trezor", "device_path": "usb:1"})
+        self.assertTrue(second["complete"])
+        self.assertEqual(self.post("/api/finalize", {"preparation_id": "reviewed-1"})["txid"],
+                         result["txid"])
+
     def test_signing_requires_the_reviewed_transaction(self):
         self.prepare_a_reviewed_transaction()
         for bad in ("", "stale-id", None):
@@ -166,6 +192,17 @@ class SendFlowTests(unittest.TestCase):
                 self.post("/api/sign", {"preparation_id": bad,
                                         "device_type": "jade", "device_path": "/dev/x"})
             self.assertEqual(err.exception.code, 400)
+
+    def test_ledger_open_failure_explains_recovery_without_retrying_signing(self):
+        self.prepare_a_reviewed_transaction(chain="mutinynet")
+        with patch("gui.sign_psbt_with_device", side_effect=ProbeError(
+                "HWI reported a device error: open failed")) as signer:
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "ledger", "device_path": "hid:1"})
+        self.assertEqual(error.exception.code, 400)
+        self.assertIn("Look for more devices", json.load(error.exception)["error"])
+        signer.assert_called_once()
 
     def test_a_device_returning_a_different_transaction_is_refused(self):
         """A device that hands back some other transaction must never be accepted."""

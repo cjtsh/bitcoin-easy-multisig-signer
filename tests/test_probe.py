@@ -197,6 +197,7 @@ class ProbeTests(unittest.TestCase):
         ledger = "Ledger is not in either the Bitcoin or Bitcoin Testnet app"
         self.assertIn("Bitcoin Testnet app", device_advice("ledger", ledger))
         self.assertIn("Bitcoin Testnet app", device_advice("ledger", "error 0x5515 locked"))
+        self.assertIn("Look for more devices", device_advice("ledger", "open failed"))
         self.assertIn("PIN", device_advice("jade", "Use Recovery Phrase Login or QR PIN Unlock"))
         self.assertIn("Trezor", device_advice("trezor", "Device is locked"))
         # An unrelated fault must not attract advice that does not apply.
@@ -272,6 +273,7 @@ class ProbeTests(unittest.TestCase):
             run.call_args.args[0],
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
         )
+        self.assertEqual(run.call_args.kwargs["timeout"], 60)
 
     def test_signing_psbt_goes_over_stdin_not_process_arguments(self):
         from subprocess import CompletedProcess
@@ -290,6 +292,7 @@ class ProbeTests(unittest.TestCase):
                                 "--stdin"])
         self.assertNotIn(packet, args)
         self.assertEqual(run.call_args.kwargs["input"], "signtx " + packet + "\n")
+        self.assertEqual(run.call_args.kwargs["timeout"], 600)
 
     def test_signing_psbt_cannot_inject_another_stdin_command(self):
         from probe import sign_psbt_with_device

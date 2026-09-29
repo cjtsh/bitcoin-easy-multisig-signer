@@ -19,9 +19,9 @@ wallet that orders them differently produces a transaction the network rejects.
 from __future__ import annotations
 
 from hashlib import sha256
-from io import BytesIO
 
 from embit import ec, transaction
+from embit.psbt import PSBT
 
 # OP_0..OP_16
 _OP_1_TO_16 = {0x50 + n: n for n in range(1, 17)}
@@ -72,56 +72,6 @@ def partial_sigs_as_bytes(scope) -> dict[bytes, bytes]:
     return out
 
 
-def _read_compact_size(stream: BytesIO) -> int:
-    """Read a PSBT map length; fail if the packet ends within the length."""
-    first = stream.read(1)
-    if len(first) != 1:
-        raise SigningError("The device returned an incomplete transaction map.")
-    marker = first[0]
-    width = 2 if marker == 0xFD else 4 if marker == 0xFE else 8 if marker == 0xFF else 0
-    if not width:
-        return marker
-    value = stream.read(width)
-    if len(value) != width:
-        raise SigningError("The device returned an incomplete transaction map.")
-    return int.from_bytes(value, "little")
-
-
-def _read_exact(stream: BytesIO, length: int) -> bytes:
-    value = stream.read(length)
-    if len(value) != length:
-        raise SigningError("The device returned an incomplete transaction map.")
-    return value
-
-
-def _psbt_maps(packet) -> list[dict[bytes, bytes]]:
-    """Canonicalize PSBT key/value maps without changing any field value.
-
-    HWI 3.2.0 sorts map entries on serialization. embit preserves insertion
-    order, so a byte comparison of two valid PSBTs rejects real signatures.
-    Compare each complete map as a dictionary instead, rejecting duplicates.
-    """
-    stream = BytesIO(packet.serialize())
-    if stream.read(5) != b"psbt\xff":
-        raise SigningError("The device returned an invalid transaction map.")
-    maps = []
-    for _ in range(1 + len(packet.inputs) + len(packet.outputs)):
-        fields = {}
-        while True:
-            key_length = _read_compact_size(stream)
-            if key_length == 0:
-                break
-            key = _read_exact(stream, key_length)
-            value = _read_exact(stream, _read_compact_size(stream))
-            if key in fields:
-                raise SigningError("The device returned a duplicate transaction field.")
-            fields[key] = value
-        maps.append(fields)
-    if stream.read(1):
-        raise SigningError("The device returned extra transaction data.")
-    return maps
-
-
 def verified_input_signatures(psbt) -> list[set[bytes]]:
     """Verify every BIP143 SIGHASH_ALL signature before calling an input complete.
 
@@ -164,34 +114,35 @@ def verified_input_signatures(psbt) -> list[set[bytes]]:
     return verified
 
 
-def accept_signature_update(before, after) -> None:
-    """Allow a hardware response to add signatures, never to revise the proposal.
+def accept_signature_update(before, after) -> PSBT:
+    """Return the reviewed PSBT with only verified device signatures added.
 
-    PSBT metadata affects what a signer believes it is signing and the fee shown
-    to the owner. HWI may reorder map fields; compare every key and value except
-    input partial signatures without depending on order. Prior signatures survive.
+    Some signers rewrite or add PSBT metadata while signing. Never trust or
+    retain that metadata: build the result from the app's original PSBT and
+    import only partial signatures, then verify them against its original
+    transaction, prevouts and witness scripts. This also handles map reordering.
     """
     if len(before.inputs) != len(after.inputs) or len(before.outputs) != len(after.outputs):
         raise SigningError("The device changed the transaction's input or output count.")
+    if before.tx.serialize() != after.tx.serialize():
+        raise SigningError("The device returned a different transaction.")
     prior = [partial_sigs_as_bytes(scope) for scope in before.inputs]
     later = [partial_sigs_as_bytes(scope) for scope in after.inputs]
     for old, new in zip(prior, later):
         if any(new.get(key) != sig for key, sig in old.items()):
             raise SigningError("The device removed or changed an earlier signature.")
     try:
-        left, right = _psbt_maps(before), _psbt_maps(after)
-        for maps in (left, right):
-            for fields in maps[1:1 + len(before.inputs)]:
-                for key in tuple(fields):
-                    if key[:1] == b"\x02":  # PSBT_IN_PARTIAL_SIG
-                        del fields[key]
-        if left != right:
-            raise SigningError("The device changed the reviewed transaction or its wallet data.")
+        # Make a separate packet so a failed verification cannot mutate the
+        # in-memory reviewed payment. All non-signature fields remain ours.
+        merged = PSBT.from_base64(before.to_base64())
+        for original, received in zip(merged.inputs, after.inputs):
+            original.partial_sigs.update(received.partial_sigs)
+        verified_input_signatures(merged)
+        return merged
     except SigningError:
         raise
     except Exception as exc:
         raise SigningError("The device returned a transaction that cannot be checked.") from exc
-    verified_input_signatures(after)
 
 
 def _compact_size(value: int) -> int:
