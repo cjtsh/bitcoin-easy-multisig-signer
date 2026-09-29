@@ -39,6 +39,11 @@ NETWORKS = {
     ),
 }
 
+# An independently operated source for selected mainnet outpoint checks.
+# Testnet4 has no reviewed, reliably available second public Esplora yet;
+# its selected outpoints are still rechecked against the configured explorer.
+SECONDARY_EXPLORERS = {"main": "https://blockstream.info/api", "testnet4": None}
+
 
 def for_record_network(record_network: str) -> NetworkConfig:
     for config in NETWORKS.values():

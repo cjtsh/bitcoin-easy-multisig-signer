@@ -22,7 +22,8 @@ Version 0.2.2 is published. The owner's latest Testnet4 payment was accepted by 
 
 - HWI signing now passes a validated base64 PSBT on stdin, with no PSBT in subprocess argv. Focused tests and the full 150-test suite passed at the first checkpoint. The bundled HWI 3.2.0 binary from the verified 0.2.2 DMG accepted an option supplied through `--stdin`; physical signing with this change remains untested.
 - A broadcast transport failure or malformed response is now an explicit **outcome unknown** state. The prepared payment is cleared so the app cannot blindly retry it, and the main screen directs the user to check the transaction on an explorer. Tests cover the local API lock. This is an initial transaction-state correction, not the full immutable-state refactor.
-- Current-output cross-checking, fee/replacement policy, and the final release audit remain open. Do not dispatch a 0.3.0 DMG yet.
+- The app now checks each selected outpoint immediately after construction and immediately before broadcast. Mainnet uses both the configured explorer and Blockstream's Esplora, after validating the second server's genesis. If Blockstream is the primary, mempool.space is the second. Only selected public transaction IDs and output numbers go to that second server; the UI consent wording discloses this. Testnet4 rechecks with its configured explorer because a reliably available independent public Testnet4 service has not been established. This is a limitation, not independent Testnet4 verification.
+- Fee/replacement policy, the immutable prepared-payment refactor, and the final release audit remain open. Do not dispatch a 0.3.0 DMG yet.
 
 ## Sources for the transport and output-check design
 

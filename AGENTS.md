@@ -19,6 +19,7 @@ One engine serves Testnet4 and mainnet. `probe.py` parses BSMS and checks public
 - Before broadcast, verify every signature, witness/prevout, output, fee and txid against immutable reviewed state. The final screen must show the same fields. A concurrent request must not change the payment during submission.
 - Treat public explorers and fee quotes as observations. Never call a gap-limited scan a complete wallet sweep. Never silently fall back to a different server.
 - After an outgoing Testnet4 broadcast, keep a session-only transaction ID and pause another payment until the explorer reports one confirmation. An address scan's mempool spent total also pauses sends, including after a restart. A missing transaction status is not confirmation. Incoming pending funds alone do not pause confirmed outputs.
+- On the 0.3.0 branch, a broadcast transport/malformed-response failure is outcome-unknown: clear the prepared payment and refuse a blind retry. Recheck every selected outpoint before preparation and broadcast. Mainnet uses an independently operated second Esplora for public outpoint IDs after the operator's disclosure consent; Testnet4 currently has only a fresh same-explorer check. These checks reduce stale-index risk but cannot replace a trusted node's consensus view.
 - Do not commit or emit BSMS records, xpubs, addresses, PSBTs, raw transactions, settings, device paths, or real wallet/test artifacts. Diagnostic reports use only fixed codes and timestamps.
 
 ## Development and release

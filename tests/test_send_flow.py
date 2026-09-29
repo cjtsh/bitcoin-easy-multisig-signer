@@ -33,7 +33,7 @@ from gui import LocalApp  # noqa: E402
 from probe import parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
-from wallet_service import BroadcastOutcomeUnknown  # noqa: E402
+from wallet_service import BroadcastOutcomeUnknown, WalletError  # noqa: E402
 
 
 class SendFlowTests(unittest.TestCase):
@@ -46,6 +46,9 @@ class SendFlowTests(unittest.TestCase):
         self.settings_patch.start()
         self.addCleanup(self.settings_patch.stop)
         self.app = LocalApp()
+        self.outpoint_patch = patch("gui.verify_selected_outpoints")
+        self.outpoint_check = self.outpoint_patch.start()
+        self.addCleanup(self.outpoint_patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.app.handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -207,6 +210,22 @@ class SendFlowTests(unittest.TestCase):
         self.assertIsNone(self.app.prepared_psbt)
         self.assertEqual(self.app.pending_broadcast_txid, txid)
         self.assertTrue(self.app.pending_broadcast_unknown)
+
+    def test_spent_output_is_refused_before_broadcast_request(self):
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                           ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.outpoint_check.side_effect = WalletError("A selected output was spent.")
+        with patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": result["txid"]})
+            self.assertEqual(err.exception.code, 400)
+            send.assert_not_called()
 
     def test_broadcasting_real_bitcoin_is_not_enabled(self):
         """The mainnet lock is the most important refusal in this file.

@@ -86,6 +86,7 @@ class ApiTestCase(unittest.TestCase):
                  real_estimate(record, scan, send_all, **kw)),
             ("fetch_fee_rates", lambda: FEE_QUOTE),
             ("fetch_btc_usd", lambda: PRICE),
+            ("verify_selected_outpoints", lambda *_args: None),
         ):
             patcher = patch.object(gui, target, value)
             patcher.start()
@@ -152,6 +153,20 @@ class LocalServerAccessTests(ApiTestCase):
 
 
 class TransactionJourneyTests(ApiTestCase):
+    def test_outpoint_check_can_stop_preparation_after_scan(self):
+        self.import_wallet()
+        self.post("/api/scan", {"chain": "testnet4"})
+        recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
+        with patch.object(gui, "verify_selected_outpoints",
+                          side_effect=gui.WalletError("A selected output was spent.")):
+            status, body = self.post("/api/prepare", {
+                "chain": "testnet4", "recipient": recipient,
+                "amount_sats": 100_000, "send_all": False, "fee_rate": 5,
+            })
+        self.assertEqual(status, 400)
+        self.assertIn("spent", body["error"])
+        self.assertIsNone(self.state.prepared_psbt)
+
     def test_receive_only_wallet_reaches_the_send_form_with_a_plain_note(self):
         """An undeclared change path permits only the no-change sweep."""
         text, _ = test_record(short_path=True)

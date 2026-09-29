@@ -29,7 +29,7 @@ from embit.psbt import PSBT
 
 from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
-from network_config import NETWORKS as CHAIN_CONFIGS
+from network_config import NETWORKS as CHAIN_CONFIGS, SECONDARY_EXPLORERS
 from network_settings import (
     SettingsError, default_servers, load_servers, save_servers,
     validate_esplora_url, verify_esplora,
@@ -39,7 +39,8 @@ from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsm
                    probe_devices_detailed, sign_psbt_with_device)
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
-from wallet_service import (BroadcastOutcomeUnknown, WalletError, broadcast_transaction, build_unsigned_psbt,
+from wallet_service import (BroadcastOutcomeUnknown, WalletError, broadcast_transaction,
+                            build_unsigned_psbt, check_selected_outpoints,
                             estimate_fee_preview, explorer_get, scan_wallet, wallet_summary)
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
@@ -153,6 +154,26 @@ def public_scan(result: dict) -> dict:
         "scanned_at": result["scanned_at"],
         "source": result["source"],
     }
+
+
+def independent_explorer(chain: str, primary: str) -> str | None:
+    """Choose a distinct public backend for mainnet outpoint cross-checks."""
+    secondary = SECONDARY_EXPLORERS.get(chain)
+    if secondary == primary:
+        secondary = CHAIN_CONFIGS[chain].explorer_url
+    return secondary
+
+
+def verify_selected_outpoints(packet: PSBT | str, chain: str, primary: str) -> None:
+    """One fail-closed gate used at preparation and immediately before submit."""
+    secondary = independent_explorer(chain, primary)
+    if secondary:
+        verify_esplora(chain, secondary)
+    try:
+        parsed = PSBT.from_base64(packet) if isinstance(packet, str) else packet
+    except Exception as exc:
+        raise WalletError("The prepared transaction cannot be checked.") from exc
+    check_selected_outpoints(parsed, chain, primary, secondary)
 
 
 def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> dict:
@@ -693,6 +714,10 @@ class LocalApp:
                         raise WalletError(str(exc)) from exc
                     self._check_final_review(state.record, packet, final,
                                              state.prepared_review or {})
+                    # A scan can become stale while the owner reviews devices.
+                    # Recheck the exact chosen coins before submitting anything.
+                    primary = state.servers[chain]["explorer"]
+                    verify_selected_outpoints(packet, chain, primary)
                     try:
                         sent = broadcast_transaction(final["raw_transaction_hex"], chain,
                                                      broadcaster)
@@ -864,6 +889,9 @@ class LocalApp:
                     record, scan, data.get("recipient"), data.get("amount_sats"),
                     requested_rate, base_url=explorer, send_all=data.get("send_all", False),
                 )
+                # Verify the selected historical outputs remain unspent. Only
+                # their public transaction IDs go to a second mainnet provider.
+                verify_selected_outpoints(result["psbt_base64"], chain, explorer)
                 if requested_rate < fee_quote["standard"]:
                     low_warning = (
                         f"{requested_rate} sat/vB is below the current mainnet "

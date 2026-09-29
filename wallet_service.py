@@ -158,6 +158,44 @@ def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
             ) from exc
 
 
+def check_selected_outpoints(packet: psbt.PSBT, chain: str, primary_base: str,
+                             secondary_base: str | None = None,
+                             get: Callable = explorer_get) -> None:
+    """Recheck selected coins just before use, against a second source when set.
+
+    Only public transaction IDs and output numbers are sent. A second Esplora
+    lowers the risk of trusting one stale or manipulated index but is not a
+    consensus proof; a user-run node is stronger. The caller verifies each
+    source's genesis before using it and never silently changes sources.
+    """
+    if chain not in EXPLORERS or secondary_base == primary_base:
+        raise WalletError("Independent output check has no separate valid source.")
+    if not packet.tx.vin:
+        raise WalletError("The transaction has no inputs to verify.")
+    for vin in packet.tx.vin:
+        txid, vout = vin.txid.hex(), vin.vout
+        if len(txid) != 64 or type(vout) is not int or vout < 0:
+            raise WalletError("A transaction input cannot be checked.")
+        for base in (primary_base, secondary_base):
+            if base is None:
+                continue
+            try:
+                status = get(f"/tx/{txid}/outspend/{vout}", chain=chain,
+                             base_url=base)
+            except WalletError as exc:
+                raise WalletError(
+                    "Could not confirm that the selected Bitcoin is still available. "
+                    "Refresh and try again, or ask for help."
+                ) from exc
+            if not isinstance(status, dict) or type(status.get("spent")) is not bool:
+                raise WalletError("An explorer gave an unclear output status; no payment was sent.")
+            if status["spent"]:
+                raise WalletError(
+                    "A selected Bitcoin output was already spent. Refresh your balance "
+                    "before preparing or sending another payment."
+                )
+
+
 def _chain(record: WalletRecord) -> str:
     try:
         return for_record_network(record.network).chain

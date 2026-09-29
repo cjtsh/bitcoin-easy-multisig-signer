@@ -185,7 +185,7 @@
           <input id="wallet-file" type="file"></div>
       </div>
       <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
-        <span id="explorer-consent-text">I understand a public explorer will see my wallet's public addresses.</span></label>
+        <span id="explorer-consent-text">I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
       <div id="message" role="status" aria-live="polite"></div>
     </section>
@@ -517,7 +517,7 @@
       document.body.classList.toggle("live-mode", main);
       $("live-banner").hidden = !main;
       setText("explorer-consent-text",
-        "I understand a public explorer will see my wallet's public addresses.");
+        "I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.");
       setText("balance-title", main ? "2. Mainnet balance" : "2. Testnet4 balance");
       setText("balance-unit", main ? "Satoshi balance" : "Testnet4 satoshi balance");
       setText("destination-label", main ? "Send to mainnet address" : "Send to Testnet4 address");
@@ -1295,7 +1295,7 @@
     $("broadcast").addEventListener("click", async () => {
       if (!finalTxid || $("broadcast").disabled) return;
       $("broadcast").disabled = true;
-      setBusy("Sending the transaction to the network…");
+      setBusy("Checking that the selected Bitcoin is still available, then sending…");
       try {
         const sent = await post("/api/broadcast", {preparation_id: preparationId,
           confirm: true, confirmed_txid: finalTxid});
