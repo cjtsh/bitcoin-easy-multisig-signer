@@ -182,11 +182,43 @@ class FinalizeTests(unittest.TestCase):
         before, keys, _ = prepared_psbt()
         after = E.PSBT.from_base64(before.to_base64())
         after.sign_with(keys[0])
-        accept_signature_update(before, after)
+        accepted = accept_signature_update(before, after)
+        self.assertEqual(signatures_collected(accepted), (1, 2))
         changed = E.PSBT.from_base64(after.to_base64())
         changed.inputs[0].witness_utxo.value += 1
-        with self.assertRaisesRegex(SigningError, "wallet data"):
-            accept_signature_update(before, changed)
+        # The device's metadata cannot enter the prepared payment, even when
+        # its valid signature remains usable against the original prevout.
+        accepted = accept_signature_update(before, changed)
+        self.assertEqual(accepted.inputs[0].witness_utxo.value,
+                         before.inputs[0].witness_utxo.value)
+        self.assertEqual(signatures_collected(accepted), (1, 2))
+
+    def test_device_metadata_and_changed_outputs_cannot_enter_reviewed_payment(self):
+        before, keys, _ = prepared_psbt()
+        after = E.PSBT.from_base64(before.to_base64())
+        after.sign_with(keys[0])
+        after.inputs[0].witness_script = None
+        after.outputs[0].unknown[b"\xfcdevice"] = b"untrusted"
+        accepted = accept_signature_update(before, after)
+        self.assertEqual(accepted.outputs[0].unknown, before.outputs[0].unknown)
+        self.assertEqual(accepted.inputs[0].witness_script,
+                         before.inputs[0].witness_script)
+        self.assertEqual(signatures_collected(accepted), (1, 2))
+        after.outputs[0].value += 1
+        with self.assertRaisesRegex(SigningError, "different transaction"):
+            accept_signature_update(before, after)
+
+    def test_invalid_device_signature_is_not_imported(self):
+        before, keys, _ = prepared_psbt()
+        after = E.PSBT.from_base64(before.to_base64())
+        after.sign_with(keys[0])
+        scope = after.inputs[0]
+        pub = next(iter(scope.partial_sigs))
+        damaged = bytearray(scope.partial_sigs[pub])
+        damaged[5] ^= 1
+        scope.partial_sigs[pub] = bytes(damaged)
+        with self.assertRaisesRegex(SigningError, "invalid signature"):
+            accept_signature_update(before, after)
 
     def test_hwi_field_reordering_does_not_erase_a_valid_signature(self):
         """HWI sorts PSBT maps; field order is not part of the payment policy."""

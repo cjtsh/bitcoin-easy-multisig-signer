@@ -197,6 +197,7 @@ class ProbeTests(unittest.TestCase):
         ledger = "Ledger is not in either the Bitcoin or Bitcoin Testnet app"
         self.assertIn("Bitcoin Testnet app", device_advice("ledger", ledger))
         self.assertIn("Bitcoin Testnet app", device_advice("ledger", "error 0x5515 locked"))
+        self.assertIn("Look for more devices", device_advice("ledger", "open failed"))
         self.assertIn("PIN", device_advice("jade", "Use Recovery Phrase Login or QR PIN Unlock"))
         self.assertIn("Trezor", device_advice("trezor", "Device is locked"))
         # An unrelated fault must not attract advice that does not apply.

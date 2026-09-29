@@ -37,7 +37,7 @@ from network_settings import (
     validate_esplora_url, verify_esplora,
 )
 from version import APP_VERSION
-from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsms,
+from probe import (MAX_BSMS_BYTES, ProbeError, device_advice, devices_need_attention, parse_bsms,
                    probe_devices_detailed, sign_psbt_with_device)
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
@@ -238,7 +238,8 @@ class PreparedPayment:
     The record identity and scan generation prevent a signature returned after
     import or refresh from being attached to a different wallet or balance.
     Review values and selected outpoints are immutable snapshots. The PSBT may
-    gain signatures, but accept_signature_update checks every unsigned field.
+    gain signatures, but device metadata is discarded; only signatures verified
+    against this reviewed PSBT are retained.
     """
     wallet: object
     chain: str
@@ -715,7 +716,8 @@ class LocalApp:
                     updated = sign_psbt_with_device(
                         "hwi", hwi_chain, device_type, device_path, payment.psbt_base64)
                 except ProbeError as exc:
-                    raise WalletError(str(exc)) from exc
+                    advice = device_advice(device_type, str(exc))
+                    raise WalletError(str(exc) + (" " + advice if advice else "")) from exc
                 try:
                     after = PSBT.from_base64(updated)
                 except Exception as exc:
@@ -726,21 +728,21 @@ class LocalApp:
                         "Nothing was signed into the reviewed transaction."
                     )
                 try:
-                    accept_signature_update(before, after)
+                    accepted = accept_signature_update(before, after)
                 except SigningError as exc:
                     state.note("signer_response", "rejected")
                     raise WalletError(str(exc)) from exc
                 with state.lock:
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The transaction changed while signing. Start again.")
-                    state.prepared = replace(payment, psbt_base64=updated)
+                    state.prepared = replace(payment, psbt_base64=accepted.to_base64())
                     state.note("signer_response", "verified")
-                present, threshold = signatures_collected(after)
+                present, threshold = signatures_collected(accepted)
                 self._send(200, {
                     "signatures": present,
                     "threshold": threshold,
-                    "signers": signed_by_signers(after, record),
-                    "complete": is_complete(after),
+                    "signers": signed_by_signers(accepted, record),
+                    "complete": is_complete(accepted),
                     "key_count": len(record.keys),
                 })
 

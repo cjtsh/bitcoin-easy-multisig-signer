@@ -338,6 +338,8 @@ SIGNER_MATCHED = "public xpub matched"
 # opened on it. Each entry is (device keyword, reason keywords, instruction) and
 # the reason must match, so an unrelated USB fault never gets advice that is wrong.
 _DEVICE_ADVICE: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("ledger", ("open failed",),
+     "Close Ledger Live and Nunchuk if they are using the device. Reconnect the Ledger, unlock it, open the Bitcoin Testnet app, then choose Look for more devices."),
     ("ledger", ("bitcoin", "5515", "locked", "lock"),
      "On the Ledger itself: unlock it, then open the Bitcoin Testnet app."),
     ("jade", ("unlock", "pin", "recovery", "wallet", "auth"),
