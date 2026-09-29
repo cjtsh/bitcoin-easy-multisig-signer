@@ -267,6 +267,7 @@ def wallet_layout(record: WalletRecord) -> Layout:
         verified = True
         declared = True
     else:
+        bare_receive_only = False
         if suffixes and all(s == "/0/*" for s in suffixes):
             receive, receive_text = desc, text
         elif suffixes and all(s == "/*" for s in suffixes):
@@ -274,7 +275,10 @@ def wallet_layout(record: WalletRecord) -> Layout:
                 receive_text = text.replace("/*", "/0/*")
                 receive = Descriptor.from_string(receive_text)
             else:
+                # xpub/* can match the first address directly at xpub/0.
+                # That does not anchor the BIP48 xpub/0/index branch.
                 receive, receive_text = desc, text
+                bare_receive_only = True
         else:
             raise WalletError("Unsupported address branches; no balance will be guessed.")
         # Nunchuk's BSMS writer emits a bare /* and "No path restrictions" for
@@ -283,15 +287,17 @@ def wallet_layout(record: WalletRecord) -> Layout:
         # owner has, but label the change branch as standard-derived rather
         # than claiming it was declared by BSMS or proven by an empty history.
         # Nonstandard/custom origins continue to fail closed.
+        if bare_receive_only and record.restrictions == "/0/*,/1/*":
+            raise WalletError("BSMS receive restriction disagrees with its first address.")
         declared = record.restrictions == "/0/*,/1/*"
-        standard_candidate = not declared and _standard_bip48(record)
+        standard_candidate = not declared and not bare_receive_only and _standard_bip48(record)
         change = (_conventional_change(receive_text, record)
                   if declared or standard_candidate else None)
         assumed = bool(change and standard_candidate)
         verified = bool(change and declared)
         if assumed:
-            warning = ("This wallet uses BIP48 standard change addresses. The BSMS file "
-                       "does not state them; check the change shown during signing.")
+            warning = ("This app derives BIP48 standard change addresses. The BSMS file "
+                       "does not state the change branch; check change during signing.")
         elif change is None:
             warning = ("This export does not establish a supported change branch. "
                        "Only Send All from scanned receiving addresses is available.")
@@ -380,9 +386,9 @@ def wallet_summary(record: WalletRecord, chain: str | None = None) -> dict:
         prepare_reason = ""
     if layout.change_assumed:
         change_note = (
-            "This wallet uses the standard multisig address pattern. Any leftover "
-            "Bitcoin goes back to this wallet. Check the change shown on your "
-            "signing device before you approve."
+            "Leftover Bitcoin is intended to return to this multisig wallet through "
+            "the standard change path. This file does not state that path. Check the "
+            "change shown on your signing device before you approve."
         )
         change_detail = (
             "The BSMS file proves the first receiving address but omits a separate "

@@ -445,6 +445,21 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ProbeError, "coin type"):
             parse_bsms("\n".join(lines) + "\n")
 
+    def test_bare_wildcard_matching_directly_does_not_prove_bip48_change(self):
+        # With a bare /*, the file's first address can be xpub/0 rather than
+        # BIP48's xpub/0/0. An m/48 origin alone must not enable /1/* change.
+        lines = mainnet_record("/*").splitlines()
+        descriptor = lines[1].split("#", 1)[0]
+        lines[3] = Descriptor.from_string(descriptor).derive(0).address(NETWORKS["main"])
+        record = parse_bsms("\n".join(lines) + "\n")
+        self.assertEqual(record.reference_status, "verified")
+        layout = wallet_layout(record)
+        self.assertIsNone(layout.change)
+        self.assertFalse(wallet_summary(record)["can_prepare"])
+        lines[2] = "/0/*,/1/*"
+        with self.assertRaisesRegex(WalletError, "restriction disagrees"):
+            wallet_layout(parse_bsms("\n".join(lines) + "\n"))
+
     def test_fee_safety_stops_extreme_fee_and_flags_unusual_rates(self):
         self.assertEqual(check_fee_safety(540, 1000, 2), "")
         self.assertIn("Unusually high", check_fee_safety(2700, 1000, 10))

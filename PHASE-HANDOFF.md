@@ -1,10 +1,10 @@
 # Current handoff — Bitcoin Easy Signer
 
-## 0.4.1 accepted on Ledger and Jade; 0.4.2 Jade wait published
+## 0.4.1 accepted on Ledger and Jade; 0.4.3 change-path correction in source
 
 The owner's 0.4.0 Jade attempt was rejected twice after transaction preparation. The diagnostic report identifies the signer-response boundary but omits the changed PSBT field. The same signing engine shipped in 0.3.2, which the owner reported worked on Jade; the precise device-side difference is unknown. Ledger then asked for two review rounds; a failed request about 46 seconds after its check is consistent with the old 45-second HWI limit. A later attempt showed HWI “open failed,” before a signature response; its specific device-connection cause is unknown. `PATCH-0.4.1.md` documents the correction: retain the reviewed PSBT and import only signatures that verify against it, allow ten minutes for signing only, and give targeted Ledger reconnect guidance. The owner then reported an installed 0.4.1 Ledger + Jade Mutinynet payment; the privacy-limited report recorded two verified signer responses, verified finalization and accepted broadcast, and Mutinynet subsequently reported confirmation. The owner also found Jade PIN entry during discovery can exceed one minute; 0.4.2 gives discovery and matched-device xpub checks three minutes. That wait change is not yet physically tested. Mainnet broadcast remains disabled.
 
-**Start here for any agent or independent reviewer.** Read `AGENTS.md`, then this file, `PATCH-0.4.2.md`, `PATCH-0.4.1.md`, `PATCH-0.4.0.md`, `PATCH-0.3.2.md`, `PATCH-0.3.1.md`, `PATCH-0.3.0.md`, `PLAN-0.3.0.md`, `MUTINYNET-0.3.0.md`, `AUDIT-BASELINE-0.1.27.md`, `SECURITY-REVIEW-0.2.0.md`, and the current code. `PROJECT-HISTORY.md` and the older phase text in `ROADMAP.md` are historical evidence, not current capability claims.
+**Start here for any agent or independent reviewer.** Read `AGENTS.md`, then this file, `CHANGE-ADDRESS-REVIEW.md`, `PATCH-0.4.2.md`, `PATCH-0.4.1.md`, `PATCH-0.4.0.md`, `PATCH-0.3.2.md`, `PATCH-0.3.1.md`, `PATCH-0.3.0.md`, `PLAN-0.3.0.md`, `MUTINYNET-0.3.0.md`, `AUDIT-BASELINE-0.1.27.md`, `SECURITY-REVIEW-0.2.0.md`, and the current code. `PROJECT-HISTORY.md` and the older phase text in `ROADMAP.md` are historical evidence, not current capability claims.
 
 ## Status and version policy
 
