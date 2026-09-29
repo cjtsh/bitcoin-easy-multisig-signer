@@ -14,14 +14,17 @@ from embit.networks import NETWORKS
 
 from probe import (
     ProbeError, _same_xpub, _validate_chain, funding_address,
-    invoke_hwi, load_bsms, main, probe_devices,
+    _device_label, device_advice, devices_need_attention, invoke_hwi, load_bsms,
+    main, probe_devices,
 )
 
 
-def test_record(short_path: bool = False, dual_branch: bool = False) -> tuple[str, list[bip32.HDKey]]:
+def test_record(short_path: bool = False, dual_branch: bool = False,
+                bsms_template: bool = False) -> tuple[str, list[bip32.HDKey]]:
     roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
     path = "m/48h/1h/0h/2h"
-    suffix = "/<0;1>/*" if dual_branch else "/*" if short_path else "/0/*"
+    suffix = ("/**" if bsms_template else
+              "/<0;1>/*" if dual_branch else "/*" if short_path else "/0/*")
     keys = [
         f"[{root.my_fingerprint.hex()}/48h/1h/0h/2h]"
         f"{root.derive(path).to_public().to_base58()}{suffix}"
@@ -29,13 +32,31 @@ def test_record(short_path: bool = False, dual_branch: bool = False) -> tuple[st
     ]
     descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
     full_descriptor = descriptor + "#" + checksum(descriptor)
-    canonical = (descriptor.replace("/<0;1>/*", "/0/*") if dual_branch else
+    canonical = (descriptor.replace("/**", "/0/*") if bsms_template else
+                 descriptor.replace("/<0;1>/*", "/0/*") if dual_branch else
                  descriptor.replace("/*", "/0/*") if short_path else descriptor)
     reference = Descriptor.from_string(canonical).derive(0).address(NETWORKS["test"])
+    restrictions = "/0/*,/1/*" if bsms_template else "No path restrictions"
     return (
-        f"BSMS 1.0\n{full_descriptor}\nNo path restrictions\n{reference}\n",
+        f"BSMS 1.0\n{full_descriptor}\n{restrictions}\n{reference}\n",
         roots,
     )
+
+
+def sparrow_record() -> tuple[str, list[bip32.HDKey]]:
+    """A Sparrow-shaped BSMS record.
+
+    Sparrow exports the descriptor WITHOUT a checksum and states the derivation
+    restrictions on their own line, with the paths already written into the
+    descriptor as <0;1>/*. Nunchuk instead writes a checksum and the words
+    "No path restrictions". Both are valid, and the app rejected the Sparrow shape
+    outright, which blocked the owner's real wallets. Synthetic keys only: the
+    owner's own xpubs must never enter the repository.
+    """
+    text, roots = test_record(dual_branch=True)
+    lines = text.splitlines()
+    descriptor = lines[1].rsplit("#", 1)[0]
+    return "\n".join([lines[0], descriptor, "/0/*,/1/*", lines[3], ""]), roots
 
 
 class ProbeTests(unittest.TestCase):
@@ -55,10 +76,55 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(wallet.reference_status, "verified")
         self.assertEqual(wallet.network, "test")
 
+    def test_sparrow_style_record_without_a_checksum_is_accepted(self):
+        text, _ = sparrow_record()
+        wallet = self.write(text)
+        self.assertEqual(wallet.reference_status, "verified")
+        self.assertEqual((wallet.threshold, len(wallet.keys)), (2, 3))
+
+    def test_the_reference_address_still_guards_an_unchecksummed_descriptor(self):
+        """Dropping the checksum must not drop the protection: a descriptor that
+        does not derive the stated reference address is still refused."""
+        text, _ = sparrow_record()
+        lines = text.splitlines()
+        lines[1] = lines[1].replace("/<0;1>/*", "/<0;1>/*").replace("sortedmulti(2,",
+                                                                    "sortedmulti(3,")
+        wallet = self.write("\n".join(lines) + "\n")
+        # A 3-of-3 reinterpretation cannot derive the same 2-of-3 address.
+        self.assertEqual(wallet.reference_status, "mismatch")
+
+    def test_a_wrong_descriptor_checksum_is_still_rejected(self):
+        text, _ = test_record()
+        lines = text.splitlines()
+        lines[1] = lines[1][:-1] + ("0" if lines[1][-1] != "0" else "1")
+        with self.assertRaises(ProbeError):
+            self.write("\n".join(lines) + "\n")
+
+    def test_more_than_one_checksum_is_rejected(self):
+        text, _ = test_record()
+        lines = text.splitlines()
+        lines[1] = lines[1] + "#deadbeef"
+        with self.assertRaises(ProbeError):
+            self.write("\n".join(lines) + "\n")
+
     def test_receive_branch_diagnostic_never_counts_as_verified(self):
         record, _ = test_record(short_path=True)
         wallet = self.write(record)
         self.assertEqual(wallet.reference_status, "receive-branch-only")
+
+    def test_bsms_template_expands_only_declared_receive_and_change_paths(self):
+        record, _ = test_record(bsms_template=True)
+        wallet = self.write(record)
+        self.assertEqual(wallet.reference_status, "verified")
+        self.assertEqual(wallet.restrictions, "/0/*,/1/*")
+        self.assertIsNotNone(wallet.change_descriptor)
+        self.assertTrue(all(key.suffix == "/0/*" for key in wallet.descriptor.keys))
+        self.assertTrue(all(key.suffix == "/1/*" for key in wallet.change_descriptor.keys))
+
+    def test_unsupported_bsms_paths_are_rejected_not_guessed(self):
+        record, _ = test_record(bsms_template=True)
+        with self.assertRaisesRegex(ProbeError, "supports either"):
+            self.write(record.replace("/0/*,/1/*", "/0/*,/2/*"))
 
     def test_bad_checksum_fails_closed(self):
         record, _ = test_record()
@@ -101,6 +167,54 @@ class ProbeTests(unittest.TestCase):
             result, ["Jade: signer 1 of 3 public xpub matched (not a signing test)."]
         )
 
+    def test_a_device_that_errors_reports_hwis_own_reason(self):
+        """The owner's Ledger was unlocked, so "unavailable or locked" sent them
+        looking for the wrong fault. HWI knew the real answer and it was discarded."""
+        record, _ = test_record()
+        wallet = self.write(record)
+        real = ("Could not open client or get fingerprint information: "
+                "Ledger is not in either the Bitcoin or Bitcoin Testnet app")
+
+        def fake_hwi(_executable, _chain, *args):
+            self.assertEqual(args, ("enumerate",))
+            return [{"type": "ledger", "model": "ledger_nano_s_plus",
+                     "path": "DevSrvsID:1", "error": real, "code": -3}]
+
+        with patch("probe.invoke_hwi", side_effect=fake_hwi):
+            result = probe_devices(wallet, "hwi", "testnet4")
+        self.assertEqual(len(result), 1)
+        # The device name is readable and the reason survives intact.
+        self.assertTrue(result[0].startswith("Ledger Nano S Plus: detected, but not readable."))
+        self.assertIn("not in either the Bitcoin or Bitcoin Testnet app", result[0])
+        self.assertNotIn("locked", result[0])
+        self.assertTrue(devices_need_attention(result))
+        # And the owner is told the one thing that fixes it.
+        self.assertIn("open the Bitcoin Testnet app", result[0])
+
+    def test_advice_is_specific_and_never_misleading(self):
+        """The owner's complaint: nobody would work out that a Ledger needs a
+        particular app opened on it. Say the one thing that applies."""
+        ledger = "Ledger is not in either the Bitcoin or Bitcoin Testnet app"
+        self.assertIn("Bitcoin Testnet app", device_advice("ledger", ledger))
+        self.assertIn("Bitcoin Testnet app", device_advice("ledger", "error 0x5515 locked"))
+        self.assertIn("PIN", device_advice("jade", "Use Recovery Phrase Login or QR PIN Unlock"))
+        self.assertIn("Trezor", device_advice("trezor", "Device is locked"))
+        # An unrelated fault must not attract advice that does not apply.
+        self.assertEqual(device_advice("ledger", "LIBUSB_ERROR_IO"), "")
+        self.assertEqual(device_advice("", "locked"), "")
+        self.assertEqual(device_advice("trezor", "LIBUSB_ERROR_NOT_FOUND"), "")
+
+    def test_device_labels_and_attention(self):
+        self.assertEqual(_device_label("ledger_nano_s_plus"), "Ledger Nano S Plus")
+        self.assertEqual(_device_label("trezor_one"), "Trezor One")
+        self.assertEqual(_device_label("coldcard_mk4"), "Coldcard Mk4")
+        self.assertEqual(_device_label(""), "Device")
+        # Only a matched signer needs nothing further from the owner.
+        self.assertTrue(devices_need_attention([]))
+        self.assertTrue(devices_need_attention(["Ledger Nano S Plus: not a signer in this BSMS file."]))
+        self.assertFalse(devices_need_attention(
+            ["Jade: signer 1 of 3 public xpub matched (not a signing test)."]))
+
     def test_hwi_fingerprint_match_with_wrong_xpub_stops_short_of_claiming_match(self):
         record, roots = test_record()
         wallet = self.write(record)
@@ -114,7 +228,8 @@ class ProbeTests(unittest.TestCase):
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
             result = probe_devices(wallet, "hwi", "testnet4")
-        self.assertEqual(result, ["ledger: fingerprint matched, but xpub DID NOT MATCH."])
+        # Device names are presented for a person to read, not as HWI spells them.
+        self.assertEqual(result, ["Ledger: fingerprint matched, but xpub DID NOT MATCH."])
 
     def test_explicit_testnet4_chain_and_guarded_funding_address(self):
         text, _ = test_record()
@@ -157,6 +272,20 @@ class ProbeTests(unittest.TestCase):
             run.call_args.args[0],
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
         )
+
+    def test_hwi_failure_keeps_hwis_own_reason(self):
+        """When a device will not connect, the app must say what HWI said. A
+        generic "check the device" is useless to the person holding it."""
+        from probe import _hwi_reason
+        self.assertEqual(_hwi_reason("Device not found"), "Device not found")
+        self.assertEqual(_hwi_reason(""), "")
+        # Paths must not travel into the interface.
+        self.assertEqual(_hwi_reason("cannot open /usr/local/lib/libusb-1.0.0.dylib"),
+                         "cannot open <path>")
+        self.assertNotIn("/dev/", _hwi_reason("Could not connect to /dev/hidraw3"))
+        # Long output is capped and control characters are dropped.
+        self.assertLessEqual(len(_hwi_reason("x" * 400)), 160)
+        self.assertNotIn("\x07", _hwi_reason("bell\x07here"))
 
 
 if __name__ == "__main__":

@@ -16,7 +16,8 @@ from probe import ProbeError, load_bsms, parse_bsms
 from network_config import NETWORKS as CHAIN_CONFIGS
 from test_probe import test_record
 from wallet_service import (
-    WalletError, build_unsigned_psbt, check_fee_safety, explorer_get, scan_wallet, wallet_layout,
+    WalletError, build_unsigned_psbt, check_fee_safety, estimate_fee_preview,
+    explorer_get, scan_wallet, wallet_layout,
     wallet_summary,
 )
 
@@ -35,9 +36,65 @@ def mainnet_record(suffix="/<0;1>/*"):
     return f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\nNo path restrictions\n{receive}\n"
 
 
+class PendingSpendTests(unittest.TestCase):
+    """A confirmed output spent by an unconfirmed transaction is normal.
+
+    The address totals still count it, because the spend is not confirmed, while the
+    UTXO list already excludes it. Reading that as corruption hid the whole prepare
+    card and locked the owner out of his own wallet after one send, until the pending
+    spend confirmed. Sparrow shows the same wallet the same way: confirmed balance,
+    minus the mempool figure, equals what is spendable.
+    """
+
+    def setUp(self):
+        self.text, _ = test_record(bsms_template=True)
+        self.wallet = parse_bsms(self.text)
+        self.layout = wallet_layout(self.wallet)
+        self.receive = self.layout.receive.derive(0).address(NETWORKS["test"])
+
+    def stub(self, *, mempool_spent, utxos):
+        def get(path, *, text=False):
+            if path == f"/address/{self.receive}/utxo":
+                return utxos
+            if path.endswith("/utxo"):
+                return []
+            if path.startswith("/address/"):
+                used = path == f"/address/{self.receive}"
+                return {
+                    "chain_stats": {"funded_txo_sum": 6000 if used else 0,
+                                    "spent_txo_sum": 0, "tx_count": 1 if used else 0},
+                    "mempool_stats": {"funded_txo_sum": 0,
+                                      "spent_txo_sum": mempool_spent if used else 0,
+                                      "tx_count": 1 if (used and mempool_spent) else 0},
+                }
+            raise AssertionError(path)
+        return get
+
+    def test_a_confirmed_output_spent_in_the_mempool_is_not_corruption(self):
+        result = scan_wallet(self.wallet, self.stub(mempool_spent=6000, utxos=[]))
+        self.assertTrue(result["utxo_consistent"])
+        self.assertEqual(result["confirmed_sats"], 6000)
+        self.assertEqual(result["pending_delta_sats"], -6000)
+
+    def test_utxos_exceeding_the_totals_is_still_refused(self):
+        # The address totals say 6,000 but the UTXO list offers 12,000: the explorer
+        # is reporting money it does not count, and nothing should be built on it.
+        result = scan_wallet(self.wallet, self.stub(
+            mempool_spent=0,
+            utxos=[{"txid": "aa" * 32, "vout": 0, "value": 12_000,
+                    "status": {"confirmed": True}}]))
+        self.assertFalse(result["utxo_consistent"])
+
+    def test_an_unexplained_shortfall_is_still_refused(self):
+        result = scan_wallet(self.wallet, self.stub(mempool_spent=100, utxos=[]))
+        self.assertFalse(result["utxo_consistent"])
+
+
 class WalletServiceTests(unittest.TestCase):
     def setUp(self):
-        self.text, _ = test_record(dual_branch=True)
+        # Exercise the standard BSMS descriptor-template form used to declare
+        # separate receive and change paths.
+        self.text, _ = test_record(bsms_template=True)
         self.wallet = parse_bsms(self.text)
         self.layout = wallet_layout(self.wallet)
         from embit.networks import NETWORKS
@@ -92,6 +149,15 @@ class WalletServiceTests(unittest.TestCase):
         address = next(item for item in result["addresses"] if item["address"] == self.receive)
         self.assertEqual(address["confirmed"], 6000)
         self.assertEqual(address["pending_delta"], 0)
+
+    def test_fee_preview_is_conservative_and_uses_confirmed_utxo_count(self):
+        data = scan_wallet(self.wallet, self.fake_get)
+        preview = estimate_fee_preview(self.wallet, data, send_all=False)
+        self.assertEqual(preview["input_count"], 1)
+        self.assertEqual(preview["estimated_vbytes"], 202)
+        self.assertIn("all confirmed", preview["method"])
+        send_all = estimate_fee_preview(self.wallet, data, send_all=True)
+        self.assertEqual(send_all["estimated_vbytes"], 159)
 
     def test_unsigned_psbt_has_correct_destination_change_and_prevout(self):
         from embit.networks import NETWORKS
@@ -153,8 +219,8 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "refresh"):
             build_unsigned_psbt(self.wallet, {**data, "confirmed_sats": 7000},
                                 recipient, None, 2, self.fake_get, send_all=True)
-        with self.assertRaisesRegex(WalletError, "coverage"):
-            build_unsigned_psbt(self.wallet, {**data, "coverage_limited": True},
+        with self.assertRaisesRegex(WalletError, "range"):
+            build_unsigned_psbt(self.wallet, {**data, "range_limited": True},
                                 recipient, None, 2, self.fake_get, send_all=True)
 
     def test_send_all_requires_every_confirmed_input_and_respects_fee_ceiling(self):
@@ -264,18 +330,19 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
 
-    def test_both_networks_leave_undeclared_change_view_only(self):
+    def test_receive_only_export_is_sweep_only(self):
+        """No inferred change path may receive a partial send."""
         for short in (False, True):
             with self.subTest(short=short):
                 record = parse_bsms(test_record(short_path=short)[0])
                 layout = wallet_layout(record)
                 self.assertIsNone(layout.change)
-                self.assertFalse(wallet_summary(record)["can_prepare"])
+                summary = wallet_summary(record)
+                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["can_send_all"])
+                self.assertIsNone(summary["change_address"])
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
-                self.assertTrue(scan["coverage_limited"])
-                with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
-                    build_unsigned_psbt(record, scan, record.reference_address, 1000)
 
     def test_mainnet_explicit_branches_build_only_unsigned_psbt(self):
         record = parse_bsms(mainnet_record())
@@ -333,16 +400,15 @@ class WalletServiceTests(unittest.TestCase):
             build_unsigned_psbt(record, {**data, "utxo_consistent": False},
                                 recipient, 10_000, 2, fake_get)
 
-    def test_mainnet_receive_only_and_inferred_branches_cannot_prepare(self):
+    def test_mainnet_receive_only_export_does_not_guess_change(self):
         for suffix in ("/0/*", "/*"):
             with self.subTest(suffix=suffix):
                 record = parse_bsms(mainnet_record(suffix))
                 layout = wallet_layout(record)
                 self.assertIsNone(layout.change)
-                self.assertFalse(wallet_summary(record)["can_prepare"])
-                with self.assertRaisesRegex(WalletError, "verified 2-of-3"):
-                    build_unsigned_psbt(record, {"network": "main", "utxo_consistent": True},
-                                        record.reference_address, 1000)
+                summary = wallet_summary(record)
+                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["can_send_all"])
         lines = mainnet_record().splitlines()
         other = parse_bsms(mainnet_record("/0/*"))
         lines[3] = other.descriptor.derive(1).address(NETWORKS["main"])

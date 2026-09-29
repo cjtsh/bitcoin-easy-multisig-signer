@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#FBA33C"/><stop offset="1" stop-color="#E27C09"/>
+  </linearGradient><filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+    <feDropShadow dx="0" dy="9" stdDeviation="12" flood-color="#00000038"/>
+  </filter></defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  
+  <circle cx="512" cy="496" r="288" fill="#ffffff"/>
+  <g transform="translate(390.75,351.00) scale(1.87500)">
+  <mask id="bm-a" maskUnits="userSpaceOnUse" x="-40" y="-40" width="200" height="240">
+    <rect x="-40" y="-40" width="200" height="240" fill="#000"/>
+    <g fill="#fff">
+      <rect x="30" y="-8" width="13" height="160"/>
+      <rect x="52" y="-8" width="13" height="160"/>
+    </g>
+    <g fill="#000">
+      <path d="M38 24 H60 A11 11 0 0 1 60 46 H38 Z"/>
+      <path d="M38 82 H62 A17 17 0 0 1 62 116 H38 Z"/>
+    </g>
+    <g fill="#fff">
+      <rect x="18" y="6" width="20" height="128"/>
+      <path d="M38 6 H60 A29 29 0 0 1 60 64 H38 Z"/>
+      <path d="M38 64 H62 A35 35 0 0 1 62 134 H38 Z"/>
+    </g>
+    <g fill="#000">
+      <path d="M38 24 H60 A11 11 0 0 1 60 46 H38 Z"/>
+      <path d="M38 82 H62 A17 17 0 0 1 62 116 H38 Z"/>
+    </g>
+  </mask>
+  <rect x="-40" y="-40" width="200" height="240" fill="#F7931A" mask="url(#bm-a)"/>
+</g>
+  <g filter="url(#soft)"><g transform="translate(596,626) rotate(45)">
+  <g stroke="#DE7A08" stroke-width="13.8">
+    <rect x="-46.0" y="-246.4" width="92.0"
+          height="436.8" rx="22.1" fill="#ffffff"/>
+    <path d="M -46.0 190.4 L 0 280.0
+             L 46.0 190.4 Z" fill="#ececec"/>
+    <path d="M -18.4 229.6 L 0 280.0
+             L 18.4 229.6 Z" fill="#4a4a4a"/>
+  </g>
+  <rect x="-46.0" y="-44.8" width="92.0"
+        height="11.0" fill="#00000026"/>
+</g></g>
+
+</svg>

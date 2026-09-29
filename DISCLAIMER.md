@@ -1,16 +1,16 @@
 # Experimental software: risk, no warranty, and liability disclaimer
 
-**Read this before using Easy Bitcoin Multisig Signer.** This is
+**Read this before using Bitcoin Easy Signer Signer.** This is
 experimental software under development, not an audited or production-ready
 Bitcoin recovery tool. It may contain bugs, security flaws, incompatible
 hardware behavior, misleading information, or missing functionality.
 Bitcoin transactions can be irreversible, and a mistake can result in the
 permanent loss of some or all funds.
 
-The current read-only proof **cannot sign or broadcast transactions**. Do
-not rely on it to recover or move funds. Future versions may have different
-capabilities and risks; a version number or GitHub "Latest" label does not
-mean the software is safe for production use.
+Version 0.2.0 can ask hardware devices to sign and can broadcast to Testnet4.
+It refuses mainnet broadcast. A signed but unbroadcast mainnet transaction can
+still be submitted by anyone who obtains its bytes. Do not rely on a version
+number or GitHub "Latest" label as proof of production safety.
 
 ## No promises or warranties
 

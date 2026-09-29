@@ -7,6 +7,7 @@ Address queries disclose the queried addresses to the configured public explorer
 from __future__ import annotations
 
 import json
+import re
 import ssl
 import time
 from functools import partial
@@ -15,10 +16,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from embit import psbt, script, transaction
+from embit.psbt import DerivationPath
 from embit.descriptor import Descriptor
+from embit.descriptor.miniscript import Multi
 from embit.networks import NETWORKS
 
 from network_config import NETWORKS as CHAIN_CONFIGS, for_record_network
@@ -50,6 +55,50 @@ def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
             f"{amount:,}-sat send. Confirm the units and total before downloading."
         )
     return ""
+
+
+def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
+                          base_url: str | None = None) -> str:
+    """Submit a finalised transaction to an Esplora endpoint and return its txid.
+
+    Redirects are refused and TLS is verified, exactly as for every other outbound
+    request. The endpoint's own rejection reason is surfaced, because "bad-txns-..."
+    from the node is far more useful than a generic failure.
+    """
+    if chain not in EXPLORERS:
+        raise WalletError("Unsupported broadcast network.")
+    raw = (raw_transaction_hex or "").strip().lower()
+    if len(raw) < 100 or len(raw) > 2_000_000 or len(raw) % 2:
+        raise WalletError("The finalised transaction is not a usable size.")
+    try:
+        bytes.fromhex(raw)
+    except ValueError as exc:
+        raise WalletError("The finalised transaction is not valid hex.") from exc
+    base = validate_esplora_url(base_url) if base_url is not None else EXPLORERS[chain]
+    request = Request(base + "/tx", data=raw.encode("ascii"), method="POST", headers={
+        "User-Agent": f"EasyMultisig/{APP_VERSION}",
+        "Content-Type": "text/plain",
+    })
+    try:
+        with urlopen(request, timeout=20) as response:
+            body = response.read(4096).decode("ascii", "replace").strip()
+    except HTTPError as exc:
+        try:
+            detail = exc.read(2048).decode("utf-8", "replace").strip()
+        except Exception:
+            detail = ""
+        raise WalletError(
+            "The network refused this transaction"
+            + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
+        ) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise WalletError("Could not reach the broadcast server.") from exc
+    if len(body) != 64 or any(char not in "0123456789abcdef" for char in body.lower()):
+        raise WalletError(
+            "The broadcast server did not return a transaction id, so it is unknown "
+            "whether anything was sent. Check the explorer before retrying."
+        )
+    return body.lower()
 
 
 def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
@@ -120,6 +169,8 @@ class Layout:
     change: Descriptor | None
     warning: str
     change_verified: bool
+    change_declared: bool = False
+    change_assumed: bool = False
 
 
 def wallet_layout(record: WalletRecord) -> Layout:
@@ -135,55 +186,133 @@ def wallet_layout(record: WalletRecord) -> Layout:
     desc = record.descriptor
     text = record.descriptor_text
     suffixes = [key.suffix for key in record.keys]
-    if desc.num_branches == 2:
+    assumed = False
+    declared = False
+    if record.change_descriptor is not None:
+        # The wallet file itself declares separate receive and change descriptors.
+        receive, change = desc, record.change_descriptor
+        warning = ""
+        verified = True
+        declared = True
+    elif desc.num_branches == 2:
         receive, change = desc.branch(0), desc.branch(1)
         warning = ""
         verified = True
-    elif suffixes and all(s == "/0/*" for s in suffixes):
-        receive = desc
-        change = None
-        warning = ("Change is not declared in this BSMS file. The receive-side balance "
-                   "may be incomplete and transaction preparation is disabled.")
-        verified = False
-    elif suffixes and all(s == "/*" for s in suffixes):
-        if record.reference_status == "receive-branch-only":
-            receive = Descriptor.from_string(text.replace("/*", "/0/*"))
-            change = None
-            warning = (
-                "The /* descriptor does not literally match the reference. "
-                "Only the matching /0/* receive path is scanned; change is not guessed. "
-                "Balance is partial and transaction preparation is disabled."
-            )
-            verified = False
-        else:
-            receive, change = desc, None
-            warning = (
-                "Only the literal /* branch can be checked. No change branch is defined; "
-                "the displayed amount may not be the wallet's full balance."
-            )
-            verified = False
+        declared = True
     else:
-        raise WalletError("Unsupported address branches; no balance will be guessed.")
+        if suffixes and all(s == "/0/*" for s in suffixes):
+            receive, receive_text = desc, text
+        elif suffixes and all(s == "/*" for s in suffixes):
+            if record.reference_status == "receive-branch-only":
+                receive_text = text.replace("/*", "/0/*")
+                receive = Descriptor.from_string(receive_text)
+            else:
+                receive, receive_text = desc, text
+        else:
+            raise WalletError("Unsupported address branches; no balance will be guessed.")
+        # The BSMS restrictions line can declare both branches even when the
+        # descriptor prints only receive. An unused inferred /1/* address is
+        # never proof that the originating wallet controls change.
+        declared = record.restrictions == "/0/*,/1/*"
+        change = _conventional_change(receive_text, record) if declared else None
+        verified = bool(change and declared)
+        warning = ("This export does not declare a change branch. Only Send All "
+                   "from scanned receiving addresses is available."
+                   if change is None else "")
     network = NETWORKS[record.network]
     if receive.derive(0).address(network) != record.reference_address:
         raise WalletError("Reference address does not match the chosen receive path.")
     if change and change.derive(0).address(network) == record.reference_address:
         raise WalletError("Receive and change paths unexpectedly overlap.")
-    return Layout(receive, change, warning, verified)
+    return Layout(receive, change, warning, verified, declared, assumed)
+
+
+_ZERO_BRANCH = re.compile(r"/0/\*")
+_BARE_WILDCARD = re.compile(r"(?<!/\d)/\*")
+
+
+def _conventional_change(receive_text: str, record: WalletRecord) -> Descriptor | None:
+    """Resolve change from the receiving descriptor after BSMS explicitly declares /1/*.
+
+    Callers must prove the declaration first. Derivation alone is never evidence
+    that the originating wallet or devices recognize the resulting addresses.
+    """
+    if "/**" in receive_text or "<0;1>" in receive_text:
+        return None
+    try:
+        if _ZERO_BRANCH.search(receive_text):
+            change_text = _ZERO_BRANCH.sub("/1/*", receive_text)
+        elif "/*" in receive_text:
+            change_text = _BARE_WILDCARD.sub("/1/*", receive_text)
+        else:
+            return None
+        candidate = Descriptor.from_string(change_text)
+        if (not candidate.wsh or candidate.sh
+                or not isinstance(candidate.miniscript, Multi)
+                or candidate.miniscript.args[0].num != record.threshold
+                or len(candidate.keys) != len(record.keys)
+                or sorted(k.key.to_base58() for k in candidate.keys)
+                   != sorted(k.key.to_base58() for k in record.keys)):
+            return None
+    except Exception:
+        return None
+    return candidate
 
 
 def wallet_summary(record: WalletRecord) -> dict:
     layout = wallet_layout(record)
     config = CHAIN_CONFIGS[_chain(record)]
     network = NETWORKS[record.network]
+    supported_policy = record.threshold == 2 and len(record.keys) == 3
+    can_prepare = bool(layout.change and layout.change_verified and supported_policy)
+    can_send_all = supported_policy
+    if record.threshold != 2 or len(record.keys) != 3:
+        prepare_reason = (
+            "This app prepares transactions only for a 2-of-3 multisig wallet. "
+            "You can still view this wallet's balance."
+        )
+    elif layout.change is None:
+        prepare_reason = (
+            "This wallet file does not establish change ownership. You can send all "
+            "confirmed Bitcoin found on its receiving addresses with no change, or "
+            "import an export that declares receive and change paths for a smaller send."
+        )
+    else:
+        prepare_reason = ""
+    if layout.change_assumed:
+        change_note = (
+            "Your wallet file lists the addresses that receive payments, but not the ones "
+            "used for change. Almost every multisig wallet uses the same standard change "
+            "addresses, so the app will use those. The change address is shown in the "
+            "review — check it on your signing device before you approve."
+        )
+        change_detail = (
+            "Change addresses are not in your wallet file. The app is using this wallet's "
+            "standard change addresses (the .../1/* branch), which is the usual arrangement "
+            "for BIP48 multisig."
+        )
+    elif layout.change is not None:
+        change_note = ""
+        change_detail = "Change addresses are declared in your wallet file."
+    else:
+        change_note = ""
+        change_detail = "This export does not establish change ownership; partial sends are unavailable."
     return {
         "policy": f"{record.threshold}-of-{len(record.keys)} native-SegWit multisig",
+        "policy_short": f"{record.threshold}-of-{len(record.keys)} multisig wallet",
         "chain": config.label,
+        "chain_short": config.short_label,
         "network": config.chain,
-        "can_prepare": bool(layout.change_verified and layout.change
-                            and record.threshold == 2 and len(record.keys) == 3),
+        "can_prepare": can_prepare,
+        "can_send_all": can_send_all,
+        "change_assumed": layout.change_assumed,
+        "change_note": change_note,
+        "change_detail": change_detail,
+        "prepare_reason": prepare_reason,
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
+        "descriptor_checksum": record.descriptor_checksum,
+        "checksum_supplied": record.checksum_supplied,
         "receive_address": layout.receive.derive(0).address(network),
         "change_address": (
             layout.change.derive(0).address(network) if layout.change else None
@@ -213,10 +342,32 @@ def _address_stats(address: str, get: Callable) -> dict:
         return {
             "confirmed": confirmed["funded_txo_sum"] - confirmed["spent_txo_sum"],
             "pending_delta": pending["funded_txo_sum"] - pending["spent_txo_sum"],
+            # Outputs being spent by a transaction that is not confirmed yet. The
+            # address totals still count them; the UTXO list already excludes them.
+            "pending_spent": pending["spent_txo_sum"],
             "used": confirmed["tx_count"] > 0 or pending["tx_count"] > 0,
         }
     except (KeyError, TypeError, ValueError) as exc:
         raise WalletError("Explorer returned malformed address statistics.") from exc
+
+
+def _utxos_agree_with_totals(confirmed_from_totals: int, confirmed_utxos: int,
+                             pending_spent: int) -> bool:
+    """Do the address totals and the UTXO list describe the same money?
+
+    They legitimately differ while a payment is unconfirmed. An output that an
+    unconfirmed transaction is spending still counts in the address totals -- the
+    spend is not confirmed -- but it is already gone from the UTXO list. Treating
+    that as corruption blocked every further transaction until the pending spend
+    confirmed, which for the owner meant the app looked frozen after one send.
+
+    A shortfall is therefore fine when unconfirmed spends account for it. UTXOs
+    exceeding the totals is not: that would mean the explorer reports money it does
+    not count, and no transaction should be built on it.
+    """
+    if confirmed_utxos > confirmed_from_totals:
+        return False
+    return (confirmed_from_totals - confirmed_utxos) <= pending_spent
 
 
 def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
@@ -284,9 +435,10 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
         "network": chain,
         "confirmed_sats": confirmed, "pending_delta_sats": pending_delta,
         "observed_sats": confirmed + pending_delta,
-        "utxo_consistent": sum(
-            u["value"] for u in utxos if u["status"]["confirmed"]
-        ) == confirmed,
+        "utxo_consistent": _utxos_agree_with_totals(
+            confirmed, sum(u["value"] for u in utxos if u["status"]["confirmed"]),
+            sum(item.get("pending_spent", 0) for item in addresses),
+        ),
         "addresses": [
             item for item in addresses
             if item["used"] or (item["branch"] == "receive" and item["index"] == 0)
@@ -297,6 +449,8 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
             if item["branch"] == "change" and item["used"]
         ],
         "scanned": len(addresses),
+        "range_limited": coverage_limited,
+        "missing_change": layout.change is None,
         "coverage_limited": coverage_limited or layout.change is None,
         "path_warning": layout.warning,
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -334,6 +488,112 @@ def _estimated_signed_vbytes(
     return (4 * base + witness + 3) // 4
 
 
+def _select_inputs(
+    candidates: list[dict], amount: int | None, fee_rate: int,
+    output_scripts: list[script.Script], witness_script_lengths: dict[str, int],
+    *, send_all: bool,
+) -> tuple[list[dict], int, int]:
+    """Choose inputs and compute the fee for the transaction that will be built.
+
+    Single source of truth for both the live fee preview and the PSBT builder, so
+    the two can never disagree about which outputs are spent or what the fee is.
+    Returns (chosen_utxos, total_input_sats, fee_sats).
+    """
+    ordered = sorted(candidates, key=lambda u: u["value"], reverse=True)
+    if send_all:
+        # Every confirmed output found by this scan is spent and there is no
+        # change output, so the fee comes out of the recipient amount.
+        total = sum(u["value"] for u in ordered)
+        fee = _estimated_signed_vbytes(
+            ordered, output_scripts, witness_script_lengths
+        ) * fee_rate
+        return ordered, total, fee
+    chosen: list[dict] = []
+    total = 0
+    fee = 0
+    for utxo in ordered:
+        chosen.append(utxo)
+        total += utxo["value"]
+        fee = _estimated_signed_vbytes(
+            chosen, output_scripts, witness_script_lengths
+        ) * fee_rate
+        if amount is not None and total >= amount + fee + SATOSHI_DUST_FLOOR:
+            break
+    return chosen, total, fee
+
+
+def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
+                         amount: int | None = None, fee_rate: int = 2,
+                         recipient: str | None = None) -> dict:
+    """Live fee estimate for the transaction that would actually be built.
+
+    For a partial send with an amount, the same greedy input selection as the
+    builder is used, so the previewed size matches the review. With no amount
+    (or for send-all) every confirmed scanned output is used, which is the
+    conservative upper bound.
+    """
+    layout = wallet_layout(record)
+    if layout.change is None and not send_all:
+        raise WalletError(
+            "This wallet export does not establish change ownership. Choose Send All "
+            "or import an export that declares both address branches."
+        )
+    if (not scan.get("utxo_consistent") or scan.get("range_limited")
+            or (scan.get("missing_change") and not send_all)):
+        raise WalletError("Refresh a complete, consistent balance before estimating a transaction.")
+    if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
+        raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
+    confirmed = [u for u in scan["utxos"] if u["status"]["confirmed"]]
+    if not confirmed:
+        raise WalletError("No confirmed outputs are available to estimate.")
+    if not send_all and amount is not None:
+        if type(amount) is not int or amount < SATOSHI_DUST_FLOOR:
+            raise WalletError("Amount must be at least 546 sats.")
+    else:
+        amount = None
+    destination = _output_script_for(recipient, record)
+    output_scripts = [destination] if send_all else [
+        destination, layout.change.derive(0).script_pubkey()
+    ]
+    script_lengths = {
+        "receive": len(layout.receive.derive(0).witness_script().data),
+    }
+    if layout.change:
+        script_lengths["change"] = len(layout.change.derive(0).witness_script().data)
+    chosen, total, fee = _select_inputs(
+        confirmed, amount, fee_rate, output_scripts, script_lengths,
+        send_all=send_all,
+    )
+    if not chosen:
+        raise WalletError("No confirmed outputs are available to estimate.")
+    if not send_all and amount is not None and total < amount + fee + SATOSHI_DUST_FLOOR:
+        raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
+    if send_all and fee > MAX_ESTIMATED_FEE_SATS:
+        raise WalletError(
+            "Sending all exceeds the 10,000-sat fee safety ceiling. "
+            "Wait for a lower fee rate or use an established wallet."
+        )
+    return {
+        "estimated_vbytes": _estimated_signed_vbytes(chosen, output_scripts, script_lengths),
+        "input_count": len(chosen),
+        "selected_sats": total,
+        "method": ("exact input selection for this amount" if amount is not None
+                   else "conservative upper estimate using all confirmed scanned outputs"),
+    }
+
+
+def _output_script_for(recipient: str | None, record: WalletRecord) -> script.Script:
+    """Real destination script when a valid address is supplied, else a P2WSH-sized stand-in."""
+    if isinstance(recipient, str):
+        try:
+            destination = script.address_to_scriptpubkey(recipient)
+            if destination.address(NETWORKS[record.network]) == recipient.lower():
+                return destination
+        except Exception:
+            pass
+    return script.Script(b"\x00\x20" + bytes(32))
+
+
 def build_unsigned_psbt(
     record: WalletRecord, scan: dict, recipient: str, amount: int | None,
     fee_rate: int = 2, get: Callable = explorer_get,
@@ -345,16 +605,19 @@ def build_unsigned_psbt(
     query = _query_for(record, get, base_url)
     if scan.get("network") != chain:
         raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
-    if not layout.change_verified or record.threshold != 2 or len(record.keys) != 3:
-        raise WalletError("Preparing a transaction requires verified 2-of-3 receiving and change paths.")
+    if record.threshold != 2 or len(record.keys) != 3 or (layout.change is None and not send_all):
+        raise WalletError(
+            "Preparing this transaction requires a 2-of-3 wallet and, for a smaller "
+            "send, a declared change path."
+        )
     if scan.get("source") != (base_url or EXPLORERS[chain]):
         raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
     if not scan.get("utxo_consistent", False):
         raise WalletError(
             "UTXOs and confirmed balance disagree; refresh or verify with your own node."
         )
-    if layout.change is None or scan.get("coverage_limited"):
-        raise WalletError("Change path or scan coverage is incomplete; no unsigned transaction will be prepared.")
+    if scan.get("range_limited") or (scan.get("missing_change") and not send_all):
+        raise WalletError("Change path or scan range is incomplete; no unsigned transaction will be prepared.")
     config = CHAIN_CONFIGS[chain]
     prefix = config.address_prefix
     if not isinstance(recipient, str) or not recipient.startswith(prefix):
@@ -374,40 +637,30 @@ def build_unsigned_psbt(
         raise WalletError("Amount must be at least 546 sats.")
     if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
         raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
-    candidates = sorted(
-        (u for u in scan["utxos"] if u["status"]["confirmed"]),
-        key=lambda u: u["value"], reverse=True,
-    )
+    candidates = [u for u in scan["utxos"] if u["status"]["confirmed"]]
     script_lengths = {
         "receive": len(layout.receive.derive(0).witness_script().data),
-        "change": len(layout.change.derive(0).witness_script().data),
     }
-    change_script = layout.change.derive(0).script_pubkey()
-    chosen, total, fee = [], 0, 0
+    if layout.change:
+        script_lengths["change"] = len(layout.change.derive(0).witness_script().data)
+    change_script = layout.change.derive(0).script_pubkey() if layout.change else None
+    output_scripts = [destination] if send_all else [destination, change_script]
+    chosen, total, fee = _select_inputs(
+        candidates, None if send_all else amount, fee_rate,
+        output_scripts, script_lengths, send_all=send_all,
+    )
     if send_all:
-        chosen = candidates
-        total = sum(u["value"] for u in chosen)
         if total != scan["confirmed_sats"]:
             raise WalletError("Confirmed outputs changed since the scan; refresh before sending all.")
         # One recipient output, no change. Include every confirmed output or refuse.
-        fee = _estimated_signed_vbytes(chosen, [destination], script_lengths) * fee_rate
         if fee > MAX_ESTIMATED_FEE_SATS:
             raise WalletError("Sending all exceeds the 10,000-sat fee safety ceiling. "
                               "Wait for a lower fee rate or use an established wallet.")
         amount = total - fee
         if amount < SATOSHI_DUST_FLOOR:
             raise WalletError("Confirmed balance cannot cover the fee and a spendable output.")
-    else:
-        for utxo in candidates:
-            chosen.append(utxo)
-            total += utxo["value"]
-            fee = _estimated_signed_vbytes(
-                chosen, [destination, change_script], script_lengths
-            ) * fee_rate
-            if total >= amount + fee + SATOSHI_DUST_FLOOR:
-                break
-        if total < amount + fee + SATOSHI_DUST_FLOOR:
-            raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
+    elif total < amount + fee + SATOSHI_DUST_FLOOR:
+        raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
     fee_warning = check_fee_safety(fee, amount, fee_rate)
     change_address = None
     change_sats = 0
@@ -426,11 +679,25 @@ def build_unsigned_psbt(
         outputs.append(transaction.TransactionOutput(change_sats, change_desc.script_pubkey()))
     tx = transaction.Transaction(
         version=2,
-        vin=[transaction.TransactionInput(bytes.fromhex(u["txid"]), u["vout"])
+        # Signal replaceability (BIP125) rather than finality. A transaction built
+        # with the default 0xffffffff cannot be fee-bumped at all, so a payment that
+        # sits in a quiet or hostile mempool is simply stuck: the owner's own second
+        # testnet send did exactly that, and nothing could be done but wait. A
+        # sequence below 0xfffffffe lets the same coins be spent again with a higher
+        # fee if it ever becomes necessary.
+        vin=[transaction.TransactionInput(bytes.fromhex(u["txid"]), u["vout"],
+                                          sequence=0xFFFFFFFD)
              for u in chosen],
         vout=outputs,
     )
     packet = psbt.PSBT(tx)
+    # Publish the wallet's account xpubs in the PSBT's global scope. A Ledger
+    # refuses to sign a multisig spend without them: hwilib rebuilds the wallet
+    # policy from these entries, and when it cannot it skips the input with no
+    # error and no prompt on the device at all. Trezor and Jade do not need them,
+    # which is why this went unnoticed until a Ledger was asked to sign.
+    for key in record.keys:
+        packet.xpubs[key.key] = DerivationPath(key.origin.fingerprint, key.origin.derivation)
     for scope, utxo in zip(packet.inputs, chosen):
         desc = (layout.receive if utxo["branch"] == "receive" else layout.change)
         derived = desc.derive(utxo["index"])
@@ -462,6 +729,9 @@ def build_unsigned_psbt(
         raise WalletError("Transaction fee check failed; no unsigned transaction was prepared.")
     return {
         "psbt_base64": packet.to_base64(),
+        # For segwit the witness is not part of the txid, so this id is already
+        # final: the same id will appear on the explorer once it is broadcast.
+        "txid": packet.tx.txid().hex(),
         "recipient": recipient,
         "amount_sats": amount,
         "send_all": send_all,
@@ -474,13 +744,16 @@ def build_unsigned_psbt(
         "fee_rate_estimate": fee_rate,
         "change_sats": change_sats,
         "change_address": change_address,
+        "change_assumed": layout.change_assumed,
         "inputs": len(chosen),
         "change_warning": (
             "All confirmed outputs found by this scan are used, with no change output. "
             "An address beyond the scan gap or range may still hold Bitcoin. "
             "Verify wallet coverage, recipient amount and fee independently on each signer."
-            if send_all else layout.warning or (
-                "Unsigned only. Verify destination, amount, fee, and change on each signer."
-            )
+            if send_all else
+            ("The change address comes from this wallet's standard change addresses, which "
+             "are not listed in your wallet file. Verify it on every signing device. "
+             if layout.change_assumed else "")
+            + "Unsigned only. Verify destination, amount, fee, and change on each signer."
         ),
     }

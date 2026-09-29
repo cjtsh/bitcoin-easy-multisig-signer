@@ -1,51 +1,214 @@
-name: Build release candidate (no publishing)
+name: Build macOS DMG and release
 
+# Explicit dispatch only. A push cannot publish a money-moving app. The version
+# and tag are immutable once released; failed candidate runs may be corrected
+# and dispatched again before publication.
 on:
-  push:
-    branches:
-      - candidate-v0.1.6-macos
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: read
+        run: |
+          echo "version=$(python3 -c 'import version; print(version.APP_VERSION)')" >> "$GITHUB_OUTPUT"
+
   source:
+    name: Source archive and tests
+    needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install --require-hashes -r requirements.lock
+      # PyYAML is only needed to lint the workflow itself, so it is installed
+      # here rather than added to the application's dependency list.
+      - run: python -m pip install --quiet pyyaml
       - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-source.sh 0.1.6
-      - uses: actions/upload-artifact@v4
+      - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
+      # Run the tests FROM the archive. An archive missing a test helper still
+      # builds and still uploads, so nothing caught it until the tests were run
+      # out of the extracted tarball.
+      - name: Run the tests from the archive itself
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          tar xzf "dist/bitcoin-easy-multisig-signer-v${version}.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/bitcoin-easy-multisig-signer-v${version}"
+          python -m unittest discover -s tests -q
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: source-0.1.6
-          path: dist/easy-bitcoin-multisig-signer-v0.1.6.tar.gz
+          name: source-archive
+          path: dist/*.tar.gz
           if-no-files-found: error
 
-  macos-apple-silicon:
+  macos:
+    name: Apple Silicon DMG
+    needs: version
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Require Apple Silicon runner
         run: test "$(uname -m)" = arm64
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt
-      - run: python -m unittest discover -s tests -q
-      - run: bash scripts/build-macos.sh 0.1.6
-      - name: Check DMG and app resources
+      - run: brew install libusb
+      - name: Check the native libusb digest before building
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
         run: |
-          hdiutil verify dist/Easy-Bitcoin-Multisig-v0.1.6-UNSIGNED-TEST.dmg
-          test -f "dist/Easy Bitcoin Multisig.app/Contents/Info.plist"
-          "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-bundle
-          "dist/Easy Bitcoin Multisig.app/Contents/MacOS/Easy Bitcoin Multisig" --check-network
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          dylib="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
+          actual="$(shasum -a 256 "$dylib" | awk '{print $1}')"
+          echo "libusb SHA-256: $actual"
+          test -n "$LIBUSB_SHA256" || { echo 'Set the reviewed LIBUSB_SHA256 repository variable.' >&2; exit 1; }
+          expected="$(printf '%s' "$LIBUSB_SHA256" | tr '[:upper:]' '[:lower:]')"
+          test "$expected" = "$actual" || { echo 'Unexpected libusb binary; refusing the build.' >&2; exit 1; }
+      - run: python -m pip install --require-hashes -r requirements.lock
+      - run: python -m unittest discover -s tests -q
+      - name: Build the DMG
+        # Mandatory integrity gate: build-macos.sh refuses an unset/mismatched digest.
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
+        run: bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
+      - name: Verify the DMG, the signature and the bundled app
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          app="dist/Bitcoin Easy Signer.app"
+          exe="$app/Contents/MacOS/Bitcoin Easy Signer"
+          hdiutil verify "dist/Bitcoin-Easy-Signer-v${version}-UNSIGNED-TEST.dmg"
+          test -f "$app/Contents/Info.plist"
+          test -x "$app/Contents/MacOS/hwi"
+          "$app/Contents/MacOS/hwi" --help >/dev/null
+          # The bundle must carry the icon, not PyInstaller's stock one.
+          icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")"
+          test -n "$icon_name"
+          icon_path="$(find "$app/Contents/Resources" -maxdepth 1 -name '*.icns' | head -1)"
+          test -n "$icon_path"
+          test "$(head -c 4 "$icon_path")" = "icns"
+          codesign --verify --strict "$app"
+          "$exe" --check-bundle
+          "$exe" --check-save
+          "$exe" --check-network
+          # Proves the frozen app finds its bundled HWI, loads the bundled
+          # libusb and parses its JSON -- the part no test can cover unbuilt.
+          "$exe" --check-devices
+          # Prove the app trusts the CA store it SHIPS, not the build machine's.
+          # With the ambient trust paths removed, only the bundled store can make
+          # this succeed. Without this, a build that ignores its bundle still
+          # passes on a runner that happens to have system CA files.
+          echo "Re-checking HTTPS with the ambient trust store removed:"
+          env -u SSL_CERT_FILE SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
+          SSL_CERT_FILE=/nonexistent/ca.pem SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network
+      - name: Inventory the built dependencies
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
+        run: |
+          .build-venv/bin/python scripts/build-sbom.py \
+            --libusb-sha "$LIBUSB_SHA256" --output dist/BUILD-SBOM.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: unsigned-macos-apple-silicon-0.1.6
-          path: dist/Easy-Bitcoin-Multisig-v0.1.6-UNSIGNED-TEST.dmg
+          name: macos-dmg
+          path: |
+            dist/*.dmg
+            dist/BUILD-SBOM.json
           if-no-files-found: error
+
+  checksums:
+    name: SHA256SUMS
+    needs: [version, source, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: source-archive
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: macos-dmg
+          path: dist
+      - name: Write SHA256SUMS
+        run: |
+          cd dist
+          shasum -a 256 *.tar.gz *.dmg BUILD-SBOM.json > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sha256sums
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, source, macos, checksums]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: source-archive
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: macos-dmg
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sha256sums
+          path: dist
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          cat > notes.md <<EOF
+          ## v${VERSION} — Apple Silicon test build
+
+          Unsigned, unnotarized test build from the \`phase2-transaction-builder\` branch,
+          commit \`${GITHUB_SHA:0:12}\`.
+
+          - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
+          - Prepares a partial send only with a declared change branch. A receive-only
+            export can Send All without change. Shows full final outputs and fee.
+          - Uses bundled HWI 3.2.0 to request two hardware signatures, rejects PSBT
+            metadata changes, verifies signatures and finalizes the transaction.
+          - Broadcasts on Testnet4 after a separate confirmation. Mainnet broadcast
+            remains disabled. It never asks for a PIN or seed.
+          - Saves an optional unsigned PSBT and an opt-in privacy-limited diagnostic
+            report. Dependencies are hash-locked; native libusb digest is required.
+
+          Downloads: \`Bitcoin-Easy-Signer-v${VERSION}-UNSIGNED-TEST.dmg\` (Apple Silicon) and
+          \`bitcoin-easy-multisig-signer-v${VERSION}.tar.gz\` (source).
+          Verify either file against \`SHA256SUMS\`.
+          \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
+
+          Experimental test build: the 0.2.0 checks need a physical-device
+          walkthrough. Verify every address, amount and fee on your signers.
+          EOF
+          # A published version is never rebuilt. Overwriting one silently changes the
+          # artifacts behind a tag someone has already downloaded and verified, which
+          # is exactly what happened to v0.1.11 five times. If this version is already
+          # published, bump version.py and push again.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "==> v${VERSION} is already published." >&2
+            echo "    Bump version.py rather than republishing a released version." >&2
+            exit 1
+          fi
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "v${VERSION} — unsigned Apple Silicon test build" \
+            --notes-file notes.md dist/*

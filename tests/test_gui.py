@@ -4,6 +4,7 @@ import json
 import io
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
@@ -48,32 +49,48 @@ class LocalGuiTests(unittest.TestCase):
         with urlopen(request, timeout=3) as response:
             return json.load(response)
 
-    def test_file_picker_page_imports_synthetic_public_wallet(self):
+    def get_page(self):
         with urlopen(self.base, timeout=3) as response:
-            page = response.read().decode()
+            return response.read().decode()
+
+    def test_file_picker_page_imports_synthetic_public_wallet(self):
+        page = self.get_page()
         self.assertIn('type="file"', page)
         self.assertIn("Testnet4", page)
         self.assertIn('id="balance-usd"', page)
         self.assertIn('id="observed-btc"', page)
-        balance_row = page.split('<div class="balance-primary">', 1)[1].split('</details>', 1)[0]
+        balance_row = page.split('<div class="balance-primary">', 1)[1].split('</section>', 1)[0]
         self.assertLess(balance_row.index('id="observed-btc"'), balance_row.index('id="observed"'))
         self.assertLess(balance_row.index('id="balance-usd"'), balance_row.index('id="observed"'))
         self.assertIn('setText("observed-btc", btc(data.observed_sats))', page)
         self.assertIn('id="send-equivalent"', page)
         self.assertIn('class="context-help"', page)
-        self.assertGreaterEqual(page.count('class="help-popout"'), 6)
+        # Help is opt-in and was deliberately reduced; keep a floor so it does
+        # not disappear entirely.
+        self.assertGreaterEqual(page.count('class="help-popout"'), 4)
         self.assertIn('aria-label="What am I saving as a PSBT file?"', page)
         self.assertIn("PSBT means Partially Signed Bitcoin Transaction.", page)
         self.assertIn("Preparing it does not move Bitcoin.", page)
-        self.assertIn("Download unsigned transaction file (.psbt)", page)
-        self.assertIn("Apple Silicon (M-series) only. Intel-based Macs are not supported.", page)
-        self.assertIn('id="send-all" type="checkbox" checked', page)
+        self.assertIn("Save unsigned transaction file (.psbt) to Downloads", page)
+        self.assertIn("Apple Silicon (M-series) only", page)
+        self.assertIn("Intel-based Macs are not supported", page)
+        self.assertIn('id="send-all" type="checkbox"', page)
+        self.assertNotIn('id="send-all" type="checkbox" checked', page)
+        self.assertIn('id="send-choice"', page)
+        self.assertIn("Would you like to prepare a Bitcoin transaction?", page)
+        self.assertIn('id="begin-send"', page)
+        self.assertIn('id="decline-send"', page)
+        self.assertIn('id="send-flow" hidden', page)
         self.assertNotIn('id="copy-balance"', page)
         self.assertNotIn('id="confirmed-btc"', page)
         self.assertIn('id="amount" type="text" inputmode="decimal"', page)
         self.assertIn('send_all:sendAll', page)
         self.assertIn('id="review-amount-sats"', page)
         self.assertIn('id="review-remaining"', page)
+        self.assertIn('id="balance-send-status"', page)
+        self.assertIn("No confirmed Bitcoin was found", page)
+        self.assertIn("Explorer UTXOs and confirmed balance disagree", page)
+        self.assertIn("The scan reached the 100-address limit", page)
         self.assertIn("Other wallet addresses beyond the scan gap may still hold funds.", page)
         self.assertIn("sats at this address", page)
         self.assertIn('value="testnet4"', page)
@@ -91,6 +108,269 @@ class LocalGuiTests(unittest.TestCase):
         self.assertTrue(result["receive_address"].startswith("tb1"))
         self.assertIsNotNone(self.app.record)
         self.assertIsNone(self.app.scan)
+
+    def test_technical_detail_is_behind_a_details_panel(self):
+        """The screen a lawyer or a spouse sees must not be a wall of keys."""
+        page = self.get_page()
+        start = page.index('id="wallet-details"')
+        panel = page[start:]
+        # Everything technical lives in the panel...
+        for element in ("id=\"reference\"", "id=\"receive\"", "id=\"change\"",
+                        "id=\"keys\"", "id=\"confirmed\"", "id=\"pending\"",
+                        "id=\"utxo-count\"", "id=\"addresses\"", "id=\"price-note\"",
+                        "id=\"scan-source\""):
+            self.assertIn(element, panel, f"{element} should live in the details panel")
+        # ...and nothing technical is left on the main screen above it.
+        before = page[:start]
+        for element in ("id=\"keys\"", "id=\"addresses\"", "id=\"confirmed\"",
+                        "id=\"utxo-count\"", "id=\"reference\""):
+            self.assertNotIn(element, before,
+                             f"{element} should not be on the main screen any more")
+        # Two ways in, one dialog.
+        self.assertEqual(page.count('class="details-button"'), 2)
+        self.assertIn('id="close-details"', panel)
+
+    def test_the_send_flow_offers_signing_and_broadcast(self):
+        """The owner has to be able to sign and send from this screen, and the
+        transaction id they confirm must be the one that is broadcast."""
+        page = self.get_page()
+        for element in ('id="sign-step"', 'id="sign-buttons"', 'id="sign-progress"',
+                        'id="finalize-step"', 'id="final-amount"', 'id="final-fee"',
+                        'id="final-vsize"', 'id="final-signers"', 'id="final-txid"',
+                        'id="confirm-broadcast"', 'id="broadcast"',
+                        'id="broadcast-message"'):
+            self.assertIn(element, page, f"missing {element}")
+        # Broadcasting requires the tick, and the confirmed id is what is sent.
+        self.assertIn('$("confirm-broadcast").addEventListener("change"', page)
+        self.assertIn("confirmed_txid: finalTxid", page)
+        # The broadcast button is disabled until the tick is set.
+        self.assertIn('$("broadcast").disabled = true', page)
+        self.assertIn('$("broadcast").disabled = !$("confirm-broadcast").checked', page)
+        # The old promise that nothing is ever signed is no longer true.
+        self.assertNotIn("No transaction is signed or broadcast.", page)
+
+    def test_the_fee_speed_buttons_show_which_one_is_selected(self):
+        """Reported bug: pressing Slow/Medium/Fast gave no confirmation at all."""
+        page = self.get_page()
+        self.assertEqual(page.count('class="secondary rate-button"'), 3)
+        # A real visual state, not just an aria attribute nobody styles.
+        self.assertIn("button.rate-button.selected", page)
+        self.assertIn('id="fee-selected"', page)
+        self.assertIn('setText("fee-selected"', page)
+        # Selection is tracked by tier, not by rate value: slow, medium and fast are
+        # frequently the same whole sat/vB, so comparing rates cannot distinguish them.
+        self.assertIn("let selectedTier", page)
+        self.assertIn("selectedTier = tier", page)
+        self.assertIn('selectedTier = "custom"', page)
+        self.assertIn('selectedTier = "medium"', page)
+
+    def test_signer_preflight_is_step_three_of_the_flow(self):
+        """A non-technical owner must meet device checking before the payment,
+        and understand why, without it being a second competing flow."""
+        page = self.get_page()
+        self.assertIn('id="signers-card"', page)
+        self.assertIn("3. Check your hardware wallets", page)
+        self.assertIn("4. Prepare a send", page)
+        self.assertIn('id="check-signers-now"', page)
+        self.assertIn('id="preflight-message"', page)
+        self.assertIn('id="preflight-results"', page)
+        # The reason it is here, in plain words.
+        self.assertIn("before you build a payment", page)
+        # And what it does not do, so nobody fears it.
+        self.assertIn("any PIN is entered on the device itself", page)
+        self.assertIn("none of your keys are in this app", page)
+        # One shared routine serves both places, so they cannot drift apart.
+        self.assertIn("async function runSignerCheck", page)
+        self.assertEqual(page.count("runSignerCheck("), 3)  # definition + two callers
+
+    def test_step_three_helps_when_no_device_appears(self):
+        """The most likely first outcome is nothing being detected; the app must
+        give the owner something to try rather than an empty list."""
+        page = self.get_page()
+        self.assertIn('id="preflight-help"', page)
+        for hint in ("Unlock the device with its PIN",
+                     "A Ledger needs it open",
+                     "Some cables only carry power",
+                     "Close any other wallet software"):
+            self.assertIn(hint, page, f"missing troubleshooting hint: {hint}")
+        # It shows whenever a device still needs the owner to do something:
+        # nothing found, one that could not be read, or one that did not match.
+        self.assertIn('$(helpId).hidden = !result.attention', page)
+        self.assertIn('helpId', page)
+
+    def test_slow_work_shows_a_spinner(self):
+        """Reported bug: a slow scan looked like the app had done nothing."""
+        page = self.get_page()
+        self.assertIn('id="busy"', page)
+        self.assertIn('class="spinner"', page)
+        self.assertIn('id="busy-text"', page)
+        self.assertIn("@keyframes spin", page)
+        self.assertIn("function setBusy", page)
+        # Each wait the owner can hit, including both they reported.
+        for message in ("Reading your wallet file",
+                        "Checking the blockchain for your balance",
+                        "Looking for connected signing devices"):
+            self.assertIn(message, page, f"missing progress message: {message}")
+
+    def test_the_main_screen_asks_nothing_technical_of_the_user(self):
+        """A lawyer or a spouse must not be asked to assert wallet internals.
+
+        The app resolves the change branch itself and tells the user what it did.
+        It must never ask them to confirm a derivation detail they cannot check,
+        and the main screen must not expose descriptor jargon.
+        """
+        page = self.get_page()
+        # No confirmation checkbox or button about change paths.
+        for removed in ('id="declare-change"', 'id="confirm-change-branch"',
+                        'id="declare-change-button"', 'id="declared-change-ack-row"',
+                        'id="path-warning"'):
+            self.assertNotIn(removed, page)
+        # Instead: one plain note, filled from the server's own wording.
+        self.assertIn('id="change-note"', page)
+        self.assertIn("setText(\"change-note\"", page)
+        self.assertIn('id="change-detail"', page)
+        # The wallet card itself carries no descriptor jargon.
+        card = page.split('id="wallet-card"', 1)[1].split("</section>", 1)[0]
+        for jargon in ("descriptor", "/0/*", "/1/*", "xpub", "derivation",
+                       "Reference address", "BIP48", "native-SegWit",
+                       "tb1 alone cannot identify"):
+            self.assertNotIn(jargon, card, f"{jargon} should not be on the main screen")
+
+    def test_send_flow_recommends_a_test_and_links_to_the_explorer(self):
+        page = self.get_page()
+        self.assertIn("Recommended: send a small test amount first.", page)
+        self.assertIn('id="review-txid"', page)
+        self.assertIn('id="review-explorer"', page)
+        self.assertIn("A payment is not finished until it is confirmed.", page)
+        self.assertIn("Continue below to approve signing on two hardware devices.", page)
+        self.assertIn("explorer_web", page)
+
+    def test_prepare_reports_a_final_transaction_id(self):
+        """Segwit txids do not cover the witness, so the id is fixed at prepare."""
+        from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout
+        from fake_explorer import three_output_wallet
+        from probe import parse_bsms
+        from embit.networks import NETWORKS
+        text, _ = test_record(bsms_template=True)
+        record = parse_bsms(text)
+        layout = wallet_layout(record)
+        explorer = three_output_wallet(layout, NETWORKS["test"])
+        scan = scan_wallet(record, explorer)
+        recipient = layout.receive.derive(5).address(NETWORKS["test"])
+        result = build_unsigned_psbt(record, scan, recipient, 1_000, 5, explorer)
+        import base64
+        packet = __import__("embit").psbt.PSBT.parse(
+            base64.b64decode(result["psbt_base64"]))
+        self.assertEqual(result["txid"], packet.tx.txid().hex())
+        self.assertEqual(len(result["txid"]), 64)
+
+    def test_the_api_accepts_a_sparrow_style_wallet_file(self):
+        """The owner's first Sparrow export failed at import with "A descriptor with
+        one checksum is required". It must work end to end, not just in the parser."""
+        from test_probe import sparrow_record
+        text, _ = sparrow_record()
+        wallet = self.post("/api/import", {"chain": "testnet4", "text": text,
+                                           "consent_explorer": True})
+        self.assertEqual(wallet["reference_status"], "verified")
+        self.assertEqual(wallet["policy_short"], "2-of-3 multisig wallet")
+        # The file omits the checksum, so the app computes it for the owner to
+        # compare against the wallet software's own backup document.
+        self.assertFalse(wallet["checksum_supplied"])
+        self.assertEqual(len(wallet["descriptor_checksum"]), 8)
+
+    def test_read_only_signer_check_requires_current_transaction_review(self):
+        text, _ = test_record(short_path=True)
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        self.app.prepared_psbt = "cHNidP8="
+        self.app.prepared_id = "prepared-test"
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/devices", {"preparation_id": "stale"})
+        self.assertEqual(err.exception.code, 400)
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": ["Trezor: signer 1 of 3 public xpub matched (not a signing test)."],
+                "signable": [{"type": "trezor", "path": "p", "model": "Trezor",
+                              "signer": 1, "keys": 3, "fingerprint": "aa"}]}):
+            result = self.post("/api/devices", {"preparation_id": "prepared-test"})
+        self.assertIn("does not sign or send", result["message"])
+        self.assertIn("not a signing test", result["devices"][0])
+        # A pre-flight check is legitimate with no transaction at all: the open
+        # wallet is enough, and the reply must say that no transaction was involved
+        # so a device check can never be read as approval of a payment.
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": ["Coldcard: not a signer in this BSMS file."],
+                "signable": []}):
+            preflight = self.post("/api/devices", {})
+        self.assertIn("no transaction was involved", preflight["message"])
+        self.assertEqual(preflight["devices"], ["Coldcard: not a signer in this BSMS file."])
+        # A device that did not match still needs the owner's attention, so the
+        # interface must offer the troubleshooting list.
+        self.assertTrue(preflight["attention"])
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": ["Jade: signer 1 of 3 public xpub matched (not a signing test)."],
+                "signable": []}):
+            matched = self.post("/api/devices", {})
+        self.assertFalse(matched["attention"])
+
+    def test_the_device_check_asks_hwi_for_a_chain_it_understands(self):
+        """hwilib's Jade backend has no testnet4 in its network map and raises
+        "Unhandled network: testnet4", which broke the owner's Jade. Trezor and
+        Ledger treat any non-mainnet chain as testnet, and testnet and testnet4 share
+        the tpub version bytes and the tb1 prefix, so the check asks for "test"."""
+        text, _ = test_record(short_path=True)
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        with patch("gui.probe_devices_detailed",
+                   return_value={"statuses": [], "signable": []}) as call:
+            self.post("/api/devices", {})
+        self.assertEqual(call.call_args[0][2], "test")
+
+    def test_a_mainnet_wallet_still_asks_for_mainnet(self):
+        self.post("/api/import", {"chain": "main", "text": mainnet_record(),
+                                  "consent_explorer": True})
+        with patch("gui.probe_devices_detailed",
+                   return_value={"statuses": [], "signable": []}) as call:
+            self.post("/api/devices", {})
+        self.assertEqual(call.call_args[0][2], "main")
+
+    def test_signer_check_without_an_open_wallet_is_refused(self):
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/devices", {})
+        self.assertEqual(err.exception.code, 400)
+
+    def test_mainnet_high_value_transaction_needs_explicit_confirmation(self):
+        self.app.price = {"usd_per_btc": 50_000}
+        self.app.price_checked = time.monotonic()
+        self.app.fees = {"standard": 2, "economy": 1, "network": "main",
+                         "checked_at": "2026-09-28T00:00:00Z"}
+        self.app.fees_checked = time.monotonic()
+        self.post("/api/import", {"chain": "main", "text": mainnet_record(),
+                                  "consent_explorer": True})
+        fake = {
+            "network": "main", "utxo_consistent": True, "confirmed_sats": 50_000_000,
+            "pending_delta_sats": 0, "observed_sats": 50_000_000, "addresses": [],
+            "utxos": [], "scanned": 40, "coverage_limited": False, "path_warning": "",
+            "scanned_at": "2026-09-28T00:00:00+00:00", "source": "https://mempool.space/api",
+        }
+        with patch("gui.scan_wallet", return_value=fake):
+            self.post("/api/scan", {"chain": "main"})
+        request = {"chain": "main", "recipient": self.app.record.reference_address,
+                   "amount_sats": 20_000_000, "fee_rate": 2}
+        with patch("gui.build_unsigned_psbt") as builder:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", request)
+        self.assertEqual(err.exception.code, 400)
+        builder.assert_not_called()
+        request["large_amount_confirmed"] = True
+        with patch("gui.build_unsigned_psbt", return_value={
+            "psbt_base64": "cHNidP8=", "fee_warning": "", "txid": "ab" * 32,
+            "fee_sats": 540, "fee_rate_estimate": 2,
+            "recipient": request["recipient"], "amount_sats": request["amount_sats"],
+            "change_sats": 1000, "change_address": request["recipient"],
+            "send_all": False,
+        }):
+            result = self.post("/api/prepare", request)
+        self.assertTrue(result["preparation_id"])
 
     def test_import_rejects_bad_chain_and_cross_origin_post(self):
         text, _ = test_record()
@@ -255,6 +535,8 @@ class LocalGuiTests(unittest.TestCase):
         text = mainnet_record()
         self.post("/api/import", {"chain": "main", "text": text,
                                   "consent_explorer": True})
+        self.app.price = {"usd_per_btc": 50_000}
+        self.app.price_checked = time.monotonic()
         fake = {
             "network": "main", "utxo_consistent": True,
             "confirmed_sats": 100_000, "pending_delta_sats": 0,
@@ -290,13 +572,16 @@ class LocalGuiTests(unittest.TestCase):
         }), patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
             "psbt_base64": "cHNidP8=",
+            "txid": "ab" * 32, "recipient": request["recipient"],
+            "amount_sats": request["amount_sats"], "change_sats": 1000,
+            "change_address": request["recipient"], "send_all": False,
         }):
             result = self.post("/api/prepare", request)
         self.assertIn("below the current mainnet standard", result["fee_warning"])
         self.assertEqual(result["fee_reference"]["standard"], 12)
 
     def test_testnet4_prepare_uses_identical_fee_guards_and_mainnet_reference(self):
-        text, _ = test_record(dual_branch=True)
+        text, _ = test_record(bsms_template=True)
         wallet = self.post("/api/import", {
             "chain": "testnet4", "text": text, "consent_explorer": True,
         })
@@ -332,6 +617,9 @@ class LocalGuiTests(unittest.TestCase):
         }), patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
             "psbt_base64": "cHNidP8=",
+            "txid": "ab" * 32, "recipient": request["recipient"],
+            "amount_sats": request["amount_sats"], "change_sats": 1000,
+            "change_address": request["recipient"], "send_all": False,
         }):
             result = self.post("/api/prepare", request)
         self.assertIn("below the current mainnet standard", result["fee_warning"])
@@ -339,6 +627,8 @@ class LocalGuiTests(unittest.TestCase):
         with patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 12, "fee_sats": 2640,
             "psbt_base64": "cHNidP8=", "send_all": True,
+            "txid": "ab" * 32, "recipient": wallet["receive_address"],
+            "amount_sats": 1000, "change_sats": 0, "change_address": None,
         }) as builder:
             swept = self.post("/api/prepare", {
                 "chain": "testnet4", "recipient": wallet["receive_address"],
