@@ -2,13 +2,13 @@
 
 Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** 2-of-3 multisig wallet. It does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on two hardware devices, and confirm the final transaction.
 
-**Version 0.3.2 is a candidate for an experimental Apple Silicon test build; [0.3.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.1) is the latest published release.** Earlier versions produced confirmed Testnet4 payments with Jade, Trezor Safe 3, and Ledger Nano S Plus. Version 0.3.0 added warm safety checks and Mutinynet practice through the same engine, and fixes an old signed payment remaining visible below a new review. Version 0.3.1 makes Mutinynet the opening network and requires an explicit Send All choice. Version 0.3.2 restores standard BIP48 custom sends from one Nunchuk BSMS file. The physical Mutinynet wallet/device walkthrough is still pending. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
+**[Version 0.3.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.2) is an experimental Apple Silicon test build.** Earlier versions produced confirmed Testnet4 payments with Jade, Trezor Safe 3, and Ledger Nano S Plus. Version 0.3.0 added warm safety checks and Mutinynet practice through the same engine, and fixes an old signed payment remaining visible below a new review. Version 0.3.1 makes Mutinynet the opening network and requires an explicit Send All choice. Version 0.3.2 restores standard BIP48 custom sends from one Nunchuk BSMS file. The physical Mutinynet wallet/device walkthrough is still pending. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
 
-The 0.3.2 design and owner gate are in [`PATCH-0.3.2.md`](PATCH-0.3.2.md); prior release evidence is in [`PATCH-0.3.1.md`](PATCH-0.3.1.md). Mutinynet needs a funded 2-of-3 BSMS wallet; existing Testnet4 coins cannot move between networks. The installed 0.2.1 app could show stale signing/final details when a new payment was prepared; **never broadcast from a screen that mixes two payments**.
+The 0.3.2 release evidence and owner gate are in [`PATCH-0.3.2.md`](PATCH-0.3.2.md); prior release evidence is in [`PATCH-0.3.1.md`](PATCH-0.3.1.md). Mutinynet needs a funded 2-of-3 BSMS wallet; existing Testnet4 coins cannot move between networks. The installed 0.2.1 app could show stale signing/final details when a new payment was prepared; **never broadcast from a screen that mixes two payments**.
 
 **0.3.1 correction published:** the first 0.3.0 Mutinynet import exposed a receive-only Nunchuk BSMS export. The app safely refused a smaller payment but preselected Send All. Do not send a sweep to work around this. The 0.3.1 release leaves Send All unchecked, explains the missing change path beside the amount, opens on Mutinynet, and keeps custom amounts blocked when change is absent from the wallet definition. The current Nunchuk BSMS export lacks that policy. See [`PATCH-0.3.1.md`](PATCH-0.3.1.md).
 
-**0.3.2 candidate:** the one-file recovery flow derives `/0/*` receive and `/1/*` change under strict BIP48 2-of-3 native-SegWit sorted-multisig conditions. It checks the BSMS first receiving address and shows standard-derived change plainly in the review. No Nunchuk database or second export is required. Custom branch layouts remain outside this fallback; see [`PATCH-0.3.2.md`](PATCH-0.3.2.md).
+**0.3.2 correction published:** the one-file recovery flow derives `/0/*` receive and `/1/*` change under strict BIP48 2-of-3 native-SegWit sorted-multisig conditions. It checks the BSMS first receiving address and shows standard-derived change plainly in the review. No Nunchuk database or second export is required. Custom branch layouts remain outside this fallback; see [`PATCH-0.3.2.md`](PATCH-0.3.2.md).
 
 ## What this version does
 
@@ -26,13 +26,13 @@ The app uses **one** wallet/PSBT/signing engine. [`network_config.py`](network_c
 
 The published DMG is for Apple Silicon. Until Developer ID enrollment and notarization are complete, it is ad-hoc signed and macOS requires **right-click → Open** on first launch. Verify the download against the release's `SHA256SUMS` before opening it. Do not disable Gatekeeper globally.
 
-After the 0.3.2 candidate is published and its downloaded DMG is verified, the owner can import the already-funded Nunchuk BSMS alone and try a small custom Mutinynet payment. Check destination, amount, fee and change on the hardware devices before approval. Do not sweep merely to test the interface. Verify a second review clears the first payment's signing/final details. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Keep wallet files, xpubs, addresses, PSBTs, and raw signed transactions out of public issue reports and the repository.
+The 0.3.2 DMG is published and its downloaded image was verified. The owner can import the already-funded Nunchuk BSMS alone and try a small custom Mutinynet payment. Check destination, amount, fee and change on the hardware devices before approval. Do not sweep merely to test the interface. Verify a second review clears the first payment's signing/final details. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Keep wallet files, xpubs, addresses, PSBTs, and raw signed transactions out of public issue reports and the repository.
 
 If neither declared nor guarded standard change is available, the app offers a no-change Send All path. **Do not sweep a real wallet merely to test this feature.**
 
 ## Supported scope and limitations
 
-| Item | 0.3.2 candidate support |
+| Item | Published 0.3.2 support |
 | --- | --- |
 | Wallet | Existing BSMS 1.0, 2-of-3 P2WSH multisig with xpub origins |
 | Networks | Testnet4, Mutinynet and mainnet through one engine; mainnet broadcast disabled |
