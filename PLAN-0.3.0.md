@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Version 0.2.2 is published. The owner's latest Testnet4 payment **confirmed** on 29 September 2026, but the planned Trezor result has not yet been observed. The owner found that the installed app can show a new unsigned review above the previous payment's signing/final screen; that display is unsafe to use. They explicitly chose Mutinynet as a faster practice path for 0.3.0. Keep Testnet4 available for the old wallet and keep mainnet broadcast refused. The target user remains a spouse, lawyer, or accountant who should see plain instructions rather than protocol controls. No owner install is requested during intermediate changes; collect one focused walkthrough at the completed 0.3.0 milestone.
+Version 0.3.0 is [published as a test build](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.3.0). Release identity, automated evidence and the remaining single owner walkthrough are in `PATCH-0.3.0.md`. The owner's latest Testnet4 payment **confirmed** on 29 September 2026, but the planned Trezor result has not yet been observed. The owner found that installed 0.2.1 can show a new unsigned review above the previous payment's signing/final screen; that display is unsafe to use. They chose Mutinynet as a faster practice path. Testnet4 stays available for the old wallet and mainnet broadcast remains refused. The target user is a spouse, lawyer, or accountant who should see plain instructions rather than protocol controls.
 
 ## Work packages in safety order
 
@@ -19,15 +19,15 @@ Version 0.2.2 is published. The owner's latest Testnet4 payment **confirmed** on
 - The GitHub Apple Silicon workflow passes its bundle, HWI, TLS, source, SBOM and checksum checks. Downloaded artifacts are verified independently.
 - One owner walkthrough in the completed 0.3.0 Mac app checks a new Mutinynet 2-of-3 wallet, both device displays, final outputs and fee, broadcast, and the payment wait. It also verifies that a second transaction does not show the old signing/final panel. This requires new practice coins and is not evidence of mainnet safety. Mainnet broadcast remains closed.
 
-## Work in progress
+## Implemented in the test release; physical checks remain
 
-- HWI signing now passes a validated base64 PSBT on stdin, with no PSBT in subprocess argv. Focused tests and the full 150-test suite passed at the first checkpoint. The bundled HWI 3.2.0 binary from the verified 0.2.2 DMG accepted an option supplied through `--stdin`; physical signing with this change remains untested.
+- HWI signing now passes a validated base64 PSBT on stdin, with no PSBT in subprocess argv. The 164-test suite and the 0.3.0 packaged HWI stdin check passed; physical signing with this change remains untested.
 - A broadcast transport failure or malformed response is now an explicit **outcome unknown** state. The prepared payment is cleared so the app cannot blindly retry it, and the main screen directs the user to check the transaction on an explorer. A same-wallet reimport retains the pending status during the app session. Tests cover the local API lock.
 - The app now checks each selected funding transaction is still confirmed and each selected outpoint unspent immediately after construction and immediately before broadcast. Mainnet uses both the configured explorer and Blockstream's Esplora, after validating genesis and that their reported tips differ by no more than two blocks. If Blockstream is the primary, mempool.space is the second. Only selected public transaction IDs and output numbers go to that second server; the UI consent wording discloses this. Testnet4 and Mutinynet recheck with their configured explorer because reliable independent public services have not been established. This is a limitation, not independent verification.
 - The parallel mutable `prepared_*` fields are now one frozen `PreparedPayment` record. Signing replaces it atomically; review ID, wallet identity, chain and scan generation bind each transition. Synthetic tests cover a device response after a refresh. A new browser review now clears the previous signer/final state, with a Node DOM-state regression test. Physical verification remains open.
 - Mutinynet uses the same PSBT builder with an explicit network profile; it has a separate fee quote and a block-1 pin. The live endpoints were probed, and synthetic import → scan → prepare tests pass. See `MUTINYNET-0.3.0.md`. Physical wallet and HWI support remains unverified.
 - Fee guidance now prints the quote check time and the 25 sat/vB / 10,000-sat ceilings in the ordinary send form. A pending payment explains Check again, the explorer, and the need for help through the original wallet if it stays stuck; the app does not offer automatic RBF or resend. This is the bounded operator path for this release, not a claim that every stuck transaction can be resolved inside this app.
-- The final release/privacy audit and packaged artifact checks remain open. Do not dispatch a 0.3.0 DMG yet.
+- The release/privacy audit and packaged artifact checks passed in workflow run 36594024409; downloaded assets passed checksum and DMG verification. Physical Mutinynet signing and the second-payment panel reset remain owner acceptance gates, not automated claims.
 
 ## Sources for the transport and output-check design
 

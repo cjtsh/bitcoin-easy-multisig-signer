@@ -2,7 +2,7 @@
 
 ## Why this exists
 
-The owner reported that a Testnet4 payment remained unconfirmed for a long time, then confirmed on 29 September 2026. Waiting for repeated Testnet4 blocks makes physical-device testing impractical. The owner chose Mutinynet for the 0.3.0 test path. This is an **additional practice network**, not a replacement for the Testnet4 wallet or a route to mainnet. Testnet4 remains selectable so the existing wallet and transaction history remain accessible. Standard Signet was considered, but it does not provide Mutinynet's operator-targeted 30-second block cadence. A cadence is not a confirmation guarantee.
+The owner reported that a Testnet4 payment remained unconfirmed for a long time, then confirmed on 29 September 2026. Waiting for repeated Testnet4 blocks makes physical-device testing impractical. The owner chose Mutinynet for the published 0.3.0 test path. This is an **additional practice network**, not a replacement for the Testnet4 wallet or a route to mainnet. Testnet4 remains selectable so the existing wallet and transaction history remain accessible. Standard Signet was considered, but it does not provide Mutinynet's operator-targeted 30-second block cadence. A cadence is not a confirmation guarantee. Release evidence and the remaining owner check are in `PATCH-0.3.0.md`.
 
 ## One engine, three network profiles
 
@@ -31,6 +31,6 @@ Ask for a diagnostic report and a description of what the device displayed only 
 ## Compatibility and release checks
 
 - Legacy v1 settings containing only `main` and `testnet4` are accepted and receive the Mutinynet default without changing the saved URLs.
-- The UI distinguishes Mutinynet from Testnet4 and clears old signing/final panels when a new payment is prepared. The installed 0.2.1 app has the stale-panel bug; **close and reopen that app** before any further send from a mixed screen.
+- The UI distinguishes Mutinynet from Testnet4 and clears old signing/final panels when a new payment is prepared. The installed 0.2.1 app has the stale-panel bug; **close that app before using 0.3.0 and never broadcast from a mixed screen**.
 - Synthetic API tests cover Mutinynet import → scan → PSBT through the existing builder, rejection of ordinary Signet's block-1 hash, and legacy settings. The bundle's `--check-network` probes Mutinynet genesis/checkpoint through the packaged TLS path. Physical wallet/device/broadcast acceptance is pending the owner test of the completed 0.3.0 DMG.
 - The [Mutinynet deployment](https://github.com/MutinyWallet/mutiny-net) describes its custom Signet, public Esplora and 30-second target. The [faucet](https://faucet.mutinynet.com/) publishes its Signet challenge and configuration. [Sparrow](https://www.sparrowwallet.com/) documents Signet and multisig support. None of these sources guarantees that every wallet, firmware or hosted service will work at test time.
