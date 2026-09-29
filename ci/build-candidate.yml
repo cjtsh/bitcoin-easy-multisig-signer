@@ -186,7 +186,8 @@ jobs:
           - Prepares a partial send only with a declared change branch. A receive-only
             export can Send All without change. Shows full final outputs and fee.
           - Uses bundled HWI 3.2.0 to request two hardware signatures, rejects PSBT
-            metadata changes, verifies signatures and finalizes the transaction.
+            metadata changes while allowing field reordering, verifies signatures
+            and finalizes the transaction.
           - Broadcasts on Testnet4 after a separate confirmation. Mainnet broadcast
             remains disabled. It never asks for a PIN or seed.
           - Saves an optional unsigned PSBT and an opt-in privacy-limited diagnostic
@@ -197,7 +198,7 @@ jobs:
           Verify either file against \`SHA256SUMS\`.
           \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
 
-          Experimental test build: the 0.2.0 checks need a physical-device
+          Experimental test build: the v${VERSION} checks need a physical-device
           walkthrough. Verify every address, amount and fee on your signers.
           EOF
           # A published version is never rebuilt. Overwriting one silently changes the

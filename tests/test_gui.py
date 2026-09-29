@@ -209,8 +209,10 @@ class LocalGuiTests(unittest.TestCase):
         # Each wait the owner can hit, including both they reported.
         for message in ("Reading your wallet file",
                         "Checking the blockchain for your balance",
-                        "Looking for connected signing devices"):
+                        "Please wait while we search for your device",
+                        "10–15 seconds"):
             self.assertIn(message, page, f"missing progress message: {message}")
+        self.assertIn("background:#ffd447", page)
 
     def test_the_main_screen_asks_nothing_technical_of_the_user(self):
         """A lawyer or a spouse must not be asked to assert wallet internals.

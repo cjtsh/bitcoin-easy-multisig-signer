@@ -188,6 +188,18 @@ class FinalizeTests(unittest.TestCase):
         with self.assertRaisesRegex(SigningError, "wallet data"):
             accept_signature_update(before, changed)
 
+    def test_hwi_field_reordering_does_not_erase_a_valid_signature(self):
+        """HWI sorts PSBT maps; field order is not part of the payment policy."""
+        before, keys, _ = prepared_psbt()
+        after = E.PSBT.from_base64(before.to_base64())
+        after.sign_with(keys[0])
+        after.xpubs = dict(reversed(list(after.xpubs.items())))
+        for scope in after.inputs:
+            scope.bip32_derivations = dict(
+                reversed(list(scope.bip32_derivations.items())))
+        self.assertNotEqual(before.serialize(), after.serialize())
+        accept_signature_update(before, after)
+
     def test_a_changed_transaction_id_is_refused(self):
         """If the id moved, this is not the transaction the owner reviewed."""
         packet, keys, _ = prepared_psbt()
