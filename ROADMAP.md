@@ -1,5 +1,11 @@
 # Roadmap and agent handoff
 
+## Current status — on hold at the owner's request
+
+The owner paused work on 29 September 2026 pending their **mainnet test run-through**. Current published version: [v0.4.3](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.3), with verified release assets. Phases 1–4 have practice-network evidence, including Testnet4 and Mutinynet hardware payments; 0.4.3 itself has no reported physical walkthrough yet. Mainnet broadcast is disabled. No mainnet transaction has been prepared, signed, or sent by this app. Resume only after the owner reports their run-through; `PHASE-HANDOFF.md` begins with the exact handoff and evidence limits.
+
+The next gate is a **mainnet dry run without broadcast** using the actual live wallet: establish its change policy independently, review a small transaction to an owner-controlled address on two hardware devices, and compare the final transaction's inputs, destination, change, fee and txid with the review. A practice wallet's matching Sparrow/Nunchuk exports are strong evidence for that wallet's change derivation, but do not prove the live wallet's policy; see `CHANGE-ADDRESS-REVIEW.md`. A live Bitcoin send follows only after the dry run, fee-policy decision, deliberate mainnet-broadcast implementation and explicit authorization. The plain-language guide, nontechnical-user walkthrough, and signed/notarized distribution remain open product work. Avoid asking for a new test payment solely to verify 0.4.2/0.4.3 corrections.
+
 **0.4.3 change-path correction published:** a bare wildcard that directly matches a first address does not authorize BIP48 inferred change. See `CHANGE-ADDRESS-REVIEW.md`. Mainnet broadcast remains disabled.
 
 **0.4.2 Jade authorization wait published; 0.4.1 signed and broadcast:** installed 0.4.0 rejected a Jade signer response after approval. See `PATCH-0.4.1.md` for diagnostic evidence, the signature-only import boundary, automated tests and the completed Ledger + Jade Mutinynet walkthrough. See `PATCH-0.4.2.md` for the longer Jade device-authorization wait still needing physical confirmation. Do not infer a cause from the visual refresh. Do not proceed to a mainnet live-send gate until this is checked.
@@ -62,8 +68,9 @@ is a code change rather than a setting (Phase 5).
   (blocks 154322 and 154330), between them signed by all three devices — Jade,
   Trezor Safe 3, and Ledger Nano S Plus. Mainnet broadcast remains refused until the
   owner authorises it deliberately.
-- [ ] **Phase 5 — Real Bitcoin: dry run first, then the deliberate switch.** Not
-  started. Everything proven so far is Testnet4; the app has never prepared or signed
+- [ ] **Phase 5 — Real Bitcoin: dry run first, then the deliberate switch.** On
+  hold pending the owner's mainnet run-through. Evidence so far is from Testnet4 and
+  Mutinynet; the app has never prepared or signed
   a mainnet transaction. Only `_broadcast` refuses mainnet today, so a mainnet **dry
   run** — prepare, sign with two devices, finalise in memory, verify independently,
   never broadcast — needs no code change. Only afterwards, and only on the owner's
@@ -262,13 +269,13 @@ testnet cycle.
 
 ## Phase 5 — Real Bitcoin: dry run first, then the deliberate switch
 
-**Status: not started. This is the only phase that touches real money.**
+**Status: on hold before the dry run. This is the only phase that touches real money.**
 
 **Goal.** Prove the whole pipeline on mainnet without risking funds, then — as a
 separate, explicitly authorised act — make a real send possible, and make the app
 trustworthy in the hands of a non-technical user.
 
-**Why the dry run comes first.** Every value verified to date was verified on Testnet4.
+**Why the dry run comes first.** Every value verified to date was verified on a practice network.
 The app has never derived a mainnet address from a real wallet, never had a real mainnet
 payment approved on a device screen, and never had its mainnet fee guidance exercised
 against a busy mempool. A dry run finds all of that with nothing at stake, because the
