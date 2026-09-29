@@ -244,6 +244,9 @@
           </div>
         </div>
         <p id="policy-detail" class="small muted"></p>
+        <p class="small muted">Descriptor checksum
+          <code id="descriptor-checksum" class="mono"></code>
+          <span id="checksum-note"></span></p>
         <p id="change-detail" class="small muted"></p>
         <h3>Scan details</h3>
         <div class="metrics">
@@ -776,6 +779,12 @@
       $("refresh-top").hidden = false;
       setText("policy", data.policy_short + " · " + data.chain_short);
       setText("policy-detail", data.policy + " · " + data.chain);
+      // Both wallet apps put this string in their backup documents; comparing the
+      // two by eye is a check a non-technical owner can actually perform.
+      setText("descriptor-checksum", data.descriptor_checksum || "unavailable");
+      setText("checksum-note", data.checksum_supplied ?
+        " — the wallet file carried this checksum and it matched." :
+        " — computed here; compare it with the checksum in your wallet software's backup.");
       setText("reference", data.reference_address);
       setText("receive", data.receive_address);
       setText("change", data.change_address || "Not defined in this file");

@@ -43,6 +43,22 @@ def test_record(short_path: bool = False, dual_branch: bool = False,
     )
 
 
+def sparrow_record() -> tuple[str, list[bip32.HDKey]]:
+    """A Sparrow-shaped BSMS record.
+
+    Sparrow exports the descriptor WITHOUT a checksum and states the derivation
+    restrictions on their own line, with the paths already written into the
+    descriptor as <0;1>/*. Nunchuk instead writes a checksum and the words
+    "No path restrictions". Both are valid, and the app rejected the Sparrow shape
+    outright, which blocked the owner's real wallets. Synthetic keys only: the
+    owner's own xpubs must never enter the repository.
+    """
+    text, roots = test_record(dual_branch=True)
+    lines = text.splitlines()
+    descriptor = lines[1].rsplit("#", 1)[0]
+    return "\n".join([lines[0], descriptor, "/0/*,/1/*", lines[3], ""]), roots
+
+
 class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -59,6 +75,37 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual((wallet.threshold, len(wallet.keys)), (2, 3))
         self.assertEqual(wallet.reference_status, "verified")
         self.assertEqual(wallet.network, "test")
+
+    def test_sparrow_style_record_without_a_checksum_is_accepted(self):
+        text, _ = sparrow_record()
+        wallet = self.write(text)
+        self.assertEqual(wallet.reference_status, "verified")
+        self.assertEqual((wallet.threshold, len(wallet.keys)), (2, 3))
+
+    def test_the_reference_address_still_guards_an_unchecksummed_descriptor(self):
+        """Dropping the checksum must not drop the protection: a descriptor that
+        does not derive the stated reference address is still refused."""
+        text, _ = sparrow_record()
+        lines = text.splitlines()
+        lines[1] = lines[1].replace("/<0;1>/*", "/<0;1>/*").replace("sortedmulti(2,",
+                                                                    "sortedmulti(3,")
+        wallet = self.write("\n".join(lines) + "\n")
+        # A 3-of-3 reinterpretation cannot derive the same 2-of-3 address.
+        self.assertEqual(wallet.reference_status, "mismatch")
+
+    def test_a_wrong_descriptor_checksum_is_still_rejected(self):
+        text, _ = test_record()
+        lines = text.splitlines()
+        lines[1] = lines[1][:-1] + ("0" if lines[1][-1] != "0" else "1")
+        with self.assertRaises(ProbeError):
+            self.write("\n".join(lines) + "\n")
+
+    def test_more_than_one_checksum_is_rejected(self):
+        text, _ = test_record()
+        lines = text.splitlines()
+        lines[1] = lines[1] + "#deadbeef"
+        with self.assertRaises(ProbeError):
+            self.write("\n".join(lines) + "\n")
 
     def test_receive_branch_diagnostic_never_counts_as_verified(self):
         record, _ = test_record(short_path=True)

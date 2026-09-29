@@ -245,6 +245,20 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(result["txid"], packet.tx.txid().hex())
         self.assertEqual(len(result["txid"]), 64)
 
+    def test_the_api_accepts_a_sparrow_style_wallet_file(self):
+        """The owner's first Sparrow export failed at import with "A descriptor with
+        one checksum is required". It must work end to end, not just in the parser."""
+        from test_probe import sparrow_record
+        text, _ = sparrow_record()
+        wallet = self.post("/api/import", {"chain": "testnet4", "text": text,
+                                           "consent_explorer": True})
+        self.assertEqual(wallet["reference_status"], "verified")
+        self.assertEqual(wallet["policy_short"], "2-of-3 multisig wallet")
+        # The file omits the checksum, so the app computes it for the owner to
+        # compare against the wallet software's own backup document.
+        self.assertFalse(wallet["checksum_supplied"])
+        self.assertEqual(len(wallet["descriptor_checksum"]), 8)
+
     def test_read_only_signer_check_requires_current_transaction_review(self):
         text, _ = test_record(short_path=True)
         self.post("/api/import", {"chain": "testnet4", "text": text,

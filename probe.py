@@ -37,6 +37,12 @@ class WalletRecord:
     reference_address: str = ""
     descriptor_text: str = ""
     change_descriptor: Descriptor | None = None
+    # The checksum of the descriptor as the file gave it, computed rather than
+    # trusted, plus whether the file actually carried one. Sparrow's BSMS export
+    # omits the checksum that its own PDF backup prints, so showing this lets the
+    # owner compare the two documents by eye.
+    descriptor_checksum: str = ""
+    checksum_supplied: bool = False
 
     @property
     def keys(self) -> list[Any]:
@@ -89,17 +95,25 @@ def parse_bsms(text: str) -> WalletRecord:
     lines = text.lstrip("\ufeff").splitlines()
     if len(lines) != 4 or lines[0] != "BSMS 1.0":
         raise ProbeError("Expected a four-line BSMS 1.0 wallet record.")
-    descriptor_with_checksum, restrictions, reference = lines[1:]
-    if descriptor_with_checksum.count("#") != 1:
-        raise ProbeError("A descriptor with one checksum is required.")
-    descriptor_text, supplied_checksum = descriptor_with_checksum.rsplit("#", 1)
-    try:
-        if descriptor_checksum(descriptor_text) != supplied_checksum:
-            raise ProbeError("Descriptor checksum mismatch.")
-    except ProbeError:
-        raise
-    except Exception as exc:
-        raise ProbeError("Descriptor checksum could not be checked.") from exc
+    descriptor_field, restrictions, reference = lines[1:]
+    if descriptor_field.count("#") > 1:
+        raise ProbeError("This descriptor carries more than one checksum.")
+    if "#" in descriptor_field:
+        descriptor_text, supplied_checksum = descriptor_field.rsplit("#", 1)
+        try:
+            if descriptor_checksum(descriptor_text) != supplied_checksum:
+                raise ProbeError("Descriptor checksum mismatch.")
+        except ProbeError:
+            raise
+        except Exception as exc:
+            raise ProbeError("Descriptor checksum could not be checked.") from exc
+    else:
+        # A checksum is optional: Nunchuk writes one, Sparrow does not. Nothing is
+        # weakened by accepting its absence, because the reference address below
+        # must still derive from this exact descriptor and a mismatch stops the
+        # wallet outright -- which catches the transcription errors a checksum
+        # would, and does so against an independently supplied address.
+        descriptor_text = descriptor_field
 
     change_descriptor = None
     if restrictions == "No path restrictions":
@@ -116,6 +130,12 @@ def parse_bsms(text: str) -> WalletRecord:
             change_descriptor = Descriptor.from_string(change_descriptor_text)
         except Exception as exc:
             raise ProbeError("BSMS change descriptor template is invalid.") from exc
+    elif restrictions == "/0/*,/1/*":
+        # Sparrow states the restrictions and ALSO writes them into the descriptor,
+        # as <0;1>/* or explicit /0/* and /1/* paths. The branches are declared in
+        # the descriptor itself, so it is used exactly as given and the change
+        # branch is resolved from it rather than from this line.
+        receive_descriptor_text = descriptor_text
     else:
         raise ProbeError(
             "This version supports either 'No path restrictions' or the explicit "
@@ -165,6 +185,8 @@ def parse_bsms(text: str) -> WalletRecord:
         reference_address=reference,
         descriptor_text=receive_descriptor_text,
         change_descriptor=change_descriptor,
+        descriptor_checksum=descriptor_checksum(descriptor_text),
+        checksum_supplied="#" in descriptor_field,
     )
 
 

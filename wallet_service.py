@@ -264,6 +264,8 @@ def wallet_summary(record: WalletRecord) -> dict:
         "prepare_reason": prepare_reason,
         "reference_address": record.reference_address,
         "reference_status": record.reference_status,
+        "descriptor_checksum": record.descriptor_checksum,
+        "checksum_supplied": record.checksum_supplied,
         "receive_address": layout.receive.derive(0).address(network),
         "change_address": (
             layout.change.derive(0).address(network) if layout.change else None
