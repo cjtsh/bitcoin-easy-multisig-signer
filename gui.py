@@ -39,7 +39,7 @@ from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsm
                    probe_devices_detailed, sign_psbt_with_device)
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
-from wallet_service import (WalletError, broadcast_transaction, build_unsigned_psbt,
+from wallet_service import (BroadcastOutcomeUnknown, WalletError, broadcast_transaction, build_unsigned_psbt,
                             estimate_fee_preview, explorer_get, scan_wallet, wallet_summary)
 
 MAX_REQUEST_BYTES = MAX_BSMS_BYTES + 2048
@@ -57,7 +57,7 @@ DIAGNOSTIC_STAGES = frozenset({
 })
 DIAGNOSTIC_OUTCOMES = frozenset({
     "passed", "declared", "missing", "complete", "incomplete",
-    "consistent", "inconsistent", "verified", "rejected", "accepted",
+    "consistent", "inconsistent", "verified", "rejected", "accepted", "unknown",
 })
 
 
@@ -140,6 +140,7 @@ def public_scan(result: dict) -> dict:
         "confirmed_sats": result["confirmed_sats"],
         "pending_delta_sats": result["pending_delta_sats"],
         "pending_outgoing": result.get("pending_outgoing", False),
+        "broadcast_outcome_unknown": result.get("broadcast_outcome_unknown", False),
         "observed_sats": result["observed_sats"],
         "addresses": result["addresses"],
         "utxo_count": len(result["utxos"]),
@@ -248,6 +249,7 @@ class LocalApp:
         # Session-only bridge between broadcast and explorer mempool propagation.
         # Never infer confirmation merely because an address scan misses the tx.
         self.pending_broadcast_txid = None
+        self.pending_broadcast_unknown = False
         self.prepared_psbt = None
         self.prepared_id = None
         # The transaction id shown at review time. SegWit keeps signatures outside
@@ -410,6 +412,16 @@ class LocalApp:
                         self._send(200, save_diagnostic_report(state))
                     else:
                         self._send(404, {"error": "Not found."})
+                except BroadcastOutcomeUnknown as exc:
+                    state.note("broadcast", "unknown")
+                    with state.lock:
+                        txid = state.pending_broadcast_txid
+                        chain = state.chain
+                    self._send(409, {
+                        "error": str(exc), "outcome_unknown": True,
+                        "explorer": (CHAIN_CONFIGS[chain].web_url + "/tx/" + txid
+                                     if txid and chain in CHAIN_CONFIGS else None),
+                    })
                 except (ProbeError, WalletError, SettingsError) as exc:
                     stage = self.path.removeprefix("/api/")
                     state.note(stage if stage in DIAGNOSTIC_STAGES else "request", "rejected")
@@ -431,6 +443,7 @@ class LocalApp:
                     state.explorer_consent = False
                     state.scan = None
                     state.pending_broadcast_txid = None
+                    state.pending_broadcast_unknown = False
                     state.prepared_psbt = None
                     state.prepared_id = None
                     state.prepared_txid = None
@@ -456,6 +469,7 @@ class LocalApp:
                 with state.lock:
                     record, revision, chain = state.record, state.revision, state.chain
                     pending_txid = state.pending_broadcast_txid
+                    pending_unknown = state.pending_broadcast_unknown
                     if data.get("chain") != chain or chain not in CHAIN_CONFIGS:
                         raise WalletError("Selected network does not match the open wallet.")
                     if not state.explorer_consent:
@@ -486,12 +500,15 @@ class LocalApp:
                     except WalletError:
                         confirmed = False
                     result["pending_outgoing"] = result.get("pending_outgoing", False) or not confirmed
+                    result["broadcast_outcome_unknown"] = (
+                        pending_unknown and not confirmed)
                 with state.lock:
                     if revision != state.revision or generation != state.scan_generation:
                         raise WalletError("Wallet or balance changed during scan; refresh again.")
                     state.scan = result
                     if pending_txid and pending_txid == state.pending_broadcast_txid and confirmed:
                         state.pending_broadcast_txid = None
+                        state.pending_broadcast_unknown = False
                     state.note("wallet_scan", "consistent" if result["utxo_consistent"] else "inconsistent")
                     state.note("wallet_scan", "incomplete" if result["coverage_limited"] else "complete")
                 self._send(200, public_scan(result))
@@ -501,13 +518,15 @@ class LocalApp:
                     wallet = wallet_summary(state.record) if state.record else None
                     balance = public_scan(state.scan) if state.scan else None
                     pending_txid = state.pending_broadcast_txid
+                    pending_unknown = state.pending_broadcast_unknown
                     chain = state.chain
                     consent = state.explorer_consent
                 self._send(200, {"wallet": wallet, "balance": balance,
                                  "chain": chain, "explorer_consent": consent,
                                  "pending_broadcast_explorer": (
                                      CHAIN_CONFIGS[chain].web_url + "/tx/" + pending_txid
-                                     if pending_txid and chain in CHAIN_CONFIGS else None)})
+                                     if pending_txid and chain in CHAIN_CONFIGS else None),
+                                 "broadcast_outcome_unknown": pending_unknown})
 
             def _devices(self, data):
                 with state.lock:
@@ -674,12 +693,26 @@ class LocalApp:
                         raise WalletError(str(exc)) from exc
                     self._check_final_review(state.record, packet, final,
                                              state.prepared_review or {})
-                    sent = broadcast_transaction(final["raw_transaction_hex"], chain, broadcaster)
-                    if sent != txid:
-                        raise WalletError(
-                            "The server reported a different transaction id than the one "
-                            "confirmed. Check the explorer before assuming anything was sent."
-                        )
+                    try:
+                        sent = broadcast_transaction(final["raw_transaction_hex"], chain,
+                                                     broadcaster)
+                        if sent != txid:
+                            raise BroadcastOutcomeUnknown(
+                                "The server reported a different transaction ID. The result "
+                                "is unknown. Do not send again; check an explorer first."
+                            )
+                    except BroadcastOutcomeUnknown:
+                        # The network request may have succeeded before its response
+                        # was lost. Retrying the reviewed payment is unsafe until a
+                        # person independently checks the expected txid.
+                        state.prepared_psbt = None
+                        state.prepared_id = None
+                        state.prepared_txid = None
+                        state.prepared_review = None
+                        state.scan = None
+                        state.pending_broadcast_txid = txid
+                        state.pending_broadcast_unknown = True
+                        raise
                     # The funds are spent now, so anything cached is stale.
                     state.prepared_psbt = None
                     state.prepared_id = None
@@ -687,6 +720,7 @@ class LocalApp:
                     state.prepared_review = None
                     state.scan = None
                     state.pending_broadcast_txid = sent
+                    state.pending_broadcast_unknown = False
                     state.note("broadcast", "accepted")
                 self._send(200, {
                     "txid": sent,

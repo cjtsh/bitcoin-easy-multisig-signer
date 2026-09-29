@@ -273,6 +273,33 @@ class ProbeTests(unittest.TestCase):
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
         )
 
+    def test_signing_psbt_goes_over_stdin_not_process_arguments(self):
+        from subprocess import CompletedProcess
+        from probe import sign_psbt_with_device
+
+        packet = "cHNidP8="
+        with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
+            "probe.subprocess.run",
+            return_value=CompletedProcess([], 0, '{"psbt":"cHNidP8="}', ""),
+        ) as run:
+            self.assertEqual(sign_psbt_with_device(
+                "fake", "testnet4", "trezor", "webusb:1", packet), packet)
+        args = run.call_args.args[0]
+        self.assertEqual(args, ["/fake/hwi", "--chain", "testnet4",
+                                "--device-type", "trezor", "--device-path", "webusb:1",
+                                "--stdin"])
+        self.assertNotIn(packet, args)
+        self.assertEqual(run.call_args.kwargs["input"], "signtx " + packet + "\n")
+
+    def test_signing_psbt_cannot_inject_another_stdin_command(self):
+        from probe import sign_psbt_with_device
+
+        with patch("probe.subprocess.run") as run:
+            with self.assertRaisesRegex(ProbeError, "malformed"):
+                sign_psbt_with_device("fake", "testnet4", "jade", "/dev/fake",
+                                      "cHNidP8=\nenumerate")
+        run.assert_not_called()
+
     def test_hwi_failure_keeps_hwis_own_reason(self):
         """When a device will not connect, the app must say what HWI said. A
         generic "check the device" is useless to the person holding it."""

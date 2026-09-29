@@ -33,6 +33,7 @@ from gui import LocalApp  # noqa: E402
 from probe import parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
+from wallet_service import BroadcastOutcomeUnknown  # noqa: E402
 
 
 class SendFlowTests(unittest.TestCase):
@@ -180,6 +181,32 @@ class SendFlowTests(unittest.TestCase):
                     self.post("/api/broadcast", payload)
                 self.assertEqual(err.exception.code, 400)
             send.assert_not_called()
+
+    def test_unknown_broadcast_result_locks_the_payment_from_retry(self):
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                           ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.broadcast_transaction", side_effect=BroadcastOutcomeUnknown(
+                "The broadcast result is unknown.")) as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(err.exception.code, 409)
+            body = json.load(err.exception)
+            self.assertTrue(body["outcome_unknown"])
+            self.assertIn(txid, body["explorer"])
+            with self.assertRaises(HTTPError) as repeat:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(repeat.exception.code, 400)
+            send.assert_called_once()
+        self.assertIsNone(self.app.prepared_psbt)
+        self.assertEqual(self.app.pending_broadcast_txid, txid)
+        self.assertTrue(self.app.pending_broadcast_unknown)
 
     def test_broadcasting_real_bitcoin_is_not_enabled(self):
         """The mainnet lock is the most important refusal in this file.

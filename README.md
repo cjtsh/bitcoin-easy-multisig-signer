@@ -4,6 +4,8 @@ Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical p
 
 **[Version 0.2.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.2.2) is an experimental test build.** Testnet4 signing and broadcast were demonstrated in earlier versions with Jade, Trezor Safe 3, and Ledger Nano S Plus; two transactions confirmed. The 0.2.0 build rejected legitimate Jade and Ledger signing responses because HWI reordered PSBT fields. Version 0.2.1 repaired that comparison and broadcast another Testnet4 payment after two verified signatures. Version 0.2.2 adds a clear waiting-for-confirmation notice and pauses the next payment until one block confirms the prior outgoing payment. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has been tested. This is not yet a production recovery tool. Read [the risk notice](DISCLAIMER.md).
 
+The `warm-0.3.0` branch is development work, not a released build. Its scope and remaining gates are in [`PLAN-0.3.0.md`](PLAN-0.3.0.md). Do not install or test this branch as if it were v0.2.2.
+
 ## What this version does
 
 - Imports a BSMS 1.0 definition for a 2-of-3 native-SegWit multisig wallet. The app checks its reference receive address, public cosigner identities, and selected network.

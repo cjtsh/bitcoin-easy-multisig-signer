@@ -4,7 +4,7 @@
 
 1. `README.md` for current user-visible behavior and supported scope.
 2. `PHASE-HANDOFF.md` for current status, version gates and owner test.
-3. `AUDIT-BASELINE-0.1.27.md` for the independent pre-fix findings, `SECURITY-REVIEW-0.2.0.md` for the finding-to-fix map, then `PATCH-0.2.1.md` and `PATCH-0.2.2.md` for subsequent corrections.
+3. `AUDIT-BASELINE-0.1.27.md` for the independent pre-fix findings, `SECURITY-REVIEW-0.2.0.md` for the finding-to-fix map, then `PATCH-0.2.1.md` and `PATCH-0.2.2.md` for subsequent corrections. For ongoing warm work, read `PLAN-0.3.0.md`.
 4. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture

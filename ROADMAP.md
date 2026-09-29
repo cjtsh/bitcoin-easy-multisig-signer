@@ -1,6 +1,6 @@
 # Roadmap and agent handoff
 
-**Current work:** 0.2.2 adds an explicit payment-confirmation wait and send pause after the first 0.2.1 Testnet4 broadcast. Read `PHASE-HANDOFF.md`, `SECURITY-REVIEW-0.2.0.md`, and `PATCH-0.2.2.md` for current behavior and acceptance. The detailed phase text below preserves earlier decisions and may describe older releases.
+**Current work:** Published 0.2.2 adds an explicit payment-confirmation wait and send pause after the first 0.2.1 Testnet4 broadcast. The owner authorized 0.3.0 warm work while Testnet4 confirmation remains pending; see `PLAN-0.3.0.md` for the current work packages and acceptance gates. Read `PHASE-HANDOFF.md`, `SECURITY-REVIEW-0.2.0.md`, and `PATCH-0.2.2.md` for current behavior and acceptance. The detailed phase text below preserves earlier decisions and may describe older releases.
 
 ## Planned 0.4.0 visual refresh
 

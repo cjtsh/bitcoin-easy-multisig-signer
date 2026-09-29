@@ -42,6 +42,10 @@ class WalletError(ProbeError):
     pass
 
 
+class BroadcastOutcomeUnknown(WalletError):
+    """The submit request left this app, but acceptance was not established."""
+
+
 def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
     """Hard stop on extreme fees; return an extra-review warning for unusual ones."""
     if fee > MAX_ESTIMATED_FEE_SATS:
@@ -92,11 +96,14 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
             + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
         ) from exc
     except (URLError, TimeoutError, OSError) as exc:
-        raise WalletError("Could not reach the broadcast server.") from exc
+        raise BroadcastOutcomeUnknown(
+            "The broadcast result is unknown. Do not send this payment again. "
+            "Check the transaction on an explorer or ask for help before proceeding."
+        ) from exc
     if len(body) != 64 or any(char not in "0123456789abcdef" for char in body.lower()):
-        raise WalletError(
-            "The broadcast server did not return a transaction id, so it is unknown "
-            "whether anything was sent. Check the explorer before retrying."
+        raise BroadcastOutcomeUnknown(
+            "The broadcast result is unknown because the server did not return a "
+            "transaction ID. Do not send this payment again; check an explorer first."
         )
     return body.lower()
 

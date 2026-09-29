@@ -16,10 +16,18 @@ from probe import ProbeError, load_bsms, parse_bsms
 from network_config import NETWORKS as CHAIN_CONFIGS
 from test_probe import test_record
 from wallet_service import (
-    WalletError, build_unsigned_psbt, check_fee_safety, estimate_fee_preview,
+    BroadcastOutcomeUnknown, WalletError, broadcast_transaction, build_unsigned_psbt,
+    check_fee_safety, estimate_fee_preview,
     explorer_get, scan_wallet, wallet_layout,
     wallet_summary,
 )
+
+
+class BroadcastOutcomeTests(unittest.TestCase):
+    def test_transport_failure_is_unknown_not_definite_rejection(self):
+        with patch("wallet_service.urlopen", side_effect=URLError("timeout")):
+            with self.assertRaisesRegex(BroadcastOutcomeUnknown, "Do not send"):
+                broadcast_transaction("00" * 50)
 
 def mainnet_record(suffix="/<0;1>/*"):
     """Synthetic keys only. No real or uploaded wallet data enters tests."""
