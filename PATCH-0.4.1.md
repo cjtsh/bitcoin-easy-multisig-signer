@@ -8,7 +8,7 @@ The 0.4.0 comparison required every non-signature PSBT field from a device to eq
 
 The owner then tried Ledger in the same installed 0.4.0 build. Ledger asked the owner to review the payment twice; the app failed. The second diagnostic report has a rejected request about 46 seconds after device checking, consistent with the old 45-second HWI timeout, though its privacy-limited codes cannot prove which request hit that limit. A later screenshot said “HWI reported a device error: open failed”; no signer response was recorded for that attempt. This is a device-open failure before a signature response, separate from Jade's PSBT rejection. The specific USB contention or disconnection cause is unknown.
 
-Version 0.4.1 allows up to 600 seconds for an explicit signing request while retaining the 45-second limit for enumeration and public identity checks. The screen explains that Ledger can ask for two review rounds and may take several minutes. An `open failed` result gets actionable reconnect and app-conflict guidance; the app does not automatically retry a signing action or claim to repair the underlying USB condition.
+Version 0.4.1 allows up to 600 seconds for an explicit signing request while allowing 60 seconds for enumeration and public identity checks. The screen explains that Ledger can ask for two review rounds and may take several minutes. An `open failed` result gets actionable reconnect and app-conflict guidance; the app does not automatically retry a signing action or claim to repair the underlying USB condition.
 
 ## Correction and security boundary
 

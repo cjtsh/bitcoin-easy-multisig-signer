@@ -1237,7 +1237,7 @@
       button.disabled = true;
       button.classList.add("searching");
       button.textContent = "Searching for devices…";
-      setBusy("Please wait while we search for your device. This often takes 10–15 seconds…");
+      setBusy("Please wait while we search for your device. This often takes 10–15 seconds, but can take up to a minute…");
       setText(messageId, "Searching for connected devices. Please wait; this is read-only.");
       $(resultsId).replaceChildren();
       try {
@@ -1313,7 +1313,7 @@
       button.disabled = true;
       button.classList.add("searching");
       button.textContent = "Searching for devices…";
-      setBusy("Please wait while we search for your device. This often takes 10–15 seconds…");
+      setBusy("Please wait while we search for your device. This often takes 10–15 seconds, but can take up to a minute…");
       setText("sign-progress", "Searching for connected devices. Please wait.");
       try { await refreshSignable(); }
       finally {
@@ -1345,7 +1345,7 @@
         if (result.complete) { await showFinal(reviewId); return; }
         // Refresh first, so the next device's button is already there, then say
         // where things stand.
-        setBusy("Signature received. Searching for another device; this can take 10–15 seconds…");
+        setBusy("Signature received. Searching for another device; this often takes 10–15 seconds, but can take up to a minute…");
         await refreshSignable();
         if (actionId !== sendActionId || reviewId !== preparationId) return;
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +

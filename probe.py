@@ -230,7 +230,7 @@ def _hwi_reason(text: str) -> str:
 
 def invoke_hwi(executable: str, chain: str, *arguments: str,
                stdin_command: str | None = None,
-               timeout_seconds: int = 45) -> Any:
+               timeout_seconds: int = 60) -> Any:
     """Run HWI without a shell; optionally send a sensitive command on stdin.
 
     HWI 3.2.0's --stdin mode appends a shlex-parsed command from standard input.

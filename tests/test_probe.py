@@ -273,7 +273,7 @@ class ProbeTests(unittest.TestCase):
             run.call_args.args[0],
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
         )
-        self.assertEqual(run.call_args.kwargs["timeout"], 45)
+        self.assertEqual(run.call_args.kwargs["timeout"], 60)
 
     def test_signing_psbt_goes_over_stdin_not_process_arguments(self):
         from subprocess import CompletedProcess
