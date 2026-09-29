@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer — experimental mainnet and Testnet4 GUI
 
-The latest published build is [v0.1.16](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.27): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, checks that your hardware signers are present and belong to the wallet *before* you build a payment, and identifies them again at the end of the send flow. **It does not sign or broadcast.** A receive-only `/*` wallet export resolves the wallet's usual change addresses itself and shows the owner exactly what it did. Older v0.1.10-v0.1.12 releases exist; their assets were replaced several times during development, so prefer the newest.
+The latest published build is [v0.1.27](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.27): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, checks that your hardware signers are present and belong to the wallet *before* you build a payment, and identifies them again at the end of the send flow. It then **asks the connected devices to sign**, finalises once the wallet's threshold is met, and broadcasts to **Testnet4**, where two real payments have confirmed. **Broadcasting real Bitcoin is refused in code.** A receive-only `/*` wallet export resolves the wallet's usual change addresses itself and shows the owner exactly what it did. Older v0.1.10-v0.1.12 releases exist; their assets were replaced several times during development, so prefer the newest.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -222,8 +222,9 @@ addresses, scans and PSBTs are not saved there. If a chosen server is offline,
 the app does **not** silently fall back to a public explorer. Only HTTPS
 servers or loopback HTTP are accepted. Electrum TLS servers (including port
 50002) speak a different protocol and are **not** supported by these Esplora
-fields. **The broadcaster URL is a future-use setting only:** this version
-cannot sign or broadcast, and no transaction is sent to that endpoint.
+fields. **The broadcaster URL is used only for a broadcast you confirm yourself, and only on
+Testnet4.** Broadcasting real Bitcoin is refused in code, so no mainnet transaction
+ever reaches that endpoint.
 
 The older Testnet4 sample export described below uses `/*` in the descriptor,
 but its reference address matches `/0/0`. Such a file proves a receiving path but

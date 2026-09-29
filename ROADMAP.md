@@ -71,7 +71,7 @@ The repository has one Python wallet/PSBT engine and one local HTML interface fo
 
 Implemented code also includes a re-scan request, locally saved advanced Esplora endpoint settings, transaction inputs, fee guidance, PSBT creation, a transaction-review panel, and saving an unsigned `.psbt` into the user's Downloads folder (new filename each time, never replacing an existing file). There are automated tests using synthetic wallet/explorer data and an Apple Silicon CI build with bundle/network self-checks. The v0.1.6 release build passed those checks. **Those checks are not evidence that the full click-through journey works with the user's actual wallet on the Mac.**
 
-The user says **Refresh balance appears to work**; do not list refresh as a reported defect. v0.1.8 does not include the current transaction workflow. v0.1.9 adds three live fee tiers, a UTXO-count fee preview with dollar equivalent, a high-dollar confirmation, transaction review, and HWI-backed signer recognition. Testnet4 and physical signer use remain to be tested on the owner's Mac. Signer recognition is not signing; the app cannot sign or broadcast, and the broadcaster URL remains future-use only.
+The user says **Refresh balance appears to work**; do not list refresh as a reported defect. v0.1.8 does not include the current transaction workflow. v0.1.9 adds three live fee tiers, a UTXO-count fee preview with dollar equivalent, a high-dollar confirmation, transaction review, and HWI-backed signer recognition. Testnet4 and physical signer use remain to be tested on the owner's Mac. At that stage signer recognition was still not signing, and the app could not sign or broadcast; both landed in Phase 4.
 
 | Capability | Evidence | Not yet proven / gap |
 | --- | --- | --- |
