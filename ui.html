@@ -1067,8 +1067,9 @@
         }
         setText(messageId, result.devices.length ? result.message :
           "No compatible device was found. Connect a supported hardware wallet, unlock it on the device itself, then check again.");
-        // Show the troubleshooting list only when it is actually needed.
-        if (helpId) $(helpId).hidden = result.devices.length > 0;
+        // Show the troubleshooting list whenever a device needs the owner to do
+        // something: none found, one that could not be read, or one that did not match.
+        if (helpId) $(helpId).hidden = !result.attention;
       } catch (e) {
         setText(messageId, e.message || "Hardware wallet recognition is unavailable.");
       } finally { button.disabled = false; setBusy(""); }

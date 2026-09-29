@@ -253,6 +253,39 @@ def _same_xpub(expected: Any, received: str) -> bool:
         return False
 
 
+_DEVICE_BRANDS = {"ledger": "Ledger", "trezor": "Trezor", "coldcard": "Coldcard",
+                 "bitbox": "BitBox", "bitbox02": "BitBox02", "digitalbitbox": "Digital BitBox"}
+_DEVICE_SHORT = {"s": "S", "x": "X", "t": "T"}
+
+
+def _device_label(model: str) -> str:
+    """ledger_nano_s_plus -> "Ledger Nano S Plus", for a person to read."""
+    words = [word for word in re.split(r"[_\s]+", model) if word]
+    pretty = []
+    for word in words:
+        low = word.lower()
+        if low in _DEVICE_BRANDS:
+            pretty.append(_DEVICE_BRANDS[low])
+        elif low in _DEVICE_SHORT:
+            pretty.append(_DEVICE_SHORT[low])
+        else:
+            pretty.append(word.capitalize())
+    label = " ".join(pretty)
+    return "".join(char for char in label if char.isprintable())[:40] or "Device"
+
+
+SIGNER_MATCHED = "public xpub matched"
+
+
+def devices_need_attention(statuses: list[str]) -> bool:
+    """True when the owner still has something to do.
+
+    No device at all, or a device that could not be read or did not match, all
+    warrant the troubleshooting list. A device that matched needs nothing from them.
+    """
+    return not statuses or any(SIGNER_MATCHED not in status for status in statuses)
+
+
 def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str]:
     devices = invoke_hwi(executable, chain, "enumerate")
     if not isinstance(devices, list):
@@ -262,13 +295,13 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
         if not isinstance(device, dict):
             statuses.append("Unrecognized USB response; no match claimed.")
             continue
-        model = "".join(
-            char
-            for char in str(device.get("model") or device.get("type") or "Device")
-            if char.isprintable()
-        )[:40] or "Device"
+        model = _device_label(str(device.get("model") or device.get("type") or "Device"))
         if device.get("error"):
-            statuses.append(f"{model}: detected but unavailable or locked.")
+            # HWI knows exactly what is wrong -- "Ledger is not in either the
+            # Bitcoin or Bitcoin Testnet app", for instance -- and replacing that
+            # with a guess about locking sent the owner looking for the wrong fault.
+            reason = _hwi_reason(str(device.get("error"))) or "the device reported an error"
+            statuses.append(f"{model}: detected, but not readable. {reason}")
             continue
         fingerprint = str(device.get("fingerprint") or "").lower()
         dev_type = device.get("type")
@@ -300,7 +333,7 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
                 statuses.append(f"{model}: signer {index} could not be verified.")
             elif _same_xpub(key, response["xpub"]):
                 statuses.append(
-                    f"{model}: signer {index} of {len(record.keys)} public xpub matched "
+                    f"{model}: signer {index} of {len(record.keys)} {SIGNER_MATCHED} "
                     "(not a signing test)."
                 )
             else:

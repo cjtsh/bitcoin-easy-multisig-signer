@@ -32,7 +32,8 @@ from network_settings import (
     validate_esplora_url, verify_esplora,
 )
 from version import APP_VERSION
-from probe import MAX_BSMS_BYTES, ProbeError, parse_bsms, probe_devices
+from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsms,
+                   probe_devices)
 from wallet_service import (WalletError, build_unsigned_psbt, estimate_fee_preview,
                             scan_wallet, wallet_summary)
 
@@ -418,6 +419,7 @@ class LocalApp:
                 statuses = probe_devices(record, "hwi", hwi_chain)
                 self._send(200, {
                     "devices": statuses,
+                    "attention": devices_need_attention(statuses),
                     "message": ("No compatible hardware signer detected." if not statuses
                                 else ("Device check complete. This check does not sign or send."
                                       if supplied else

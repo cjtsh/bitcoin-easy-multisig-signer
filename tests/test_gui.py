@@ -174,8 +174,9 @@ class LocalGuiTests(unittest.TestCase):
                      "Some cables only carry power",
                      "Close any other wallet software"):
             self.assertIn(hint, page, f"missing troubleshooting hint: {hint}")
-        # It stays hidden until a check actually finds nothing.
-        self.assertIn('$(helpId).hidden = result.devices.length > 0', page)
+        # It shows whenever a device still needs the owner to do something:
+        # nothing found, one that could not be read, or one that did not match.
+        self.assertIn('$(helpId).hidden = !result.attention', page)
         self.assertIn('helpId', page)
 
     def test_slow_work_shows_a_spinner(self):
@@ -264,6 +265,12 @@ class LocalGuiTests(unittest.TestCase):
             preflight = self.post("/api/devices", {})
         self.assertIn("no transaction was involved", preflight["message"])
         self.assertEqual(preflight["devices"], ["Coldcard: not a signer in this BSMS file."])
+        # A device that did not match still needs the owner's attention, so the
+        # interface must offer the troubleshooting list.
+        self.assertTrue(preflight["attention"])
+        with patch("gui.probe_devices", return_value=["Jade: signer 1 of 3 public xpub matched (not a signing test)."]):
+            matched = self.post("/api/devices", {})
+        self.assertFalse(matched["attention"])
 
     def test_signer_check_without_an_open_wallet_is_refused(self):
         with self.assertRaises(HTTPError) as err:

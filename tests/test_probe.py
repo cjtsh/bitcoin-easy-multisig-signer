@@ -14,7 +14,8 @@ from embit.networks import NETWORKS
 
 from probe import (
     ProbeError, _same_xpub, _validate_chain, funding_address,
-    invoke_hwi, load_bsms, main, probe_devices,
+    _device_label, devices_need_attention, invoke_hwi, load_bsms, main,
+    probe_devices,
 )
 
 
@@ -119,6 +120,39 @@ class ProbeTests(unittest.TestCase):
             result, ["Jade: signer 1 of 3 public xpub matched (not a signing test)."]
         )
 
+    def test_a_device_that_errors_reports_hwis_own_reason(self):
+        """The owner's Ledger was unlocked, so "unavailable or locked" sent them
+        looking for the wrong fault. HWI knew the real answer and it was discarded."""
+        record, _ = test_record()
+        wallet = self.write(record)
+        real = ("Could not open client or get fingerprint information: "
+                "Ledger is not in either the Bitcoin or Bitcoin Testnet app")
+
+        def fake_hwi(_executable, _chain, *args):
+            self.assertEqual(args, ("enumerate",))
+            return [{"type": "ledger", "model": "ledger_nano_s_plus",
+                     "path": "DevSrvsID:1", "error": real, "code": -3}]
+
+        with patch("probe.invoke_hwi", side_effect=fake_hwi):
+            result = probe_devices(wallet, "hwi", "testnet4")
+        self.assertEqual(len(result), 1)
+        # The device name is readable and the reason survives intact.
+        self.assertTrue(result[0].startswith("Ledger Nano S Plus: detected, but not readable."))
+        self.assertIn("not in either the Bitcoin or Bitcoin Testnet app", result[0])
+        self.assertNotIn("locked", result[0])
+        self.assertTrue(devices_need_attention(result))
+
+    def test_device_labels_and_attention(self):
+        self.assertEqual(_device_label("ledger_nano_s_plus"), "Ledger Nano S Plus")
+        self.assertEqual(_device_label("trezor_one"), "Trezor One")
+        self.assertEqual(_device_label("coldcard_mk4"), "Coldcard Mk4")
+        self.assertEqual(_device_label(""), "Device")
+        # Only a matched signer needs nothing further from the owner.
+        self.assertTrue(devices_need_attention([]))
+        self.assertTrue(devices_need_attention(["Ledger Nano S Plus: not a signer in this BSMS file."]))
+        self.assertFalse(devices_need_attention(
+            ["Jade: signer 1 of 3 public xpub matched (not a signing test)."]))
+
     def test_hwi_fingerprint_match_with_wrong_xpub_stops_short_of_claiming_match(self):
         record, roots = test_record()
         wallet = self.write(record)
@@ -132,7 +166,8 @@ class ProbeTests(unittest.TestCase):
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
             result = probe_devices(wallet, "hwi", "testnet4")
-        self.assertEqual(result, ["ledger: fingerprint matched, but xpub DID NOT MATCH."])
+        # Device names are presented for a person to read, not as HWI spells them.
+        self.assertEqual(result, ["Ledger: fingerprint matched, but xpub DID NOT MATCH."])
 
     def test_explicit_testnet4_chain_and_guarded_funding_address(self):
         text, _ = test_record()
