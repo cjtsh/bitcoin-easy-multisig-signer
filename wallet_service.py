@@ -187,15 +187,18 @@ def wallet_layout(record: WalletRecord) -> Layout:
     text = record.descriptor_text
     suffixes = [key.suffix for key in record.keys]
     assumed = False
+    declared = False
     if record.change_descriptor is not None:
         # The wallet file itself declares separate receive and change descriptors.
         receive, change = desc, record.change_descriptor
         warning = ""
         verified = True
+        declared = True
     elif desc.num_branches == 2:
         receive, change = desc.branch(0), desc.branch(1)
         warning = ""
         verified = True
+        declared = True
     else:
         if suffixes and all(s == "/0/*" for s in suffixes):
             receive, receive_text = desc, text
@@ -207,21 +210,21 @@ def wallet_layout(record: WalletRecord) -> Layout:
                 receive, receive_text = desc, text
         else:
             raise WalletError("Unsupported address branches; no balance will be guessed.")
-        # The file names only the receiving addresses. Resolve the wallet's usual
-        # change addresses instead of asking the owner to assert something they
-        # have no way to check: this is the standard BIP48 arrangement, the scan
-        # then looks for on-chain evidence of it, and the review shows the
-        # resulting change address for checking on the signing device.
-        change = _conventional_change(receive_text, record)
-        verified = False
-        assumed = change is not None
-        warning = ""
+        # The BSMS restrictions line can declare both branches even when the
+        # descriptor prints only receive. An unused inferred /1/* address is
+        # never proof that the originating wallet controls change.
+        declared = record.restrictions == "/0/*,/1/*"
+        change = _conventional_change(receive_text, record) if declared else None
+        verified = bool(change and declared)
+        warning = ("This export does not declare a change branch. Only Send All "
+                   "from scanned receiving addresses is available."
+                   if change is None else "")
     network = NETWORKS[record.network]
     if receive.derive(0).address(network) != record.reference_address:
         raise WalletError("Reference address does not match the chosen receive path.")
     if change and change.derive(0).address(network) == record.reference_address:
         raise WalletError("Receive and change paths unexpectedly overlap.")
-    return Layout(receive, change, warning, verified, False, assumed)
+    return Layout(receive, change, warning, verified, declared, assumed)
 
 
 _ZERO_BRANCH = re.compile(r"/0/\*")
@@ -229,13 +232,10 @@ _BARE_WILDCARD = re.compile(r"(?<!/\d)/\*")
 
 
 def _conventional_change(receive_text: str, record: WalletRecord) -> Descriptor | None:
-    """Derive this wallet's usual change addresses from its receiving addresses.
+    """Resolve change from the receiving descriptor after BSMS explicitly declares /1/*.
 
-    BIP48 multisig wallets receive at .../0/* and give change at .../1/*. A
-    receive-only export does not state that, so it is treated as an assumption
-    that is shown to the owner, backed by scanning for evidence, and verified
-    visually in the review -- never as a fact read from the file. Returns None
-    when no single, matching change descriptor can be derived.
+    Callers must prove the declaration first. Derivation alone is never evidence
+    that the originating wallet or devices recognize the resulting addresses.
     """
     if "/**" in receive_text or "<0;1>" in receive_text:
         return None
@@ -263,8 +263,9 @@ def wallet_summary(record: WalletRecord) -> dict:
     layout = wallet_layout(record)
     config = CHAIN_CONFIGS[_chain(record)]
     network = NETWORKS[record.network]
-    can_prepare = bool(layout.change and record.threshold == 2
-                       and len(record.keys) == 3)
+    supported_policy = record.threshold == 2 and len(record.keys) == 3
+    can_prepare = bool(layout.change and layout.change_verified and supported_policy)
+    can_send_all = supported_policy
     if record.threshold != 2 or len(record.keys) != 3:
         prepare_reason = (
             "This app prepares transactions only for a 2-of-3 multisig wallet. "
@@ -272,9 +273,9 @@ def wallet_summary(record: WalletRecord) -> dict:
         )
     elif layout.change is None:
         prepare_reason = (
-            "This wallet file does not show how change is addressed and the app could "
-            "not work it out, so it will not build a transaction. Export a wallet file "
-            "that includes the change addresses."
+            "This wallet file does not establish change ownership. You can send all "
+            "confirmed Bitcoin found on its receiving addresses with no change, or "
+            "import an export that declares receive and change paths for a smaller send."
         )
     else:
         prepare_reason = ""
@@ -295,7 +296,7 @@ def wallet_summary(record: WalletRecord) -> dict:
         change_detail = "Change addresses are declared in your wallet file."
     else:
         change_note = ""
-        change_detail = "No change addresses could be resolved for this wallet."
+        change_detail = "This export does not establish change ownership; partial sends are unavailable."
     return {
         "policy": f"{record.threshold}-of-{len(record.keys)} native-SegWit multisig",
         "policy_short": f"{record.threshold}-of-{len(record.keys)} multisig wallet",
@@ -303,6 +304,7 @@ def wallet_summary(record: WalletRecord) -> dict:
         "chain_short": config.short_label,
         "network": config.chain,
         "can_prepare": can_prepare,
+        "can_send_all": can_send_all,
         "change_assumed": layout.change_assumed,
         "change_note": change_note,
         "change_detail": change_detail,
@@ -447,6 +449,8 @@ def scan_wallet(record: WalletRecord, get: Callable = explorer_get,
             if item["branch"] == "change" and item["used"]
         ],
         "scanned": len(addresses),
+        "range_limited": coverage_limited,
+        "missing_change": layout.change is None,
         "coverage_limited": coverage_limited or layout.change is None,
         "path_warning": layout.warning,
         "scanned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -529,12 +533,13 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
     conservative upper bound.
     """
     layout = wallet_layout(record)
-    if layout.change is None:
+    if layout.change is None and not send_all:
         raise WalletError(
-            "This wallet's change addresses could not be resolved, so no fee can be "
-            "estimated for a transaction."
+            "This wallet export does not establish change ownership. Choose Send All "
+            "or import an export that declares both address branches."
         )
-    if not scan.get("utxo_consistent") or scan.get("coverage_limited"):
+    if (not scan.get("utxo_consistent") or scan.get("range_limited")
+            or (scan.get("missing_change") and not send_all)):
         raise WalletError("Refresh a complete, consistent balance before estimating a transaction.")
     if type(fee_rate) is not int or not 1 <= fee_rate <= 25:
         raise WalletError("Fee rate must be between 1 and 25 sat/vB.")
@@ -552,8 +557,9 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
     ]
     script_lengths = {
         "receive": len(layout.receive.derive(0).witness_script().data),
-        "change": len(layout.change.derive(0).witness_script().data),
     }
+    if layout.change:
+        script_lengths["change"] = len(layout.change.derive(0).witness_script().data)
     chosen, total, fee = _select_inputs(
         confirmed, amount, fee_rate, output_scripts, script_lengths,
         send_all=send_all,
@@ -599,10 +605,10 @@ def build_unsigned_psbt(
     query = _query_for(record, get, base_url)
     if scan.get("network") != chain:
         raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
-    if layout.change is None or record.threshold != 2 or len(record.keys) != 3:
+    if record.threshold != 2 or len(record.keys) != 3 or (layout.change is None and not send_all):
         raise WalletError(
-            "Preparing a transaction requires a 2-of-3 wallet with resolvable "
-            "receiving and change addresses."
+            "Preparing this transaction requires a 2-of-3 wallet and, for a smaller "
+            "send, a declared change path."
         )
     if scan.get("source") != (base_url or EXPLORERS[chain]):
         raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
@@ -610,8 +616,8 @@ def build_unsigned_psbt(
         raise WalletError(
             "UTXOs and confirmed balance disagree; refresh or verify with your own node."
         )
-    if layout.change is None or scan.get("coverage_limited"):
-        raise WalletError("Change path or scan coverage is incomplete; no unsigned transaction will be prepared.")
+    if scan.get("range_limited") or (scan.get("missing_change") and not send_all):
+        raise WalletError("Change path or scan range is incomplete; no unsigned transaction will be prepared.")
     config = CHAIN_CONFIGS[chain]
     prefix = config.address_prefix
     if not isinstance(recipient, str) or not recipient.startswith(prefix):
@@ -634,9 +640,10 @@ def build_unsigned_psbt(
     candidates = [u for u in scan["utxos"] if u["status"]["confirmed"]]
     script_lengths = {
         "receive": len(layout.receive.derive(0).witness_script().data),
-        "change": len(layout.change.derive(0).witness_script().data),
     }
-    change_script = layout.change.derive(0).script_pubkey()
+    if layout.change:
+        script_lengths["change"] = len(layout.change.derive(0).witness_script().data)
+    change_script = layout.change.derive(0).script_pubkey() if layout.change else None
     output_scripts = [destination] if send_all else [destination, change_script]
     chosen, total, fee = _select_inputs(
         candidates, None if send_all else amount, fee_rate,

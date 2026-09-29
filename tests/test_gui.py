@@ -242,7 +242,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('id="review-txid"', page)
         self.assertIn('id="review-explorer"', page)
         self.assertIn("A payment is not finished until it is confirmed.", page)
-        self.assertIn("This app\n              does not sign or send Bitcoin.", page)
+        self.assertIn("Continue below to approve signing on two hardware devices.", page)
         self.assertIn("explorer_web", page)
 
     def test_prepare_reports_a_final_transaction_id(self):
@@ -365,6 +365,9 @@ class LocalGuiTests(unittest.TestCase):
         with patch("gui.build_unsigned_psbt", return_value={
             "psbt_base64": "cHNidP8=", "fee_warning": "", "txid": "ab" * 32,
             "fee_sats": 540, "fee_rate_estimate": 2,
+            "recipient": request["recipient"], "amount_sats": request["amount_sats"],
+            "change_sats": 1000, "change_address": request["recipient"],
+            "send_all": False,
         }):
             result = self.post("/api/prepare", request)
         self.assertTrue(result["preparation_id"])
@@ -569,6 +572,9 @@ class LocalGuiTests(unittest.TestCase):
         }), patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
             "psbt_base64": "cHNidP8=",
+            "txid": "ab" * 32, "recipient": request["recipient"],
+            "amount_sats": request["amount_sats"], "change_sats": 1000,
+            "change_address": request["recipient"], "send_all": False,
         }):
             result = self.post("/api/prepare", request)
         self.assertIn("below the current mainnet standard", result["fee_warning"])
@@ -611,6 +617,9 @@ class LocalGuiTests(unittest.TestCase):
         }), patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 2, "fee_sats": 540,
             "psbt_base64": "cHNidP8=",
+            "txid": "ab" * 32, "recipient": request["recipient"],
+            "amount_sats": request["amount_sats"], "change_sats": 1000,
+            "change_address": request["recipient"], "send_all": False,
         }):
             result = self.post("/api/prepare", request)
         self.assertIn("below the current mainnet standard", result["fee_warning"])
@@ -618,6 +627,8 @@ class LocalGuiTests(unittest.TestCase):
         with patch("gui.build_unsigned_psbt", return_value={
             "fee_warning": "", "fee_rate_estimate": 12, "fee_sats": 2640,
             "psbt_base64": "cHNidP8=", "send_all": True,
+            "txid": "ab" * 32, "recipient": wallet["receive_address"],
+            "amount_sats": 1000, "change_sats": 0, "change_address": None,
         }) as builder:
             swept = self.post("/api/prepare", {
                 "chain": "testnet4", "recipient": wallet["receive_address"],

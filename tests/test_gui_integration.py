@@ -49,7 +49,7 @@ PRICE = {
 class ApiTestCase(unittest.TestCase):
     """Shared harness: real server, deterministic data, no outbound traffic."""
 
-    bsms_kwargs: dict = {"short_path": True}
+    bsms_kwargs: dict = {"bsms_template": True}
 
     def bsms(self):
         """Overridable: returns (bsms_text, synthetic_signing_roots)."""
@@ -153,21 +153,20 @@ class LocalServerAccessTests(ApiTestCase):
 
 class TransactionJourneyTests(ApiTestCase):
     def test_receive_only_wallet_reaches_the_send_form_with_a_plain_note(self):
-        """No checkbox, no jargon: the app resolves the change branch itself."""
-        status, summary = self.import_wallet()
+        """An undeclared change path permits only the no-change sweep."""
+        text, _ = test_record(short_path=True)
+        status, summary = self.post("/api/import", {
+            "chain": "testnet4", "text": text, "consent_explorer": True})
         self.assertEqual(status, 200)
-        self.assertTrue(summary["can_prepare"])
-        self.assertTrue(summary["change_assumed"])
-        self.assertEqual(summary["prepare_reason"], "")
-        self.assertIn("change", summary["change_note"].lower())
-        self.assertNotIn("descriptor", summary["change_note"].lower())
-        self.assertNotIn("/0/*", summary["change_note"])
+        self.assertFalse(summary["can_prepare"])
+        self.assertTrue(summary["can_send_all"])
+        self.assertIn("send all", summary["prepare_reason"].lower())
 
     def test_wallet_reaches_a_reviewable_psbt(self):
         status, summary = self.import_wallet()
         self.assertEqual(status, 200)
         self.assertTrue(summary["can_prepare"])
-        self.assertTrue(summary["change_assumed"])
+        self.assertFalse(summary["change_assumed"])
 
         status, scan = self.post("/api/scan", {"chain": "testnet4"})
         self.assertEqual(status, 200)
@@ -193,8 +192,8 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertEqual(preview["input_count"], prepared["inputs"])
         self.assertEqual(prepared["fee_sats"], prepared["estimated_signed_vbytes"] * 5)
         self.assertEqual(prepared["amount_sats"], amount)
-        self.assertTrue(prepared["change_assumed"])
-        self.assertIn("standard change addresses", prepared["change_warning"])
+        self.assertFalse(prepared["change_assumed"])
+        self.assertIn("Unsigned only", prepared["change_warning"])
         self.assertTrue(prepared["preparation_id"])
 
         packet = psbt.PSBT.from_base64(prepared["psbt_base64"])

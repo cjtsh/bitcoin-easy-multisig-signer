@@ -1,5 +1,7 @@
 # Project history — detailed records from Phases 1 to 4
 
+For current 0.2.0 behavior, read `AGENTS.md`, `PHASE-HANDOFF.md`, and `SECURITY-REVIEW-0.2.0.md`. In particular, 0.2.0 no longer infers spendable change from a receive-only export and no longer publishes a release on every branch push.
+
 **This is the archive, not the starting point.** Read `PHASE-HANDOFF.md` first: it
 carries the current state and the next work. This file exists so the reasoning behind
 earlier decisions is not lost, and so nobody has to re-derive it.

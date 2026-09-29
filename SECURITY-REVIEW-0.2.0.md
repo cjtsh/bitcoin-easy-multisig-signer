@@ -1,0 +1,27 @@
+# 0.2.0 hot-item implementation and verification record
+
+This document maps the independent audit's hot findings to source, tests and remaining evidence. It is intended for a third-party reviewer. No real wallet material is included. The earlier audit is available from the owner as `Bitcoin-Easier-Signer-Review.md`; this file describes the changes made in response. Historical phase notes are in `PROJECT-HISTORY.md`.
+
+## Finding-to-fix map
+
+| Audit finding | 0.2.0 change | Evidence and residual risk |
+| --- | --- | --- |
+| Receive-only export silently becomes `/1/*` change | `wallet_service.wallet_layout` derives change only when the descriptor or BSMS restrictions declare both branches. `wallet_summary` distinguishes partial-send eligibility from no-change Send All; builder and fee preview enforce it. | `tests/test_change_branch.py`, `tests/test_wallet_service.py`, GUI integration. A declared export can still be wrong if wallet software or hardware does not honor the declaration; confirm change on the two device screens in the owner walkthrough. |
+| HWI response can alter PSBT metadata while retaining txid | `signing.accept_signature_update` compares the entire returned PSBT to the reviewed version after removing partial signatures, preserves previous signatures, and cryptographically verifies all signatures. `gui._sign` applies this before accepting it. | `tests/test_signing.py`, `tests/test_send_flow.py`. Strict equality may expose legitimate device-specific metadata changes; do not relax it without proving each field safe and recording a patch release. |
+| Finalizer accepted malformed signatures | `signing.verified_input_signatures` checks P2WSH script hash, historical prevout match, 2-of-3 script, BIP143 ECDSA and SIGHASH_ALL per input. `is_complete` and finalization use verified signatures on every input. | A corrupted-signature regression test now fails before completion/finalization. The owner/device test still needs to show each physical HWI response passes. |
+| Last confirmation omitted destination/change | `gui._finalize` compares all outputs and exact fee with the prepared review; `ui.html` displays network, full destination, amount, change address/amount, fee, effective fee rate and txid together. Mainnet's final screen has no broadcast control; API refusal remains. | GUI/static and API tests. Verify visually in the packaged Mac window. |
+| Concurrent refresh could invalidate in-flight broadcast | `gui._broadcast` rechecks the review and holds the session lock through the network submission and state clear. | API race regression to be run before release. A server timeout still has an unknown outcome; the operator must check the explorer before retrying. |
+| Build/release provenance and documentation drift | Full dependency lock with hashes, mandatory `LIBUSB_SHA256`, manual-only workflow dispatch, immutable version tags, complete source archive, refreshed README/handoff/agent guide/risk notice/release notes. | CI archive and bundled DMG checks plus `SHA256SUMS` and workflow run. Current DMG remains ad-hoc signed until Developer ID enrollment and notarization. |
+| User needs useful evidence without wallet leakage | Opt-in `Save diagnostic report` produces a mode-0600 JSON file with fixed stage/outcome codes and timestamps only. | `tests/test_diagnostics.py`; inspect a report produced by the Mac app. No background log file is written. |
+
+## Security model and limits
+
+The wallet definition contains public but privacy-sensitive xpubs and origin paths. Keys stay on hardware; HWI receives PSBT bytes and asks devices to sign. The app cannot guarantee the safety of compromised firmware, a compromised host, or a malicious build dependency. The local API uses a random fragment-carried token, loopback bind, Host/Origin validation and no request logging. Esplora sees queried addresses after explicit consent. The application checks historical outputs, but a remote explorer does not independently prove an output remains unspent; that is a 0.3.0 warm item.
+
+The 0.2.0 signature verifier accepts only BIP143 SIGHASH_ALL for the supported 2-of-3 native-SegWit policy. It checks the script hash and the previous transaction that supplies the input value, then validates signatures against the transaction digest. A real Bitcoin node remains the final consensus authority. A passing Testnet4 send demonstrates the supported wallet/device path, not every possible BSMS export.
+
+## Verification record
+
+Before dispatch, record: full test count and skips; syntax checks; synthetic full-flow results; negative tests; source archive extraction results; `git` commit. After GitHub Actions finishes, record: run URL, release tag/commit, DMG and source SHA-256, bundle self-checks and whether the Mac runner had attached devices (normally none). After the owner's single install, record: wallet export *shape only*, devices used, whether change appeared as owned on both screens, final-review agreement, broadcast response, independent confirmation, and sanitized diagnostic report if needed.
+
+**Status:** source changes in progress; automated, CI, release and owner hardware evidence must be filled in before marking 0.2.0 accepted.

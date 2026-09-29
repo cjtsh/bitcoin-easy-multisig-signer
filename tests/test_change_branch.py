@@ -1,4 +1,4 @@
-"""The wallet change branch: derived from convention, never demanded.
+"""Change is used only when the wallet export declares it.
 
 Synthetic keys only; no wallet export is ever checked in.
 """
@@ -10,7 +10,7 @@ from embit.descriptor import Descriptor
 from embit.descriptor.checksum import checksum
 from embit.networks import NETWORKS
 
-from fake_explorer import three_output_wallet
+from fake_explorer import FakeExplorer, three_output_wallet
 from probe import ProbeError, parse_bsms
 from test_probe import test_record
 from wallet_service import (
@@ -22,32 +22,39 @@ from wallet_service import (
 class ChangeBranchTests(unittest.TestCase):
     """A receive-only export must not demand a technical assertion from the owner."""
 
-    def test_receive_only_wallet_prepares_and_explains_itself(self):
+    def test_receive_only_wallet_only_allows_no_change_send_all(self):
         record = parse_bsms(test_record(short_path=True)[0])  # bare /* export
         layout = wallet_layout(record)
         summary = wallet_summary(record)
-        self.assertTrue(summary["can_prepare"])
-        self.assertTrue(summary["change_assumed"])
-        self.assertEqual(summary["prepare_reason"], "")
-        self.assertIsNotNone(layout.change)
-        # The change branch is this wallet's own /1/0 address, and the summary
-        # reports exactly that address for the owner to check.
-        self.assertEqual(layout.change.derive(0).address(NETWORKS["test"]),
-                         summary["change_address"])
-        self.assertNotEqual(summary["change_address"], summary["receive_address"])
-        # The owner is told, in plain words, not asked a question.
-        self.assertIn("change", summary["change_note"].lower())
-        self.assertIn("review", summary["change_note"].lower())
-        self.assertNotIn("descriptor", summary["change_note"].lower())
-        self.assertNotIn("BIP48", summary["change_note"])
-        self.assertIn("1/*", summary["change_detail"])
+        self.assertFalse(summary["can_prepare"])
+        self.assertTrue(summary["can_send_all"])
+        self.assertIsNone(layout.change)
+        self.assertIsNone(summary["change_address"])
+        self.assertIn("send all", summary["prepare_reason"].lower())
 
-    def test_path_qualified_wallet_also_gets_its_usual_change_addresses(self):
+    def test_path_qualified_receive_only_wallet_does_not_guess_change(self):
         record = parse_bsms(test_record()[0])  # /0/* only
         summary = wallet_summary(record)
-        self.assertTrue(summary["can_prepare"])
-        self.assertTrue(summary["change_assumed"])
-        self.assertIsNotNone(wallet_layout(record).change)
+        self.assertFalse(summary["can_prepare"])
+        self.assertIsNone(wallet_layout(record).change)
+
+    def test_receive_only_wallet_can_sweep_without_creating_change(self):
+        record = parse_bsms(test_record(short_path=True)[0])
+        layout = wallet_layout(record)
+        network = NETWORKS["test"]
+        receive = layout.receive.derive(0).address(network)
+        explorer = FakeExplorer(layout, network, [(receive, 10_000, "receive", 0)])
+        scan = scan_wallet(record, explorer)
+        self.assertTrue(scan["missing_change"])
+        self.assertTrue(scan["coverage_limited"])
+        self.assertFalse(scan["range_limited"])
+        recipient = layout.receive.derive(5).address(network)
+        built = build_unsigned_psbt(record, scan, recipient, None, 2,
+                                    explorer, send_all=True)
+        self.assertEqual(built["change_sats"], 0)
+        self.assertEqual(len(psbt.PSBT.from_base64(built["psbt_base64"]).tx.vout), 1)
+        with self.assertRaisesRegex(WalletError, "declared change"):
+            build_unsigned_psbt(record, scan, recipient, 1_000, 2, explorer)
 
     def test_declared_paths_are_trusted_and_not_called_an_assumption(self):
         for label, kwargs in (("multipath", {"dual_branch": True}),
@@ -59,8 +66,16 @@ class ChangeBranchTests(unittest.TestCase):
                 self.assertEqual(summary["change_note"], "")
                 self.assertIn("declared", summary["change_detail"])
 
-    def test_derived_change_branch_uses_the_same_keys(self):
-        record = parse_bsms(test_record(short_path=True)[0])
+    def test_explicit_bsms_restrictions_declare_change_on_receive_descriptor(self):
+        text, _ = test_record()
+        text = text.replace("No path restrictions", "/0/*,/1/*")
+        record = parse_bsms(text)
+        summary = wallet_summary(record)
+        self.assertTrue(summary["can_prepare"])
+        self.assertIsNotNone(wallet_layout(record).change)
+
+    def test_declared_change_branch_uses_the_same_keys(self):
+        record = parse_bsms(test_record(bsms_template=True)[0])
         layout = wallet_layout(record)
         self.assertEqual(sorted(k.key.to_base58() for k in layout.change.keys),
                          sorted(k.key.to_base58() for k in layout.receive.keys))
@@ -138,7 +153,7 @@ class FeePreviewTests(unittest.TestCase):
 
     def test_preview_requires_a_complete_consistent_scan(self):
         with self.assertRaisesRegex(WalletError, "complete, consistent"):
-            estimate_fee_preview(self.record, {**self.scan, "coverage_limited": True},
+            estimate_fee_preview(self.record, {**self.scan, "range_limited": True},
                                  False, amount=1_000, fee_rate=5)
         with self.assertRaisesRegex(WalletError, "complete, consistent"):
             estimate_fee_preview(self.record, {**self.scan, "utxo_consistent": False},

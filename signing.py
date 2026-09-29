@@ -18,7 +18,10 @@ wallet that orders them differently produces a transaction the network rejects.
 
 from __future__ import annotations
 
-from embit import transaction
+from collections import OrderedDict
+from hashlib import sha256
+
+from embit import ec, transaction
 
 # OP_0..OP_16
 _OP_1_TO_16 = {0x50 + n: n for n in range(1, 17)}
@@ -49,7 +52,7 @@ def parse_multisig_script(script: bytes) -> tuple[int, list[bytes]]:
         raise SigningError("This witness script is not a multisig script.")
     if data[i] - 0x50 != len(keys):
         raise SigningError("The witness script's key count does not add up.")
-    if len(data) < i + 2 or data[i + 1] != 0xAE:  # OP_CHECKMULTISIG
+    if len(data) != i + 2 or data[i + 1] != 0xAE:  # OP_CHECKMULTISIG
         raise SigningError("This witness script is not a multisig script.")
     if not 1 <= threshold <= len(keys):
         raise SigningError("The witness script's threshold is impossible.")
@@ -67,6 +70,77 @@ def partial_sigs_as_bytes(scope) -> dict[bytes, bytes]:
         raw = key.sec() if hasattr(key, "sec") else bytes(key)
         out[bytes(raw)] = bytes(signature)
     return out
+
+
+def verified_input_signatures(psbt) -> list[set[bytes]]:
+    """Verify every BIP143 SIGHASH_ALL signature before calling an input complete.
+
+    HWI output is an untrusted PSBT update. Counting partial-sig entries would
+    allow malformed bytes to be described as a finished payment. The immutable
+    transaction and verified prevouts are bound to the prepared PSBT in gui.py.
+    """
+    if len(psbt.inputs) != len(psbt.tx.vin):
+        raise SigningError("The signed transaction's input count changed.")
+    verified = []
+    for index, (scope, txin) in enumerate(zip(psbt.inputs, psbt.tx.vin)):
+        if scope.witness_script is None or scope.witness_utxo is None:
+            raise SigningError(f"Input {index + 1} is missing its script or previous output.")
+        threshold, keys = parse_multisig_script(scope.witness_script.data)
+        if threshold != 2 or len(keys) != 3:
+            raise SigningError("Only 2-of-3 native-SegWit signatures are supported.")
+        expected_script = b"\x00\x20" + sha256(scope.witness_script.data).digest()
+        if scope.witness_utxo.script_pubkey.data != expected_script:
+            raise SigningError(f"Input {index + 1} has a witness script that does not own its output.")
+        if (scope.non_witness_utxo is None
+                or scope.non_witness_utxo.txid() != txin.txid
+                or txin.vout >= len(scope.non_witness_utxo.vout)
+                or scope.non_witness_utxo.vout[txin.vout].serialize()
+                   != scope.witness_utxo.serialize()):
+            raise SigningError(f"Input {index + 1} does not match its verified previous transaction.")
+        valid = set()
+        for pubkey, signature in partial_sigs_as_bytes(scope).items():
+            if pubkey not in keys or len(signature) < 2 or signature[-1] != 1:
+                raise SigningError(f"Input {index + 1} contains an unexpected signature or sighash type.")
+            try:
+                parsed = ec.Signature.parse(signature[:-1])
+                digest = psbt.tx.sighash_segwit(
+                    index, scope.witness_script, scope.witness_utxo.value)
+                if not ec.PublicKey.parse(pubkey).verify(parsed, digest):
+                    raise ValueError("signature mismatch")
+            except (ValueError, TypeError, RuntimeError) as exc:
+                raise SigningError(f"Input {index + 1} contains an invalid signature.") from exc
+            valid.add(pubkey)
+        verified.append(valid)
+    return verified
+
+
+def accept_signature_update(before, after) -> None:
+    """Allow a hardware response to add signatures, never to revise the proposal.
+
+    PSBT metadata affects what a signer believes it is signing and the fee shown
+    to the owner. Both packets are reserialized without partial signatures;
+    everything else must remain byte-identical. Every prior signature must survive.
+    """
+    if len(before.inputs) != len(after.inputs) or len(before.outputs) != len(after.outputs):
+        raise SigningError("The device changed the transaction's input or output count.")
+    prior = [partial_sigs_as_bytes(scope) for scope in before.inputs]
+    later = [partial_sigs_as_bytes(scope) for scope in after.inputs]
+    for old, new in zip(prior, later):
+        if any(new.get(key) != sig for key, sig in old.items()):
+            raise SigningError("The device removed or changed an earlier signature.")
+    try:
+        left = type(before).from_base64(before.to_base64())
+        right = type(after).from_base64(after.to_base64())
+        for packet in (left, right):
+            for scope in packet.inputs:
+                scope.partial_sigs = OrderedDict()
+        if left.serialize() != right.serialize():
+            raise SigningError("The device changed the reviewed transaction or its wallet data.")
+    except SigningError:
+        raise
+    except Exception as exc:
+        raise SigningError("The device returned a transaction that cannot be checked.") from exc
+    verified_input_signatures(after)
 
 
 def _compact_size(value: int) -> int:
@@ -101,16 +175,15 @@ def virtual_size(tx, raw: bytes) -> int:
 
 def signatures_collected(psbt) -> tuple[int, int]:
     """(signatures present, threshold) across every input, for progress display."""
-    present = 0
+    present = None
     threshold = 0
-    for scope in psbt.inputs:
-        if not scope.witness_script:
-            continue
+    valid_by_input = verified_input_signatures(psbt)
+    for scope, valid in zip(psbt.inputs, valid_by_input):
         need, keys = parse_multisig_script(scope.witness_script.data)
         threshold = max(threshold, need)
-        have = [k for k in keys if k in partial_sigs_as_bytes(scope)]
-        present = max(present, len(have))
-    return present, threshold
+        have = [k for k in keys if k in valid]
+        present = len(have) if present is None else min(present, len(have))
+    return present or 0, threshold
 
 
 def signed_by_signers(psbt, record) -> list[int]:
@@ -121,8 +194,9 @@ def signed_by_signers(psbt, record) -> list[int]:
     """
     numbers = {key.fingerprint.hex(): index
                for index, key in enumerate(record.keys, start=1)}
-    signed: set[int] = set()
+    signed: set[int] | None = None
     for scope in psbt.inputs:
+        input_signed: set[int] = set()
         derivations = scope.bip32_derivations or {}
         for pubkey in (scope.partial_sigs or {}):
             path = derivations.get(pubkey)
@@ -130,8 +204,9 @@ def signed_by_signers(psbt, record) -> list[int]:
                 continue
             number = numbers.get(path.fingerprint.hex())
             if number is not None:
-                signed.add(number)
-    return sorted(signed)
+                input_signed.add(number)
+        signed = input_signed if signed is None else signed & input_signed
+    return sorted(signed or set())
 
 
 def is_complete(psbt) -> bool:
@@ -149,13 +224,15 @@ def finalize_multisig(psbt, expected_txid: str) -> dict:
     if not psbt.inputs:
         raise SigningError("This transaction has no inputs.")
 
+    valid_by_input = verified_input_signatures(psbt)
+
     used_signatures = 0
-    for index, scope in enumerate(psbt.inputs, start=1):
+    for index, (scope, valid) in enumerate(zip(psbt.inputs, valid_by_input), start=1):
         if not scope.witness_script:
             raise SigningError(f"Input {index} has no witness script; cannot finalise.")
         threshold, keys = parse_multisig_script(scope.witness_script.data)
         partial = partial_sigs_as_bytes(scope)
-        ordered = [partial[key] for key in keys if key in partial]
+        ordered = [partial[key] for key in keys if key in valid]
         if len(ordered) < threshold:
             raise SigningError(
                 f"Input {index} has {len(ordered)} of {threshold} required signatures."

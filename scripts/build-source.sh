@@ -17,7 +17,9 @@ mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
-cp README.md DISCLAIMER.md replit.md requirements.txt requirements-desktop.txt version.py \
+cp README.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md \
+  PROJECT-HISTORY.md SECURITY-REVIEW-0.2.0.md \
+  requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   signing.py wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
 

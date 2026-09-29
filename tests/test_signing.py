@@ -19,15 +19,15 @@ from embit.networks import NETWORKS  # noqa: E402
 
 from fake_explorer import three_output_wallet  # noqa: E402
 from probe import parse_bsms  # noqa: E402
-from signing import (SigningError, finalize_multisig, is_complete,  # noqa: E402
-                     parse_multisig_script, signatures_collected)
+from signing import (SigningError, accept_signature_update, finalize_multisig,
+                     is_complete, parse_multisig_script, signatures_collected)
 from test_probe import test_record  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
 
 
 def prepared_psbt(amount: int = 100_000, fee_rate: int = 5):
     """An unsigned 2-of-3 PSBT from the synthetic wallet, plus its signing keys."""
-    text, roots = test_record()
+    text, roots = test_record(bsms_template=True)
     record = parse_bsms(text)
     layout = wallet_layout(record)
     explorer = three_output_wallet(layout, NETWORKS["test"])
@@ -164,6 +164,29 @@ class FinalizeTests(unittest.TestCase):
         with self.assertRaises(SigningError) as err:
             finalize_multisig(packet, packet.tx.txid().hex())
         self.assertIn("1 of 2", str(err.exception))
+
+    def test_corrupted_signatures_are_not_counted_or_finalized(self):
+        packet, keys, _ = prepared_psbt()
+        sign(packet, keys[:2])
+        for scope in packet.inputs:
+            for pub in list(scope.partial_sigs):
+                damaged = bytearray(scope.partial_sigs[pub])
+                damaged[5] ^= 1
+                scope.partial_sigs[pub] = bytes(damaged)
+        with self.assertRaises(SigningError):
+            is_complete(packet)
+        with self.assertRaises(SigningError):
+            finalize_multisig(packet, packet.tx.txid().hex())
+
+    def test_device_can_only_add_valid_signatures(self):
+        before, keys, _ = prepared_psbt()
+        after = E.PSBT.from_base64(before.to_base64())
+        after.sign_with(keys[0])
+        accept_signature_update(before, after)
+        changed = E.PSBT.from_base64(after.to_base64())
+        changed.inputs[0].witness_utxo.value += 1
+        with self.assertRaisesRegex(SigningError, "wallet data"):
+            accept_signature_update(before, changed)
 
     def test_a_changed_transaction_id_is_refused(self):
         """If the id moved, this is not the transaction the owner reviewed."""

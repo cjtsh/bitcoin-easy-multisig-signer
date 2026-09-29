@@ -294,8 +294,8 @@
       <p class="muted">First prepare and review the transaction. Nothing is signed or sent here.</p>
       <div id="send-choice" role="group" aria-label="Choose whether to prepare a transaction">
         <h3>Would you like to prepare a Bitcoin transaction?</h3>
-        <p class="small muted">You will enter the destination and amount, review the fee and change, then save an unsigned file. This app will not sign or send Bitcoin.</p>
-        <div class="tip"><strong>Recommended: send a small test amount first.</strong>
+        <p class="small muted">Enter the destination and amount, review every output, then approve signing on two hardware devices. Testnet4 payments can then be broadcast.</p>
+        <div id="test-send-tip" class="tip"><strong>Recommended: send a small test amount first.</strong>
           Confirm that a small payment arrives before you move a large amount. Nothing here is
           forced — a test transaction is simply the cheapest insurance there is.</div>
         <button id="begin-send" type="button">Yes, prepare a transaction</button>
@@ -367,10 +367,8 @@
         <div class="tip"><strong>What happens next</strong>
           <ol class="small">
             <li>Save the unsigned file to your Downloads folder.</li>
-            <li>Open it in your own wallet software and sign it on your devices. <strong>This app
-              does not sign or send Bitcoin.</strong></li>
-            <li>Broadcast it, then open the transaction link above to confirm it arrived and is
-              confirming. A payment is not finished until it is confirmed.</li>
+            <li>Continue below to approve signing on two hardware devices. The saved file is an optional backup.</li>
+            <li>On Testnet4, confirm the final transaction and broadcast it. Mainnet broadcast remains disabled.</li>
           </ol></div>
         <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
           <details class="context-help"><summary aria-label="What is change in a Bitcoin transaction?">?</summary>
@@ -379,7 +377,7 @@
         <div id="review-warning" class="notice"></div>
         <div id="review-fee-warning" class="notice" hidden></div>
         <label class="check"><input id="confirm-review" type="checkbox">
-          <span>I checked the network, full destination, BTC amount, fee and any change shown above. This file is unsigned; no Bitcoin has been sent.</span></label>
+          <span>I checked the network, full destination, BTC amount, fee and any change shown above. No Bitcoin has been sent yet.</span></label>
         <label id="fee-ack-row" class="check" hidden><input id="confirm-fee" type="checkbox">
           <span>I checked the sat/vB units and the exact estimated fee and total above.</span></label>
         <div class="with-help"><button id="download" disabled>Save unsigned transaction file (.psbt) to Downloads</button>
@@ -415,6 +413,10 @@
               <div class="metric"><b id="final-vsize"></b><span>transaction size (vB)</span></div>
               <div class="metric"><b id="final-signers"></b><span>devices that signed</span></div>
             </div>
+            <div class="kv"><b>Network</b><code id="final-network"></code></div>
+            <div class="kv"><b>Destination — check every character</b><code id="final-destination" class="mono"></code></div>
+            <div class="kv"><b>Change returns to your wallet</b><code id="final-change" class="mono"></code></div>
+            <div class="kv"><b>Effective fee rate</b><code id="final-fee-rate"></code></div>
             <div class="kv"><b>Transaction id — the same one shown at review</b>
               <code id="final-txid" class="mono"></code></div>
             <label class="check"><input id="confirm-broadcast" type="checkbox">
@@ -427,9 +429,11 @@
       </div>
       </div>
     </section>
-    <footer>Experimental, unaudited software. Verify every output and fee on your signing devices.
+    <footer>Experimental software. Verify every output and fee on your signing devices.
       Never enter seed words or private keys.
       <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Full disclaimer</a>.
+       <p><button id="save-diagnostics" class="secondary" type="button">Save diagnostic report</button>
+       <span id="diagnostic-message" role="status" aria-live="polite"></span></p>
        <p><button id="quit" class="secondary" __DESKTOP_HIDE_QUIT__>Quit local app</button></p></footer>
   </main>
   <script>
@@ -477,6 +481,7 @@
     let feeEstimate = null;
     let preparationId = null;
     let walletCanPrepare = false;
+    let walletCanSendAll = false;
     let changeAssumed = false;
     let feeEstimateError = "";
     let feeEstimateTimer = null;
@@ -679,6 +684,7 @@
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
     }
     function updateSendMode() {
+      if (!walletCanPrepare) $("send-all").checked = true;
       $("amount").disabled = $("send-all").checked;
       $("amount").placeholder = $("send-all").checked ? "Calculated after fee" : "e.g. 0.00100000";
       updateSendEquivalent();
@@ -776,6 +782,7 @@
       setText("fee-input-warning", warn);
       $("prepare").disabled = preparing || !feeQuote || feeQuote.standard > 25 ||
         !Number.isInteger(value) || value < feeQuote?.economy || value > 25;
+      if (!walletCanPrepare && !$("send-all").checked) $("prepare").disabled = true;
       const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
       if (isLargeAmount(sats) && !$("confirm-large-amount").checked) $("prepare").disabled = true;
     }
@@ -800,6 +807,8 @@
       $("chain").value = data.network;
       updateNetworkUI();
       walletCanPrepare = data.can_prepare;
+      walletCanSendAll = Boolean(data.can_send_all);
+      $("test-send-tip").hidden = !walletCanPrepare;
       $("wallet-card").hidden = false;
       $("signers-card").hidden = false;
       setText("signer-policy", data.policy_short);
@@ -842,11 +851,11 @@
     function showBalance(data) {
       $("balance-card").hidden = false;
       let sendBlockReason = "";
-      if (!walletCanPrepare) {
+      if (!walletCanSendAll) {
         sendBlockReason = "This wallet definition does not meet the transaction policy shown above.";
       } else if (data.utxo_consistent === false) {
         sendBlockReason = "Explorer UTXOs and confirmed balance disagree. Refresh the balance; if the mismatch remains, verify with your own node before preparing a transaction.";
-      } else if (data.coverage_limited) {
+      } else if (data.range_limited) {
         sendBlockReason = "The scan reached the 100-address limit before finding the required unused gap. Do not prepare a transaction from this partial scan; verify wallet coverage with your own node.";
       } else if (data.confirmed_sats <= 0 || data.utxo_count <= 0) {
         sendBlockReason = data.pending_delta_sats > 0 ?
@@ -856,15 +865,16 @@
       const allowSend = !sendBlockReason;
       $("send-card").hidden = !allowSend;
       if (allowSend) resetSendChoice();
-      $("send-unavailable").hidden = walletCanPrepare || allowSend;
-      if (walletCanPrepare && sendBlockReason) {
+      $("send-unavailable").hidden = walletCanPrepare;
+      if (!allowSend) {
         setText("send-unavailable", sendBlockReason);
       }
-      $("balance-send-status").hidden = !walletCanPrepare || allowSend;
+      $("balance-send-status").hidden = allowSend;
       setText("balance-send-status", sendBlockReason);
       $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
       lastScan = data;
-      $("send-all").checked = false;
+      $("send-all").checked = !walletCanPrepare;
+      $("send-all").disabled = !walletCanPrepare;
       $("amount").value = "";
       setText("available-btc", "Confirmed BTC found by scan: " + btc(data.confirmed_sats) +
         (data.pending_delta_sats < 0 ?
@@ -972,7 +982,7 @@
     });
     $("chain").addEventListener("change", () => {
       walletActionId++;
-      walletCanPrepare = false; lastScan = null;
+      walletCanPrepare = false; walletCanSendAll = false; lastScan = null;
       feeEstimate = null;
       $("explorer-consent").checked = false;
       currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
@@ -1195,11 +1205,21 @@
         finalTxid = final.txid;
         setText("final-amount", btc(final.amount_sats) + " BTC");
         setText("final-fee", fmt(final.fee_sats) + " sats");
+        setText("final-network", final.network === "main" ? "MAINNET · REAL BITCOIN" : "TESTNET4");
+        setText("final-destination", final.destination);
+        setText("final-change", final.change_address ?
+          final.change_address + " · " + btc(final.change_sats) + " BTC" : "None — Send All");
+        setText("final-fee-rate", final.effective_fee_rate + " sat/vB");
         setText("final-vsize", fmt(final.vsize));
         setText("final-signers", (final.signers || []).join(", "));
         setText("final-txid", final.txid);
         $("confirm-broadcast").checked = false;
         $("broadcast").disabled = true;
+        const mainnetDryRun = final.network === "main";
+        $("confirm-broadcast").closest("label").hidden = mainnetDryRun;
+        $("broadcast").hidden = mainnetDryRun;
+        setText("broadcast-message", mainnetDryRun ?
+          "Mainnet dry run complete. This build cannot broadcast real Bitcoin." : "");
         $("finalize-step").hidden = false;
         $("finalize-step").scrollIntoView({behavior:"smooth", block:"start"});
       } catch (e) {
@@ -1243,6 +1263,15 @@
         msg("send-message", (e && e.message) ||
           "Could not save the unsigned transaction file.", true);
       } finally { updateDownload(); }
+    });
+    $("save-diagnostics").addEventListener("click", async () => {
+      $("save-diagnostics").disabled = true;
+      try {
+        const result = await post("/api/diagnostics", {});
+        msg("diagnostic-message", "Saved a privacy-limited report to " + result.path + ". You can share that file for troubleshooting.");
+      } catch (e) {
+        msg("diagnostic-message", (e && e.message) || "Could not save diagnostic report.", true);
+      } finally { $("save-diagnostics").disabled = false; }
     });
     $("quit").addEventListener("click", async () => {
       try { await post("/api/quit", {}); } catch (e) {}

@@ -45,7 +45,8 @@ esac
 # reused to produce a build.
 rm -rf .build-venv
 python3 -m venv .build-venv
-.build-venv/bin/python -m pip install --disable-pip-version-check -r requirements-desktop.txt
+.build-venv/bin/python -m pip install --disable-pip-version-check --require-hashes \
+  -r requirements-desktop.lock
 [[ -f assets/AppIcon.icns ]] || { echo "assets/AppIcon.icns is missing." >&2; exit 1; }
 args=(--noconfirm --clean --windowed --onedir --name "Bitcoin Easy Signer"
       --icon "assets/AppIcon.icns"
@@ -69,8 +70,7 @@ libusb_dylib="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
 #   shasum -a 256 "$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
 # Then build with the expected digest (64 lowercase hex characters):
 #   LIBUSB_SHA256=<64-hex> bash scripts/build-macos.sh <version>
-# If LIBUSB_SHA256 is unset the build continues but is unverified and must be
-# treated as a local test build only.
+# LIBUSB_SHA256 is mandatory: no artifact is built from an unverified dylib.
 libusb_sha256="$(shasum -a 256 "$libusb_dylib" | awk '{print $1}')"
 if [[ -n "${LIBUSB_SHA256:-}" ]]; then
   [[ "${LIBUSB_SHA256}" =~ ^[0-9a-fA-F]{64}$ ]] || {
@@ -87,14 +87,9 @@ if [[ -n "${LIBUSB_SHA256:-}" ]]; then
   fi
   echo "libusb integrity check passed (sha256 $libusb_sha256)."
 else
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
-  echo "WARNING: LIBUSB_SHA256 is not set; the native libusb library is UNVERIFIED." >&2
-  echo "WARNING:   $libusb_dylib" >&2
-  echo "WARNING:   sha256 = $libusb_sha256" >&2
-  echo "WARNING: The resulting build is FOR LOCAL TESTING ONLY and must not be" >&2
-  echo "WARNING: published or distributed. Re-run with LIBUSB_SHA256=<64-hex>" >&2
-  echo "WARNING: once you have independently verified that digest." >&2
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >&2
+  echo "LIBUSB_SHA256 is required; refusing an unverified native library." >&2
+  echo "Observed digest: $libusb_sha256" >&2
+  exit 1
 fi
 hwi_args=(--noconfirm --clean --onefile --name hwi --collect-all hwilib
           --collect-all hid --collect-all requests --collect-all urllib3

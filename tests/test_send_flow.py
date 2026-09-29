@@ -66,7 +66,7 @@ class SendFlowTests(unittest.TestCase):
 
     def prepare_a_reviewed_transaction(self, chain="testnet4"):
         """Put the app in the state it is in after a reviewed, saved transaction."""
-        text, roots = test_record()
+        text, roots = test_record(bsms_template=True)
         record = parse_bsms(text)
         layout = wallet_layout(record)
         explorer = three_output_wallet(layout, NETWORKS["test"])
@@ -80,6 +80,9 @@ class SendFlowTests(unittest.TestCase):
         self.app.prepared_psbt = result["psbt_base64"]
         self.app.prepared_id = "reviewed-1"
         self.app.prepared_txid = result["txid"]
+        self.app.prepared_review = {key: result[key] for key in (
+            "txid", "recipient", "amount_sats", "fee_sats", "change_sats",
+            "change_address", "send_all")}
         keys = [root.derive("m/48h/1h/0h/2h/0/0") for root in roots]
         return result, keys
 
@@ -145,7 +148,7 @@ class SendFlowTests(unittest.TestCase):
         """A device that hands back some other transaction must never be accepted."""
         self.prepare_a_reviewed_transaction()
         other, _keys, _ = None, None, None
-        text, roots = test_record()
+        text, roots = test_record(bsms_template=True)
         record = parse_bsms(text)
         layout = wallet_layout(record)
         explorer = three_output_wallet(layout, NETWORKS["test"])
@@ -194,6 +197,57 @@ class SendFlowTests(unittest.TestCase):
             self.assertEqual(err.exception.code, 400)
             self.assertIn("not enabled", err.exception.read().decode())
         send.assert_not_called()
+
+    def test_wallet_import_waits_until_broadcast_submission_finishes(self):
+        """A concurrent import cannot replace the reviewed payment mid-submit."""
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"), ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        entered = threading.Event()
+        release = threading.Event()
+        import_done = threading.Event()
+        outcomes = {}
+
+        def delayed_broadcast(*_args):
+            entered.set()
+            if not release.wait(3):
+                raise RuntimeError("Timed out waiting for race test")
+            return result["txid"]
+
+        def send():
+            try:
+                outcomes["send"] = self.post("/api/broadcast", {
+                    "preparation_id": "reviewed-1", "confirm": True,
+                    "confirmed_txid": result["txid"]})
+            except Exception as exc:
+                outcomes["send_error"] = exc
+
+        def replace_wallet():
+            try:
+                outcomes["import"] = self.post("/api/import", {
+                    "chain": "testnet4", "text": test_record(bsms_template=True)[0],
+                    "consent_explorer": True})
+            finally:
+                import_done.set()
+
+        with patch("gui.broadcast_transaction", side_effect=delayed_broadcast):
+            sender = threading.Thread(target=send)
+            sender.start()
+            self.assertTrue(entered.wait(2), "broadcast did not enter the submission step")
+            importer = threading.Thread(target=replace_wallet)
+            importer.start()
+            try:
+                self.assertFalse(import_done.wait(0.2),
+                                 "wallet import passed while broadcast was in flight")
+            finally:
+                release.set()
+                sender.join(3)
+                importer.join(3)
+        self.assertNotIn("send_error", outcomes)
+        self.assertEqual(outcomes["send"]["txid"], result["txid"])
+        self.assertTrue(import_done.is_set())
 
     def test_the_device_check_reports_what_can_sign(self):
         text, _ = test_record()

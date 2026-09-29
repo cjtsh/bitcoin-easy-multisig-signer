@@ -1,6 +1,8 @@
 # Roadmap and agent handoff
 
-**Current build:** **v0.1.27**, 29 September 2026, on the `phase2-transaction-builder`
+**Current 0.2.0 work:** The hot audit fixes are being implemented on `phase2-transaction-builder`. Read `PHASE-HANDOFF.md` and `SECURITY-REVIEW-0.2.0.md` for current behavior and acceptance. The detailed phase text below preserves earlier decisions and may describe older releases.
+
+**Previous build:** **v0.1.27**, 29 September 2026, on the `phase2-transaction-builder`
 branch. It prepares, reviews, **signs with hardware devices, finalises and broadcasts
 to Testnet4**. Two real Testnet4 payments have confirmed, between them using all three
 devices. **Broadcasting real Bitcoin is refused in code**, deliberately, and opening it

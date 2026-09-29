@@ -76,7 +76,7 @@ class WorkflowConfigTests(unittest.TestCase):
                             "the workflow must not hardcode a version")
 
     def test_release_is_not_tag_gated_and_not_a_prerelease(self):
-        # The owner asked for a plain release on push, not a candidate/pre-release.
+        # The owner asked for a plain release, triggered by explicit dispatch.
         self.assertNotIn("--prerelease", self.text)
         self.assertNotIn("--clobber", self.text)
         release = self.data["jobs"]["release"]
@@ -96,10 +96,11 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIn("is already published", self.text)
         self.assertIn("Bump version.py", self.text)
 
-    def test_documentation_only_pushes_do_not_republish(self):
-        """A released version must keep exactly the artifacts it was verified with."""
+    def test_only_manual_dispatch_can_publish(self):
+        """A source push must not publish a money-moving desktop app."""
         trigger = self.data.get("on", self.data.get(True))
-        self.assertEqual(trigger["push"]["paths-ignore"], ["**/*.md"])
+        self.assertIn("workflow_dispatch", trigger)
+        self.assertNotIn("push", trigger)
 
 
 if __name__ == "__main__":

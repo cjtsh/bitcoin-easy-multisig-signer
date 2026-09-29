@@ -219,8 +219,8 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "refresh"):
             build_unsigned_psbt(self.wallet, {**data, "confirmed_sats": 7000},
                                 recipient, None, 2, self.fake_get, send_all=True)
-        with self.assertRaisesRegex(WalletError, "coverage"):
-            build_unsigned_psbt(self.wallet, {**data, "coverage_limited": True},
+        with self.assertRaisesRegex(WalletError, "range"):
+            build_unsigned_psbt(self.wallet, {**data, "range_limited": True},
                                 recipient, None, 2, self.fake_get, send_all=True)
 
     def test_send_all_requires_every_confirmed_input_and_respects_fee_ceiling(self):
@@ -330,20 +330,17 @@ class WalletServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
 
-    def test_receive_only_export_gets_its_usual_change_addresses(self):
-        """Naming only receiving addresses must not block a non-technical user."""
+    def test_receive_only_export_is_sweep_only(self):
+        """No inferred change path may receive a partial send."""
         for short in (False, True):
             with self.subTest(short=short):
                 record = parse_bsms(test_record(short_path=short)[0])
                 layout = wallet_layout(record)
-                self.assertIsNotNone(layout.change)
-                self.assertTrue(layout.change_assumed)
+                self.assertIsNone(layout.change)
                 summary = wallet_summary(record)
-                self.assertTrue(summary["can_prepare"])
-                self.assertEqual(summary["prepare_reason"], "")
-                self.assertTrue(summary["change_note"])
-                self.assertEqual(layout.change.derive(0).address(NETWORKS["test"]),
-                                 summary["change_address"])
+                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["can_send_all"])
+                self.assertIsNone(summary["change_address"])
                 scan = scan_wallet(record, self.fake_get)
                 self.assertEqual(scan["network"], "testnet4")
 
@@ -403,16 +400,15 @@ class WalletServiceTests(unittest.TestCase):
             build_unsigned_psbt(record, {**data, "utxo_consistent": False},
                                 recipient, 10_000, 2, fake_get)
 
-    def test_mainnet_receive_only_export_also_gets_usual_change_addresses(self):
+    def test_mainnet_receive_only_export_does_not_guess_change(self):
         for suffix in ("/0/*", "/*"):
             with self.subTest(suffix=suffix):
                 record = parse_bsms(mainnet_record(suffix))
                 layout = wallet_layout(record)
-                self.assertIsNotNone(layout.change)
+                self.assertIsNone(layout.change)
                 summary = wallet_summary(record)
-                self.assertTrue(summary["can_prepare"])
-                self.assertTrue(summary["change_assumed"])
-                self.assertIn("change", summary["change_note"].lower())
+                self.assertFalse(summary["can_prepare"])
+                self.assertTrue(summary["can_send_all"])
         lines = mainnet_record().splitlines()
         other = parse_bsms(mainnet_record("/0/*"))
         lines[3] = other.descriptor.derive(1).address(NETWORKS["main"])

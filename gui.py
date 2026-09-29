@@ -37,8 +37,8 @@ from network_settings import (
 from version import APP_VERSION
 from probe import (MAX_BSMS_BYTES, ProbeError, devices_need_attention, parse_bsms,
                    probe_devices_detailed, sign_psbt_with_device)
-from signing import (SigningError, finalize_multisig, is_complete,
-                     signatures_collected, signed_by_signers)
+from signing import (SigningError, accept_signature_update, finalize_multisig,
+                     is_complete, signatures_collected, signed_by_signers)
 from wallet_service import (WalletError, broadcast_transaction, build_unsigned_psbt,
                             estimate_fee_preview, scan_wallet, wallet_summary)
 
@@ -50,6 +50,15 @@ FEES_CACHE_SECONDS = 120
 # Mainnet payments at or above this size always need the high-value confirmation,
 # independent of any remote BTC/USD quote. 0.1 BTC is 10,000,000 satoshis.
 LARGE_AMOUNT_SATS_FLOOR = 10_000_000
+DIAGNOSTIC_STAGES = frozenset({
+    "wallet_import", "change_path", "wallet_scan", "transaction_prepare",
+    "signer_check", "signer_response", "final_transaction", "broadcast",
+    "request",
+})
+DIAGNOSTIC_OUTCOMES = frozenset({
+    "passed", "declared", "missing", "complete", "incomplete",
+    "consistent", "inconsistent", "verified", "rejected", "accepted",
+})
 
 
 def launch_url(port: int, token: str) -> str:
@@ -135,6 +144,8 @@ def public_scan(result: dict) -> dict:
         "utxo_count": len(result["utxos"]),
         "scanned": result["scanned"],
         "coverage_limited": result["coverage_limited"],
+        "range_limited": result.get("range_limited", result["coverage_limited"]),
+        "missing_change": result.get("missing_change", False),
         "utxo_consistent": result["utxo_consistent"],
         "path_warning": result["path_warning"],
         "scanned_at": result["scanned_at"],
@@ -191,6 +202,39 @@ def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> 
     )
 
 
+def save_diagnostic_report(state: "LocalApp", folder: Path | None = None) -> dict:
+    """Export fixed-code events only; never wallet identifiers or raw errors."""
+    with state.lock:
+        report = {"app_version": APP_VERSION, "format": 1,
+                  "events": list(state.diagnostic_events)}
+    destination = folder or Path.home() / "Downloads"
+    if not destination.is_dir():
+        raise WalletError("Downloads is unavailable; diagnostic report was not saved.")
+    payload = (json.dumps(report, indent=2) + "\n").encode("utf-8")
+    for suffix in ("",) + tuple(f"-{n}" for n in range(2, 100)):
+        target = destination / f"bitcoin-easy-signer-diagnostics-{APP_VERSION}{suffix}.json"
+        try:
+            fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise WalletError("Could not save the diagnostic report to Downloads.") from exc
+        try:
+            with os.fdopen(fd, "wb") as output:
+                if output.write(payload) != len(payload):
+                    raise OSError("Incomplete write.")
+                output.flush()
+                os.fsync(output.fileno())
+        except OSError as exc:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+            raise WalletError("Could not save the diagnostic report to Downloads.") from exc
+        return {"saved": True, "path": str(target)}
+    raise WalletError("Too many diagnostic reports in Downloads; move an older report and retry.")
+
+
 class LocalApp:
     def __init__(self, *, desktop: bool = False):
         self.token = secrets.token_urlsafe(32)
@@ -206,6 +250,8 @@ class LocalApp:
         # it, so it must be identical before signing and after. It is the thread that
         # ties what the owner confirmed to what would actually be broadcast.
         self.prepared_txid = None
+        self.prepared_review = None
+        self.diagnostic_events = []
         self.revision = 0
         self.scan_generation = 0
         self.price = None
@@ -218,6 +264,17 @@ class LocalApp:
         except SettingsError as exc:
             self.servers = default_servers()
             self.settings_error = str(exc)
+
+    def note(self, stage: str, outcome: str) -> None:
+        """Fixed vocabulary, bounded memory; no wallet data or exception text."""
+        if stage not in DIAGNOSTIC_STAGES or outcome not in DIAGNOSTIC_OUTCOMES:
+            return
+        with self.lock:
+            self.diagnostic_events.append({
+                "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "stage": stage, "outcome": outcome,
+            })
+            del self.diagnostic_events[:-80]
 
     def handler(self):
         state = self
@@ -345,9 +402,13 @@ class LocalApp:
                     elif self.path == "/api/quit":
                         self._send(200, {"stopped": True})
                         threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    elif self.path == "/api/diagnostics":
+                        self._send(200, save_diagnostic_report(state))
                     else:
                         self._send(404, {"error": "Not found."})
                 except (ProbeError, WalletError, SettingsError) as exc:
+                    stage = self.path.removeprefix("/api/")
+                    state.note(stage if stage in DIAGNOSTIC_STAGES else "request", "rejected")
                     self._send(400, {"error": str(exc)})
                 except (ValueError, TypeError, UnicodeError):
                     self._send(400, {"error": "Wallet request is malformed."})
@@ -368,6 +429,7 @@ class LocalApp:
                     state.prepared_psbt = None
                     state.prepared_id = None
                     state.prepared_txid = None
+                    state.prepared_review = None
                     state.revision += 1
                     state.scan_generation += 1
                     revision = state.revision
@@ -381,6 +443,8 @@ class LocalApp:
                     state.record = record
                     state.chain = chain
                     state.explorer_consent = True
+                    state.note("wallet_import", "passed")
+                    state.note("change_path", "declared" if summary["can_prepare"] else "missing")
                 self._send(200, summary)
 
             def _scan(self, data):
@@ -397,6 +461,7 @@ class LocalApp:
                     state.prepared_psbt = None
                     state.prepared_id = None
                     state.prepared_txid = None
+                    state.prepared_review = None
                     state.scan_generation += 1
                     generation = state.scan_generation
                 if record is None:
@@ -408,6 +473,8 @@ class LocalApp:
                     if revision != state.revision or generation != state.scan_generation:
                         raise WalletError("Wallet or balance changed during scan; refresh again.")
                     state.scan = result
+                    state.note("wallet_scan", "consistent" if result["utxo_consistent"] else "inconsistent")
+                    state.note("wallet_scan", "incomplete" if result["coverage_limited"] else "complete")
                 self._send(200, public_scan(result))
 
             def _status(self):
@@ -441,6 +508,7 @@ class LocalApp:
                 # tb1 address prefix, so the xpub comparison is byte-exact either way.
                 hwi_chain = "main" if chain == "main" else "test"
                 detailed = probe_devices_detailed(record, "hwi", hwi_chain)
+                state.note("signer_check", "passed")
                 statuses = detailed["statuses"]
                 self._send(200, {
                     "devices": statuses,
@@ -488,10 +556,16 @@ class LocalApp:
                         "The device returned a different transaction, so it was refused. "
                         "Nothing was signed into the reviewed transaction."
                     )
+                try:
+                    accept_signature_update(before, after)
+                except SigningError as exc:
+                    state.note("signer_response", "rejected")
+                    raise WalletError(str(exc)) from exc
                 with state.lock:
                     if state.prepared_id != preparation_id:
                         raise WalletError("The transaction changed while signing. Start again.")
                     state.prepared_psbt = updated
+                    state.note("signer_response", "verified")
                 present, threshold = signatures_collected(after)
                 self._send(200, {
                     "signatures": present,
@@ -504,6 +578,8 @@ class LocalApp:
             def _finalize(self, data):
                 record, _chain, prepared, _prep, txid = self._current_prepared(
                     data, "finishing it")
+                with state.lock:
+                    review = dict(state.prepared_review or {})
                 packet = PSBT.from_base64(prepared)
                 # Read the signers first: finalising clears the partial signatures.
                 signers = signed_by_signers(packet, record)
@@ -511,6 +587,8 @@ class LocalApp:
                     final = finalize_multisig(packet, txid)
                 except SigningError as exc:
                     raise WalletError(str(exc)) from exc
+                self._check_final_review(record, packet, final, review)
+                state.note("final_transaction", "verified")
                 self._send(200, {
                     "txid": final["txid"],
                     "vsize": final["vsize"],
@@ -521,18 +599,37 @@ class LocalApp:
                     "amount_sats": packet.tx.vout[0].value,
                     "change_sats": (packet.tx.vout[1].value
                                     if len(packet.tx.vout) > 1 else 0),
+                    "change_address": (packet.tx.vout[1].script_pubkey.address(
+                        NETWORKS[record.network]) if len(packet.tx.vout) > 1 else None),
+                    "network": _chain,
+                    "effective_fee_rate": round(final["fee_sats"] / final["vsize"], 2),
                 })
+
+            def _check_final_review(self, record, packet, final, review):
+                """Compare every final output and fee with the accepted review."""
+                outputs = packet.tx.vout
+                network = NETWORKS[record.network]
+                if (not review or len(outputs) != (1 if review["send_all"] else 2)
+                    or final["txid"] != review["txid"]
+                    or final["fee_sats"] != review["fee_sats"]
+                    or outputs[0].value != review["amount_sats"]
+                    or outputs[0].script_pubkey.address(network) != review["recipient"]
+                    or (not review["send_all"] and
+                        (outputs[1].value != review["change_sats"]
+                         or outputs[1].script_pubkey.address(network)
+                            != review["change_address"]))):
+                    raise WalletError("The final transaction differs from the reviewed payment.")
 
             def _broadcast(self, data):
                 _record, chain, prepared, _prep, txid = self._current_prepared(
                     data, "broadcasting it")
-                # Broadcasting real Bitcoin is not enabled in this build. A completed
-                # testnet send comes first, and switching this on must be a deliberate
-                # change rather than a setting anyone can flip by accident.
+                # Broadcasting real Bitcoin is not enabled in this build. Enabling
+                # it needs a deliberate review and separate release, rather than
+                # a setting anyone can flip by accident.
                 if chain == "main":
                     raise WalletError(
                         "Broadcasting real Bitcoin is not enabled in this build. "
-                        "Testnet4 only, until a full testnet send has been completed."
+                        "Testnet4 broadcast only in this release."
                     )
                 if data.get("confirm") is not True:
                     raise WalletError("Confirm the final transaction before broadcasting it.")
@@ -540,25 +637,33 @@ class LocalApp:
                     raise WalletError(
                         "The confirmed transaction is not the one prepared. Nothing was sent."
                     )
+                # Keep payment state locked until the network request finishes.
+                # A concurrent refresh/import/settings edit must not invalidate
+                # the reviewed payment during the irreversible submit call.
                 with state.lock:
+                    if state.prepared_id != data.get("preparation_id"):
+                        raise WalletError("The payment changed before broadcast.")
                     broadcaster = state.servers[chain]["broadcaster"]
-                packet = PSBT.from_base64(prepared)
-                try:
-                    final = finalize_multisig(packet, txid)
-                except SigningError as exc:
-                    raise WalletError(str(exc)) from exc
-                sent = broadcast_transaction(final["raw_transaction_hex"], chain, broadcaster)
-                if sent != txid:
-                    raise WalletError(
-                        "The server reported a different transaction id than the one "
-                        "confirmed. Check the explorer before assuming anything was sent."
-                    )
-                with state.lock:
+                    packet = PSBT.from_base64(state.prepared_psbt)
+                    try:
+                        final = finalize_multisig(packet, txid)
+                    except SigningError as exc:
+                        raise WalletError(str(exc)) from exc
+                    self._check_final_review(state.record, packet, final,
+                                             state.prepared_review or {})
+                    sent = broadcast_transaction(final["raw_transaction_hex"], chain, broadcaster)
+                    if sent != txid:
+                        raise WalletError(
+                            "The server reported a different transaction id than the one "
+                            "confirmed. Check the explorer before assuming anything was sent."
+                        )
                     # The funds are spent now, so anything cached is stale.
                     state.prepared_psbt = None
                     state.prepared_id = None
                     state.prepared_txid = None
+                    state.prepared_review = None
                     state.scan = None
+                    state.note("broadcast", "accepted")
                 self._send(200, {
                     "txid": sent,
                     "explorer": CHAIN_CONFIGS[chain].web_url + "/tx/" + sent,
@@ -609,6 +714,7 @@ class LocalApp:
                             state.scan = None
                             state.prepared_psbt = None
                             state.prepared_id = None
+                            state.prepared_review = None
                             state.scan_generation += 1
                 with state.lock:
                     active = dict(state.servers[chain])
@@ -626,6 +732,7 @@ class LocalApp:
                     state.prepared_psbt = None
                     state.prepared_id = None
                     state.prepared_txid = None
+                    state.prepared_review = None
                     record, scan, revision, chain = (
                         state.record, state.scan, state.revision, state.chain
                     )
@@ -719,7 +826,13 @@ class LocalApp:
                     state.prepared_psbt = result["psbt_base64"]
                     state.prepared_id = secrets.token_urlsafe(18)
                     state.prepared_txid = result.get("txid")
+                    state.prepared_review = {
+                        key: result[key] for key in (
+                            "txid", "recipient", "amount_sats", "fee_sats",
+                            "change_sats", "change_address", "send_all")
+                    }
                     result["preparation_id"] = state.prepared_id
+                    state.note("transaction_prepare", "passed")
                 self._send(200, result)
 
         return Handler
