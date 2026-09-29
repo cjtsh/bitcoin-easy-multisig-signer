@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer — experimental mainnet and Testnet4 GUI
 
-The latest published build is [v0.1.16](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.21): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, checks that your hardware signers are present and belong to the wallet *before* you build a payment, and identifies them again at the end of the send flow. **It does not sign or broadcast.** A receive-only `/*` wallet export resolves the wallet's usual change addresses itself and shows the owner exactly what it did. Older v0.1.10-v0.1.12 releases exist; their assets were replaced several times during development, so prefer the newest.
+The latest published build is [v0.1.16](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.1.22): an unsigned, ad-hoc-signed Apple Silicon test build. It prepares and reviews an **unsigned** transaction from an existing 2-of-3 multisig wallet — partial amount or send-all with the fee deducted, live fee suggestions, the change address in plain sight, a final transaction id and a public explorer link — saves the `.psbt` to your Downloads folder, checks that your hardware signers are present and belong to the wallet *before* you build a payment, and identifies them again at the end of the send flow. **It does not sign or broadcast.** A receive-only `/*` wallet export resolves the wallet's usual change addresses itself and shows the owner exactly what it did. Older v0.1.10-v0.1.12 releases exist; their assets were replaced several times during development, so prefer the newest.
 
 ## Disclaimer — experimental software; use at your own risk
 
@@ -243,7 +243,18 @@ creation or seed entry.
    python -m pip install -r requirements.txt
    ```
 
-2. HWI 3.2.0 is bundled in the v0.1.21 Mac app. The command-line proof below
+2. HWI 3.2.0 is bundled in the v0.1.22 Mac app.
+
+**Devices behave differently, and it matters for the person using this.** The app
+runs the recognition check itself and tells you what to do when a device will not
+read, but the honest summary is:
+
+| Device | What it takes |
+| --- | --- |
+| **Trezor** (Safe 3 tested) | Plug in, unlock on the device. |
+| **Blockstream Jade** | Plug in, enter the PIN **on the Jade**. |
+| **Ledger** (Nano S Plus tested) | Unlock on the device **and open the Bitcoin Testnet app** — the extra step people miss, and the reason a Ledger can look broken when it is not. |
+| **Coldcard** | Unlock on the device. | The command-line proof below
    still uses an HWI 3.2.0 installation on your PATH. Use only the official
    [HWI release][releases]. It adds an explicit `testnet4` chain option.
 3. Use a **nonproduction Testnet4 BSMS file** made with the test signers.

@@ -14,8 +14,8 @@ from embit.networks import NETWORKS
 
 from probe import (
     ProbeError, _same_xpub, _validate_chain, funding_address,
-    _device_label, devices_need_attention, invoke_hwi, load_bsms, main,
-    probe_devices,
+    _device_label, device_advice, devices_need_attention, invoke_hwi, load_bsms,
+    main, probe_devices,
 )
 
 
@@ -188,6 +188,21 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("not in either the Bitcoin or Bitcoin Testnet app", result[0])
         self.assertNotIn("locked", result[0])
         self.assertTrue(devices_need_attention(result))
+        # And the owner is told the one thing that fixes it.
+        self.assertIn("open the Bitcoin Testnet app", result[0])
+
+    def test_advice_is_specific_and_never_misleading(self):
+        """The owner's complaint: nobody would work out that a Ledger needs a
+        particular app opened on it. Say the one thing that applies."""
+        ledger = "Ledger is not in either the Bitcoin or Bitcoin Testnet app"
+        self.assertIn("Bitcoin Testnet app", device_advice("ledger", ledger))
+        self.assertIn("Bitcoin Testnet app", device_advice("ledger", "error 0x5515 locked"))
+        self.assertIn("PIN", device_advice("jade", "Use Recovery Phrase Login or QR PIN Unlock"))
+        self.assertIn("Trezor", device_advice("trezor", "Device is locked"))
+        # An unrelated fault must not attract advice that does not apply.
+        self.assertEqual(device_advice("ledger", "LIBUSB_ERROR_IO"), "")
+        self.assertEqual(device_advice("", "locked"), "")
+        self.assertEqual(device_advice("trezor", "LIBUSB_ERROR_NOT_FOUND"), "")
 
     def test_device_labels_and_attention(self):
         self.assertEqual(_device_label("ledger_nano_s_plus"), "Ledger Nano S Plus")

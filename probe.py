@@ -304,6 +304,34 @@ def _device_label(model: str) -> str:
 
 SIGNER_MATCHED = "public xpub matched"
 
+# What to tell the owner, given the device and what HWI said. A generic list of
+# tips makes everyone read five things when only one applies; the owner's own
+# complaint was that nobody would work out that a Ledger needs a particular app
+# opened on it. Each entry is (device keyword, reason keywords, instruction) and
+# the reason must match, so an unrelated USB fault never gets advice that is wrong.
+_DEVICE_ADVICE: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("ledger", ("bitcoin", "5515", "locked", "lock"),
+     "On the Ledger itself: unlock it, then open the Bitcoin Testnet app."),
+    ("jade", ("unlock", "pin", "recovery", "wallet", "auth"),
+     "On the Jade itself: enter your PIN. This app never receives it."),
+    ("trezor", ("lock", "pin", "passphrase", "bootloader"),
+     "On the Trezor itself: unlock it, then try again."),
+    ("coldcard", ("lock", "pin"),
+     "On the Coldcard itself: unlock it, then try again."),
+    ("bitbox", ("lock", "pin"),
+     "On the BitBox itself: unlock it, then try again."),
+)
+
+
+def device_advice(device_type: str, reason: str) -> str:
+    """A short instruction for the owner, or "" when HWI's words are enough."""
+    kind = (device_type or "").lower()
+    said = (reason or "").lower()
+    for keyword, triggers, instruction in _DEVICE_ADVICE:
+        if keyword in kind and any(trigger in said for trigger in triggers):
+            return instruction
+    return ""
+
 
 def devices_need_attention(statuses: list[str]) -> bool:
     """True when the owner still has something to do.
@@ -329,13 +357,17 @@ def probe_devices(record: WalletRecord, executable: str, chain: str) -> list[str
             # Bitcoin or Bitcoin Testnet app", for instance -- and replacing that
             # with a guess about locking sent the owner looking for the wrong fault.
             reason = _hwi_reason(str(device.get("error"))) or "the device reported an error"
-            statuses.append(f"{model}: detected, but not readable. {reason}")
+            advice = device_advice(str(device.get("type") or model), reason)
+            statuses.append(f"{model}: detected, but not readable. {reason}"
+                            + (f" {advice}" if advice else ""))
             continue
         fingerprint = str(device.get("fingerprint") or "").lower()
         dev_type = device.get("type")
         dev_path = device.get("path")
         if not (dev_type and dev_path and len(fingerprint) == 8):
-            statuses.append(f"{model}: no usable public identity yet.")
+            advice = device_advice(str(dev_type or model), "unlock pin")
+            statuses.append(f"{model}: no usable public identity yet."
+                            + (f" {advice}" if advice else ""))
             continue
         possible = [
             (index, key)
