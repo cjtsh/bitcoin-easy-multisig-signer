@@ -89,6 +89,13 @@ class WorkflowConfigTests(unittest.TestCase):
                       "CI must re-verify HTTPS with the host's CA configuration "
                       "removed, so only the bundled trust store can make it pass")
 
+    def test_a_published_version_is_never_rebuilt(self):
+        """Overwriting a published tag changes artifacts somebody already
+        downloaded and verified. The publish step must refuse, not delete."""
+        self.assertNotIn("gh release delete", self.text)
+        self.assertIn("is already published", self.text)
+        self.assertIn("Bump version.py", self.text)
+
     def test_documentation_only_pushes_do_not_republish(self):
         """A released version must keep exactly the artifacts it was verified with."""
         trigger = self.data.get("on", self.data.get(True))

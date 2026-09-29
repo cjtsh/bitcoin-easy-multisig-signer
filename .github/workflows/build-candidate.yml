@@ -191,10 +191,15 @@ jobs:
 
           Experimental and unaudited: verify every address, amount and fee on your signers.
           EOF
-          # Replace an existing release for this version rather than failing, so a
-          # repeated push simply refreshes the test build.
-          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" >/dev/null 2>&1 || true
+          # A published version is never rebuilt. Overwriting one silently changes the
+          # artifacts behind a tag someone has already downloaded and verified, which
+          # is exactly what happened to v0.1.11 five times. If this version is already
+          # published, bump version.py and push again.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "==> v${VERSION} is already published." >&2
+            echo "    Bump version.py rather than republishing a released version." >&2
+            exit 1
+          fi
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "v${VERSION} — unsigned Apple Silicon test build" \
             --notes-file notes.md dist/*
