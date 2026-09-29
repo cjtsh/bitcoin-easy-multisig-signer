@@ -15,4 +15,12 @@ The owner then noted that Jade setup during **Check connected devices** can requ
 
 ## Verification and remaining gate
 
-Synthetic tests assert the exact timeout passed to HWI enumeration, Jade xpub verification, other-device xpub verification and signing. Existing local API and interface regressions remain in the release gate. A physical multi-minute Jade PIN-entry test has not been performed in this build; the owner should use 0.4.2 on the next ordinary Mutinynet device check rather than make a payment solely to test the timer. Record workflow and artifact verification below after release. Mainnet broadcast remains disabled.
+Synthetic tests assert the exact timeout passed to HWI enumeration, Jade xpub verification, other-device xpub verification and signing. Existing local API and interface regressions remain in the release gate. A physical multi-minute Jade PIN-entry test has not been performed in this build; the owner should use 0.4.2 on the next ordinary Mutinynet device check rather than make a payment solely to test the timer. Mainnet broadcast remains disabled.
+
+## Published release evidence
+
+- GitHub's [manual 0.4.2 workflow](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36628229636) passed the source archive tests, Apple Silicon app tests and packaging checks, checksum generation, and release publication from commit `13a78cb0892890f3f29a8d8d2f1e5413e9eee16c`.
+- The [v0.4.2 release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.2) contains the DMG, source archive, dependency inventory, and checksum file. Downloaded release assets matched `SHA256SUMS`; `hdiutil verify` also accepted the DMG.
+- SHA-256: DMG `435c611133f9e66972f0a868d4f56b0a21f452398e06d71cdc2e99717613b7e6`; source `da21b8bb771cbeb8e67b406981882db11eb615f4580b3f82899be5e25e3402e8`; SBOM `c9318094ee3f3e1ce630691cc7e470193ef5949b6f9053fec249d0d63e8f9424`.
+- The first manual run failed its source job because `ci/build-candidate.yml` had diverged from `.github/workflows/build-candidate.yml`; [PR #15](https://github.com/cjtsh/bitcoin-easy-multisig-signer/pull/15) synchronized them and the successful run used that correction. No 0.4.2 artifact was published from the failed run.
+- The owner's physical Ledger + Jade payment is evidence for installed 0.4.1. The longer 0.4.2 authorization window is still awaiting incidental physical use. It does not require a new payment just to test the timer.
