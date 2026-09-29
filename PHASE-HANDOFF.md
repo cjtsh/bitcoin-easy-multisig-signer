@@ -1,9 +1,9 @@
-# Project status and handoff — v0.1.22
+# Project status and handoff — v0.1.23
 
 **Repository:** `cjtsh/bitcoin-easy-multisig-signer`, branch `phase2-transaction-builder`
-**Current build:** `v0.1.22`. `version.py` is the single source of the version; the
+**Current build:** `v0.1.23`. `version.py` is the single source of the version; the
 workflow derives the tag, the artifact names and the release title from it.
-**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.22-UNSIGNED-TEST.dmg`
+**Get it:** the GitHub release page, or `~/Downloads/Bitcoin-Easy-Signer-v0.1.23-UNSIGNED-TEST.dmg`
 **Verified on:** the owner's Apple Silicon Mac (macOS 27), plus GitHub Actions CI.
 
 ## Immediate next step (updated 28 September, 22:15)
@@ -18,7 +18,7 @@ testnet4 only.
 
 1. The owner creates a new 2-of-3 multisig on the three physical devices and exports
    its BSMS file.
-2. In **v0.1.22**: Testnet4 -> choose that file -> **Open wallet & check balance**.
+2. In **v0.1.23**: Testnet4 -> choose that file -> **Open wallet & check balance**.
 3. **3. Check your hardware wallets** -> **Look for my hardware wallets**. One device
    at a time, unlocked on the device itself. No funding is needed for this step.
 4. Report the exact lines. `"not a signer in this BSMS file"` and `"fingerprint
@@ -73,6 +73,17 @@ not need a PIN sent from the host"); the host only relays ciphertext.
 `--dsh-capabilities` probe whose `jade_http_relay` flag the app checks on every build,
 so this cannot silently return. Verified by building the tool and confirming the flag
 flips from absent to true.
+
+**The Jade needed a chain it knows (28 Sep).** With the relay in place the Jade
+still failed, now with `Unhandled network: testnet4`. hwilib's Jade client keeps a
+strict map -- `{MAIN: 'mainnet', TEST: 'testnet', SIGNET: 'testnet', REGTEST:
+'localtest'}` -- that predates testnet4, and its own comment already says signet is
+"the same as far as Jade is concerned". The device check now asks HWI for **`test`**,
+never `testnet4`: the Trezor sets `coin_name = 'Testnet'` for every non-mainnet chain
+and the Ledger derives the same coin type, while testnet and testnet4 share the tpub
+version bytes and the `tb1` prefix, so the xpub comparison stays byte-exact. Verified
+against the real Jade: fingerprint `a54cf273`, and its xpub at `m/48h/1h/0h/2h` came
+back identical to the cosigner declared in the BSMS file.
 
 **The three devices (28 Sep):** a **Trezor Safe 3** (matched signer 2 of 3 on the
 owner's real wallet), a **Ledger Nano S Plus** (recognised once its Bitcoin Testnet app

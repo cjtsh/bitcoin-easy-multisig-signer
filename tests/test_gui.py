@@ -286,6 +286,25 @@ class LocalGuiTests(unittest.TestCase):
             matched = self.post("/api/devices", {})
         self.assertFalse(matched["attention"])
 
+    def test_the_device_check_asks_hwi_for_a_chain_it_understands(self):
+        """hwilib's Jade backend has no testnet4 in its network map and raises
+        "Unhandled network: testnet4", which broke the owner's Jade. Trezor and
+        Ledger treat any non-mainnet chain as testnet, and testnet and testnet4 share
+        the tpub version bytes and the tb1 prefix, so the check asks for "test"."""
+        text, _ = test_record(short_path=True)
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        with patch("gui.probe_devices", return_value=[]) as call:
+            self.post("/api/devices", {})
+        self.assertEqual(call.call_args[0][2], "test")
+
+    def test_a_mainnet_wallet_still_asks_for_mainnet(self):
+        self.post("/api/import", {"chain": "main", "text": mainnet_record(),
+                                  "consent_explorer": True})
+        with patch("gui.probe_devices", return_value=[]) as call:
+            self.post("/api/devices", {})
+        self.assertEqual(call.call_args[0][2], "main")
+
     def test_signer_check_without_an_open_wallet_is_refused(self):
         with self.assertRaises(HTTPError) as err:
             self.post("/api/devices", {})

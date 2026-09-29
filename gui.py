@@ -415,7 +415,14 @@ class LocalApp:
                 supplied = data.get("preparation_id")
                 if supplied and supplied != preparation_id:
                     raise WalletError("Review a transaction before continuing to signer recognition.")
-                hwi_chain = "main" if chain == "main" else "testnet4"
+                # Ask HWI for "test", never "testnet4". hwilib's Jade backend keeps
+                # a strict network map that predates testnet4 and raises "Unhandled
+                # network: testnet4"; its neighbouring entries already map signet to
+                # testnet "as far as Jade is concerned". The Trezor treats every
+                # non-mainnet chain as Testnet and the Ledger derives the same coin
+                # type, and testnet and testnet4 share the tpub version bytes and the
+                # tb1 address prefix, so the xpub comparison is byte-exact either way.
+                hwi_chain = "main" if chain == "main" else "test"
                 statuses = probe_devices(record, "hwi", hwi_chain)
                 self._send(200, {
                     "devices": statuses,

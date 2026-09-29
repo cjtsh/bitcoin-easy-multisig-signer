@@ -185,7 +185,7 @@ class DesktopTests(unittest.TestCase):
         with patch("desktop.bundled_capabilities", return_value=capable), \
              patch("desktop.invoke_hwi", return_value=[]) as call:
             check_device_bridge()
-        self.assertEqual(call.call_args[0][1], "testnet4")
+        self.assertEqual(call.call_args[0][1], "test")
         with patch("desktop.bundled_capabilities", return_value=capable), \
              patch("desktop.invoke_hwi", return_value=[{"model": "Trezor"}]):
             check_device_bridge()

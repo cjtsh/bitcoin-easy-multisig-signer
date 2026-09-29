@@ -207,7 +207,9 @@ def check_device_bridge() -> None:
             "HTTP relay for its PIN server. Install `requests` before building."
         )
     try:
-        devices = invoke_hwi("hwi", "testnet4", "enumerate")
+        # "test", not "testnet4": see the note in gui.py. A Jade cannot be
+        # enumerated under a chain its backend does not know.
+        devices = invoke_hwi("hwi", "test", "enumerate")
     except ProbeError as exc:
         raise RuntimeError(f"The bundled hardware-wallet tool could not run: {exc}") from exc
     if not isinstance(devices, list):
