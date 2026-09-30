@@ -230,7 +230,12 @@ class LocalGuiTests(unittest.TestCase):
                         "Looking for your signing device",
                         "Check each screen carefully"):
             self.assertIn(message, page, f"missing progress message: {message}")
-        self.assertIn("background:#ffd447", page)
+        # The bar must take its colours from the palette so it themes with the rest
+        # of the app. This assertion used to pin a literal "#ffd447", which is
+        # precisely how colours drifted: a test holding a raw value in place while
+        # nobody had chosen it. It now pins the role instead.
+        self.assertIn("background:var(--pending-bg)", page)
+        self.assertNotIn("#ffd447", page)
         # The wait must be visible, but its length must not be. The internal
         # timeouts exist so a slow human is never cut off mid-review; advertising
         # one reads as permission to walk away while a signing ceremony is open.
