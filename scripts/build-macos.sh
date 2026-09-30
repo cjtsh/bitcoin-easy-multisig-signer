@@ -192,12 +192,24 @@ hdiutil create -ov -format UDZO -volname "Bitcoin Easy Signer" \
   -srcfolder "$stage" "$dmg"
 if [[ "${RELEASE:-0}" == 1 ]]; then
   xcrun notarytool submit "$dmg" "${notary_args[@]}" --wait
+  # Staple BOTH artifacts. The DMG's ticket is what a download is checked against,
+  # but the app inside carries none of its own: dragged to /Applications it is
+  # verified by an ONLINE lookup to Apple, and an operator opening this during a
+  # recovery with no network would be refused. One submission covers both, so
+  # stapling the app as well costs no extra Apple round trip.
   xcrun stapler staple "$dmg"
-  # Prove the ticket is attached, then prove Gatekeeper accepts the artifact.
-  # Gatekeeper is the gate the operator actually meets, so a build that cannot be
-  # opened must fail here rather than reach a release.
+  xcrun stapler staple "$app"
   xcrun stapler validate "$dmg"
-  spctl -a -t open --context context:primary-signature -v "$dmg"
+  xcrun stapler validate "$app"
+  # Gatekeeper is the gate the operator actually meets, so prove it here and fail
+  # rather than ship an artifact that cannot be opened.
+  #
+  # Assess the APP, not the DMG. A disk image is not code-signed and
+  # `spctl --type open` reports "rejected, source=no usable signature" for a
+  # perfectly good notarized image -- measured against a real one, not assumed.
+  # The app inside is what Gatekeeper must accept, and it reports
+  # "accepted, Notarized Developer ID".
+  spctl -a -t exec -vv "$app"
 else
   echo "UNSIGNED TEST BUILD: not suitable for a simple public Mac installation."
 fi

@@ -122,5 +122,48 @@ class BuildFailsClosedTests(unittest.TestCase):
         self.assertIn("incompletely", result.stderr)
 
 
+class ReleaseGateTests(unittest.TestCase):
+    """The notarized path's finish line, pinned.
+
+    Both of these were wrong the first time and only a real notarized artifact
+    revealed it, because the release path cannot be exercised without an Apple
+    account. Since the whole point is that a later edit cannot quietly undo them,
+    they are asserted here rather than trusted.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = BUILD_MACOS.read_text(encoding="utf-8")
+
+    def test_the_dmg_and_the_app_are_both_stapled(self):
+        """The app needs its own ticket or it fails offline.
+
+        Dragged to /Applications, an app with no stapled ticket is verified by an
+        online lookup to Apple. A recovery operator with no network would be
+        refused. One submission covers both artifacts, so this is free.
+        """
+        self.assertIn('xcrun stapler staple "$dmg"', self.text)
+        self.assertIn('xcrun stapler staple "$app"', self.text)
+
+    def test_the_dmg_and_the_app_are_both_validated(self):
+        self.assertIn('xcrun stapler validate "$dmg"', self.text)
+        self.assertIn('xcrun stapler validate "$app"', self.text)
+
+    def test_gatekeeper_assesses_the_app_not_the_dmg(self):
+        """A DMG is not code-signed, so spctl reports it as unsigned.
+
+        Measured against a genuinely notarized and stapled image:
+            spctl -a -t open  <dmg>  -> rejected, source=no usable signature
+            spctl -a -t exec  <app>  -> accepted, Notarized Developer ID
+        Assessing the DMG aborted a build that had notarized correctly.
+        """
+        gates = [line.strip() for line in self.text.splitlines()
+                 if line.strip().startswith("spctl ")]
+        self.assertEqual(len(gates), 1, f"expected exactly one Gatekeeper gate, found {gates}")
+        self.assertIn('"$app"', gates[0], "the Gatekeeper gate must assess the app")
+        self.assertNotIn('"$dmg"', gates[0],
+                         "a DMG reports 'no usable signature' even when correctly notarized")
+
+
 if __name__ == "__main__":
     unittest.main()
