@@ -193,10 +193,33 @@ codesign --verify --strict --verbose=2 "$app" || {
 }
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
+if [[ "${RELEASE:-0}" == 1 ]]; then
+  # Notarise and staple the APP before the image exists.
+  #
+  # The order matters and used to be wrong: the image was built first, from a copy
+  # of an app that had no ticket, so the copy a downloader received carried none
+  # either and Gatekeeper fell back to an ONLINE lookup - accepted when connected,
+  # refused offline. For a tool people open when something has gone wrong, that is
+  # the wrong way to fail.
+  #
+  # This was left undone because it needs a second Apple round trip and the first
+  # submission took 54 minutes. Measured on 0.4.13: a later submission for the same
+  # team took about 40 SECONDS, so the objection no longer holds.
+  #
+  # notarytool takes an archive, not a bare .app, hence the temporary zip.
+  app_zip="dist/Bitcoin-Easy-Signer-v${version}-app.zip"
+  ditto -c -k --keepParent "$app" "$app_zip"
+  xcrun notarytool submit "$app_zip" "${notary_args[@]}" --wait
+  rm -f "$app_zip"
+  xcrun stapler staple "$app"
+  xcrun stapler validate "$app"
+fi
+# The image is built from the app as it now stands, ticket included.
 cp -R "$app" "$stage/"
-# The copy inside the DMG is what users receive; make sure it carries no stray
-# extended attributes either.
-xattr -cr "$stage/$(basename "$app")"
+# Strip extended attributes from the STAGED COPY only, and note that this must not
+# be moved after notarisation: the staple is carried on the bundle, so clearing
+# xattrs afterwards would take the ticket with it. The app itself was already
+# cleaned before signing.
 ln -s /Applications "$stage/Applications"
 if [[ "${RELEASE:-0}" == 1 ]]; then
   dmg="dist/Bitcoin-Easy-Signer-v${version}-macOS.dmg"
@@ -208,6 +231,17 @@ hdiutil create -ov -format UDZO -volname "Bitcoin Easy Signer" \
 if [[ "${RELEASE:-0}" == 1 ]]; then
   xcrun notarytool submit "$dmg" "${notary_args[@]}" --wait
   xcrun stapler staple "$dmg"
+  xcrun stapler validate "$dmg"
+  # Prove the ticket reached the copy INSIDE the image, not just the build tree.
+  # That copy is what a downloader runs, and it is the whole reason the app is
+  # notarised before the image is made. A build that ships an unstapled app must
+  # fail here rather than at somebody's first offline launch.
+  mount_point="$(mktemp -d)"
+  hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_point" -quiet
+  xcrun stapler validate "$mount_point/$(basename "$app")"
+  spctl -a -t exec -vv "$mount_point/$(basename "$app")"
+  hdiutil detach "$mount_point" -quiet
+  rmdir "$mount_point"
   # Also staple the built app in dist/, which makes THAT copy self-contained for
   # offline testing here.
   #
