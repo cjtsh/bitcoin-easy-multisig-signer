@@ -687,9 +687,25 @@ class LocalApp:
                 detailed = probe_devices_detailed(record, "hwi", hwi_chain)
                 state.note("signer_check", "passed")
                 statuses = detailed["statuses"]
+                # Which of the wallet's cosigners have already signed, read from the
+                # prepared PSBT itself rather than tracked in the page. The signing
+                # screen shows one box per cosigner; deriving that from the signed
+                # transaction means the boxes cannot drift from what is really there.
+                with state.lock:
+                    prepared = state.prepared
+                signed = []
+                if prepared is not None and prepared.wallet is record:
+                    try:
+                        signed = signed_by_signers(
+                            PSBT.from_base64(prepared.psbt_base64), record)
+                    except Exception:  # noqa: BLE001 - a status read, never fatal
+                        signed = []
                 self._send(200, {
                     "devices": statuses,
                     "signable": detailed["signable"],
+                    "threshold": record.threshold,
+                    "keys": len(record.keys),
+                    "signed": signed,
                     "attention": devices_need_attention(statuses),
                     "message": ("No compatible hardware signer detected." if not statuses
                                 else ("Device check complete. This check does not sign or send."

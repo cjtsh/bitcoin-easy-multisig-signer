@@ -199,6 +199,34 @@ class SendFlowTests(unittest.TestCase):
                                         "device_type": "jade", "device_path": "/dev/x"})
             self.assertEqual(err.exception.code, 400)
 
+    def test_device_check_reports_slot_state_read_from_the_signed_psbt(self):
+        """The signing screen draws one box per cosigner.
+
+        The boxes must come from the server's reading of the signed PSBT rather
+        than from anything the page remembers, so they cannot drift from what has
+        actually been signed.
+        """
+        _result, keys = self.prepare_a_reviewed_transaction()
+        detailed = {
+            "statuses": ["Jade: signer 1 of 3 public xpub matched (not a signing test)."],
+            "signable": [{"type": "jade", "path": "/dev/x", "model": "Jade",
+                          "signer": 1, "keys": 3, "fingerprint": "aaaaaaaa"}],
+        }
+        with patch("gui.probe_devices_detailed", return_value=detailed):
+            body = self.post("/api/devices", {"preparation_id": "reviewed-1"})
+        self.assertEqual(body["threshold"], 2)
+        self.assertEqual(body["keys"], 3)
+        self.assertEqual(body["signed"], [], "nothing has signed yet")
+        self.assertEqual([d["signer"] for d in body["signable"]], [1])
+
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[0])):
+            self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                    "device_type": "jade", "device_path": "/dev/x"})
+        with patch("gui.probe_devices_detailed", return_value=detailed):
+            body = self.post("/api/devices", {"preparation_id": "reviewed-1"})
+        self.assertEqual(body["signed"], [1],
+                         "the server must report the signer that actually signed")
+
     def test_ledger_open_failure_explains_recovery_without_retrying_signing(self):
         self.prepare_a_reviewed_transaction(chain="mutinynet")
         with patch("gui.sign_psbt_with_device", side_effect=ProbeError(
