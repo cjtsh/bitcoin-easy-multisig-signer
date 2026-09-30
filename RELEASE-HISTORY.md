@@ -349,3 +349,39 @@ Suite: **188 tests, 0 failures**, plus three Node DOM tests. No change to the
 PSBT construction path, the signature-verification rules, fee policy, or the set
 of networks on which broadcast is possible. Mainnet broadcast remains refused in
 code.
+
+### Also in 0.4.7 — the operator could not see that a payment had been sent
+
+Reported by the owner after several payments: pressing Broadcast made the whole
+transaction area disappear, and the only confirmation was the pending banner at
+the very top of the page. The viewport had been at the bottom of the send card,
+so the screen looked empty. The payments did go out; the app simply never showed
+it. In a recovery tool that is a dangerous way to fail — an operator who cannot
+tell whether money moved may send it again.
+
+**What changed.** A successful broadcast now shows the outcome **where the
+transaction was prepared**, not only in the banner above the fold:
+
+- A "Payment sent · waiting for one confirmation" panel appears in the page where
+  the send card was, carrying the transaction ID, a block-explorer link, and a
+  **Check again** button.
+- An unknown outcome — the transport failed after submission — shows the same
+  panel with the do-not-resend wording, in the same place.
+- The top banner still appears and remains the refresh-safe tracker; the in-place
+  notice is cleared when a new wallet is opened or a new payment is prepared.
+
+The old behaviour relied on `scrollIntoView` successfully moving the window to a
+banner that was off screen; whatever defeated that scroll, the fix no longer
+depends on scrolling at all.
+
+**Guards added.** `tests/ui_broadcast_outcome.cjs` drives a successful broadcast
+and asserts the in-place notice appears with the right transaction ID and link
+while the send card is retired. A new static test asserts that **every** `$("id")`
+in the served page has a matching element in the markup — the dangerous shape of
+this bug class, where a handler touches a node that is not there after doing
+something irreversible. CI and the source archive now take the UI tests by glob,
+so a new `tests/ui_*.cjs` runs without a workflow edit.
+
+Suite: **189 tests, 0 failures**, plus four Node DOM tests. No change to the
+PSBT construction path, the signature-verification rules, fee policy, or the set
+of networks on which broadcast is possible.

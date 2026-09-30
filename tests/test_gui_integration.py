@@ -455,6 +455,28 @@ class TransactionJourneyTests(ApiTestCase):
         self.assertEqual(self.post("/api/clear",
                                    {"preparation_id": prepared["preparation_id"]})[0], 400)
 
+    def test_every_element_the_page_script_reaches_for_actually_exists(self):
+        """A $("id") with no matching element throws at the worst moment.
+
+        That is the dangerous shape of this bug: a handler does something
+        irreversible, then touches a node that is not there, and the operator is
+        left with a half-updated screen or none at all. Static, cheap, and it
+        covers every handler rather than the ones with tests.
+        """
+        _status, page = self.get_page()
+        # Match the tag generically: the served page carries a per-response nonce,
+        # so it is "<script nonce=...>" rather than a bare "<script>".
+        found = re.search(r"<script\b[^>]*>(.*?)</script>", page, re.S)
+        self.assertIsNotNone(found, "the served page must carry its script")
+        script = found.group(1)
+        markup = page[:found.start()] + page[found.end():]
+        referenced = set(re.findall(r'\$\("([^"]+)"\)', script))
+        declared = set(re.findall(r'id="([^"]+)"', markup))
+        self.assertGreater(len(referenced), 20, "expected the script to look up elements")
+        self.assertEqual(
+            sorted(referenced - declared), [],
+            "the page script looks up elements the markup never declares")
+
 
 class LargeAmountGateTests(ApiTestCase):
     """The high-value confirmation must not depend on a remote price feed."""
