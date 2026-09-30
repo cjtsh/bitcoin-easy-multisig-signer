@@ -168,25 +168,41 @@ class ReleaseGateTests(unittest.TestCase):
         cls.text = BUILD_MACOS.read_text(encoding="utf-8")
 
     def test_the_dmg_and_the_app_are_both_stapled(self):
-        """Both artifacts are stapled - but this does NOT fix offline for a downloader.
-
-        The image is built from a copy of the app taken before either staple runs, so
-        the app a downloader receives stays unstapled and Gatekeeper verifies it with
-        an online lookup. Measured on the published v0.4.12 DMG: the image validates,
-        the app inside reports "does not have a ticket stapled to it".
-
-        Stapling `$app` is still worth pinning: it makes the copy in dist/
-        self-contained for offline testing here, and an accidental removal would
-        otherwise go unnoticed. Closing the downloader's offline gap needs the app
-        notarized and stapled BEFORE the image is built, at the cost of a second Apple
-        round trip; see PHASE-HANDOFF.md.
-        """
         self.assertIn('xcrun stapler staple "$dmg"', self.text)
         self.assertIn('xcrun stapler staple "$app"', self.text)
+
+    def test_the_app_is_stapled_before_the_image_is_built(self):
+        """The order is the whole fix, and it used to be wrong.
+
+        The image was built first, from a copy of an app that had no ticket, so the
+        copy a downloader received had none either and Gatekeeper fell back to an
+        ONLINE lookup: accepted when connected, refused offline. For a tool people
+        open when something has gone wrong, that is the wrong way to fail.
+
+        It was left undone because it needs a second Apple round trip and the first
+        submission took 54 minutes. Measured on 0.4.13, a later submission for the
+        same team took about 40 SECONDS, so the objection no longer holds.
+        """
+        staple_app = self.text.index('xcrun stapler staple "$app"')
+        build_image = self.text.index("hdiutil create")
+        self.assertLess(
+            staple_app, build_image,
+            "the app must be notarised and stapled before the image is created, or "
+            "the copy inside the image carries no ticket")
 
     def test_the_dmg_and_the_app_are_both_validated(self):
         self.assertIn('xcrun stapler validate "$dmg"', self.text)
         self.assertIn('xcrun stapler validate "$app"', self.text)
+
+    def test_the_copy_inside_the_image_is_what_gets_checked(self):
+        """Prove the ticket reached the downloader's copy, not just the build tree.
+
+        The build tree validating says nothing about what is inside the image, and
+        the image is what somebody runs.
+        """
+        self.assertIn("hdiutil attach", self.text)
+        self.assertIn('xcrun stapler validate "$mount_point/$(basename "$app")"', self.text)
+        self.assertIn("hdiutil detach", self.text)
 
     def test_gatekeeper_assesses_the_app_not_the_dmg(self):
         """A DMG is not code-signed, so spctl reports it as unsigned.
@@ -198,10 +214,13 @@ class ReleaseGateTests(unittest.TestCase):
         """
         gates = [line.strip() for line in self.text.splitlines()
                  if line.strip().startswith("spctl ")]
-        self.assertEqual(len(gates), 1, f"expected exactly one Gatekeeper gate, found {gates}")
-        self.assertIn('"$app"', gates[0], "the Gatekeeper gate must assess the app")
-        self.assertNotIn('"$dmg"', gates[0],
-                         "a DMG reports 'no usable signature' even when correctly notarized")
+        self.assertGreaterEqual(len(gates), 1, "the release path must assess something")
+        for gate in gates:
+            with self.subTest(gate=gate):
+                self.assertNotIn(
+                    '"$dmg"', gate,
+                    "a DMG reports 'no usable signature' even when correctly notarized")
+                self.assertIn("$app", gate, "the Gatekeeper gate must assess an app")
 
 
 class BuildPythonSelectionTests(unittest.TestCase):
