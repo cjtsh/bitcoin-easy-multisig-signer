@@ -130,12 +130,32 @@ class ThemeToggleTests(unittest.TestCase):
         self.assertIn('id="theme-toggle"', self.html)
 
     def test_the_toggle_is_wired_and_can_never_break_the_app(self):
-        """A decoration must not be able to take down a signing screen."""
-        self.assertIn("window.__applyTheme", self.html)
-        # Every browser API it touches is probed first, and the whole thing is
-        # wrapped, because this code runs in front of everything else.
-        self.assertIn("typeof matchMedia === \"function\"", self.html)
+        """A decoration must not be able to take down a signing screen.
+
+        This code runs in front of every other line of the app, so an exception in
+        it would cost the signing screen, not the theme.
+        """
+        self.assertIn("globals.__applyTheme = apply", self.html)
+        # The browser global is looked up rather than assumed, every API it touches
+        # is probed first, and the whole block is wrapped.
+        self.assertIn('typeof window === "undefined" ? {} : window', self.html)
+        self.assertIn('typeof matchMedia === "function"', self.html)
         self.assertIn("document.documentElement || document.body", self.html)
+        self.assertIn("} catch { /* decoration only: never take the signing screen down */ }",
+                      self.html)
+
+    def test_no_stale_palette_name_survives_anywhere(self):
+        """The old role names are gone, so nothing can quietly depend on one.
+
+        --green, --mint, --warn, --red and --navy were the 0.4.12 palette. A rule
+        still referencing one would resolve to nothing and render as an unset
+        colour, which looks like a rendering bug rather than a stale name.
+        """
+        for stale in ("var(--green)", "var(--mint)", "var(--warn)", "var(--red)",
+                      "var(--navy)"):
+            with self.subTest(token=stale):
+                self.assertNotIn(stale, self.html,
+                                 f"{stale} is from the old palette and no longer exists")
 
     def test_ink_and_accent_stay_distinguishable_in_both_themes(self):
         """Contrast on the two colours an operator must actually read.

@@ -599,44 +599,52 @@
     // "theme crashed".
     // ---------------------------------------------------------------------
     (() => {
-      const KEY = "besa-theme";
-      const root = document.documentElement || document.body;
-      if (!root || !root.dataset) return;
-      const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
-      const store = {
-        get() { try { return localStorage.getItem(KEY); } catch { return null; } },
-        set(value) { try { localStorage.setItem(KEY, value); } catch { /* private mode */ } },
-      };
-      const apply = (theme) => {
-        root.dataset.theme = theme === "dark" ? "dark" : "light";
-        const button = document.getElementById && document.getElementById("theme-toggle");
-        if (!button) return;
-        // The icon shows the CURRENT theme; the label says what the press does,
-        // because that is what a screen reader reads out.
-        button.textContent = theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19";
-        if (button.setAttribute) {
-          button.setAttribute("aria-label",
-            `Switch to ${theme === "dark" ? "light" : "dark"} theme`);
+      try {
+        const KEY = "besa-theme";
+        const root = document.documentElement || document.body;
+        if (!root || !root.dataset) return;
+        // `window` is the browser global, but this block runs in front of the whole
+        // app and is also loaded by test harnesses that stub only a document. So it
+        // is looked up rather than assumed: a missing global costs the toggle, not
+        // the app.
+        const globals = typeof window === "undefined" ? {} : window;
+        const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+        const store = {
+          get() { try { return localStorage.getItem(KEY); } catch { return null; } },
+          set(value) { try { localStorage.setItem(KEY, value); } catch { /* private mode */ } },
+        };
+        const apply = (theme) => {
+          root.dataset.theme = theme === "dark" ? "dark" : "light";
+          const button = document.getElementById && document.getElementById("theme-toggle");
+          if (!button) return;
+          // The icon shows the CURRENT theme; the label says what the press does,
+          // because that is what a screen reader reads out.
+          button.textContent = theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19";
+          if (button.setAttribute) {
+            button.setAttribute("aria-label",
+              `Switch to ${theme === "dark" ? "light" : "dark"} theme`);
+          }
+        };
+        globals.__applyTheme = apply;
+        const chosen = store.get();
+        apply(chosen || (media && media.matches ? "dark" : "light"));
+        // Follow the Mac while no explicit choice has been stored.
+        if (media && media.addEventListener) {
+          media.addEventListener("change", (event) => {
+            if (!store.get()) apply(event.matches ? "dark" : "light");
+          });
         }
-      };
-      window.__applyTheme = apply;
-      const chosen = store.get();
-      apply(chosen || (media && media.matches ? "dark" : "light"));
-      // Follow the Mac while no explicit choice has been stored.
-      if (media && media.addEventListener) {
-        media.addEventListener("change", (event) => {
-          if (!store.get()) apply(event.matches ? "dark" : "light");
-        });
-      }
-      window.__themeReady = true;
+        globals.__themeReady = true;
+      } catch { /* decoration only: never take the signing screen down */ }
     })();
     try {
+      const globals = typeof window === "undefined" ? {} : window;
       const button = document.getElementById && document.getElementById("theme-toggle");
       if (button && button.addEventListener) {
         button.addEventListener("click", () => {
           const root = document.documentElement || document.body;
           const next = root.dataset.theme === "dark" ? "light" : "dark";
-          window.__applyTheme(next);
+          if (typeof globals.__applyTheme === "function") globals.__applyTheme(next);
           try { localStorage.setItem("besa-theme", next); } catch { /* private mode */ }
         });
         // T toggles too, but never while the operator is typing an address or an
