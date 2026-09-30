@@ -17,7 +17,7 @@ mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
-cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md \
+cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
   RELEASE-HISTORY.md PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md \
   AUDIT-DEEPSEEK-0.4.3.md AUDIT-ZAI-0.4.3.md SECURITY-REVIEW-0.2.0.md \
   PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md PATCH-0.4.0.md PATCH-0.4.1.md PATCH-0.4.2.md PATCH-0.4.6.md CHANGE-ADDRESS-REVIEW.md \

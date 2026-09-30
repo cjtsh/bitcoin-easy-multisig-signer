@@ -60,7 +60,7 @@ The Mac build installs [`requirements-desktop.lock`](requirements-desktop.lock) 
 ## External components
 
 - [embit](https://github.com/diybitcoinhardware/embit): descriptors, derivation, Bitcoin transactions and PSBTs.
-- [Bitcoin Core HWI](https://github.com/bitcoin-core/HWI): hardware discovery and signing requests; no USB driver or private-key code is written here.
+- [Bitcoin Core HWI](https://github.com/bitcoin-core/HWI): hardware discovery and signing requests; no USB driver or private-key code is written here. **This dependency decides which devices are supported, which Python version the app builds on, and when a rebuild is mandatory** — see [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 - [pywebview](https://pywebview.flowrl.com/): native Mac WebKit window over the loopback-only local app.
 - [PyInstaller](https://pyinstaller.org/): bundled runtime and binaries.
 - [Esplora](https://github.com/Blockstream/esplora): public address/UTXO/transaction API and practice-network broadcast endpoints.
