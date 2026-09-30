@@ -95,5 +95,20 @@ assert.match(problem('0.00000001'), /at least 0.00000546/,
 assert.ok(!/0\.00000546/.test(problem('1.123456789')),
   'the size advice must not be shown for a decimals problem');
 
+// --- the form must SAY that the leading zero is optional ---------------------
+// It was mandatory until 0.4.9, so anyone who hit that wall learned to avoid
+// typing ".001". Removing the requirement without saying so on the form left them
+// no way to find out it was gone - the owner asked for this twice.
+assert.match(problem(''), /\.001 and 0\.001 both work/,
+  'the empty-field hint must name both accepted spellings');
+assert.match(problem('abc'), /\.001 or 0\.001/,
+  'the not-a-number hint must show both spellings too');
+assert.match(problem(''), /0\.00000546/,
+  'and the empty-field hint must still give the minimum');
+vm.runInContext('walletCanPrepare = true; updateSendMode();', context);
+assert.match(get('amount').placeholder, /\.001/,
+  'the placeholder must show the spelling without a leading zero');
+
 console.log('Amount entry: ".1" and "1." are accepted, the box shows the canonical '
-  + 'spelling, and each rejection explains itself.');
+  + 'spelling, the form states that the leading zero is optional, and each '
+  + 'rejection explains itself.');

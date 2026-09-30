@@ -33,7 +33,8 @@ every version:
 | 0.4.7 | Correction: the final signature fills its own box, and completing does not scroll the boxes off screen | — |
 | 0.4.8 | Attributable diagnostics, and visible progress that never advertises a wait | — |
 | 0.4.9 | A fraction of a Bitcoin no longer needs a leading zero | — |
-| **0.4.10** | **Current.** One progress bar, and only the operation that owns it may change or clear it | — |
+| 0.4.10 | One progress bar, and only the operation that owns it may change or clear it | — |
+| **0.4.11** | **Current.** The amount box states that a leading zero is optional | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -502,7 +503,7 @@ reintroduce each fault are all detected. No change to the PSBT construction path
 the signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
 
-## 0.4.10 — the progress bar has an owner (current)
+## 0.4.10 — the progress bar has an owner
 
 Reported by the owner from the confirmation screen: pressing **Check again** —
 the control that asks the explorer whether the payment has confirmed — brought up
@@ -537,3 +538,28 @@ Suite: **193 tests, 0 failures**, plus seven Node DOM tests; each reintroduced
 fault is detected by mutation. No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
+
+## 0.4.11 — the form says the leading zero is optional (current)
+
+The owner asked twice for the amount form to say something about the leading zero.
+The first request was answered by **0.4.9**, which removed the requirement
+entirely: `.001` and `0.001` now both parse, and the box rewrites itself to the
+canonical spelling on blur. But the form was left saying nothing about it, so
+anyone who had learned to avoid typing `.001` had no way to discover that the rule
+was gone. Removing a rule silently is not the same as telling somebody it is gone.
+
+The form now states it:
+
+- the empty-field hint reads *"Enter a BTC amount — .001 and 0.001 both work. The
+  minimum is 0.00000546, or tick Send all."*
+- the placeholder reads *"e.g. .001 or 0.001"*, showing the optional-zero spelling
+  before anything is typed
+- the not-a-number hint gives *".001 or 0.001"* as its example
+
+Both spellings are named rather than the rule being asserted, because a rule that
+no longer exists must not be taught. `tests/ui_amount_entry.cjs` pins the hint, the
+placeholder and both examples, so the guidance cannot quietly disappear again.
+
+Suite: **193 tests, 0 failures**, plus seven Node DOM tests. Copy and hint text
+only; no change to the PSBT construction path, the signature-verification rules,
+fee policy, or the set of networks on which broadcast is possible.
