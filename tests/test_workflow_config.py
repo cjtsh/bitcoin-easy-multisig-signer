@@ -113,5 +113,64 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertNotIn("push", trigger)
 
 
+class ReleaseNotesTests(unittest.TestCase):
+    """What a downloader reads must not describe the build as two different things.
+
+    v0.4.12 was published saying it was "notarized by Apple" AND "Unsigned,
+    unnotarized test build" on consecutive lines, because the template emitted a
+    hardcoded unsigned line regardless of which mode had just been chosen. The
+    release notes are the first thing anyone reads, and nobody re-reads them.
+
+    Deliberately NOT gated on PyYAML: this renders the template with the shell that
+    runs it in CI, so it needs nothing but bash.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = ACTIVE.read_text(encoding="utf-8")
+
+    def render(self, notarize: str) -> str:
+        """Run the workflow's own notes block with one mode selected."""
+        block = self.text.split('release_title="$tag"', 1)[1].split("          EOF", 1)[0]
+        script = block.replace("${{ inputs.notarize }}", notarize)
+        # Print instead of writing notes.md, and drop the YAML indentation.
+        script = script.replace("cat > notes.md <<EOF", "cat <<EOF")
+        script = "\n".join(line[10:] if line.startswith(" " * 10) else line
+                           for line in script.splitlines())
+        runner = ("VERSION=9.9.9 GITHUB_REF_NAME=main GITHUB_SHA=abcdef1234567890\n"
+                  + script)
+        result = subprocess.run(["bash", "-c", runner], capture_output=True,
+                                text=True, cwd=ROOT, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_a_notarized_release_does_not_also_claim_to_be_unsigned(self):
+        body = self.render("true")
+        self.assertIn("notarized by Apple", body)
+        self.assertNotIn("Unsigned", body)
+        self.assertNotIn("unnotarized", body)
+
+    def test_a_test_build_says_it_is_unsigned(self):
+        body = self.render("false")
+        self.assertIn("Unsigned", body)
+        self.assertNotIn("notarized by Apple", body)
+
+    def test_the_notes_carry_no_stale_version_specific_boilerplate(self):
+        """v0.4.12 shipped a paragraph about a Sparrow/Nunchuk change-path patch."""
+        for mode in ("true", "false"):
+            with self.subTest(notarize=mode):
+                body = self.render(mode)
+                self.assertNotIn("Sparrow", body)
+                self.assertNotIn("Nunchuk", body)
+
+    def test_the_heading_is_the_version_alone(self):
+        """Build provenance is not a release name; it belongs in the notes body."""
+        body = self.render("true")
+        self.assertIn("## v9.9.9", body)
+        self.assertNotIn("— Apple Silicon", body)
+        self.assertNotIn("— notarized", body)
+        self.assertNotIn("— unsigned", body)
+
+
 if __name__ == "__main__":
     unittest.main()

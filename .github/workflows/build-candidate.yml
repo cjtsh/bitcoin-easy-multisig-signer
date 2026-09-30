@@ -367,22 +367,31 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${VERSION}"
+          # The title is the version. Nothing else.
+          #
+          # It used to carry "notarized Apple Silicon build" or "unsigned test
+          # build", which described how the artifact was BUILT rather than what it
+          # does. Notarization is now the normal state, so advertising it is like a
+          # restaurant advertising that it has a roof; and "unsigned test build" was
+          # never a release name at all. Apple Silicon stays out for the same reason:
+          # it is the only architecture this app has ever shipped for.
+          #
+          # The tag is the identity. What changed for the reader belongs in the notes
+          # below, where it can be a sentence instead of a suffix.
+          release_title="$tag"
           if [[ "${{ inputs.notarize }}" == "true" ]]; then
-            build_kind="Signed with a Developer ID certificate and **notarized by Apple**, so it opens with a normal double-click."
+            build_kind="Signed with a Developer ID certificate and **notarized by Apple**, so it installs with a normal double-click."
             dmg_name="Bitcoin-Easy-Signer-v${VERSION}-macOS.dmg"
-            release_title="v${VERSION} — notarized Apple Silicon build"
           else
-            build_kind="**Unsigned, unnotarized** test build from the \`${GITHUB_REF_NAME}\` branch, commit \`${GITHUB_SHA:0:12}\`."
+            build_kind="**Unsigned and unnotarized.** macOS will require right-click → Open on first launch. Built for testing, not for handing to anyone."
             dmg_name="Bitcoin-Easy-Signer-v${VERSION}-UNSIGNED-TEST.dmg"
-            release_title="v${VERSION} — unsigned Apple Silicon test build"
           fi
           cat > notes.md <<EOF
-          ## v${VERSION} — Apple Silicon build
+          ## v${VERSION}
 
           ${build_kind}
 
-          Unsigned, unnotarized test build from the \`${GITHUB_REF_NAME}\` branch,
-          commit \`${GITHUB_SHA:0:12}\`.
+          Built from \`${GITHUB_REF_NAME}\` at commit \`${GITHUB_SHA:0:12}\`.
 
           - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
           - Prepares a partial send with a declared change branch or the guarded
@@ -415,13 +424,10 @@ jobs:
           Verify either file against \`SHA256SUMS\`.
           \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
 
-          The owner's prior Mutinynet Ledger + Jade payment confirmed. This patch
-          tightens one ambiguous BSMS change-path case; the supplied Sparrow and
-          Nunchuk files still import through their intended branches. A physical
-          check of this exact patch has not yet occurred. The two supplied exports
-          describe one practice wallet and derive identical change scripts at
-          indices 0–19. Verify every address,
-          amount and fee on your signers. No mainnet broadcast is available.
+          Practice networks only: **this build cannot broadcast on mainnet**, and
+          mainnet broadcast is refused in code rather than merely hidden. Verify every
+          address, amount and fee on your signing devices before approving, and treat
+          an unconfirmed payment as unfinished.
           EOF
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which
