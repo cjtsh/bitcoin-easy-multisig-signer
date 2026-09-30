@@ -71,6 +71,13 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
     """
     if chain not in EXPLORERS:
         raise WalletError("Unsupported broadcast network.")
+    if chain == "main":
+        # Real Bitcoin is refused here as well as in the HTTP handler. The
+        # handler is the gate the operator sees and explains; this one means a
+        # future CLI, an additional endpoint or a refactor cannot submit a
+        # mainnet transaction by calling the engine directly. Enabling it is a
+        # deliberate release decision, not a parameter.
+        raise WalletError("Broadcasting real Bitcoin is not enabled in this build.")
     raw = (raw_transaction_hex or "").strip().lower()
     if len(raw) < 100 or len(raw) > 2_000_000 or len(raw) % 2:
         raise WalletError("The finalised transaction is not a usable size.")
@@ -91,6 +98,17 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
             detail = exc.read(2048).decode("utf-8", "replace").strip()
         except Exception:
             detail = ""
+        if exc.code >= 500:
+            # A server-side failure can arrive after the node has already
+            # accepted and relayed the transaction. Reporting a refusal would
+            # state something we cannot know, and would leave the payment
+            # retryable without the pending-payment pause being armed.
+            raise BroadcastOutcomeUnknown(
+                "The broadcast result is unknown: the server failed while "
+                f"submitting this payment (HTTP {exc.code}), and it may already "
+                "have been accepted. Do not send this payment again. Check the "
+                "transaction on an explorer or ask for help before proceeding."
+            ) from exc
         raise WalletError(
             "The network refused this transaction"
             + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
@@ -674,10 +692,13 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
         raise WalletError("No confirmed outputs are available to estimate.")
     if not send_all and amount is not None and total < amount + fee + SATOSHI_DUST_FLOOR:
         raise WalletError("Not enough confirmed sats for amount, estimated fee, and change.")
-    if send_all and fee > MAX_ESTIMATED_FEE_SATS:
+    # The builder enforces this unconditionally, so the preview must too. A
+    # preview that displays a fee the builder will then refuse is worse than no
+    # preview, and the message deliberately matches check_fee_safety's.
+    if fee > MAX_ESTIMATED_FEE_SATS:
         raise WalletError(
-            "Sending all exceeds the 10,000-sat fee safety ceiling. "
-            "Wait for a lower fee rate or use an established wallet."
+            f"Estimated fee of {fee:,} sats exceeds the 10,000-sat safety ceiling. "
+            "Use fewer inputs or a lower sat/vB rate."
         )
     return {
         "estimated_vbytes": _estimated_signed_vbytes(chosen, output_scripts, script_lengths),

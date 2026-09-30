@@ -1,6 +1,6 @@
 # Project history — detailed records from Phases 1 to 4
 
-For current 0.2.0 behavior, read `AGENTS.md`, `PHASE-HANDOFF.md`, and `SECURITY-REVIEW-0.2.0.md`. In particular, 0.2.0 no longer infers spendable change from a receive-only export and no longer publishes a release on every branch push.
+For current behavior, read [`CURRENT-STATUS.md`](CURRENT-STATUS.md), `AGENTS.md` and `PHASE-HANDOFF.md`. The 0.2.0 notes below are historical: they record that 0.2.0 stopped inferring spendable change from a receive-only export and stopped publishing a release on every branch push, and that its hardware signing was broken and corrected in 0.2.1.
 
 **This is the archive, not the starting point.** Read `PHASE-HANDOFF.md` first: it
 carries the current state and the next work. This file exists so the reasoning behind
@@ -157,14 +157,20 @@ artifact built by CI fails it.
 
 Synthetic fixtures prove code paths, not your wallet. Still unverified:
 
-1. **No Apple Silicon window walkthrough.** Nobody has driven the native WebKit
-   window through import → refresh → send form → save.
+1. **No Apple Silicon window walkthrough.** *(As written: nobody had driven the
+   native WebKit window through import → refresh → send form → save.)*
+   **Superseded:** the owner has since driven the installed Apple Silicon app
+   through import, refresh, review, hardware signing and broadcast, beginning with
+   the confirmed Testnet4 payment on 29 September 2026.
 2. **Partially resolved.** The control did appear for the owner's real wallet and
    they used it successfully (see the observations below). What has *not* been
    checked is the change-branch evidence line against a wallet that has spent
    before, and the review/save steps.
-3. **No hardware signer.** HWI recognition has never run against a physical
-   device; signing and broadcast remain unimplemented by design.
+3. **No hardware signer.** *(As written: HWI recognition had never run against a
+   physical device; signing and broadcast remained unimplemented by design.)*
+   **Superseded:** Phase 4 implemented signing and broadcast and accepted them on
+   physical devices from 29 September 2026 on Testnet4, later on Mutinynet; only
+   mainnet broadcast remains refused in code.
 4. **The token-in-fragment change needs one browser check.** If the fragment did
    not survive the window load, the page now fails loudly with "could not read its
    local access token" instead of silently doing nothing. Watch for that text on

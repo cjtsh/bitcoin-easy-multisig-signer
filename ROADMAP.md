@@ -6,6 +6,20 @@ The owner paused work on 29 September 2026 pending their **mainnet test run-thro
 
 The next gate is a **mainnet dry run without broadcast** using the actual live wallet: establish its change policy independently, review a small transaction to an owner-controlled address on two hardware devices, and compare the final transaction's inputs, destination, change, fee and txid with the review. A practice wallet's matching Sparrow/Nunchuk exports are strong evidence for that wallet's change derivation, but do not prove the live wallet's policy; see `CHANGE-ADDRESS-REVIEW.md`. A live Bitcoin send follows only after the dry run, the fee-policy decision, deliberate mainnet-broadcast implementation and explicit authorization. The plain-language guide, nontechnical-user walkthrough, and signed/notarized distribution remain open product work. Avoid asking for a new test payment solely to verify a 0.4.x correction.
 
+---
+
+> **ARCHIVE — HISTORICAL RECORD.** Everything from here down describes the phases as
+> they stood when written (0.1.x through 0.4.0). It is kept for provenance and is
+> **not** a description of current capability. The current-status block at the top of
+> this file is authoritative; `PHASE-HANDOFF.md` and `RELEASE-HISTORY.md` carry the
+> current state and the version-by-version record. Statements below that signing or
+> broadcast are "future scope", "not implemented", or do not exist were true when
+> written and are now superseded: Phase 4 implemented hardware signing and
+> practice-network broadcast and accepted them on hardware on 29 September 2026.
+> Only mainnet broadcast remains refused in code.
+
+---
+
 ## 0.4.0 visual refresh
 
 The owner requested a more modern interface for the spouse, lawyer, or accountant who may have no Bitcoin experience. The current 0.4.0 candidate uses a quiet slate/teal light palette, cleaner cards and review metrics, and a confirmed-payment receipt. Preserve the approved simple step-by-step recovery flow, the BTC/sats/USD balance, and all review and hardware-device safety gates. The remaining items below are possible later refinements, not a reason to delay the bounded 0.4.0 release.
@@ -17,7 +31,8 @@ The owner requested a more modern interface for the spouse, lawyer, or accountan
 - Keep wallet policy and technical evidence available in optional details. Do not hide destination, amount, change, fee, network, or final confirmation behind visual polish.
 - Review the design with the owner before implementation; then test the real Apple Silicon window at ordinary and smaller sizes, keyboard focus, text scaling, contrast, and the full two-device journey. Do not ask for extra payment tests solely to evaluate styling.
 
-**Previous build:** **v0.1.27**, 29 September 2026, on the `phase2-transaction-builder`
+**Previous build at the time of this archived section (historical):** **v0.1.27**,
+29 September 2026, on the `phase2-transaction-builder`
 branch. It prepares, reviews, **signs with hardware devices, finalises and broadcasts
 to Testnet4**. Two real Testnet4 payments have confirmed, between them using all three
 devices. **Broadcasting real Bitcoin is refused in code**, deliberately, and opening it
@@ -96,7 +111,7 @@ The user says **Refresh balance appears to work**; do not list refresh as a repo
 | Open a BSMS definition and display balance | Owner uses it on Apple Silicon; wallet, balance and change-address handling all reach the screen; parsing, rejection and scan-coverage tests exist. | Formal error-path walkthrough by the owner. |
 | Prepare an unsigned transaction | Owner reached the send form, fee selection, review and save on the Mac; the engine is verified independently by signing a synthetic PSBT and measuring it (305 vB actual against 307 estimated; effective 5.033 sat/vB against a requested 5). | Recognition of a physical hardware signer (recognition is not signing). |
 | Recognize hardware signers | HWI-backed recognition matches a connected device's public key to a BSMS signer; the packaged app passes its headless checks. | Never run against a physical device. Recognition is not signing. |
-| Sign and broadcast | Not implemented, by design. | Phase 4, and only after explicit owner authorisation. |
+| Sign and broadcast | **Historical entry.** At this phase it was not implemented, by design. Phase 4 later implemented it and accepted it on hardware. | Phase 4, and only after explicit owner authorisation. |
 
 ### Rules that apply to every subsequent phase
 
@@ -222,11 +237,14 @@ stated rather than glossed.
 
 ## Phase 4 — Decide the signing boundary, complete the send, and review the whole tool
 
-**Status: the owner has asked to begin it (28 September).** The read-only recognition
-screen exists from Phase 3; signing and broadcast do not. Phase 4 begins with the
-owner's answers to the decisions below, then implementation on **testnet4 only**,
-with mainnet broadcast gated behind a separate explicit opt-in after a complete
-testnet cycle.
+**Status (historical, as written on 28 September 2026): the owner has asked to
+begin it.** The read-only recognition screen exists from Phase 3; signing and
+broadcast did not exist at that point. **Superseded: Phase 4 is complete** —
+hardware signing and practice-network broadcast shipped and were accepted on
+hardware on 29 September 2026; see the current-status block at the top of this file.
+Phase 4 began with the owner's answers to the decisions below, then implementation
+on **testnet4 only**, with mainnet broadcast gated behind a separate explicit opt-in
+after a complete testnet cycle.
 
 **Decisions this phase needs from the owner**
 
@@ -240,7 +258,12 @@ testnet cycle.
 3. Which devices must be supported first, and in what order the signatures are
    collected.
 
-**Goal:** Move from a proven unsigned Testnet4 PSBT to an **owner-approved** end-to-end Testnet4 prototype: hardware signers review and sign, the app verifies the finalized payment, and only an explicit user action submits it. Then run an independent full-tool review. This is **future scope**, not existing functionality. `replit.md` currently says no signing or broadcasting; do not implement this phase until the owner explicitly approves changing that boundary, the supported devices, and the intended send workflow. If the owner instead chooses external signing/broadcast, document and validate that handoff as the agreed prototype endpoint; do not claim the app itself sends Bitcoin.
+**Goal:** Move from a proven unsigned Testnet4 PSBT to an **owner-approved** end-to-end Testnet4 prototype: hardware signers review and sign, the app verifies the finalized payment, and only an explicit user action submits it. Then run an independent full-tool review. **Historical note:** this was **future scope when written, not existing
+functionality**; Phase 4 has since implemented and hardware-accepted it (see the
+current-status block at the top of this file). `replit.md` said at that time that
+there was no signing or broadcasting. The boundary instruction below applied before
+that approval: do not implement this phase until the owner explicitly approves
+changing that boundary, the supported devices, and the intended send workflow. If the owner instead chooses external signing/broadcast, document and validate that handoff as the agreed prototype endpoint; do not claim the app itself sends Bitcoin.
 
 **Start here in the code:** the completed Phase 3 handoff; `probe.py` (read-only HWI device proof); `wallet_service.py` (wallet policy and PSBT); `gui.py` and `ui.html` (local session and review); `desktop.py` and `scripts/build-macos.sh` (packaging). Treat the current “Connect signers (not available yet)” UI and stored broadcaster URL as placeholders, **not** working integrations.
 

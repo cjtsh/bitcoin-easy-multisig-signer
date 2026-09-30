@@ -195,6 +195,12 @@ def _hwi_path(executable: str) -> str:
         bundled = Path(sys.executable).with_name("hwi")
         if bundled.is_file():
             return str(bundled)
+        # A packaged build must never fall through to a PATH search: a
+        # substituted binary would then be executed by the app. The device
+        # bridge is broken either way, and failing loudly is the safe half.
+        raise ProbeError(
+            "The bundled hardware-wallet tool is missing from this installation."
+        )
     found = shutil.which(executable)
     if found is None:
         raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
@@ -464,7 +470,13 @@ def _probe_devices_into(record: WalletRecord, executable: str, chain: str,
 
 def _validate_chain(record: WalletRecord, chain: str) -> None:
     if record.network == "main":
-        raise ProbeError("This test-only release will not probe or fund a mainnet wallet.")
+        # Only the command-line helpers are practice-only. The GUI does check
+        # and sign mainnet wallets for the Phase 5 dry run, so saying "this
+        # test-only release" here described the wrong product.
+        raise ProbeError(
+            "This command-line check supports practice wallets only. "
+            "Use the app itself to check signers for a mainnet wallet."
+        )
     if record.network == "test" and chain in ("testnet4", "signet", "test"):
         return
     if record.network == "regtest" and chain == "regtest":

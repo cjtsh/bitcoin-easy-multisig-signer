@@ -26,7 +26,8 @@ every version:
 | 0.4.0 | Visual refresh; session-only payment receipt | [`PATCH-0.4.0.md`](PATCH-0.4.0.md) |
 | 0.4.1 | Signature-only signer-response import; longer signing window | [`PATCH-0.4.1.md`](PATCH-0.4.1.md) |
 | 0.4.2 | Three-minute device discovery/authorization waits (Jade) | [`PATCH-0.4.2.md`](PATCH-0.4.2.md) |
-| **0.4.3** | **Current.** Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
+| 0.4.3 | Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
+| **0.4.4** | **Current.** Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -188,7 +189,7 @@ wallet and transaction engine is unchanged from 0.4.1, and this wait change
 has not yet been physically exercised. Record:
 [`PATCH-0.4.2.md`](PATCH-0.4.2.md).
 
-## 0.4.3 — fail-closed bare-`/*` change inference (current)
+## 0.4.3 — fail-closed bare-`/*` change inference
 
 A bare `/*` descriptor whose first address matches directly at `xpub/0` is no
 longer accepted as anchoring the BIP48 `/0/0` receive path, so it can never
@@ -202,3 +203,55 @@ wallet*, not for every possible wallet. Release evidence and remaining mainnet
 gate: [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md). **0.4.3 itself
 has no reported physical walkthrough yet; mainnet broadcast remains
 disabled.**
+
+## 0.4.4 — audit remediation and hardening (current)
+
+Two independent audits of `main` at `7d622ef` — one by DeepSeek, one by Z.ai —
+were reconciled into [`PLAN-0.4.4.md`](PLAN-0.4.4.md). This release carries the
+Tier 1 items only: fixes and hardening that need no fee-policy decision, no
+hardware and no Apple account. **Mainnet broadcast remains refused in code and
+nothing here weakens it.** No mainnet transaction has ever been prepared,
+signed or broadcast by this app.
+
+**The suite now covers the guards it previously did not.** Mutation testing had
+shown that deleting the mainnet broadcast refusal, the `SIGHASH_ALL` check, the
+removed-or-changed-prior-signature check, or the CSP/security headers broke
+**no test at all**. The mainnet test in particular set `app.chain` to `main` on
+a *testnet4* payment, so an earlier guard raised first and the lock was never
+reached. Each of those is now covered, and every mutation was re-checked to
+confirm it fails the suite rather than assuming it would.
+
+**Fail-closed gaps closed.**
+- `broadcast_transaction` refuses mainnet at the engine boundary as well as in
+  the HTTP handler, so a future CLI, extra endpoint or refactor cannot submit
+  real Bitcoin by calling the engine directly.
+- A broadcast HTTP 5xx raises `BroadcastOutcomeUnknown` rather than "the network
+  refused": a server error can arrive after the node accepted and relayed, so
+  reporting a refusal stated something the app could not know. 4xx node
+  rejections keep their precise message.
+- The fee preview enforces the 10,000-sat ceiling for partial sends exactly as
+  the builder does, so a preview can never display a fee the builder refuses.
+- A frozen build refuses to fall back to a `PATH` lookup for the bundled `hwi`.
+
+**Distribution and supply chain.** The project is MIT-licensed, with
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md); the DMG bundles both and the
+frozen-app self-check now fails if either is missing, because the bundle
+redistributes libusb under LGPL-2.1-or-later. The double-click launcher installs
+from the hash-pinned lock and asserts the `embit` **version** rather than merely
+that it imports. `pyyaml` is pinned and CI fails on a skipped test instead of
+reporting green. The libusb digest is verified before the library is used, and
+an already-present matching copy is preferred so Homebrew is not always invoked.
+The SBOM records SPDX licence identifiers and no longer rejects an uppercase
+digest *after* a successful build. The release workflow is a single file (the
+archive copy is generated), and CI exercises the `RELEASE=1` guard to prove the
+notarized path fails closed without credentials.
+
+**Test isolation.** `test_gui_integration` wrote to the real
+`~/Library/Application Support/Easy Bitcoin Multisig/settings.json`, silently
+resetting a developer's own saved server settings and reporting a false failure
+in any environment with a read-only `$HOME`. It is confined to a temporary
+directory now.
+
+Suite: **182 tests, 0 failures.** No change to the PSBT construction path, the
+signature-verification rules, fee policy, or the set of networks on which
+broadcast is possible.

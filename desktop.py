@@ -83,6 +83,11 @@ def check_bundle_resources() -> None:
         raise RuntimeError("Bundled ui.html does not read its local access token.")
     if "__DESKTOP_MODE__" not in page:
         raise RuntimeError("Bundled ui.html cannot tell that it is the desktop app.")
+    # The licence and third-party notices are a redistribution obligation, not
+    # decoration: the bundle ships libusb under LGPL-2.1-or-later.
+    for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md"):
+        if not (ui_path().parent / notice).is_file():
+            raise RuntimeError(f"Bundled {notice} is missing from the app bundle.")
     if getattr(sys, "frozen", False):
         import certifi
         bundle = Path(certifi.where())

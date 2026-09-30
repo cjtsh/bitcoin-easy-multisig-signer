@@ -29,6 +29,11 @@ class DesktopTests(unittest.TestCase):
         self.addCleanup(path_patch.stop)
         self.state = LocalApp(desktop=True)
         self.state.chain = "testnet4"
+        # check_bundle_resources() requires the licence and the third-party
+        # notices to ship beside the app, because the bundle redistributes libusb
+        # under LGPL-2.1-or-later. Provide them for every frozen-bundle test.
+        for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md"):
+            (Path(self.temp.name) / notice).write_text(f"synthetic {notice}\n")
         self.raw = b"psbt\xff" + b"synthetic test data"
         self.encoded = base64.b64encode(self.raw).decode()
         self.state.prepared = PreparedPayment(
@@ -215,6 +220,29 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("requests", (root / "requirements-desktop.txt").read_text(encoding="utf-8"))
         build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
         self.assertIn("--collect-all requests", build)
+
+    def test_bundle_check_requires_the_licence_and_notices(self):
+        """The bundle redistributes libusb under LGPL-2.1-or-later.
+
+        Shipping the licence and the third-party notices is a redistribution
+        obligation, so a build that dropped either must fail its own self-check
+        rather than ship silently.
+        """
+        ui = Path(self.temp.name) / "ui.html"
+        ui.write_text("<html>__APP_VERSION__ location.hash __DESKTOP_MODE__</html>")
+        for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md"):
+            with self.subTest(notice=notice):
+                target = Path(self.temp.name) / notice
+                original = target.read_text(encoding="utf-8")
+                target.unlink()
+                try:
+                    with patch("gui.sys.frozen", True, create=True), patch(
+                        "gui.sys._MEIPASS", self.temp.name, create=True
+                    ):
+                        with self.assertRaisesRegex(RuntimeError, notice):
+                            check_bundle_resources()
+                finally:
+                    target.write_text(original, encoding="utf-8")
 
     def test_bundle_check_rejects_an_unconfigured_trust_store(self):
         """The check must fail when the app would fall back to ambient trust."""

@@ -20,6 +20,10 @@ The regression test changes PSBT field order after a valid signature and checks 
 
 **Owner walkthrough, 2026-09-29:** the opt-in 0.2.1 diagnostic report records two `signer_response: verified` events, `final_transaction: verified`, and `broadcast: accepted`. The user provided a public Testnet4 explorer link; the explorer API found the transaction in its mempool, unconfirmed at 14:35 UTC. The report also contains two earlier generic `request: rejected` events; it cannot identify their causes, and they did not stop this payment. The diagnostic file and transaction identifier are not committed to the repository. The successful device models and on-device review details still need the owner's confirmation.
 
-Version 0.2.1 has passed real-device signing and broadcast, but **acceptance remains pending** until the owner confirms device-screen review and the transaction confirms on Testnet4. Do not request wallet files, addresses, xpubs, PSBTs or signed bytes for debugging.
+Version 0.2.1 passed real-device signing and broadcast, and the two-device
+Testnet4 payment later **confirmed on 29 September 2026** (recorded in
+[`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)). Acceptance is no longer pending on
+the transaction; the on-device review details remain owner-reported rather than
+independently recorded. Do not request wallet files, addresses, xpubs, PSBTs or signed bytes for debugging.
 
-**Next owner check:** after the first payment confirms, refresh the same wallet and make one more small self-owned Testnet4 payment using the Trezor plus one signer already exercised in 0.2.1. Confirm the Trezor contributes a counted signature, review recipient/change/fee on both devices and the final app screen, broadcast deliberately, and independently observe confirmation. If other confirmed UTXOs exist, the app may offer another send before the first confirms; waiting avoids confusing pending change with spendable funds. The app cannot spend unconfirmed change and has no built-in fee bump. Do not enable mainnet broadcast as part of this check.
+**Next owner check (completed).** The trigger was the first payment confirming, and the two-device Testnet4 payment broadcast by 0.2.1 confirmed on 29 September 2026. The follow-up check described here was superseded by the later 0.3.x Mutinynet walkthroughs and the 0.4.1 Ledger + Jade payment: do not repeat it against 0.2.1. Kept as written because it records what was planned at the time. Do not enable mainnet broadcast as part of any check.

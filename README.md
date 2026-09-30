@@ -33,7 +33,7 @@ If neither declared nor guarded standard change is available, the app offers a n
 | --- | --- |
 | Wallet | Existing BSMS 1.0, 2-of-3 P2WSH multisig with xpub origins |
 | Networks | Testnet4, Mutinynet and mainnet through one engine; mainnet broadcast disabled |
-| Hardware tested before 0.2.0 | Jade, Trezor Safe 3, Ledger Nano S Plus on the owner's Testnet4 wallet |
+| Hardware exercised | Jade, Trezor Safe 3, Ledger Nano S Plus — Testnet4 through 0.2.1; Mutinynet on 0.3.2 and 0.4.1. Owner-reported, not independently reproduced; no firmware versions are recorded |
 | Distribution | Apple Silicon test DMG, source archive; no trusted/notarized release yet |
 | Fees | Mainnet mempool.space guidance for mainnet/Testnet4; Mutinynet's Esplora reference in Mutinynet mode; 1–25 sat/vB and 10,000-sat estimated fee caps |
 | Scan | 20-address unused gap, at most 100 addresses per known branch; historical or unusual funds can be missed |
@@ -48,6 +48,9 @@ Use Python 3.12 for the Mac build (HWI 3.2.0 does not support 3.13+). Source tes
 ```sh
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
+# PyYAML is only needed to lint the workflow itself. Without it the entire
+# workflow-lint module skips itself, which looks exactly like a pass.
+.venv/bin/python -m pip install pyyaml==6.0.3
 .venv/bin/python -m unittest discover -s tests -q
 ```
 

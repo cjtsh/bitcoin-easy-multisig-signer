@@ -32,6 +32,7 @@ from fake_explorer import three_output_wallet  # noqa: E402
 from gui import LocalApp, PreparedPayment  # noqa: E402
 from probe import ProbeError, parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
+from test_wallet_service import mainnet_record, mainnet_roots  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
 from wallet_service import BroadcastOutcomeUnknown, WalletError  # noqa: E402
 
@@ -68,14 +69,19 @@ class SendFlowTests(unittest.TestCase):
         with urlopen(request, timeout=5) as response:
             return json.load(response)
 
-    def prepare_a_reviewed_transaction(self, chain="testnet4"):
+    def prepare_a_reviewed_transaction(self, chain="testnet4", mainnet=False):
         """Put the app in the state it is in after a reviewed, saved transaction."""
-        text, roots = test_record(bsms_template=True)
+        if mainnet:
+            text, roots = mainnet_record(), mainnet_roots()
+            network, signing_path = NETWORKS["main"], "m/48h/0h/0h/2h/0/0"
+        else:
+            text, roots = test_record(bsms_template=True)
+            network, signing_path = NETWORKS["test"], "m/48h/1h/0h/2h/0/0"
         record = parse_bsms(text)
         layout = wallet_layout(record)
-        explorer = three_output_wallet(layout, NETWORKS["test"])
+        explorer = three_output_wallet(layout, network)
         scan = scan_wallet(record, explorer)
-        recipient = layout.receive.derive(5).address(NETWORKS["test"])
+        recipient = layout.receive.derive(5).address(network)
         result = build_unsigned_psbt(record, scan, recipient, 100_000, 5, explorer)
         self.post("/api/import", {"chain": chain, "text": text,
                                   "consent_explorer": True})
@@ -87,7 +93,7 @@ class SendFlowTests(unittest.TestCase):
         self.app.prepared = PreparedPayment.create(
             record, chain, self.app.scan_generation, "reviewed-1",
             result["psbt_base64"], review)
-        keys = [root.derive("m/48h/1h/0h/2h/0/0") for root in roots]
+        keys = [root.derive(signing_path) for root in roots]
         return result, keys
 
     def signing_device(self, key):
@@ -307,18 +313,35 @@ class SendFlowTests(unittest.TestCase):
     def test_broadcasting_real_bitcoin_is_not_enabled(self):
         """The mainnet lock is the most important refusal in this file.
 
-        It is checked against the open wallet's network before anything else, so a
-        fully signed, perfectly valid mainnet transaction is still refused.
+        This drives a real mainnet wallet through the whole flow, so the refusal
+        is reached with the payment reviewed, signed by two devices and
+        finalised - not short-circuited by an earlier guard. The earlier version
+        of this test set app.chain to "main" while the prepared payment's chain
+        was still testnet4, so _current_prepared raised "wallet or balance
+        changed" first and the assertion passed without ever reaching the lock.
         """
-        self.prepare_a_reviewed_transaction()
-        self.app.chain = "main"
-        with patch("gui.broadcast_transaction", return_value=self.app.prepared.txid) as send:
+        result, keys = self.prepare_a_reviewed_transaction(chain="main",
+                                                           mainnet=True)
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device",
+                       side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind,
+                                        "device_path": path})
+        final = self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        self.assertEqual(final["txid"], result["txid"])
+        self.assertEqual(final["network"], "main")
+
+        with patch("gui.broadcast_transaction",
+                   return_value=result["txid"]) as send:
             with self.assertRaises(HTTPError) as err:
                 self.post("/api/broadcast", {"preparation_id": "reviewed-1",
                                              "confirm": True,
-                                             "confirmed_txid": self.app.prepared.txid})
+                                             "confirmed_txid": result["txid"]})
             self.assertEqual(err.exception.code, 400)
-            self.assertIn("wallet or balance changed", err.exception.read().decode())
+            self.assertIn("not enabled in this build",
+                          json.load(err.exception)["error"])
         send.assert_not_called()
 
     def test_wallet_import_waits_until_broadcast_submission_finishes(self):

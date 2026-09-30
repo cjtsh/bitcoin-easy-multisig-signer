@@ -29,9 +29,50 @@ class BroadcastOutcomeTests(unittest.TestCase):
             with self.assertRaisesRegex(BroadcastOutcomeUnknown, "Do not send"):
                 broadcast_transaction("00" * 50)
 
+    def test_a_server_error_is_unknown_not_a_definite_rejection(self):
+        """A 5xx can arrive after the node already accepted the transaction.
+
+        Reporting a refusal would state something the app cannot know, and would
+        leave the payment retryable without the pending-payment pause in gui.py
+        being armed.
+        """
+        error = HTTPError("https://example.invalid/api/tx", 502, "Bad Gateway",
+                          None, None)
+        with patch("wallet_service.urlopen", side_effect=error):
+            with self.assertRaisesRegex(BroadcastOutcomeUnknown, "result is unknown"):
+                broadcast_transaction("00" * 50)
+
+    def test_a_client_rejection_remains_a_definite_refusal(self):
+        """A 4xx carrying a node rejection keeps its precise refusal message."""
+        error = HTTPError("https://example.invalid/api/tx", 400, "Bad Request",
+                          None, None)
+        with patch("wallet_service.urlopen", side_effect=error):
+            with self.assertRaises(WalletError) as caught:
+                broadcast_transaction("00" * 50)
+        self.assertNotIsInstance(caught.exception, BroadcastOutcomeUnknown)
+        self.assertIn("refused", str(caught.exception))
+
+    def test_real_bitcoin_is_refused_at_the_engine_boundary(self):
+        """The mainnet refusal must not depend on the HTTP handler alone.
+
+        gui.py is the gate the operator sees and explains. This proves the engine
+        underneath it cannot be asked to submit a mainnet transaction by any
+        other caller - a future CLI, a second endpoint, or a refactor.
+        """
+        with patch("wallet_service.urlopen") as send:
+            with self.assertRaisesRegex(WalletError, "not enabled in this build"):
+                broadcast_transaction("00" * 50, chain="main")
+        send.assert_not_called()
+
+
+def mainnet_roots():
+    """The synthetic signing roots behind mainnet_record(). Test keys only."""
+    return [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
+
+
 def mainnet_record(suffix="/<0;1>/*"):
     """Synthetic keys only. No real or uploaded wallet data enters tests."""
-    roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
+    roots = mainnet_roots()
     keys = [
         f"[{root.my_fingerprint.hex()}/48h/0h/0h/2h]"
         f"{root.derive('m/48h/0h/0h/2h').to_public().to_base58()}{suffix}"
@@ -181,6 +222,19 @@ class WalletServiceTests(unittest.TestCase):
         self.assertIn("all confirmed", preview["method"])
         send_all = estimate_fee_preview(self.wallet, data, send_all=True)
         self.assertEqual(send_all["estimated_vbytes"], 159)
+
+    def test_preview_enforces_the_fee_ceiling_for_a_partial_send(self):
+        """The builder applies the ceiling unconditionally, so the preview must too.
+
+        A preview that displays a fee the builder will then refuse is worse than
+        no preview at all. Four inputs at 25 sat/vB costs more than the ceiling.
+        """
+        data = scan_wallet(self.wallet, self.fake_get)
+        costly = {**data, "utxos": data["utxos"] + [data["utxos"][0]] * 3,
+                  "confirmed_sats": 24_000}
+        with self.assertRaisesRegex(WalletError, "safety ceiling"):
+            estimate_fee_preview(self.wallet, costly, False, amount=8_000,
+                                 fee_rate=25)
 
     def test_unsigned_psbt_has_correct_destination_change_and_prevout(self):
         from embit.networks import NETWORKS

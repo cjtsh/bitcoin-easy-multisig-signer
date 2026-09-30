@@ -173,6 +173,28 @@ class FeePreviewTests(unittest.TestCase):
             estimate_fee_preview(self.record, self.scan, False, amount=545,
                                  fee_rate=5, recipient=self.recipient)
 
+    def test_change_is_never_left_below_dust(self):
+        """No successfully built partial send may leave under-dust change.
+
+        The greedy selection stops only when the remainder clears the dust floor
+        and the builder re-checks it, so a remainder in 1-545 sats must never
+        appear as a change output. The sweep crosses the point where the wallet
+        runs out of confirmed sats, so both outcomes are exercised.
+        """
+        refused = 0
+        for amount in range(170_000, 175_001, 25):
+            with self.subTest(amount=amount):
+                try:
+                    built = build_unsigned_psbt(self.record, self.scan,
+                                                self.recipient, amount, 5,
+                                                self.explorer)
+                except WalletError as exc:
+                    self.assertIn("Not enough confirmed", str(exc))
+                    refused += 1
+                    continue
+                self.assertGreaterEqual(built["change_sats"], 546)
+        self.assertGreater(refused, 0, "the sweep must cross the refusal boundary")
+
     def test_preview_requires_a_complete_consistent_scan(self):
         with self.assertRaisesRegex(WalletError, "complete, consistent"):
             estimate_fee_preview(self.record, {**self.scan, "range_limited": True},
