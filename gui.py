@@ -417,7 +417,7 @@ class LocalApp:
             self.servers = default_servers()
             self.settings_error = str(exc)
 
-    def note(self, stage: str, outcome: str, device: str = "", found=()) -> None:
+    def note(self, stage: str, outcome: str, device: str = "", found=None) -> None:
         """Fixed vocabulary, bounded memory; no wallet data and no exception text.
 
         The selected network and, where a device was involved, its *class* are
@@ -426,11 +426,15 @@ class LocalApp:
         differently enough that "which one, when" is the first troubleshooting
         question. A device model is not an identity - no path, serial,
         fingerprint, xpub, address or error text can be written here.
+
+        A caller that passes `found` always gets the key, even when it is empty.
+        An absent key meant "nothing usable was visible", which a reader could not
+        tell apart from a field that simply is not written; a real report showed
+        two of four signer checks in that ambiguous state.
         """
         if stage not in DIAGNOSTIC_STAGES or outcome not in DIAGNOSTIC_OUTCOMES:
             return
         cleaned = _clean_token(device)
-        classes = sorted({c for c in (_clean_token(x) for x in found) if c})
         with self.lock:
             event = {
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -438,8 +442,8 @@ class LocalApp:
             }
             if cleaned:
                 event["device"] = cleaned
-            if classes:
-                event["found"] = classes
+            if found is not None:
+                event["found"] = sorted({c for c in (_clean_token(x) for x in found) if c})
             self.diagnostic_events.append(event)
             del self.diagnostic_events[:-80]
 
