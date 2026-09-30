@@ -168,11 +168,18 @@ class ReleaseGateTests(unittest.TestCase):
         cls.text = BUILD_MACOS.read_text(encoding="utf-8")
 
     def test_the_dmg_and_the_app_are_both_stapled(self):
-        """The app needs its own ticket or it fails offline.
+        """Both artifacts are stapled - but this does NOT fix offline for a downloader.
 
-        Dragged to /Applications, an app with no stapled ticket is verified by an
-        online lookup to Apple. A recovery operator with no network would be
-        refused. One submission covers both artifacts, so this is free.
+        The image is built from a copy of the app taken before either staple runs, so
+        the app a downloader receives stays unstapled and Gatekeeper verifies it with
+        an online lookup. Measured on the published v0.4.12 DMG: the image validates,
+        the app inside reports "does not have a ticket stapled to it".
+
+        Stapling `$app` is still worth pinning: it makes the copy in dist/
+        self-contained for offline testing here, and an accidental removal would
+        otherwise go unnoticed. Closing the downloader's offline gap needs the app
+        notarized and stapled BEFORE the image is built, at the cost of a second Apple
+        round trip; see PHASE-HANDOFF.md.
         """
         self.assertIn('xcrun stapler staple "$dmg"', self.text)
         self.assertIn('xcrun stapler staple "$app"', self.text)
