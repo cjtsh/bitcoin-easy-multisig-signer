@@ -1,69 +1,139 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bitcoin Easy Signer</title>
   <style>
-    /* One quiet palette: dark text for careful reading, teal for actions,
-       amber for waiting/caution, red for errors. Mainnet keeps its own warning. */
-    :root { color-scheme: light; --ink:#1e2b2d; --muted:#53666a; --line:#d9e2df;
-      --mint:#e6f4ed; --green:#0c6756; --paper:#fff; --warn:#fff2d5; --red:#a83336;
-      --canvas:#f4f6f3; --navy:#173b39; }
+    /* ============================================================
+       THE PALETTE - five hues, assigned to roles.
+
+         neutral   surfaces, text, borders
+         accent    the one action colour: buttons, links, focus
+         pending   waiting / caution          (amber)
+         done      completed / verified       (green)
+         failed    refused / error            (red)
+
+       Light and dark are the same roles with different values. Mainnet is
+       the same roles with alarming values, applied as a mode: it adds no
+       colours, it reads the same five more loudly.
+
+       NOTHING outside these blocks may name a colour.
+       tests/test_palette.py fails the build if a raw hex, rgb() or hsl()
+       appears anywhere else, because colours used to drift one revision at
+       a time - a border here, a hover shade there - until 89 of them had
+       accumulated that nobody had chosen.
+       ============================================================ */
+    :root, [data-theme="light"] {
+      color-scheme: light;
+      /* surfaces */
+      --canvas:#f6f8fa; --paper:#ffffff; --sunken:#eef2f7;
+      --header:#0f172a; --header-ink:#f1f5f9; --header-muted:#9fb0c7; --header-rule:#14b8a6;
+      /* text */
+      --ink:#0f172a; --muted:#64748b;
+      /* structure */
+      --line:#e3e8ef; --line-strong:#cbd5e1;
+      /* action */
+      --accent:#0f766e; --accent-hover:#115e59; --accent-ink:#ffffff; --accent-soft:#e6f4f1;
+      --focus:#0f766e;
+      /* states */
+      --pending:#92400e; --pending-bg:#fffbeb; --pending-line:#d97706;
+      --done:#065f46; --done-bg:#ecfdf5; --done-line:#10b981;
+      --failed:#991b1b; --failed-bg:#fef2f2; --failed-line:#dc2626;
+      /* inactive */
+      --disabled:#cbd5e1; --disabled-ink:#94a3b8;
+      /* effects */
+      --shadow:0 5px 20px rgba(15,23,42,.07);
+      --shadow-lg:0 24px 60px rgba(15,23,42,.28);
+      --scrim:rgba(15,23,42,.55);
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --canvas:#0b1120; --paper:#121a2b; --sunken:#0e1626;
+      --header:#080d18; --header-ink:#eef4ff; --header-muted:#8ea0bb; --header-rule:#2dd4bf;
+      --ink:#e8eefb; --muted:#93a4bd;
+      --line:#243049; --line-strong:#33415c;
+      --accent:#2dd4bf; --accent-hover:#5eead4; --accent-ink:#04211e; --accent-soft:#0d2f2c;
+      --focus:#2dd4bf;
+      --pending:#fcd34d; --pending-bg:#2a1f08; --pending-line:#d97706;
+      --done:#6ee7b7; --done-bg:#0d2b24; --done-line:#10b981;
+      --failed:#fca5a5; --failed-bg:#2c1214; --failed-line:#ef4444;
+      --disabled:#33415c; --disabled-ink:#7c8ba5;
+      --shadow:0 5px 20px rgba(0,0,0,.42);
+      --shadow-lg:0 24px 60px rgba(0,0,0,.62);
+      --scrim:rgba(2,6,16,.72);
+    }
+    /* Mainnet. The same five hues, unmistakably alarming: an operator must
+       never mistake real Bitcoin for a practice network. This is a mode, not a
+       second palette, so it overrides roles rather than declaring colours. */
+    body.live-mode {
+      --canvas:#fff7ed; --paper:#fffdfa; --sunken:#fff1e2;
+      --header:#431407; --header-ink:#ffedd5; --header-muted:#fdba74; --header-rule:#ea580c;
+      --line:#fed7aa; --line-strong:#fdba74;
+      --accent:#c2410c; --accent-hover:#9a3412; --accent-ink:#ffffff; --accent-soft:#ffedd5;
+      --focus:#ea580c;
+      --pending:#7c2d12; --pending-bg:#ffedd5; --pending-line:#ea580c;
+    }
+    [data-theme="dark"] body.live-mode {
+      --canvas:#1c1005; --paper:#241505; --sunken:#1e1206;
+      --header:#3a1a05; --header-ink:#ffedd5; --header-muted:#fdba74; --header-rule:#f97316;
+      --line:#4a2a0c; --line-strong:#6b3a11;
+      --accent:#fb923c; --accent-hover:#fdba74; --accent-ink:#2a1405; --accent-soft:#3a2107;
+      --focus:#fb923c;
+      --pending:#fdba74; --pending-bg:#33200a; --pending-line:#ea580c;
+    }
+
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--canvas); color:var(--ink); font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    .top { padding:34px max(22px,calc((100vw - 1060px)/2)) 37px; background:var(--navy); color:#f5faf7; border-bottom:4px solid #70b9a0; }
-    .top small { text-transform:uppercase; letter-spacing:.11em; color:#aad9c7; font-weight:700; font-size:12px; }
+    body { margin:0; background:var(--canvas); color:var(--ink); font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      transition:background-color .15s ease, color .15s ease; }
+    /* The header carries the theme control, so it is a positioning context. */
+    .top { position:relative; padding:34px max(84px,calc((100vw - 1060px)/2 + 62px)) 37px max(22px,calc((100vw - 1060px)/2));
+      background:var(--header); color:var(--header-ink); border-bottom:4px solid var(--header-rule); }
+    .top small { text-transform:uppercase; letter-spacing:.11em; color:var(--header-muted); font-weight:700; font-size:12px; }
     .top h1 { margin:8px 0 5px; font-size:clamp(29px,4vw,40px); letter-spacing:-.04em; line-height:1.12; }
-    .top p { margin:0; color:#d5e9e1; max-width:660px; }
-    .top .platform-note { margin-top:10px; font-size:14px; color:#eaf7ef; }
+    .top p { margin:0; color:var(--header-muted); max-width:660px; }
+    .top p strong { color:var(--header-ink); }
+    .top .platform-note { margin-top:10px; font-size:14px; color:var(--header-ink); }
     .top .secondary { margin-top:14px; }
-    .network { display:inline-flex; border:1px solid #8bcab4; border-radius:99px; padding:5px 12px;
-      margin-top:20px; font-size:12px; letter-spacing:.045em; font-weight:750; color:#dcf5e8; }
-    .network.live { border:3px solid #ff9e2c; background:#ffdc99; color:#48260a; }
-    .live-banner { background:#ffde9d; border:3px solid #de6f0b; border-radius:12px;
-      color:#552806; font-weight:800; padding:15px 18px; margin:0 0 19px; font-size:17px; }
-    .pending-banner { background:#fff0c6; border:2px solid #d69b27; border-radius:12px;
-      color:#49350e; padding:17px 19px; margin:0 0 19px; }
+    .network { display:inline-flex; border:1px solid var(--header-rule); border-radius:99px; padding:5px 12px;
+      margin-top:20px; font-size:12px; letter-spacing:.045em; font-weight:750; color:var(--header-ink); }
+    .network.live { border:3px solid var(--pending-line); background:var(--pending-bg); color:var(--pending); }
+    .theme-toggle { position:absolute; top:30px; right:max(22px,calc((100vw - 1060px)/2));
+      width:42px; height:42px; min-height:0; padding:0; display:grid; place-items:center;
+      font-size:18px; line-height:1; border-radius:99px; cursor:pointer;
+      background:var(--header-rule); color:var(--header); border:1px solid transparent; }
+    .theme-toggle:hover { background:var(--header-ink); }
+    .live-banner { background:var(--pending-bg); border:3px solid var(--pending-line); border-radius:12px;
+      color:var(--pending); font-weight:800; padding:15px 18px; margin:0 0 19px; font-size:17px; }
+    .pending-banner { background:var(--pending-bg); border:2px solid var(--pending-line); border-radius:12px;
+      color:var(--pending); padding:17px 19px; margin:0 0 19px; }
     .pending-banner h2 { margin:0 0 5px; }
-    .outcome-card { border:2px solid #37957c; background:#e8f5ee; }
+    .outcome-card { border:2px solid var(--done-line); background:var(--done-bg); }
     .outcome-card h2 { margin:0 0 6px; }
-    .patience-note { background:#eef5f0; border:1px solid #cfe2d7; border-radius:12px;
-      padding:15px 18px; margin:0 0 19px; color:#1d3b2e; }
+    .patience-note { background:var(--sunken); border:1px solid var(--line); border-radius:12px;
+      padding:15px 18px; margin:0 0 19px; color:var(--ink); }
     .patience-note p { margin:0 0 11px; }
     .pending-banner p { margin:0 0 12px; }
-    body.live-mode { background:#fff5e3; }
-    body.live-mode .top { background:#332713; border-bottom:8px solid #db7918; }
-    body.live-mode .top small { color:#ffd38c; }
-    body.live-mode .top p { color:#ffe7c7; }
-    body.live-mode .card { border:2px solid #e5aa4f; box-shadow:0 8px 25px #61341418; }
-    body.live-mode button:not(.secondary) { background:#ae5108; }
-    body.live-mode button:not(.secondary):hover { background:#843a06; }
-    body.live-mode button:not(.secondary):disabled { background:#cab99e; }
-    body.live-mode .secondary { background:#ffe0ad; color:#613009; }
-    body.live-mode .secondary:hover { background:#f9cb80; }
-    body.live-mode input:focus, body.live-mode select:focus,
-    body.live-mode button:focus-visible { outline-color:#e68927; }
     main { max-width:1060px; padding:30px 22px 70px; margin:auto; }
     .steps { display:flex; gap:10px; color:var(--muted); font-size:13px; margin-bottom:19px; flex-wrap:wrap; }
-    .steps span { background:#dfe9e2; border-radius:99px; padding:5px 12px; }
-    .steps .active { background:#c0ead5; color:#155c48; font-weight:700; }
-    .card { background:var(--paper); border:1px solid var(--line); box-shadow:0 5px 20px #193a3409;
+    .steps span { background:var(--sunken); border-radius:99px; padding:5px 12px; }
+    .steps .active { background:var(--accent-soft); color:var(--accent); font-weight:700; }
+    .card { background:var(--paper); border:1px solid var(--line); box-shadow:var(--shadow);
       border-radius:18px; padding:29px 31px; margin:18px 0; }
-    .card > .with-help { padding-bottom:13px; border-bottom:1px solid #e7eeea; margin-bottom:15px; }
+    .card > .with-help { padding-bottom:13px; border-bottom:1px solid var(--line); margin-bottom:15px; }
     h2 { margin:0 0 5px; font-size:23px; letter-spacing:-.035em; line-height:1.25; }
     h3 { margin:0; font-size:17px; letter-spacing:-.015em; }
     .with-help { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:5px; }
     .with-help h2, .with-help h3 { margin:0; }
     .context-help { position:relative; display:inline-block; flex:none; }
     .context-help summary { display:grid; place-items:center; width:27px; height:27px;
-      border:1px solid #7eae98; border-radius:50%; background:#e5f2e9; color:#155943;
+      border:1px solid var(--line-strong); border-radius:50%; background:var(--sunken); color:var(--accent);
       font-size:16px; font-weight:800; line-height:1; list-style:none; cursor:pointer; }
     .context-help summary::-webkit-details-marker { display:none; }
-    .context-help summary:focus-visible { outline:3px solid #86d4a6; outline-offset:2px; }
+    .context-help summary:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
     .context-help .help-popout { position:absolute; top:calc(100% + 8px); left:0; z-index:20;
-      width:min(315px,calc(100vw - 60px)); padding:14px 16px; background:white; color:var(--ink);
-      border:1px solid #b3d4c2; border-radius:12px; box-shadow:0 12px 28px #142c1e30;
+      width:min(315px,calc(100vw - 60px)); padding:14px 16px; background:var(--paper); color:var(--ink);
+      border:1px solid var(--line-strong); border-radius:12px; box-shadow:var(--shadow-lg);
       font-size:14px; line-height:1.45; font-weight:400; }
     .context-help.align-right .help-popout { left:auto; right:0; }
     .help-popout strong { display:block; margin-bottom:5px; }
@@ -74,111 +144,100 @@
     .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:17px; }
     label { display:block; font-weight:680; margin:19px 0 7px; font-size:14px; }
     input[type=file], input[type=text], input[type=number], select {
-      width:100%; border:1px solid #b9cbc4; border-radius:10px; background:white; color:var(--ink);
+      width:100%; border:1px solid var(--line-strong); border-radius:10px; background:var(--paper); color:var(--ink);
       padding:13px 14px; font:inherit; min-height:48px; }
     input[type=file] { padding:11px; }
-    input[type=file]::file-selector-button { border:1px solid #c6dbce; border-radius:8px;
-      background:#edf5ef; color:#155943; padding:8px 12px; margin-right:12px;
+    input[type=file]::file-selector-button { border:1px solid var(--line-strong); border-radius:8px;
+      background:var(--sunken); color:var(--accent); padding:8px 12px; margin-right:12px;
       font:700 14px system-ui; cursor:pointer; }
-    input[type=file]::file-selector-button:hover { background:#e0eee5; }
-    input:focus, select:focus, button:focus-visible { outline:3px solid #86d4a6; outline-offset:2px; }
-    button { appearance:none; border:1px solid transparent; background:var(--green); color:white; font:700 15px system-ui;
+    input[type=file]::file-selector-button:hover { background:var(--accent-soft); }
+    input:focus, select:focus, button:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+    button { appearance:none; border:1px solid transparent; background:var(--accent); color:var(--accent-ink); font:700 15px system-ui;
       border-radius:10px; padding:13px 19px; min-height:46px; cursor:pointer; transition:background-color .15s ease, border-color .15s ease; }
-    button:hover { background:#075343; }
-    button:disabled { background:#b5c8be; cursor:not-allowed; }
-    button.searching:disabled { background:#ffd447; color:#322300;
-      border:2px solid #ad7600; }
-    .secondary { background:#eef5f0; border-color:#d2e4d9; color:#155943; }
-    .secondary:hover { background:#e0eee5; }
+    button:hover { background:var(--accent-hover); }
+    button:disabled { background:var(--disabled); color:var(--disabled-ink); cursor:not-allowed; }
+    button.searching:disabled { background:var(--pending-line); color:var(--pending-bg);
+      border:2px solid var(--pending); }
+    .secondary { background:var(--sunken); border-color:var(--line-strong); color:var(--accent); }
+    .secondary:hover { background:var(--accent-soft); }
     .action { margin-top:18px; }
-    .notice { border-left:4px solid #cb9121; padding:13px 16px; border-radius:9px; background:var(--warn); margin:15px 0; }
-    .error { background:#ffeae8; color:var(--red); border-left:4px solid var(--red); padding:13px 15px; border-radius:9px; margin:14px 0; }
-    .success { background:var(--mint); padding:12px 15px; border-radius:9px; color:var(--green); margin:12px 0; }
+    .notice { border-left:4px solid var(--pending-line); padding:13px 16px; border-radius:9px; background:var(--pending-bg); color:var(--pending); margin:15px 0; }
+    .error { background:var(--failed-bg); color:var(--failed); border-left:4px solid var(--failed-line); padding:13px 15px; border-radius:9px; margin:14px 0; }
+    .success { background:var(--done-bg); padding:12px 15px; border-radius:9px; color:var(--done); margin:12px 0; }
     .balance-primary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; align-items:start; }
     .balance-primary > div { min-width:0; }
     .technical-details { margin:15px 0; }
-    .technical-details > summary { cursor:pointer; color:var(--green); font-weight:650; }
+    .technical-details > summary { cursor:pointer; color:var(--accent); font-weight:650; }
     .balance-label { margin:0 0 5px; color:var(--muted); font-size:14px; font-weight:650; }
     .amount { font-size:clamp(26px,3.7vw,43px); font-weight:760; line-height:1.15; letter-spacing:-.045em; white-space:nowrap; }
     .amount small { font-size:16px; letter-spacing:0; font-weight:600; color:var(--muted); }
-    .equivalent { margin:5px 0 12px; color:var(--green); font-weight:650; }
+    .equivalent { margin:5px 0 12px; color:var(--accent); font-weight:650; }
     .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:12px; margin:20px 0; }
-    .metric { border:1px solid #e1e9e5; background:#f8faf8; border-radius:11px; padding:13px 14px; min-width:0; }
+    .metric { border:1px solid var(--line); background:var(--sunken); border-radius:11px; padding:13px 14px; min-width:0; }
     .metric b { display:block; font-size:19px; line-height:1.3; overflow-wrap:anywhere; }
     .metric span { display:block; margin-top:4px; color:var(--muted); font-size:13px; line-height:1.35; }
     .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; overflow-wrap:anywhere; }
     .kv { margin:12px 0; }
     .kv b { display:block; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
     .kv code { display:block; margin-top:3px; }
-    .cosigner { border:1px solid var(--line); padding:15px; border-radius:12px; background:#fff; margin:10px 0; }
+    .cosigner { border:1px solid var(--line); padding:15px; border-radius:12px; background:var(--paper); margin:10px 0; }
     .cosigner summary { cursor:pointer; font-weight:700; }
     .cosigner p { margin:8px 0 0; }
     .address-row { padding:12px 0; border-top:1px solid var(--line); }
     .address-row small { display:block; color:var(--muted); }
-    .review { border:1px solid #cbded4; border-left:4px solid #37957c; border-radius:12px; background:#fff; padding:22px 23px; margin-top:22px; box-shadow:0 3px 16px #193a3408; }
-    .review .review { background:#f8faf8; box-shadow:none; }
+    .review { border:1px solid var(--line); border-left:4px solid var(--done-line); border-radius:12px; background:var(--paper); padding:22px 23px; margin-top:22px; box-shadow:var(--shadow); }
+    .review .review { background:var(--sunken); box-shadow:none; }
     #sign-buttons { display:flex; flex-wrap:wrap; gap:9px; margin:12px 0; }
     /* One box per cosigner. The operator should be able to see at a glance which
        signer is still missing, without reading a sentence about it. */
-    .signer-slot { flex:1 1 165px; min-width:150px; border:2px dashed #9dc3b1; border-radius:11px;
-      background:#fff; padding:13px 14px; display:flex; flex-direction:column; gap:6px; text-align:left; }
+    .signer-slot { flex:1 1 165px; min-width:150px; border:2px dashed var(--line-strong); border-radius:11px;
+      background:var(--paper); padding:13px 14px; display:flex; flex-direction:column; gap:6px; text-align:left; }
     .signer-slot b { font-size:15px; }
-    .signer-slot.ready { border-style:solid; border-color:#37957c; cursor:pointer; }
-    .signer-slot.ready:hover { background:#f2f7f3; }
-    .signer-slot.signed { border-style:solid; border-color:#37957c; background:#e8f5ee; }
-    .signer-slot.optional, .signer-slot.waiting { border-style:solid; border-color:#dbe4df;
-      background:#f6f8f7; color:#85958d; }
-    .signer-slot.optional b, .signer-slot.waiting b { color:#7d8d85; }
+    .signer-slot.ready { border-style:solid; border-color:var(--done-line); cursor:pointer; }
+    .signer-slot.ready:hover { background:var(--accent-soft); }
+    .signer-slot.signed { border-style:solid; border-color:var(--done-line); background:var(--done-bg); }
+    .signer-slot.optional, .signer-slot.waiting { border-style:solid; border-color:var(--line);
+      background:var(--sunken); color:var(--disabled-ink); }
+    .signer-slot.optional b, .signer-slot.waiting b { color:var(--disabled-ink); }
     .signer-slot.busy { opacity:.6; cursor:progress; }
-    .signer-slot .tick { color:#2f7d66; font-weight:700; }
-    #sign-progress:not(.error):not(:empty) { border-left:3px solid #75a995; background:#f2f7f3; padding:10px 13px; border-radius:7px; margin:12px 0; }
-    .receipt { background:#e8f5ee; border:1px solid #b5d9c4; border-radius:12px; padding:18px 20px; margin:17px 0; }
+    .signer-slot .tick { color:var(--done); font-weight:700; }
+    #sign-progress:not(.error):not(:empty) { border-left:3px solid var(--done-line); background:var(--accent-soft); padding:10px 13px; border-radius:7px; margin:12px 0; }
+    .receipt { background:var(--done-bg); border:1px solid var(--done-line); border-radius:12px; padding:18px 20px; margin:17px 0; }
     .receipt h2 { font-size:19px; }
     .receipt p { margin:6px 0 10px; }
     .receipt a { font-weight:700; }
     .check { display:flex; align-items:flex-start; gap:9px; margin:15px 0; font-weight:500; }
     .check input { width:17px; height:17px; flex:0 0 17px; margin-top:3px; }
     footer { color:var(--muted); font-size:13px; padding-top:10px; }
-    a { color:#166c55; }
+    a { color:var(--accent); }
     [hidden] { display:none !important; }
     dialog.panel { border:0; border-radius:18px; padding:0; width:min(760px,92vw);
-      max-height:88vh; color:var(--ink); box-shadow:0 24px 60px #102d2a40; }
-    dialog.panel::backdrop { background:#102d2a99; }
+      max-height:88vh; color:var(--ink); background:var(--paper); box-shadow:var(--shadow-lg); }
+    dialog.panel::backdrop { background:var(--scrim); }
     .panel-head { display:flex; align-items:center; justify-content:space-between; gap:14px;
       padding:16px 22px; border-bottom:1px solid var(--line); background:var(--paper); }
     .panel-head h2 { margin:0; font-size:20px; }
     .panel-body { padding:4px 22px 22px; overflow:auto; max-height:calc(88vh - 68px); }
-    .details-button { background:#e5f2e9; color:#155943; font-weight:650; padding:11px 16px; }
-    .details-button:hover { background:#d3ebdc; }
-    .tip { background:#eef6f1; border-left:4px solid var(--green); padding:12px 16px;
+    .details-button { background:var(--sunken); color:var(--accent); font-weight:650; padding:11px 16px; }
+    .details-button:hover { background:var(--accent-soft); }
+    .tip { background:var(--sunken); border-left:4px solid var(--accent); padding:12px 16px;
       border-radius:9px; margin:15px 0; }
     .tip ol { margin:6px 0 0; padding-left:20px; }
     .tip li { margin:4px 0; }
-    button.rate-button.selected { background:#0f6a4f; color:#fff;
-      box-shadow:inset 0 0 0 2px #0a4a37; }
-    button.rate-button.selected::before { content:"✓ "; }
-    #fee-selected { font-weight:650; color:var(--green); margin:10px 0 4px; }
+    button.rate-button.selected { background:var(--accent); color:var(--accent-ink);
+      box-shadow:inset 0 0 0 2px var(--accent-hover); }
+    button.rate-button.selected::before { content:"\2713 "; }
+    #fee-selected { font-weight:650; color:var(--accent); margin:10px 0 4px; }
     body.busy-mode { padding-top:54px; }
     .busy-bar { position:fixed; top:0; left:0; right:0; z-index:60;
       display:flex; align-items:center; gap:11px; padding:12px 20px;
-      background:#ffd447; color:#322300; border-bottom:3px solid #ad7600;
-      font-weight:750; font-size:16px; box-shadow:0 3px 14px #5a43004d; }
+      background:var(--pending-bg); color:var(--pending); border-bottom:3px solid var(--pending-line);
+      font-weight:750; font-size:16px; box-shadow:var(--shadow-lg); }
     .spinner { width:17px; height:17px; flex:none; border-radius:50%;
-      border:3px solid #66500055; border-top-color:#322300;
+      border:3px solid var(--pending-line); border-top-color:var(--pending);
       animation:spin .8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration:2.4s; } }
-    .busy-elapsed { margin-left:auto; font-variant-numeric:tabular-nums; opacity:.75; }
-    @media(max-width:680px) {
-      .grid, .balance-primary { grid-template-columns:1fr; }
-      .card { padding:21px; }
-      .review { padding:17px; }
-      .metrics { grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); }
-      .context-help .help-popout, .context-help.align-right .help-popout {
-        position:fixed; top:auto; bottom:16px; left:16px; right:16px; width:auto;
-        max-height:55vh; overflow:auto;
-      }
-    }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation-duration:2.4s; } .top, body { transition:none; } }
   </style>
 </head>
 <body>
@@ -188,6 +247,11 @@
     <span id="busy-elapsed" class="busy-elapsed" aria-hidden="true"></span>
   </div>
   <header class="top">
+    <!-- The only appearance control in the app. Its label states what pressing it
+         does rather than what state it is in, because that is what a screen
+         reader should read out. -->
+    <button id="theme-toggle" class="theme-toggle" type="button"
+            aria-label="Switch to dark theme" title="Switch theme (T)">🌙</button>
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Bitcoin Easy Signer</h1>
     <p>Open an existing <strong>2-of-3</strong> wallet, review a payment, and approve it on two hardware devices.</p>
@@ -519,9 +583,88 @@
        <p><button id="quit" class="secondary" __DESKTOP_HIDE_QUIT__>Quit local app</button></p></footer>
   </main>
   <script>
+    // ---------------------------------------------------------------------
+    // Light / dark. Runs before anything else so the first paint is already in
+    // the right theme rather than flashing the wrong one.
+    //
+    // Only a preference is stored, never a wallet detail, and it is stored in
+    // this browser's localStorage rather than on disk. An operator who has
+    // never chosen gets the Mac's own setting, so the app agrees with the rest
+    // of their machine by default.
+    // ---------------------------------------------------------------------
+    // A failed theme must never take the app down with it. Everything here is
+    // inside one try/catch and every browser API is probed before use, because
+    // decoration is not worth losing a signing screen over. The last line
+    // records that the setup completed, so a test can tell "no theme" from
+    // "theme crashed".
+    // ---------------------------------------------------------------------
+    (() => {
+      try {
+        const KEY = "besa-theme";
+        const root = document.documentElement || document.body;
+        if (!root || !root.dataset) return;
+        // `window` is the browser global, but this block runs in front of the whole
+        // app and is also loaded by test harnesses that stub only a document. So it
+        // is looked up rather than assumed: a missing global costs the toggle, not
+        // the app.
+        const globals = typeof window === "undefined" ? {} : window;
+        const media = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+        const store = {
+          get() { try { return localStorage.getItem(KEY); } catch { return null; } },
+          set(value) { try { localStorage.setItem(KEY, value); } catch { /* private mode */ } },
+        };
+        const apply = (theme) => {
+          root.dataset.theme = theme === "dark" ? "dark" : "light";
+          const button = document.getElementById && document.getElementById("theme-toggle");
+          if (!button) return;
+          // The icon shows the CURRENT theme; the label says what the press does,
+          // because that is what a screen reader reads out.
+          button.textContent = theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19";
+          if (button.setAttribute) {
+            button.setAttribute("aria-label",
+              `Switch to ${theme === "dark" ? "light" : "dark"} theme`);
+          }
+        };
+        globals.__applyTheme = apply;
+        const chosen = store.get();
+        apply(chosen || (media && media.matches ? "dark" : "light"));
+        // Follow the Mac while no explicit choice has been stored.
+        if (media && media.addEventListener) {
+          media.addEventListener("change", (event) => {
+            if (!store.get()) apply(event.matches ? "dark" : "light");
+          });
+        }
+        globals.__themeReady = true;
+      } catch { /* decoration only: never take the signing screen down */ }
+    })();
+    try {
+      const globals = typeof window === "undefined" ? {} : window;
+      const button = document.getElementById && document.getElementById("theme-toggle");
+      if (button && button.addEventListener) {
+        button.addEventListener("click", () => {
+          const root = document.documentElement || document.body;
+          const next = root.dataset.theme === "dark" ? "light" : "dark";
+          if (typeof globals.__applyTheme === "function") globals.__applyTheme(next);
+          try { localStorage.setItem("besa-theme", next); } catch { /* private mode */ }
+        });
+        // T toggles too, but never while the operator is typing an address or an
+        // amount: a bare "t" is a legitimate keystroke in both.
+        document.addEventListener("keydown", (event) => {
+          if (event.key !== "t" && event.key !== "T") return;
+          if (event.metaKey || event.ctrlKey || event.altKey) return;
+          const field = event.target;
+          if (field && (field.tagName === "INPUT" || field.tagName === "SELECT" ||
+                        field.tagName === "TEXTAREA" || field.isContentEditable)) return;
+          button.click();
+        });
+      }
+    } catch { /* decoration only */ }
+
     // The access token arrives in the URL fragment, which a browser never sends
     // to the server, so it does not appear in this page's source.
     const token = (() => {
+      // The hash may be "#token=..." or "#&token=...", so both separators must
+      // match. Dropping the "#" here silently breaks every launch.
       const match = location.hash.match(/[#&]token=([^&]+)/);
       return match ? decodeURIComponent(match[1]) : "";
     })();
