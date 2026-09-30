@@ -35,7 +35,8 @@ every version:
 | 0.4.9 | A fraction of a Bitcoin no longer needs a leading zero | — |
 | 0.4.10 | One progress bar, and only the operation that owns it may change or clear it | — |
 | 0.4.11 | The amount box states that a leading zero is optional | — |
-| **0.4.12** | **Current.** The first **notarized** release: installs with a normal double-click | — |
+| 0.4.12 | The first **notarized** release: installs with a normal double-click | — |
+| **0.4.13** | **Current.** Light and dark themes, one palette of roles, and a toggle | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -565,7 +566,7 @@ Suite: **193 tests, 0 failures**, plus seven Node DOM tests. Copy and hint text
 only; no change to the PSBT construction path, the signature-verification rules,
 fee policy, or the set of networks on which broadcast is possible.
 
-## 0.4.12 — the first notarized release (current)
+## 0.4.12 — the first notarized release
 
 **No application behaviour changed.** This release exists so the download can be
 installed the way any Mac app is: double-click the DMG, drag the app to
@@ -611,3 +612,64 @@ source (`python desktop.py`, seconds), package unsigned for bundle testing, and
 notarize only to publish.
 
 Suite: **210 tests, 0 failures**, plus seven Node DOM tests.
+
+## 0.4.13 — light and dark, one palette (current)
+
+**No application behaviour changed.** This release is appearance: the app now has a
+light theme and a dark theme, a moon/sun button in the header to switch between them,
+and a colour palette small enough to hold in your head.
+
+### Why it was worth doing properly
+
+The owner noticed colours changing between revisions without anyone asking. That was
+real, and the cause was structural rather than carelessness: every new surface was
+written as a fresh hex value instead of reusing a named one, and nothing was watching.
+By 0.4.12 `ui.html` held **113 colour literals and 91 distinct values, of which only 10
+had ever been chosen.** The other 89 were borders, hover shades, focus rings and
+shadows, each reasonable on the day it was added.
+
+Five hues now fill a fixed set of roles:
+
+| Hue | Roles |
+|---|---|
+| neutral | `--canvas` `--paper` `--sunken` `--header*` `--ink` `--muted` `--line*` |
+| accent | `--accent*` `--focus` — the one action colour |
+| pending | `--pending*` — waiting and caution |
+| done | `--done*` — completed and verified |
+| failed | `--failed*` — refused and error |
+
+Every rule names a role. Mainnet stopped being 13 override rules carrying their own
+hex values and became the same roles read more loudly, so it themes automatically and
+its alarm survives the change from light to dark.
+
+### Why the theme cannot break the app
+
+The theme code runs in front of every other line, so an exception in it would have
+cost the signing screen rather than the theme. It probes each browser API before use
+and the whole block is wrapped.
+
+That was not theoretical. The suite's DOM harnesses stub a deliberately minimal
+document, and the first version broke **all seven** of them by assuming `window`. The
+failure was worth more than the tests it fixed: a decoration reaching for a global
+that might not exist, in front of a money-moving app, is the shape of the bug that
+does the damage.
+
+### How it stays fixed
+
+`tests/test_palette.py` fails the build when:
+
+- a colour is named anywhere outside the four palette blocks;
+- light and dark do not define exactly the same roles — a role missing from dark
+  silently inherits the light value, which is exactly how one white border appears on
+  a dark screen;
+- mainnet overrides a role that does not exist;
+- `--ink` falls below 7:1 against `--canvas` or `--paper`, because addresses and
+  amounts are read character by character and a theme that makes that harder is wrong
+  whatever it looks like.
+
+All four guards are mutation-checked: reintroducing each fault is detected.
+
+One existing test was itself holding the drift in place — `test_slow_work_shows_a_spinner`
+asserted the literal `#ffd447`. It now asserts the role.
+
+Suite: **224 tests, 0 failures**, plus eight Node DOM tests.
