@@ -43,7 +43,10 @@ passed and assets matched `SHA256SUMS` — integrity, not publisher identity or 
 - **No mainnet transaction has ever been prepared, signed, or broadcast by this app.**
   Mainnet broadcast is refused in code, not merely hidden in the UI.
 - **No notarized or Developer ID-signed build.** The DMG is ad-hoc signed and needs
-  right-click → Open; no recipient can attribute it to a publisher.
+  right-click → Open; no recipient can attribute it to a publisher. The signing and
+  notarization path is now wired and fails closed without credentials, so this is
+  waiting only on the Apple Developer Program purchase and the certificates; see
+  `PHASE-HANDOFF.md` for the exact secrets.
 - **The live mainnet wallet's change policy is unverified.** Ambiguous BSMS exports use
   a strictly gated BIP48 `/1/*` inference corroborated only for the practice wallet;
   verify the first unused change address and its derivation before a mainnet send.
