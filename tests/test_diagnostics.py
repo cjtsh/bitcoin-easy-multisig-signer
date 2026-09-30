@@ -66,6 +66,17 @@ class DiagnosticTests(unittest.TestCase):
                          "the device class is recorded, lowercased")
         self.assertEqual(events[2]["found"], ["jade", "trezor"],
                          "a check records which device classes it saw, sorted and deduped")
+        # A check that saw nothing must say so explicitly. An absent key used to
+        # carry the same meaning, and a real report showed two of four checks in
+        # that state, where a reader cannot tell it from a field never written.
+        state.note("signer_check", "passed", found=[])
+        with tempfile.TemporaryDirectory() as temporary:
+            again = json.loads(
+                Path(save_diagnostic_report(state, Path(temporary))["path"]).read_text())
+        self.assertEqual(again["events"][-1]["found"], [],
+                         "a check that found no usable device must write an empty list")
+        self.assertNotIn("found", again["events"][0],
+                         "a stage with no device check must not carry the key")
         # Anything that is not a plain token is dropped rather than escaped into
         # the report: a path is an identity, and free text is how wallet material
         # leaks. The event survives; the value does not.

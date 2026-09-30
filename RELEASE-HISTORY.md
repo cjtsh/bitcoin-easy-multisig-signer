@@ -404,7 +404,7 @@ that payment, the report could not have said so.
 
 Rejections are now attributed through an explicit `DIAGNOSTIC_ROUTE_STAGES` map.
 Routes deliberately absent from it — fee estimates, price, settings, status — are
-ordinary interface feedback and now record **nothing**: six of the twenty-two
+ordinary interface feedback and now record **nothing**: five of the twenty-one
 events in the owner's report were debounced estimate calls, and the buffer holds
 only 80 events, so chatter was evicting the events that matter.
 
@@ -478,8 +478,25 @@ amount mentions the 546-satoshi floor. That message was previously shown for eve
 rejected spelling, including amounts far larger than the floor.
 
 `tests/ui_amount_entry.cjs` pins the accepted spellings, the canonical rewrite,
-the refusal of genuinely bad input, and each distinct message. Suite: **193 tests,
-0 failures**, plus six Node DOM tests; the three mutations that reintroduce each
-fault are all detected. No change to the PSBT construction path, the
-signature-verification rules, fee policy, or the set of networks on which
+the refusal of genuinely bad input, and each distinct message.
+
+### A successful report, and the one thing it exposed
+
+The owner's first 0.4.8 report is a clean two-device Mutinynet payment — Trezor
+then Jade, `signer_response: verified` for each, `final_transaction: verified`,
+`broadcast: accepted` — and it confirms the 0.4.8 work: **13 events, none
+unattributable, every one carrying its network**, against 21 events with 5
+unattributable and no network at all before. Its timings also show the dead zone
+closing: the Trezor signature verified at 13:45:40 and the next device re-scan
+landed at 13:45:47, so the box would previously have sat offering to sign for
+those seven seconds.
+
+It also exposed one ambiguity. Two of its four `signer_check` events carried no
+`found` key, which meant "no usable device was visible" — but a reader could not
+tell that apart from a field the app does not write. `found` is now written
+whenever a check runs, as an explicit `[]` when nothing usable was seen.
+
+Suite: **193 tests, 0 failures**, plus six Node DOM tests; the three mutations that
+reintroduce each fault are all detected. No change to the PSBT construction path,
+the signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
