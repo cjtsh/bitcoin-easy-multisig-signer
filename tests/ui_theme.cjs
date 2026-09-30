@@ -141,10 +141,10 @@ function build({ systemDark = false, stored = null, themeToggle = true,
 //     "the theme is dark", depending on who is reading it.
 {
   const app = build({ systemDark: false });
-  assert.equal(app.button.textContent, 'Dark theme',
+  assert.equal(app.button.textContent, 'Dark Theme',
     'the button must name the theme you would get, in words');
   app.button.click();
-  assert.equal(app.button.textContent, 'Light theme', 'and it must flip with the theme');
+  assert.equal(app.button.textContent, 'Light Theme', 'and it must flip with the theme');
   assert.doesNotMatch(html, /\u2600|\ud83c\udf19|\u{1F319}/u,
     'no sun or moon glyphs anywhere in the page');
 }
