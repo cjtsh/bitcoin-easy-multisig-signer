@@ -681,10 +681,16 @@
       // poor advice when the amount typed was larger than that but had nine
       // decimal places, and it was the message shown for every rejected spelling.
       const raw = String(text == null ? "" : text).trim();
-      if (!raw) return "Enter a BTC amount, or tick Send all.";
+      // A leading zero is accepted but never required, and the form has to say so:
+      // it used to be mandatory, so anyone who hit that wall still avoids typing
+      // ".001". Naming both spellings teaches the rule without inventing one.
+      if (!raw) {
+        return "Enter a BTC amount — .001 and 0.001 both work. The minimum is "
+          + "0.00000546, or tick Send all.";
+      }
       const normalised = raw.replace(/^\./, "0.").replace(/\.$/, "");
       if (!/^\d+(?:\.\d+)?$/.test(normalised)) {
-        return "Enter the amount as a number of Bitcoin, for example 0.00100000.";
+        return "Enter the amount as a number of Bitcoin, for example .001 or 0.001.";
       }
       if (/^\d+\.\d{9,}$/.test(normalised)) {
         return "Bitcoin amounts use at most 8 decimal places. Remove the extra digits.";
@@ -834,7 +840,7 @@
       // silently select a sweep. The owner must choose Send All explicitly.
       $("amount").disabled = !walletCanPrepare || $("send-all").checked;
       $("amount").placeholder = !walletCanPrepare ? "Change addresses required for a smaller send" :
-        ($("send-all").checked ? "Calculated after fee" : "e.g. 0.00100000");
+        ($("send-all").checked ? "Calculated after fee" : "e.g. .001 or 0.001");
       updateSendEquivalent();
     }
     function resetSendChoice() {
