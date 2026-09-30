@@ -93,30 +93,64 @@ class PaletteShapeTests(unittest.TestCase):
                 self.assertEqual(sorted(overrides - light), [],
                                  f"{selector} declares roles the palette does not have")
 
-    def test_mainnet_is_alarming_in_both_themes(self):
-        """The safety signal has to survive the theme change.
+    def test_the_network_frame_is_the_whole_of_mainnet_mode(self):
+        """The owner's design: an orange frame means real money, green means practice.
 
-        On real Bitcoin the operator must notice. A mainnet header that renders
-        calm in dark mode is a safety regression, not a style choice.
+        Everything inside the frame must be IDENTICAL, so that a button, a notice and
+        a link mean the same thing on every network. Mainnet used to repaint the
+        canvas, the header, the borders and the action colour, which is how "Review
+        payment" came out burnt orange on a step that signs nothing and sends nothing.
+
+        A frame is a better signal: peripheral, so it never competes with the amount
+        or the destination; unmistakable, because it surrounds everything; and it
+        leaves the interior alone. This test is deliberately strict - if a future
+        change needs a second role in mainnet mode, that is the moment to ask why.
         """
-        light = token_block(self.css, "body.live-mode")
-        dark = token_block(self.css, '[data-theme="dark"] body.live-mode')
-        for name, block in (("light", light), ("dark", dark)):
-            with self.subTest(theme=name):
-                self.assertTrue(block, f"mainnet has no {name} treatment")
-                self.assertIn("--header", block)
-                self.assertIn("--canvas", block)
-                self.assertIn("--accent", block)
+        for selector in ("body.live-mode", '[data-theme="dark"] body.live-mode'):
+            with self.subTest(selector=selector):
+                overrides = token_names(token_block(self.css, selector))
+                self.assertEqual(
+                    sorted(overrides), ["--frame"],
+                    f"{selector} changes more than the frame; mainnet mode is a frame "
+                    "and nothing else")
+
+    def test_the_frame_distinguishes_real_bitcoin_from_practice_coins(self):
+        """A frame nobody can tell apart is not a signal."""
+        for selector in (':root, [data-theme="light"]', '[data-theme="dark"]'):
+            with self.subTest(theme=selector):
+                practice = dict(re.findall(
+                    r"(--frame)\s*:\s*(#[0-9a-fA-F]{3,8})", token_block(self.css, selector)))
+                self.assertTrue(practice, f"{selector} defines no --frame")
+                mainnet = token_block(self.css, "body.live-mode")
+                if "dark" in selector:
+                    mainnet = token_block(self.css, '[data-theme="dark"] body.live-mode')
+                self.assertNotEqual(
+                    practice["--frame"], dict(re.findall(r"(--frame)\s*:\s*(#[0-9a-fA-F]{3,8})",
+                                                         mainnet)).get("--frame", practice["--frame"]),
+                    f"{selector}: practice and mainnet frames are the same colour")
+
+    def test_the_frame_can_never_swallow_a_click(self):
+        """A decoration around a signing screen must not eat a press."""
+        frame = re.search(r"body::after\s*\{(.*?)\}", self.css, re.S)
+        self.assertIsNotNone(frame, "the network frame is not defined")
+        rules = frame.group(1)
+        self.assertIn("position:fixed", rules.replace(" ", ""),
+                      "the frame must surround the viewport, not the document")
+        self.assertIn("pointer-events:none", rules.replace(" ", ""),
+                      "the frame must never intercept a click")
 
     def test_the_palette_stays_small_enough_to_hold_in_your_head(self):
         """Five hues, assigned to roles. The ceiling is deliberate.
 
         If this fails, the question is not how to raise the limit: it is which of
-        the new roles is really an existing one under a different name.
+        the new roles is really an existing one under a different name. It was
+        raised once, from 30 to 32, for `--frame` - the network signal the owner
+        designed - which is a genuinely new job rather than a restatement of an
+        existing one.
         """
         roles = token_names(token_block(self.css, ':root, [data-theme="light"]'))
         self.assertLessEqual(
-            len(roles), 30,
+            len(roles), 32,
             f"the palette has grown to {len(roles)} roles; it was designed as a "
             "handful of hues filling fixed roles")
 

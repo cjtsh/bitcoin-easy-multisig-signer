@@ -36,6 +36,8 @@
       /* action */
       --accent:#0f766e; --accent-hover:#115e59; --accent-ink:#ffffff; --accent-soft:#e6f4f1;
       --focus:#0f766e;
+      /* the network frame: practice networks are green */
+      --frame:#4ade80;
       /* states */
       --pending:#92400e; --pending-bg:#fffbeb; --pending-line:#d97706;
       --done:#065f46; --done-bg:#ecfdf5; --done-line:#10b981;
@@ -55,6 +57,7 @@
       --line:#243049; --line-strong:#33415c;
       --accent:#2dd4bf; --accent-hover:#5eead4; --accent-ink:#04211e; --accent-soft:#0d2f2c;
       --focus:#2dd4bf;
+      --frame:#22c55e;
       --pending:#fcd34d; --pending-bg:#2a1f08; --pending-line:#d97706;
       --done:#6ee7b7; --done-bg:#0d2b24; --done-line:#10b981;
       --failed:#fca5a5; --failed-bg:#2c1214; --failed-line:#ef4444;
@@ -63,29 +66,41 @@
       --shadow-lg:0 24px 60px rgba(0,0,0,.62);
       --scrim:rgba(2,6,16,.72);
     }
-    /* Mainnet. The same five hues, unmistakably alarming: an operator must
-       never mistake real Bitcoin for a practice network. This is a mode, not a
-       second palette, so it overrides roles rather than declaring colours. */
+    /* Real Bitcoin wears an orange frame; practice coins wear green.
+       That single change is the whole of mainnet mode.
+
+       It used to repaint the canvas, the header, the borders and - worst of all -
+       the action colour, so "Review payment" came out burnt orange. The owner
+       read it exactly as written: you do not want to click red things. A step
+       that signs nothing and sends nothing was dressed as the dangerous button.
+
+       A frame is a better signal than a repaint. It is peripheral, so it never
+       competes with the amount or the destination for attention; it is
+       unmistakable, because it surrounds everything; and it leaves the interior
+       alone, so a button means the same thing on every network. Severity on a
+       control belongs to the one action that is truly irreversible, and that is
+       not a colour scheme's job. */
     body.live-mode {
-      --canvas:#fff7ed; --paper:#fffdfa; --sunken:#fff1e2;
-      --header:#431407; --header-ink:#ffedd5; --header-muted:#fdba74; --header-rule:#ea580c;
-      --line:#fed7aa; --line-strong:#fdba74;
-      --accent:#c2410c; --accent-hover:#9a3412; --accent-ink:#ffffff; --accent-soft:#ffedd5;
-      --focus:#ea580c;
-      --pending:#7c2d12; --pending-bg:#ffedd5; --pending-line:#ea580c;
+      --frame:#f97316;
     }
-    [data-theme="dark"] body.live-mode {
-      --canvas:#1c1005; --paper:#241505; --sunken:#1e1206;
-      --header:#3a1a05; --header-ink:#ffedd5; --header-muted:#fdba74; --header-rule:#f97316;
-      --line:#4a2a0c; --line-strong:#6b3a11;
-      --accent:#fb923c; --accent-hover:#fdba74; --accent-ink:#2a1405; --accent-soft:#3a2107;
-      --focus:#fb923c;
-      --pending:#fdba74; --pending-bg:#33200a; --pending-line:#ea580c;
-    }
+    [data-theme="dark"] body.live-mode { --frame:#f97316; }
 
     * { box-sizing:border-box; }
     body { margin:0; background:var(--canvas); color:var(--ink); font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
       transition:background-color .15s ease, color .15s ease; }
+    /* The network frame.
+
+       Fixed rather than a border on <body>, so it surrounds the viewport whatever
+       the page height is, and pointer-events:none so it can never intercept a
+       click: a decoration around a signing screen must not be able to swallow a
+       press. It sits above the busy bar so the signal cannot be hidden by
+       progress, and below <dialog>, which renders in the top layer and is its own
+       focused context. */
+    body::after {
+      content:""; position:fixed; inset:0; z-index:80; pointer-events:none;
+      border:7px solid var(--frame);
+      transition:border-color .15s ease;
+    }
     /* The header carries the theme control, so it is a positioning context. */
     .top { position:relative; padding:34px max(84px,calc((100vw - 1060px)/2 + 62px)) 37px max(22px,calc((100vw - 1060px)/2));
       background:var(--header); color:var(--header-ink); border-bottom:4px solid var(--header-rule); }
