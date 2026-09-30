@@ -20,7 +20,8 @@ from embit.networks import NETWORKS  # noqa: E402
 from fake_explorer import three_output_wallet  # noqa: E402
 from probe import parse_bsms  # noqa: E402
 from signing import (SigningError, accept_signature_update, finalize_multisig,
-                     is_complete, parse_multisig_script, signatures_collected)
+                     is_complete, parse_multisig_script, signatures_collected,
+                     verified_input_signatures)
 from test_probe import test_record  # noqa: E402
 from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
 
@@ -239,6 +240,51 @@ class FinalizeTests(unittest.TestCase):
         with self.assertRaises(SigningError) as err:
             finalize_multisig(packet, "00" * 32)
         self.assertIn("changed while signing", str(err.exception))
+
+    def test_only_sighash_all_is_accepted(self):
+        """A signature relabelled to another sighash must not be counted.
+
+        The trailing sighash byte is stripped before ECDSA verification, so
+        without the explicit check a genuine ALL signature relabelled as NONE or
+        SINGLE would still verify against the ALL digest and be accepted. Only
+        SIGHASH_ALL can be assembled into a safe multisig witness here.
+        """
+        for sighash in (0x00, 0x02, 0x03, 0x81, 0x82, 0x83):
+            with self.subTest(sighash=sighash):
+                packet, keys, _ = prepared_psbt()
+                sign(packet, keys[:2])
+                scope = packet.inputs[0]
+                pub = next(iter(scope.partial_sigs))
+                scope.partial_sigs[pub] = (
+                    scope.partial_sigs[pub][:-1] + bytes([sighash])
+                )
+                with self.assertRaisesRegex(SigningError, "sighash type"):
+                    verified_input_signatures(packet)
+
+    def test_removing_a_prior_signature_is_refused(self):
+        """A device that drops a signature it was given must not be accepted."""
+        before, keys, _ = prepared_psbt()
+        sign(before, keys[:2])
+        after = E.PSBT.from_base64(before.to_base64())
+        scope = after.inputs[0]
+        del scope.partial_sigs[next(iter(scope.partial_sigs))]
+        with self.assertRaisesRegex(SigningError,
+                                    "removed or changed an earlier signature"):
+            accept_signature_update(before, after)
+
+    def test_an_altered_prior_signature_is_refused(self):
+        """Changing a signature already held is the same failure as dropping it."""
+        before, keys, _ = prepared_psbt()
+        sign(before, keys[:2])
+        after = E.PSBT.from_base64(before.to_base64())
+        scope = after.inputs[0]
+        victim = next(iter(scope.partial_sigs))
+        damaged = bytearray(scope.partial_sigs[victim])
+        damaged[5] ^= 1
+        scope.partial_sigs[victim] = bytes(damaged)
+        with self.assertRaisesRegex(SigningError,
+                                    "removed or changed an earlier signature"):
+            accept_signature_update(before, after)
 
     def test_a_script_that_is_not_multisig_is_refused(self):
         with self.assertRaises(SigningError):

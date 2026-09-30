@@ -195,6 +195,12 @@ def _hwi_path(executable: str) -> str:
         bundled = Path(sys.executable).with_name("hwi")
         if bundled.is_file():
             return str(bundled)
+        # A packaged build must never fall through to a PATH search: a
+        # substituted binary would then be executed by the app. The device
+        # bridge is broken either way, and failing loudly is the safe half.
+        raise ProbeError(
+            "The bundled hardware-wallet tool is missing from this installation."
+        )
     found = shutil.which(executable)
     if found is None:
         raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
