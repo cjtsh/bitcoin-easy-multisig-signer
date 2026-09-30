@@ -31,7 +31,8 @@ every version:
 | 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
 | 0.4.6 | One signing box per cosigner, so the missing signer is visible at a glance | — |
 | 0.4.7 | Correction: the final signature fills its own box, and completing does not scroll the boxes off screen | — |
-| **0.4.8** | **Current.** Attributable diagnostics, and visible progress that never advertises a wait | — |
+| 0.4.8 | Attributable diagnostics, and visible progress that never advertises a wait | — |
+| **0.4.9** | **Current.** A fraction of a Bitcoin no longer needs a leading zero | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -387,7 +388,7 @@ Suite: **189 tests, 0 failures**, plus four Node DOM tests. No change to the
 PSBT construction path, the signature-verification rules, fee policy, or the set
 of networks on which broadcast is possible.
 
-## 0.4.8 — attributable diagnostics and visible progress (current)
+## 0.4.8 — attributable diagnostics and visible progress
 
 Two threads, both from the owner reading a real 0.4.7 diagnostic report from a
 successful two-device Mutinynet payment.
@@ -455,3 +456,30 @@ to the diagnostic vocabulary, the progress bar and its copy. No change to the
 PSBT construction path, the signature-verification rules, fee policy, or the set
 of networks on which broadcast is possible. Mainnet broadcast remains refused in
 code.
+
+## 0.4.9 — a fraction of a Bitcoin needs no leading zero (current)
+
+Reported by the owner from the amount box: typing a fraction without a leading
+zero left the amount apparently broken. `btcToSats` matched
+`/^\d+(?:\.\d{1,8})?$/`, so `.1` and `.0001` were refused outright while `0.1`
+worked, and the only feedback was *"Enter a BTC amount of at least 0.00000546,
+with up to 8 decimal places"* — which blamed the size for a spelling problem. The
+fee estimate then never appeared, so the box looked dead.
+
+**The natural spelling is now accepted rather than taught against.** A leading
+bare `.` is normalised to `0.`, and a trailing `.` — what the box holds half-way
+through typing `1.5` — is tolerated. Leaving the box rewrites it into the
+canonical form, so `.1` visibly becomes `0.1` and the habit teaches itself rather
+than being explained.
+
+The rejection message now says what is actually wrong: too many decimal places
+says so, unparseable input asks for a number, and only a genuinely below-dust
+amount mentions the 546-satoshi floor. That message was previously shown for every
+rejected spelling, including amounts far larger than the floor.
+
+`tests/ui_amount_entry.cjs` pins the accepted spellings, the canonical rewrite,
+the refusal of genuinely bad input, and each distinct message. Suite: **193 tests,
+0 failures**, plus six Node DOM tests; the three mutations that reintroduce each
+fault are all detected. No change to the PSBT construction path, the
+signature-verification rules, fee policy, or the set of networks on which
+broadcast is possible.
