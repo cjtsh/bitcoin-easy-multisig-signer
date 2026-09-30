@@ -415,6 +415,9 @@
           </details></div><code id="review-change" class="mono"></code></div>
         <div id="review-warning" class="notice"></div>
         <div id="review-fee-warning" class="notice" hidden></div>
+        <label id="sweep-ack-row" class="check" hidden><input id="confirm-sweep" type="checkbox">
+          <span>This sweep sends <strong>every</strong> confirmed output the scan found. The scan stops
+            after 20 consecutive unused addresses, so any Bitcoin beyond that gap is left behind.</span></label>
         <label class="check"><input id="confirm-review" type="checkbox">
           <span>I checked the network, full destination, BTC amount, fee and any change shown above. No Bitcoin has been sent yet.</span></label>
         <label id="fee-ack-row" class="check" hidden><input id="confirm-fee" type="checkbox">
@@ -462,6 +465,9 @@
               <span>I checked the destination, amount and fee above, and I want to broadcast this
                 exact transaction to the selected practice network. This cannot be undone.</span></label>
             <button id="broadcast" type="button" disabled>Broadcast payment</button>
+            <button id="clear-signed" type="button" class="secondary" disabled>Clear this signed transaction</button>
+            <p class="small muted">A signed transaction that has not been broadcast can still be submitted by
+              anyone who obtains its bytes. Clearing it discards the signatures from this session.</p>
             <div id="broadcast-message" role="status" aria-live="polite"></div>
           </div>
         </div>
@@ -748,7 +754,9 @@
                         "final-destination", "final-change", "final-fee-rate",
                         "final-vsize", "final-signers", "final-txid"]) setText(id, "");
       $("confirm-broadcast").checked = false; $("broadcast").disabled = true;
+      $("clear-signed").disabled = true;
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
+      $("confirm-sweep").checked = false; $("sweep-ack-row").hidden = true;
     }
     function updateSendMode() {
       // Missing change ownership makes partial sends unsafe, but must never
@@ -988,7 +996,7 @@
         " · refreshed " + new Date(data.scanned_at).toLocaleString() + ".");
       setText("coverage", (data.coverage_limited ?
         "Partial coverage: do not treat this as a complete wallet balance." :
-        "Balance from a standard gap scan; older or unusual addresses may be missed.") +
+        "Balance from a standard gap scan: it stops after 20 consecutive unused addresses, so older or unusual addresses may be missed.") +
         (selectedChain() === "main" ? " Explorer data can be stale." : "") +
         (data.pending_delta_sats < 0 ?
           " A payment is still confirming: the spendable amount is lower than the" +
@@ -1205,6 +1213,7 @@
         setText("review-fee-warning", feeWarning);
         $("fee-ack-row").hidden = !feeWarning;
         $("confirm-review").checked = false; $("confirm-fee").checked = false;
+        $("confirm-sweep").checked = false; $("sweep-ack-row").hidden = !$("send-all").checked;
         $("download").disabled = true;
         $("review").hidden = false; msg("send-message", "Unsigned transaction file ready. Nothing has been signed or sent.");
       } catch (e) { if (started === sendActionId) msg("send-message", e.message, true); }
@@ -1212,14 +1221,20 @@
     });
     function updateDownload() {
       const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
+      // A sweep needs its own acknowledgement: it moves everything this scan
+      // found, and the scan stops looking after a fixed unused-address gap.
+      $("sweep-ack-row").hidden = !$("send-all").checked;
       const confirmed = $("confirm-review").checked &&
         (!isLargeAmount(sats) || $("confirm-large-amount").checked) &&
-        ($("fee-ack-row").hidden || $("confirm-fee").checked);
+        ($("fee-ack-row").hidden || $("confirm-fee").checked) &&
+        ($("sweep-ack-row").hidden || $("confirm-sweep").checked);
       $("download").disabled = !confirmed || !currentPsbt;
       $("next-signers").disabled = !confirmed || !currentPsbt;
+      $("clear-signed").disabled = !currentPsbt;
     }
     $("confirm-review").addEventListener("change", updateDownload);
     $("confirm-fee").addEventListener("change", updateDownload);
+    $("confirm-sweep").addEventListener("change", updateDownload);
     $("confirm-large-amount").addEventListener("change", () => {
       updateDownload(); renderFeeGuidance();
     });
@@ -1390,6 +1405,26 @@
     }
     $("confirm-broadcast").addEventListener("change", () => {
       $("broadcast").disabled = !$("confirm-broadcast").checked || !finalTxid;
+    });
+    $("clear-signed").addEventListener("click", async () => {
+      const reviewId = preparationId;
+      if (!reviewId || $("clear-signed").disabled) return;
+      try {
+        await post("/api/clear", {preparation_id: reviewId});
+      } catch (e) {
+        msg("broadcast-message", (e && e.message) || "Could not clear the transaction.", true);
+        return;
+      }
+      // Keep the panel visible so the confirmation can be read, but retire every
+      // value it was showing: the signed bytes are gone and must not look live.
+      finalTxid = null; preparationId = null;
+      $("confirm-broadcast").checked = false; $("broadcast").disabled = true;
+      $("clear-signed").disabled = true;
+      for (const id of ["final-amount", "final-fee", "final-vsize", "final-signers",
+                        "final-network", "final-destination", "final-change",
+                        "final-fee-rate", "final-txid"]) setText(id, "");
+      $("broadcast-message").className = "";
+      msg("broadcast-message", "The signed transaction has been discarded from this session.");
     });
     $("broadcast").addEventListener("click", async () => {
       if (!finalTxid || $("broadcast").disabled) return;

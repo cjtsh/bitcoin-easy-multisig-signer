@@ -11,6 +11,7 @@ local server itself.
 
 import base64
 import json
+import re
 import tempfile
 import threading
 import time
@@ -384,6 +385,70 @@ class TransactionJourneyTests(ApiTestCase):
         _status, page = self.get_page()
         self.assertNotIn(self.token, page)
         self.assertNotIn("__LOCAL_TOKEN__", page)
+
+    def test_the_inline_script_needs_a_nonce_not_unsafe_inline(self):
+        """script-src must not permit arbitrary inline script.
+
+        The page is the only document this server has and it is rebuilt for every
+        request, so a fresh nonce costs nothing. Without it an injected, or
+        future, inline script would inherit the allowance.
+        """
+        with urllib.request.urlopen(self.base + "/", timeout=15) as response:
+            policy = response.headers["Content-Security-Policy"]
+            page = response.read().decode("utf-8")
+        script_src = policy.split("script-src", 1)[1].split(";", 1)[0]
+        self.assertNotIn("unsafe-inline", script_src)
+        match = re.search(r"'nonce-([A-Za-z0-9_-]+)'", script_src)
+        self.assertIsNotNone(match, f"no nonce in {script_src!r}")
+        self.assertIn(f'<script nonce="{match.group(1)}">', page)
+
+    def test_every_page_load_uses_a_fresh_nonce(self):
+        nonces = set()
+        for _ in range(3):
+            with urllib.request.urlopen(self.base + "/", timeout=15) as response:
+                policy = response.headers["Content-Security-Policy"]
+            nonces.add(re.search(r"'nonce-([A-Za-z0-9_-]+)'", policy).group(1))
+        self.assertEqual(len(nonces), 3, "the nonce must not be reused")
+
+    def test_the_page_requires_its_own_sweep_acknowledgement_and_names_the_gap(self):
+        """Send All moves everything the scan found, and the scan stops at a gap.
+
+        The generic review checkbox does not mention either, so a sweep needs a
+        control that does, and the operator needs the number.
+        """
+        _status, page = self.get_page()
+        self.assertIn('id="confirm-sweep"', page)
+        self.assertIn("20 consecutive unused addresses", page)
+
+    def test_clearing_a_prepared_payment_discards_it(self):
+        """A signed-but-unbroadcast transaction is spend authority.
+
+        Ending its life in app state should be a deliberate action, so the
+        endpoint must clear the payment and refuse to be replayed.
+        """
+        self.import_wallet()
+        self.post("/api/scan", {"chain": "testnet4"})
+        _status, prepared = self.post("/api/prepare", {
+            "chain": "testnet4",
+            "recipient": self.layout.receive.derive(5).address(NETWORKS["test"]),
+            "amount_sats": 1_000, "send_all": False, "fee_rate": 5,
+        })
+        self.assertIsNotNone(self.state.prepared)
+
+        # A stale or guessed id must not clear somebody else's review.
+        status, body = self.post("/api/clear", {"preparation_id": "not-the-review"})
+        self.assertEqual(status, 400)
+        self.assertIn("Review the current transaction", body["error"])
+        self.assertIsNotNone(self.state.prepared)
+
+        status, body = self.post("/api/clear",
+                                 {"preparation_id": prepared["preparation_id"]})
+        self.assertEqual(status, 200)
+        self.assertTrue(body["cleared"])
+        self.assertIsNone(self.state.prepared)
+        # Clearing twice is a refusal, not a silent success.
+        self.assertEqual(self.post("/api/clear",
+                                   {"preparation_id": prepared["preparation_id"]})[0], 400)
 
 
 class LargeAmountGateTests(ApiTestCase):
