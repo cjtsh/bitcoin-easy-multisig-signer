@@ -18,7 +18,8 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
 cp README.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md \
-  PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md SECURITY-REVIEW-0.2.0.md \
+  RELEASE-HISTORY.md PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md \
+  AUDIT-DEEPSEEK-0.4.3.md AUDIT-ZAI-0.4.3.md SECURITY-REVIEW-0.2.0.md \
   PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md PATCH-0.4.0.md PATCH-0.4.1.md PATCH-0.4.2.md CHANGE-ADDRESS-REVIEW.md \
   PLAN-0.3.0.md MUTINYNET-0.3.0.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
@@ -34,6 +35,18 @@ for file in ./*.py; do
 done
 if (( ${#missing[@]} )); then
   echo "Source archive is incomplete; missing: ${missing[*]}" >&2
+  exit 1
+fi
+
+# Every root document must ship too. RELEASE-HISTORY.md was left off the copy list
+# while README.md and AGENTS.md still directed reviewers to read it, so the archive
+# shipped a README linking to a file it did not contain.
+missing_docs=()
+for file in ./*.md; do
+  [[ -f "$stage/$root/$(basename "$file")" ]] || missing_docs+=("$(basename "$file")")
+done
+if (( ${#missing_docs[@]} )); then
+  echo "Source archive is missing documents: ${missing_docs[*]}" >&2
   exit 1
 fi
 cp tests/test_*.py tests/support.py tests/fake_explorer.py \
