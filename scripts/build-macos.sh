@@ -21,8 +21,22 @@ app_version="$(python3 -c 'from version import APP_VERSION; print(APP_VERSION)')
   echo "DMG version $version does not match app version $app_version." >&2
   exit 1
 }
-if [[ "${RELEASE:-0}" == 1 && ( -z "${MAC_SIGN_IDENTITY:-}" || -z "${MAC_NOTARY_PROFILE:-}" ) ]]; then
-  echo "Public DMG requires MAC_SIGN_IDENTITY and MAC_NOTARY_PROFILE on this Mac." >&2
+# Which notarisation credentials to present. notary-args.sh refuses a partial or
+# ambiguous configuration rather than guessing, because guessing would mean signing
+# with credentials the operator did not intend.
+if ! notary_output="$(bash scripts/notary-args.sh)"; then
+  echo "Notarisation credentials are set incompletely; refusing to guess." >&2
+  exit 1
+fi
+notary_args=()
+if [[ -n "$notary_output" ]]; then
+  # A while-read loop, not mapfile: macOS ships bash 3.2, which has no mapfile.
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && notary_args+=("$line")
+  done <<< "$notary_output"
+fi
+if [[ "${RELEASE:-0}" == 1 && ( -z "${MAC_SIGN_IDENTITY:-}" || ${#notary_args[@]} -eq 0 ) ]]; then
+  echo "Public DMG requires MAC_SIGN_IDENTITY and a notarisation credential: set MAC_NOTARY_PROFILE, or all of MAC_NOTARY_KEY_PATH, MAC_NOTARY_KEY_ID and MAC_NOTARY_ISSUER_ID." >&2
   exit 1
 fi
 # hwi 3.2.0 declares Requires-Python >=3.9,<3.13 and is bundled into the app, so a
@@ -177,8 +191,13 @@ fi
 hdiutil create -ov -format UDZO -volname "Bitcoin Easy Signer" \
   -srcfolder "$stage" "$dmg"
 if [[ "${RELEASE:-0}" == 1 ]]; then
-  xcrun notarytool submit "$dmg" --keychain-profile "$MAC_NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$dmg" "${notary_args[@]}" --wait
   xcrun stapler staple "$dmg"
+  # Prove the ticket is attached, then prove Gatekeeper accepts the artifact.
+  # Gatekeeper is the gate the operator actually meets, so a build that cannot be
+  # opened must fail here rather than reach a release.
+  xcrun stapler validate "$dmg"
+  spctl -a -t open --context context:primary-signature -v "$dmg"
 else
   echo "UNSIGNED TEST BUILD: not suitable for a simple public Mac installation."
 fi

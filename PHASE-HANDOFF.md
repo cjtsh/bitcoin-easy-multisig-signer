@@ -48,4 +48,39 @@ The controlled 0.2.1 Testnet4 payment signed with two devices, was accepted by t
 
 ## Remaining Phase 5 dependencies
 
-Current UTXO checks still depend on public explorers (dual-source on mainnet, single-source recheck on practice networks), and fee replacement remains outside this app. Mainnet dry run and a deliberate owner-authorized real send are separate Phase 5 gates; do not enable mainnet broadcast merely because a practice-network walkthrough passes. Developer ID enrollment and notarization remain a human account dependency. The plain-language operator guide and the nontechnical-user walkthrough are also unfinished; see `ROADMAP.md` Phase 5 for the full sequence.
+Current UTXO checks still depend on public explorers (dual-source on mainnet, single-source recheck on practice networks), and fee replacement remains outside this app. Mainnet dry run and a deliberate owner-authorized real send are separate Phase 5 gates; do not enable mainnet broadcast merely because a practice-network walkthrough passes. The plain-language operator guide and the nontechnical-user walkthrough are also unfinished; see `ROADMAP.md` Phase 5 for the full sequence.
+
+## Notarization — wired, waiting only on Apple credentials
+
+The owner's Apple Developer Program enrollment was accepted on 30 September 2026; the membership purchase must still be completed before any credential exists.
+
+**The build path is finished.** `scripts/build-macos.sh` with `RELEASE=1` signs every nested Mach-O (including the bundled `hwi`) with the hardened runtime, seals the `.app`, submits the DMG with `notarytool`, staples it, validates the staple, and then requires `spctl` to accept the artifact. `scripts/notary-args.sh` chooses the credentials and refuses a partial or ambiguous configuration rather than guessing. The workflow exposes the path as an opt-in dispatch input:
+
+```
+gh workflow run build-candidate.yml --ref main -f notarize=true
+```
+
+With `notarize` off, the run produces the usual `-UNSIGNED-TEST.dmg`. With it on, the run **fails closed** unless the credentials below exist, so a "notarized" dispatch can never quietly produce an ad-hoc-signed DMG. Two guards prove that, plus `tests/test_notary_args.py` covering the credential choice without an Apple account.
+
+**What the repository needs** (Settings → Secrets and variables → Actions). Variables are not secret:
+
+| Kind | Name | Value |
+|---|---|---|
+| Variable | `MAC_SIGN_IDENTITY` | `Developer ID Application: NAME (TEAMID)` |
+| Variable | `MAC_NOTARY_KEY_ID` | App Store Connect key ID |
+| Variable | `MAC_NOTARY_ISSUER_ID` | App Store Connect issuer UUID |
+| Secret | `MAC_CERT_P12_BASE64` | Developer ID Application `.p12`, base64 |
+| Secret | `MAC_CERT_PASSWORD` | the `.p12` export password |
+| Secret | `MAC_NOTARY_KEY_P8_BASE64` | the `AuthKey_*.p8`, base64 |
+
+```bash
+base64 -i cert.p12          | tr -d '\n' > cert.p12.b64
+base64 -i AuthKey_XXXX.p8   | tr -d '\n' > authkey.p8.b64
+```
+
+**Two things not yet verified, because they need the credentials:**
+
+1. **The notarization round trip has never run.** Everything up to it is tested; the Apple round trip is not. Watch the first `notarize=true` run end to end and expect to iterate — this is a code-signing integration, and those rarely pass first time.
+2. **The app inside the DMG is not stapled.** Only the DMG gets the ticket. Dragging the app out and running it needs an **online** lookup by Apple; offline, Gatekeeper blocks it. For an offline recovery that matters. Stapling the app means notarizing it separately before building the DMG — an extra round trip of a few minutes per release. Decide before the first public release.
+
+Also note the release notes template in the workflow still carries stale boilerplate from an older release ("the supplied Sparrow and Nunchuk files…"). It is inaccurate for current versions and should be rewritten separately.

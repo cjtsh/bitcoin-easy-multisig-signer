@@ -54,8 +54,9 @@ cp tests/test_*.py tests/support.py tests/fake_explorer.py \
   tests/ui_*.cjs "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
-cp scripts/build-source.sh scripts/build-macos.sh scripts/build-sbom.py scripts/hwi_entry.py \
-  scripts/make-icon.sh "$stage/$root/scripts/"
+# Glob, not a list: build-macos.sh calls notary-args.sh, and an archive missing a
+# script it invokes would build nothing while looking complete.
+cp scripts/*.sh scripts/*.py "$stage/$root/scripts/"
 if [[ -f ci/build-candidate.yml ]]; then
   workflow=ci/build-candidate.yml
 elif [[ -f .github/workflows/build-candidate.yml ]]; then
