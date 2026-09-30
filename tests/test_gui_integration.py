@@ -417,8 +417,13 @@ class TransactionJourneyTests(ApiTestCase):
         control that does, and the operator needs the number.
         """
         _status, page = self.get_page()
+        # Assert each mention of the gap distinctly: both the sweep row and the
+        # coverage line say "20 consecutive unused addresses", so a single loose
+        # assertion would pass with either one deleted.
         self.assertIn('id="confirm-sweep"', page)
-        self.assertIn("20 consecutive unused addresses", page)
+        self.assertIn("This sweep sends", page)
+        self.assertIn("Balance from a standard gap scan: it stops after 20 "
+                      "consecutive unused addresses", page)
 
     def test_clearing_a_prepared_payment_discards_it(self):
         """A signed-but-unbroadcast transaction is spend authority.
