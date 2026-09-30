@@ -29,7 +29,8 @@ function element(tag = 'div') {
       contains: (n) => classes.has(n),
     },
     addEventListener(name, callback) { this.listeners = this.listeners || {}; this.listeners[name] = callback; },
-    scrollIntoView() {}, setAttribute() {}, removeAttribute() {}, focus() {},
+    scrollIntoView() { scrolled.push(this.id || this.tag); },
+    setAttribute() {}, removeAttribute() {}, focus() {},
     closest() { return element(); },
     replaceChildren(...children) { this.children = children; },
     append(...children) { this.children.push(...children); },
@@ -47,9 +48,18 @@ const document = {
   addEventListener() {},
 };
 
+// Responses the app will see. Only /api/sign and /api/finalize are exercised.
+const route = {sign: null, finalize: null};
+const scrolled = [];
+const reply = (body) => Promise.resolve({ok: true, json: async () => body});
 const context = vm.createContext({
   document, location: {hash: '#token=test'},
-  fetch: () => new Promise(() => {}),
+  fetch: (url) => {
+    if (url === '/api/sign') return reply(route.sign);
+    if (url === '/api/finalize') return reply(route.finalize);
+    if (url === '/api/devices') return reply({devices: [], signable: [], threshold: 2, keys: 3, signed: []});
+    return new Promise(() => {});
+  },
   setTimeout: () => 1, clearTimeout() {},
   console,
 });
@@ -117,4 +127,38 @@ assert.equal(boxes().filter((b) => has(b, 'optional')).length, 2,
   'exactly the two surplus boxes grey out');
 assert.equal(boxes().filter((b) => has(b, 'signed')).length, 3);
 
-console.log('Signer boxes: one per cosigner, greyed only once the quota is met, 2-of-3 and 3-of-5.');
+// --- the last signature must fill its own box, in place ---------------------
+// Regression from 0.4.6: signWith returned straight to showFinal, so the final
+// signature never filled its box (the screen read "Signature 2 of 2 collected"
+// next to a box still saying "Click here to sign"), and showFinal scrolled the
+// panel to the top, throwing the completed boxes off screen.
+//
+// Reproduces the reported sequence exactly: the Ledger (signer 2) signed first
+// and is no longer attached, so box 2 shows as signed while box 1 still offers
+// the Jade. Signing with the Jade completes the quota.
+(async () => {
+vm.runInContext('preparationId = "reviewed-1";', context);
+route.sign = {complete: true, signatures: 2, threshold: 2, signers: [1, 2]};
+route.finalize = {txid: 'ab'.repeat(32), amount_sats: 100000, fee_sats: 380,
+                  signers: [1, 2], network: 'mutinynet', vsize: 189};
+render({threshold: 2, keys: 3, signed: [2], signable: [three[0]]});
+assert.ok(has(boxes()[0], 'ready'), 'precondition: the last box is still open');
+assert.ok(has(boxes()[1], 'signed'), 'precondition: the first signature is shown');
+assert.ok(has(boxes()[2], 'waiting'), 'precondition: surplus box not yet greyed');
+
+scrolled.length = 0;
+context.__device = three[0];
+context.__box = boxes()[0];
+await vm.runInContext('signWith(__device, __box)', context);
+
+assert.ok(has(boxes()[0], 'signed'),
+  'the final signature must fill its OWN box, not leave it offering to sign');
+assert.ok(has(boxes()[1], 'signed'), 'and the earlier signature must remain shown');
+assert.ok(has(boxes()[2], 'optional'),
+  'the surplus box greys as soon as the quota is met');
+assert.ok(!scrolled.includes('finalize-step'),
+  'the final panel must not be flung to the top; the boxes stay in view');
+
+console.log('Signer boxes: one per cosigner, greyed only once the quota is met, '
+  + '2-of-3 and 3-of-5; the last signature fills its own box where it stands.');
+})().catch((error) => { console.error(error); process.exit(1); });

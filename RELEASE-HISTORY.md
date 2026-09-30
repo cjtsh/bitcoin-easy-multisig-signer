@@ -29,7 +29,8 @@ every version:
 | 0.4.3 | Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
 | 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
 | 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
-| **0.4.6** | **Current.** One signing box per cosigner, so the missing signer is visible at a glance | — |
+| 0.4.6 | One signing box per cosigner, so the missing signer is visible at a glance | — |
+| **0.4.7** | **Current.** Correction: the final signature now fills its own box, and completing does not scroll the boxes off screen | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -285,7 +286,7 @@ prepared, signed or broadcast. No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
 
-## 0.4.6 — one signing box per cosigner (current)
+## 0.4.6 — one signing box per cosigner
 
 The signing screen listed the devices it had found and reported progress in a
 sentence underneath ("Signature 1 of 2 collected…"). The owner's feedback, from
@@ -315,3 +316,36 @@ Suite: **188 tests, 0 failures**, plus three Node DOM tests; a new
 signing *mechanics* are untouched — only how progress is presented. No change to
 the PSBT construction path, the signature-verification rules, fee policy, or the
 set of networks on which broadcast is possible.
+
+## 0.4.7 — the last signature fills its own box (current)
+
+Correction to 0.4.6, found by the owner on the first real payment through it.
+
+**The bug.** When the signature that met the quota arrived, `signWith` called
+`showFinal` and returned *before* re-rendering the boxes. So the screen read
+"Signature 2 of 2 collected. Signers 1 and 2 signed." next to a box still
+offering "Click here to sign with this device" — the last signature was accepted
+and verified, but its own box never filled. The surplus box also stayed on "No
+device found" instead of greying out as no longer needed.
+
+**The jump.** `showFinal` scrolled the final panel to the top of the window,
+which pushed the just-completed boxes off screen at the exact moment the operator
+wants to see them fill. `renderSignable` also scrolled on every device refresh,
+so finding the second device moved the page too.
+
+**Fixed.** The completion path now writes the authoritative signer list into the
+boxes and re-renders them *before* handing off to the final panel; `showFinal` no
+longer scrolls at all, and the device-refresh path only scrolls when entering the
+step. Completing the quota now leaves the operator looking at three boxes — two
+green, one greyed — with the final panel immediately below.
+
+`tests/ui_signer_slots.cjs` reproduces the reported sequence exactly (the Ledger
+signed first and is no longer attached, then the Jade completes the quota) and
+asserts that the last box fills, the earlier one stays filled, the surplus greys,
+and the final panel is **not** scrolled into view. Both halves were confirmed by
+re-introducing each fault and watching the test fail.
+
+Suite: **188 tests, 0 failures**, plus three Node DOM tests. No change to the
+PSBT construction path, the signature-verification rules, fee policy, or the set
+of networks on which broadcast is possible. Mainnet broadcast remains refused in
+code.
