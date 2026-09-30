@@ -180,15 +180,16 @@
 #### Warm
 
 - **W-1 — `gui.py` concentrates too much.** HTTP plumbing, session state, fee and price reference fetching, settings, and the entire prepare/sign/finalize/broadcast orchestration live in one 1,057-line file. It is organized and heavily guarded, but the payment lifecycle is the security-critical core, and it currently cannot be read — or reviewed — in isolation.
-- **W-2 — *(new, sharpened)* Documentation volume has hardened into demonstrable internal contradiction, not merely sprawl.** The prior review called this a navigation problem; it is stronger than that. Concrete, checkable contradictions between documents that describe the *current* product:
+- **W-2 — *(new, sharpened)* Documentation volume has hardened into demonstrable internal contradiction and self-overstatement, not merely sprawl.** The prior review called this a navigation problem; it is stronger than that. Concrete, checkable contradictions between documents that describe the *current* product:
   - `ROADMAP.md` contradicts itself: `:5` states v0.4.3 is current with Phases 1–4 complete, while `:20` labels v0.1.27 the "Previous build", `:225` says Phase 4 has only been *asked to begin*, and `:243` declares signing and broadcast "**future scope, not existing functionality**" and instructs agents not to implement the phase — while that same line notes "`replit.md` currently says no signing or broadcasting", i.e. a drift notice sitting inside a document that is itself stale.
   - `DISCLAIMER.md:10` still frames **0.2.0** as the version that "can ask hardware devices to sign and can broadcast to Testnet4", and never mentions Mutinynet.
   - `replit.md:5` says the tool "serves Testnet4 and mainnet" and "broadcasts only to Testnet4" — stale since 0.3.0 — and `:7` still calls "0.2.0 … the hot-audit-fix milestone".
   - `PROJECT-HISTORY.md:159` says "**No Apple Silicon window walkthrough**" and `:167` says "No hardware signer… signing and broadcast remain unimplemented by design" — both long superseded.
   - `PATCH-0.2.1.md:23` says acceptance "remains pending until… the transaction confirms", while `RELEASE-HISTORY.md:56-58` records it as confirmed.
   - `README.md:36` labels the device table "Hardware tested before 0.2.0", understating the 0.3.2/0.4.1 evidence it elsewhere cites.
+  - **`RELEASE-HISTORY.md` overstated its own coverage.** Its opening line claims to be "the consolidated, chronological record of **every** published version", but **35 of its 46 tagged versions have no entry**: every tag from `0.0.1` through `0.1.26` is collapsed into a single aggregate `0.1.x` row and section, and only `0.1.27` is even named in that section's prose. The commit that introduced the file (`61371d5`) simultaneously routed every *other* document's version narrative through it — so the one document now carrying the entire release record is the one that is incomplete. It is also absent from the source archive's copy list (§3 N-5), so a reader of the tarball cannot reach even the incomplete version.
 
-  Note that commit `61371d5`, titled *"docs: consolidate release history, trim stacked status notices"*, landed immediately before this audit and **did not fix these**; the contradiction is live on `main` today.
+  Note that commit `61371d5`, titled *"docs: consolidate release history, trim stacked status notices"*, landed immediately before this audit, **did not fix the contradictions above**, and introduced the coverage overclaim in the final bullet; all of it is live on `main` today.
 
 #### Nice to have
 
@@ -205,7 +206,7 @@
 
 **Warm**
 2. **Extract the payment lifecycle from `gui.py` into its own module** (W-1) — `PreparedPayment` transitions and the sign/finalize/broadcast gating, with the invariants as docstrings and a dedicated test file — leaving `gui.py` as HTTP/session plumbing. This is the single highest-leverage refactor for third-party reviewability.
-3. **Consolidate the document set** (W-2): one short `CURRENT-STATUS.md` (version, what is proven, what is next, links), `README.md` trimmed to capabilities + install, a single `CHANGELOG.md` carrying per-release corrections, and everything else explicitly marked archive. Critically, **fix the six concrete contradictions above in the same change** — a reviewer who finds `ROADMAP.md` claiming signing is "future scope" has to distrust the rest of the set.
+3. **Consolidate the document set** (W-2): one short `CURRENT-STATUS.md` (version, what is proven, what is next, links), `README.md` trimmed to capabilities + install, a single `CHANGELOG.md` carrying per-release corrections, and everything else explicitly marked archive. Critically, **fix the seven concrete documentation defects above in the same change** — a reviewer who finds `ROADMAP.md` claiming signing is "future scope" has to distrust the rest of the set.
 
 **Nice to have**
 4. Increase scan parallelism modestly (4–8 workers) with the same gap logic, show per-branch progress, and consider incremental re-scans from the last used index within a session (N-1).
@@ -238,7 +239,7 @@
   | Usability for the intended non-technical user | **7** | Plain language, accessible, visible gates, honest failure text; but unnotarized install, no operator guide, mainnet-USD scares on worthless practice coins, gap-of-20 not surfaced |
   | Testing and evidence | **7** | Genuinely adversarial suite with real cryptography, archive-level CI re-run, recorded physical evidence — but mutation testing shows the mainnet broadcast lock has no effective test and three further guards are unprotected (§2 H-3, W-10); practice networks single-source; no mainnet dry run |
   | Distribution and release readiness | **4** | Hashes, SBOM, immutable releases, mandatory libusb digest — but unsigned, unnotarized, no licence, unhashed launcher install |
-  | Documentation currency | **6** | Content is unusually good; currency is not — six live contradictions on `main` |
+  | Documentation currency | **6** | Content is unusually good; currency is not — seven live documentation defects on `main` |
 
 - **Why not higher.** Not one of the remaining blockers is a discovered defect. They are unpassed gates — no mainnet dry run, no live-wallet change-policy proof, an unresolved fee policy, an unnotarized DMG — plus the three distribution/compliance items above. A tool whose whole purpose is to be usable years from now, by someone who is not a Bitcoiner, during what is probably a difficult week, cannot be scored as production-ready while its install path needs a Gatekeeper bypass and its operator guide does not exist.
 
@@ -316,7 +317,7 @@
 
 **Nice to have**
 8. **Publish the fee ceiling's practical consequence** — at 10 sat/vB it is 8 inputs — and consider a proportional ceiling rather than an absolute 10,000 sats, since that is what currently blocks a many-UTXO estate wallet (§1 W-1).
-9. The remaining polish: `gui.py` payment-lifecycle extraction, doc consolidation **including the six live contradictions**, `ui.html` asset split with strict CSP, faster and progressive scans, a Send-All-specific acknowledgement, the gap-of-20 surfaced numerically, and a session control to clear signed bytes. None of these should delay the Phase 5 sequence; all of them make the tool read, to a third party, like what it already is.
+9. The remaining polish: `gui.py` payment-lifecycle extraction, doc consolidation **including the seven live documentation defects**, `ui.html` asset split with strict CSP, faster and progressive scans, a Send-All-specific acknowledgement, the gap-of-20 surfaced numerically, and a session control to clear signed bytes. None of these should delay the Phase 5 sequence; all of them make the tool read, to a third party, like what it already is.
 
 ---
 
@@ -340,7 +341,7 @@ Everything below was executed against a clean clone of `main` at `7d622ef` in Py
 | 10 | `ui.html` DOM-sink enumeration | **Zero** `innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`/`eval`/`new Function`/`srcdoc`/`javascript:`/inline handlers |
 | 11 | Workflow trigger and publish gating | `workflow_dispatch` only; Actions SHA-pinned; Python 3.12 pinned; tests before build; `LIBUSB_SHA256` mandatory; release refuses an existing tag → no push-to-publish path found |
 | 12 | `tests/test_signing.py` inspection | Real derived keys, real ECDSA verification, real re-parsing — adversarial, not mocked |
-| 13 | Docs cross-read | Six live contradictions identified (§3 W-2) |
+| 13 | Docs cross-read | Seven live documentation defects identified (§3 W-2) |
 | 14 | **Mutation:** delete `gui.py:795-803` (mainnet broadcast refusal) from a scratch copy | `test_broadcasting_real_bitcoin_is_not_enabled` still **passes** → the lock has no effective test (§2 H-3) |
 | 15 | **Mutation:** delete `signing.py:102`, `signing.py:131-133`, and the CSP block `gui.py:413-418` | Full suite result unchanged → three guards and the security headers are untested (§2 H-3, W-10) |
 | 16 | `requirements-desktop.lock` structural audit | 37 packages, **571 hashes, none missing**, no unpinned/URL/editable entries → `--require-hashes`-compatible |
