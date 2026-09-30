@@ -207,12 +207,20 @@ hdiutil create -ov -format UDZO -volname "Bitcoin Easy Signer" \
   -srcfolder "$stage" "$dmg"
 if [[ "${RELEASE:-0}" == 1 ]]; then
   xcrun notarytool submit "$dmg" "${notary_args[@]}" --wait
-  # Staple BOTH artifacts. The DMG's ticket is what a download is checked against,
-  # but the app inside carries none of its own: dragged to /Applications it is
-  # verified by an ONLINE lookup to Apple, and an operator opening this during a
-  # recovery with no network would be refused. One submission covers both, so
-  # stapling the app as well costs no extra Apple round trip.
   xcrun stapler staple "$dmg"
+  # Also staple the built app in dist/, which makes THAT copy self-contained for
+  # offline testing here.
+  #
+  # This does NOT put a ticket inside the DMG, and an earlier version of this comment
+  # claimed it did. The image was created at the line above from a copy taken before
+  # this point, so the app a downloader receives stays unstapled and Gatekeeper
+  # verifies it with an ONLINE lookup: accepted when connected, refused offline.
+  # Measured on the published v0.4.12 DMG -- the image validates, the app inside
+  # reports "does not have a ticket stapled to it".
+  #
+  # Closing that properly means notarizing and stapling the app FIRST, then building
+  # the DMG from the stapled app, which costs a second Apple round trip per release.
+  # Recorded rather than silently reasserted; see PHASE-HANDOFF.md.
   xcrun stapler staple "$app"
   xcrun stapler validate "$dmg"
   xcrun stapler validate "$app"
