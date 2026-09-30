@@ -106,8 +106,11 @@ assert.match(problem('abc'), /\.001 or 0\.001/,
 assert.match(problem(''), /0\.00000546/,
   'and the empty-field hint must still give the minimum');
 vm.runInContext('walletCanPrepare = true; updateSendMode();', context);
-assert.match(get('amount').placeholder, /\.001/,
-  'the placeholder must show the spelling without a leading zero');
+// Assert BOTH spellings. A bare /\.001/ also matches "0.00100000", so it would
+// pass even if the placeholder lost its optional-zero example entirely - mutation
+// testing caught exactly that.
+assert.match(get('amount').placeholder, /\.001 or 0\.001/,
+  'the placeholder must show both spellings, including the one without a leading zero');
 
 console.log('Amount entry: ".1" and "1." are accepted, the box shows the canonical '
   + 'spelling, the form states that the leading zero is optional, and each '
