@@ -75,6 +75,19 @@ class ApiTestCase(unittest.TestCase):
         self.server.server_close()
 
     def _patch(self):
+        # Keep the settings file inside a temp directory. Without this, the
+        # /api/settings write in test_stale_explorer_settings_invalidate_a_review
+        # lands in the real ~/Library/Application Support/Easy Bitcoin Multisig/
+        # settings.json: it silently resets a developer's own saved explorer
+        # settings, and it makes the suite report a failure in any environment
+        # where $HOME is not writable, which is not a code defect.
+        settings_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(settings_dir.cleanup)
+        settings_patch = patch(
+            "network_settings.settings_path",
+            return_value=Path(settings_dir.name) / "settings.json")
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
         for target, value in (
             ("load_servers", gui.default_servers),
             ("scan_wallet", lambda record, base_url=None, chain=None:
@@ -347,6 +360,30 @@ class TransactionJourneyTests(ApiTestCase):
         # Changing the explorer for this chain must drop the prepared PSBT.
         self.post("/api/settings", {"chain": "testnet4", "action": "reset"})
         self.assertIsNone(self.state.prepared)
+
+    def test_security_headers_accompany_the_page(self):
+        """The loopback API's hardening headers are part of the trust boundary.
+
+        These are defence in depth rather than an injection fix, but a money
+        application should not lose them silently to a refactor of the handler.
+        """
+        with urllib.request.urlopen(self.base + "/", timeout=15) as response:
+            headers = response.headers
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(headers["Referrer-Policy"], "no-referrer")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        policy = headers["Content-Security-Policy"]
+        self.assertIn("default-src 'none'", policy)
+        self.assertIn("connect-src 'self'", policy)
+        self.assertIn("base-uri 'none'", policy)
+        self.assertIn("form-action 'none'", policy)
+        self.assertIn("frame-ancestors 'none'", policy)
+
+    def test_the_page_never_echoes_the_access_token(self):
+        """The token travels in the URL fragment, so it must not be in the body."""
+        _status, page = self.get_page()
+        self.assertNotIn(self.token, page)
+        self.assertNotIn("__LOCAL_TOKEN__", page)
 
 
 class LargeAmountGateTests(ApiTestCase):
