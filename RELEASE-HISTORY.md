@@ -34,7 +34,8 @@ every version:
 | 0.4.8 | Attributable diagnostics, and visible progress that never advertises a wait | — |
 | 0.4.9 | A fraction of a Bitcoin no longer needs a leading zero | — |
 | 0.4.10 | One progress bar, and only the operation that owns it may change or clear it | — |
-| **0.4.11** | **Current.** The amount box states that a leading zero is optional | — |
+| 0.4.11 | The amount box states that a leading zero is optional | — |
+| **0.4.12** | **Current.** The first **notarized** release: installs with a normal double-click | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -539,7 +540,7 @@ fault is detected by mutation. No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
 
-## 0.4.11 — the form says the leading zero is optional (current)
+## 0.4.11 — the form says the leading zero is optional
 
 The owner asked twice for the amount form to say something about the leading zero.
 The first request was answered by **0.4.9**, which removed the requirement
@@ -563,3 +564,50 @@ placeholder and both examples, so the guidance cannot quietly disappear again.
 Suite: **193 tests, 0 failures**, plus seven Node DOM tests. Copy and hint text
 only; no change to the PSBT construction path, the signature-verification rules,
 fee policy, or the set of networks on which broadcast is possible.
+
+## 0.4.12 — the first notarized release (current)
+
+**No application behaviour changed.** This release exists so the download can be
+installed the way any Mac app is: double-click the DMG, drag the app to
+Applications, run it. No right-click → Open, no "unidentified developer" warning.
+
+Everything before this was **ad-hoc signed**. macOS permits that locally, because a
+file you built yourself carries no `com.apple.quarantine` attribute and Gatekeeper
+never inspects it — which is why every test build has run fine here while a
+downloaded copy would not. Downloading is what applies quarantine, and notarization
+is the only thing that clears it.
+
+The DMG and the app inside are both signed with the Developer ID certificate for
+Bitseeker LLC, sealed with the hardened runtime, notarized by Apple, and **both
+stapled**. Stapling the app matters for the recovery case: an unstapled app is
+verified by an online lookup, so an operator with no network would be refused.
+
+### What the first real notarized build taught
+
+Two faults, neither visible by reading the script and both found by running it —
+and both of which would have broken this release at its final step:
+
+1. **Only the DMG was stapled.** `stapler validate` on the app reported "does not
+   have a ticket stapled to it". It stapled successfully from the same submission,
+   so the fix cost no extra Apple round trip.
+2. **The Gatekeeper gate assessed the DMG.** A disk image is not code-signed, so
+   `spctl` reports `rejected, source=no usable signature` even for a correctly
+   notarized image — while the app inside reports `accepted, source=Notarized
+   Developer ID`. A build that had done everything right would have aborted.
+
+Both are pinned by `ReleaseGateTests`.
+
+### Notarization is slow, in a way worth recording
+
+Apple took **54 minutes**, and `notarytool --wait` never returned while Apple's own
+status already read `Accepted`. Apple's developer forums carry a cluster of the same
+symptom, one titled *"All notarization submissions stuck In Progress — new Developer
+ID account"*, with durations from 20 hours to 5 days. New teams' first submissions
+are the known-affected case.
+
+**Consequences, now policy:** judge progress by `notarytool info`, never by the
+`--wait` spinner. And do **not** notarize during iteration — develop by running from
+source (`python desktop.py`, seconds), package unsigned for bundle testing, and
+notarize only to publish.
+
+Suite: **210 tests, 0 failures**, plus seven Node DOM tests.
