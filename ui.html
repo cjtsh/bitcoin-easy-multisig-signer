@@ -665,11 +665,45 @@
         "." + String(absolute % 100000000).padStart(8, "0");
     }
     function btcToSats(text) {
-      const value = text.trim();
+      // ".1" is how people ordinarily write a fraction, and "1." is what the box
+      // holds half-way through typing "1.5". Neither is a mistake worth refusing:
+      // requiring a leading zero made the amount look broken for anyone who typed
+      // it the natural way, so both spellings are normalised instead.
+      const value = String(text == null ? "" : text).trim()
+        .replace(/^\./, "0.").replace(/\.$/, "");
       if (!/^\d+(?:\.\d{1,8})?$/.test(value)) return null;
       const [whole, fraction = ""] = value.split(".");
       const sats = BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, "0"));
       return sats <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(sats) : null;
+    }
+    function amountProblem(text) {
+      // Say what is actually wrong. "Enter an amount of at least 0.00000546" is
+      // poor advice when the amount typed was larger than that but had nine
+      // decimal places, and it was the message shown for every rejected spelling.
+      const raw = String(text == null ? "" : text).trim();
+      if (!raw) return "Enter a BTC amount, or tick Send all.";
+      const normalised = raw.replace(/^\./, "0.").replace(/\.$/, "");
+      if (!/^\d+(?:\.\d+)?$/.test(normalised)) {
+        return "Enter the amount as a number of Bitcoin, for example 0.00100000.";
+      }
+      if (/^\d+\.\d{9,}$/.test(normalised)) {
+        return "Bitcoin amounts use at most 8 decimal places. Remove the extra digits.";
+      }
+      return "Enter a BTC amount of at least 0.00000546 (546 satoshis), or tick Send all.";
+    }
+    function tidyAmount() {
+      // Rewrite the box into its canonical form once the operator leaves it, so
+      // ".1" visibly becomes "0.1" and the habit teaches itself.
+      const field = $("amount");
+      const raw = field.value.trim();
+      if (!raw) return;
+      const normalised = raw.replace(/^\./, "0.").replace(/\.$/, "");
+      if (normalised !== raw && btcToSats(normalised) !== null) {
+        field.value = normalised;
+        updateSendEquivalent();
+        renderFeeGuidance();
+        scheduleFeeEstimate();
+      }
     }
     function usdReference(sats) {
       if (!rate) return "USD reference unavailable";
@@ -715,8 +749,7 @@
       }
       const sats = btcToSats($("amount").value);
       setText("send-equivalent", sats !== null && sats >= 546 ?
-        fmt(sats) + " sats · " + usdLabel(sats) :
-        "Enter a BTC amount of at least 0.00000546, with up to 8 decimal places.");
+        fmt(sats) + " sats · " + usdLabel(sats) : amountProblem($("amount").value));
     }
     function renderAmountSafety() {
       const sats = $("send-all").checked && lastScan ? lastScan.confirmed_sats : btcToSats($("amount").value);
@@ -1206,6 +1239,7 @@
     $("amount").addEventListener("input", () => {
       invalidateReview(); updateSendEquivalent(); renderFeeGuidance(); scheduleFeeEstimate();
     });
+    $("amount").addEventListener("blur", tidyAmount);
     $("destination").addEventListener("input", () => {
       invalidateReview(); scheduleFeeEstimate();
     });
@@ -1237,7 +1271,8 @@
       const fee = Number($("fee-rate").value);
       if ((!sendAll && (amount === null || amount < 546)) ||
           !Number.isSafeInteger(fee) || fee < 1 || fee > 25) {
-        msg("send-message", "Enter at least 0.00000546 BTC (up to 8 decimal places), or select Send all. Check the network fee setting.", true); return;
+        msg("send-message", (sendAll ? "" : amountProblem($("amount").value) + " ")
+          + "Check the network fee setting.", true); return;
       }
       preparing = true;
       $("prepare").disabled = true; msg("send-message", "Checking confirmed outputs and preparing your unsigned transaction file…");
