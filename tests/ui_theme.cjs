@@ -136,6 +136,19 @@ function build({ systemDark = false, stored = null, themeToggle = true,
     'the label must describe the action, so it flips with the theme');
 }
 
+// 4b. In words, not a pictogram. The owner's words: "don't make people guess
+//     that it's a sun or a moon." A crescent means "night", or "make it night", or
+//     "the theme is dark", depending on who is reading it.
+{
+  const app = build({ systemDark: false });
+  assert.equal(app.button.textContent, 'Dark theme',
+    'the button must name the theme you would get, in words');
+  app.button.click();
+  assert.equal(app.button.textContent, 'Light theme', 'and it must flip with the theme');
+  assert.doesNotMatch(html, /\u2600|\ud83c\udf19|\u{1F319}/u,
+    'no sun or moon glyphs anywhere in the page');
+}
+
 // 5. T toggles, but never while the operator is typing an address or an amount:
 //    a bare "t" belongs to both.
 {
