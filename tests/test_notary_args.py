@@ -80,15 +80,34 @@ class NotaryArgsTests(unittest.TestCase):
 
 # The credential logic is pure shell and runs anywhere. Tests that EXECUTE
 # build-macos.sh cannot: the script's first act is to refuse anything but macOS
-# ("DMGs must be built and tested on macOS."), so on the Ubuntu source job they fail
-# for a reason that has nothing to do with what they assert. They still run in the
-# macOS job of the same workflow, which is where the guard matters anyway.
-requires_macos = unittest.skipUnless(
-    sys.platform == "darwin",
-    "executes build-macos.sh, which refuses to run on anything but macOS")
+# ("DMGs must be built and tested on macOS.").
+#
+# They are DELIBERATELY NOT SKIPPED elsewhere, they are not collected. The workflow
+# refuses any skip outright - `grep -qE "skipped=[1-9]"` - because a silently skipped
+# test can hide a missing dependency, and that guard is worth keeping intact. A
+# platform that cannot run these is not a missing dependency, so the honest thing is
+# for them not to exist there. They still run in the same workflow's macOS job, which
+# is where the fail-closed behaviour actually matters.
+def macos_only(target):
+    """Mark a test class or method as macOS-only. Applied at import."""
+    target._macos_only = True
+    return target
 
 
-@requires_macos
+def load_tests(loader, tests, pattern):
+    if sys.platform == "darwin":
+        return tests
+    keep = unittest.TestSuite()
+    for group in tests:
+        for case in (group if isinstance(group, unittest.TestSuite) else [group]):
+            method = getattr(case, getattr(case, "_testMethodName", ""), None)
+            if not (getattr(method, "_macos_only", False)
+                    or getattr(type(case), "_macos_only", False)):
+                keep.addTest(case)
+    return keep
+
+
+@macos_only
 class BuildFailsClosedTests(unittest.TestCase):
     """RELEASE=1 must never quietly produce an ad-hoc-signed artifact.
 
@@ -203,14 +222,14 @@ class BuildPythonSelectionTests(unittest.TestCase):
         self.assertIn('"$python_bin" -m venv .build-venv', text)
         self.assertNotIn("\npython3 -m venv .build-venv", text)
 
-    @requires_macos
+    @macos_only
     def test_a_missing_interpreter_is_refused_with_a_usable_command(self):
         result = self.run_build(PYTHON="python3.99-definitely-not-here")
         self.assertEqual(result.returncode, 1)
         self.assertIn("was not found on PATH", result.stderr)
         self.assertIn("PYTHON=python3.12 bash scripts/build-macos.sh", result.stderr)
 
-    @requires_macos
+    @macos_only
     def test_an_unsupported_interpreter_names_the_override(self):
         """Host-independent, using a stand-in interpreter that reports 3.14.
 
