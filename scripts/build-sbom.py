@@ -20,6 +20,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from version import APP_VERSION
 
+# SPDX identifiers for the components this project ships or depends on.
+# "GPL-2.0-or-later" for PyInstaller carries its explicit bundling exception,
+# which is what makes distributing this MIT application with it permissible;
+# see THIRD-PARTY-NOTICES.md.
+LICENCES = {
+    "embit": "MIT",
+    "hwi": "MIT",
+    "pywebview": "BSD-3-Clause",
+    "pyinstaller": "GPL-2.0-or-later",
+    "certifi": "MPL-2.0",
+    "requests": "Apache-2.0",
+    "pyyaml": "MIT",
+}
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -30,8 +44,12 @@ def sha256(path: Path) -> str:
 
 
 def build(lib_hash: str, root: Path) -> dict:
+    # Normalise before validating. CI passes the repository variable through
+    # raw, and a SHA-256 is case-insensitive, so requiring lowercase here made an
+    # uppercase variable fail *after* the build and tests had already succeeded.
+    lib_hash = (lib_hash or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{64}", lib_hash):
-        raise ValueError("Expected the verified lowercase SHA-256 of libusb.")
+        raise ValueError("Expected the verified SHA-256 of libusb.")
     components = []
     for distribution in importlib.metadata.distributions():
         name = distribution.metadata.get("Name")
@@ -39,14 +57,18 @@ def build(lib_hash: str, root: Path) -> dict:
             continue
         normalized = re.sub(r"[-_.]+", "-", name).lower()
         version = distribution.version
-        components.append({
+        component = {
             "type": "library", "name": normalized, "version": version,
             "purl": f"pkg:pypi/{normalized}@{version}",
-        })
+        }
+        if normalized in LICENCES:
+            component["licenses"] = [{"license": {"id": LICENCES[normalized]}}]
+        components.append(component)
     components.sort(key=lambda component: (component["name"], component["version"]))
     components.append({
         "type": "library", "name": "libusb", "version": "1.0.30",
         "hashes": [{"alg": "SHA-256", "content": lib_hash}],
+        "licenses": [{"license": {"id": "LGPL-2.1-or-later"}}],
     })
     return {
         "bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,

@@ -123,3 +123,27 @@ does **not** publish anything. Cutting the release is a separate, explicit
 action: bump `version.py`, merge, then dispatch the workflow, which builds the
 DMG, `BUILD-SBOM.json` and `SHA256SUMS` and publishes an immutable tag. Never
 repost under an existing version.
+
+## Delivery note — what landed, and what moved to 0.4.5
+
+**Landed in 0.4.4:** A-1 through A-6, A-9 through A-14, A-16 and A-17 — fourteen
+of the seventeen Tier 1 items.
+
+**Moved to 0.4.5: A-7** (Send-All acknowledgement and the 20-address gap number),
+**A-8** (session control to clear signed bytes) and **A-15** (drop
+`'unsafe-inline'` from `script-src` via a per-session nonce).
+
+All three change what the browser renders from `ui.html`, and this release
+process has no browser walkthrough: the automated checks cover the Python API,
+the DOM state machine in Node, and the served headers, but nothing loads the page
+and executes it. A CSP nonce that does not match the injected `<script>` tag, or
+a misplaced acknowledgement control, would present as a blank or broken window —
+a worse outcome than the defence-in-depth gap A-15 closes. They are small,
+self-contained changes that deserve to be seen on a screen, so they belong in a
+release that includes the owner's next walkthrough rather than in the one that is
+being published now.
+
+This is a deliberate scope call under the rule at the top of this file, not an
+oversight: A-7 and A-8 are user-interface additions rather than strictly
+fail-closed tightenings, and A-15 cannot be verified without executing the page.
+Tier 2 and Tier 3 are unchanged.

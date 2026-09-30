@@ -50,7 +50,8 @@ python3 -m venv .build-venv
 [[ -f assets/AppIcon.icns ]] || { echo "assets/AppIcon.icns is missing." >&2; exit 1; }
 args=(--noconfirm --clean --windowed --onedir --name "Bitcoin Easy Signer"
       --icon "assets/AppIcon.icns"
-      --add-data "ui.html:." --collect-data certifi --distpath dist desktop.py)
+      --add-data "ui.html:." --add-data "LICENSE:." --add-data "THIRD-PARTY-NOTICES.md:." \
+      --collect-data certifi --distpath dist desktop.py)
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   args+=(--codesign-identity "$MAC_SIGN_IDENTITY")
 fi

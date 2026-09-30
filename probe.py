@@ -470,7 +470,13 @@ def _probe_devices_into(record: WalletRecord, executable: str, chain: str,
 
 def _validate_chain(record: WalletRecord, chain: str) -> None:
     if record.network == "main":
-        raise ProbeError("This test-only release will not probe or fund a mainnet wallet.")
+        # Only the command-line helpers are practice-only. The GUI does check
+        # and sign mainnet wallets for the Phase 5 dry run, so saying "this
+        # test-only release" here described the wrong product.
+        raise ProbeError(
+            "This command-line check supports practice wallets only. "
+            "Use the app itself to check signers for a mainnet wallet."
+        )
     if record.network == "test" and chain in ("testnet4", "signet", "test"):
         return
     if record.network == "regtest" and chain == "regtest":

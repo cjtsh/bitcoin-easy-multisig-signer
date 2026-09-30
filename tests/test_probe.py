@@ -251,7 +251,10 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("not inferred from tb1", output.getvalue())
         with self.assertRaisesRegex(ProbeError, "conflicts"):
             _validate_chain(wallet, "regtest")
-        with self.assertRaisesRegex(ProbeError, "test-only"):
+        # The command-line helpers are practice-only. The wording says so rather
+        # than calling the whole release test-only, because the GUI does check
+        # and sign mainnet wallets for the Phase 5 dry run.
+        with self.assertRaisesRegex(ProbeError, "practice wallets only"):
             _validate_chain(
                 wallet.__class__(
                     wallet.descriptor, wallet.threshold, "main",

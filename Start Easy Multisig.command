@@ -14,10 +14,13 @@ if [ ! -x .venv/bin/python3 ]; then
   echo "Preparing the local Python environment (first launch only)..."
   python3 -m venv .venv
 fi
-if ! .venv/bin/python3 -c 'import embit' >/dev/null 2>&1; then
-  echo "Installing the pinned open-source descriptor library (first launch only)..."
-  .venv/bin/python3 -m pip install --disable-pip-version-check -r requirements.txt
+# The exact version is asserted, not merely the import: an older or substituted
+# embit must not satisfy this check. requirements.lock carries the hash, so the
+# install is verified rather than trusted to whatever the index serves.
+if ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0 if m.version("embit") == "0.8.0" else 1)' >/dev/null 2>&1; then
+  echo "Installing the hash-verified open-source descriptor library (first launch only)..."
+  .venv/bin/python3 -m pip install --disable-pip-version-check --require-hashes -r requirements.lock
 fi
 
-echo "Opening the Testnet4 wallet GUI in your browser..."
+echo "Opening the Bitcoin Easy Signer GUI in your browser..."
 .venv/bin/python3 gui.py
