@@ -1325,7 +1325,9 @@
         setText("sign-progress", "Choose a device to sign with. Approve the transaction on "
           + "the device screen.");
       }
-      step.scrollIntoView({behavior:"smooth", block:"start"});
+      // Only scroll when entering the step. A refresh after a device is found
+      // must not move the page: the operator is watching the boxes.
+      if (reset) step.scrollIntoView({behavior:"smooth", block:"start"});
     }
     function renderSignerSlots() {
       const row = $("sign-buttons");
@@ -1411,7 +1413,16 @@
           " Signer" + (result.signers.length > 1 ? "s " : " ") + result.signers.join(" and ") + " signed." : "";
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
           " collected." + who);
-        if (result.complete) { await showFinal(reviewId); return; }
+        if (result.complete) {
+          // Fill the boxes from the authoritative signer list BEFORE handing off.
+          // Returning straight to showFinal left the last box still reading
+          // "Click here to sign with this device" while the status line said the
+          // signature had been collected: the screen contradicted itself.
+          signerState.signed = (result.signers || []).slice();
+          renderSignerSlots();
+          await showFinal(reviewId);
+          return;
+        }
         // Refresh first, so the next device's button is already there, then say
         // where things stand.
         setBusy("Signature received. Searching for another device; Jade PIN entry may take several minutes…");
@@ -1451,7 +1462,9 @@
         setText("broadcast-message", mainnetDryRun ?
           "Mainnet dry run complete. This build cannot broadcast real Bitcoin." : "");
         $("finalize-step").hidden = false;
-        $("finalize-step").scrollIntoView({behavior:"smooth", block:"start"});
+        // Deliberately no scrollIntoView here. Slamming the final panel to the top
+        // threw the just-completed boxes off screen at the exact moment the
+        // operator wants to see them fill; the panel sits directly below them.
       } catch (e) {
         if (actionId === sendActionId && reviewId === preparationId)
           setText("sign-progress", (e && e.message) || "Could not finish the transaction.");

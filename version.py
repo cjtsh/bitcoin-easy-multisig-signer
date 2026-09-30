@@ -1,3 +1,3 @@
 """Single version shared by the app and both release artifacts."""
 
-APP_VERSION = "0.4.6"
+APP_VERSION = "0.4.7"
