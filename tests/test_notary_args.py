@@ -14,6 +14,7 @@ import os
 import pathlib
 import re
 import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -163,6 +164,57 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn('"$app"', gates[0], "the Gatekeeper gate must assess the app")
         self.assertNotIn('"$dmg"', gates[0],
                          "a DMG reports 'no usable signature' even when correctly notarized")
+
+
+class BuildPythonSelectionTests(unittest.TestCase):
+    """The build must be told which Python to use.
+
+    Homebrew's python@3.12 keg ships python3.12 and deliberately NO python3, so the
+    script's old advice ("put it first on PATH") could not be followed. Both the
+    owner and a coding session had to invent a throwaway symlink directory to build
+    at all, which is the tell that the advice was impossible.
+    """
+
+    def run_build(self, **env):
+        return subprocess.run(["bash", str(BUILD_MACOS), APP_VERSION], cwd=ROOT,
+                              capture_output=True, text=True,
+                              env=clean_env(**env), timeout=120)
+
+    def test_the_interpreter_is_selectable_and_defaults_to_python3(self):
+        text = BUILD_MACOS.read_text(encoding="utf-8")
+        self.assertIn('python_bin="${PYTHON:-python3}"', text,
+                      "PYTHON must name the interpreter, defaulting to python3")
+
+    def test_the_chosen_interpreter_builds_the_venv(self):
+        """A hardcoded python3 there would silently ignore the override."""
+        text = BUILD_MACOS.read_text(encoding="utf-8")
+        self.assertIn('"$python_bin" -m venv .build-venv', text)
+        self.assertNotIn("\npython3 -m venv .build-venv", text)
+
+    def test_a_missing_interpreter_is_refused_with_a_usable_command(self):
+        result = self.run_build(PYTHON="python3.99-definitely-not-here")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("was not found on PATH", result.stderr)
+        self.assertIn("PYTHON=python3.12 bash scripts/build-macos.sh", result.stderr)
+
+    def test_an_unsupported_interpreter_names_the_override(self):
+        """Host-independent, using a stand-in interpreter that reports 3.14.
+
+        The real python3 is 3.14 on the owner's Mac and 3.12 on a CI runner, so the
+        guard cannot be exercised by relying on whichever one happens to be present.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            fake = pathlib.Path(temporary) / "python3"
+            fake.write_text('#!/bin/sh\n'
+                            'if [ "$1" = "-c" ]; then echo "3.14"; exit 0; fi\n'
+                            'exit 1\n', encoding="utf-8")
+            fake.chmod(0o755)
+            result = self.run_build(PYTHON=str(fake))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is Python 3.14", result.stderr)
+        self.assertIn("PYTHON=python3.12 bash scripts/build-macos.sh", result.stderr)
+        self.assertNotIn("put it first on PATH", result.stderr,
+                         "the old PATH advice could not be followed on macOS")
 
 
 if __name__ == "__main__":
