@@ -44,7 +44,13 @@ If neither declared nor guarded standard change is available, the app offers a n
 
 Read [`AGENTS.md`](AGENTS.md) and [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md) first for current status, safety boundaries and the exact handoff; then [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md) for the version record, and [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) for the BSMS change-path trust boundary. The [original audit](AUDIT-BASELINE-0.1.27.md), the [0.2.0 fix record](SECURITY-REVIEW-0.2.0.md), and [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) / [`ROADMAP.md`](ROADMAP.md) preserve earlier decisions and phase history. Two independent 0.4.3 audits are recorded: [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md) and [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md). Both reviewed `main` at `7d622ef`, two documentation-only commits after the `v0.4.3` build commit `e7f97ac`; neither exercised a mainnet transaction or a physical device. Current behavior in source and tests takes precedence over historical descriptions and over any review's description of it.
 
-Use Python 3.12 for the Mac build (HWI 3.2.0 does not support 3.13+). Source tests:
+Use Python 3.12 for the Mac build (HWI 3.2.0 does not support 3.13+). Homebrew's keg ships `python3.12` and deliberately no `python3`, so name the interpreter:
+
+```sh
+PYTHON=python3.12 bash scripts/build-macos.sh <version>
+```
+
+Source tests:
 
 ```sh
 python3.12 -m venv .venv

@@ -78,9 +78,13 @@ base64 -i cert.p12          | tr -d '\n' > cert.p12.b64
 base64 -i AuthKey_XXXX.p8   | tr -d '\n' > authkey.p8.b64
 ```
 
-**Two things not yet verified, because they need the credentials:**
+**Both of these were resolved by the first real notarized build on 30 September 2026.** The round trip ran and Apple returned `Accepted`; both faults it exposed are fixed and pinned by `ReleaseGateTests`.
 
-1. **The notarization round trip has never run.** Everything up to it is tested; the Apple round trip is not. Watch the first `notarize=true` run end to end and expect to iterate — this is a code-signing integration, and those rarely pass first time.
-2. **The app inside the DMG is not stapled.** Only the DMG gets the ticket. Dragging the app out and running it needs an **online** lookup by Apple; offline, Gatekeeper blocks it. For an offline recovery that matters. Stapling the app means notarizing it separately before building the DMG — an extra round trip of a few minutes per release. Decide before the first public release.
+1. **The round trip works, and it is slow.** Apple accepted the submission — but took **54 minutes**, not the usual 2–10. The `notarytool --wait` in the terminal never returned and had to be killed, while Apple's own status said `Accepted` the whole time. Apple's developer forums carry a cluster of threads with exactly this symptom, one of them titled *"All notarization submissions stuck In Progress — new Developer ID account"*, with durations from 20 hours to 5 days. **A new team's first submissions are the known-affected case.** So: never judge progress by the `--wait` spinner, always by `notarytool info`. And never notarize during iteration — see the three build loops above.
+2. **The app is now stapled as well as the DMG.** Only the DMG carried a ticket, leaving the app to be verified by an online lookup to Apple, which would refuse an operator working offline. Both now staple from the **same** submission, so the offline fix costs no extra Apple round trip.
+
+Verified against the real artifact: the DMG and the app both `stapler validate`, and `spctl` reports the app as `accepted, source=Notarized Developer ID`. A quarantined copy of the DMG mounts through LaunchServices, which is the download path a release recipient takes.
+
+**One trap worth recording:** the Gatekeeper gate originally assessed the DMG, which a disk image can never pass because it is not code-signed — measured, it reports `rejected, source=no usable signature` even when correctly notarized. The gate now assesses the **app**, which is the artifact Gatekeeper must actually accept. Had this not been caught, the first notarized release would have aborted at its final step having done everything right.
 
 Also note the release notes template in the workflow still carries stale boilerplate from an older release ("the supplied Sparrow and Nunchuk files…"). It is inaccurate for current versions and should be rewritten separately.

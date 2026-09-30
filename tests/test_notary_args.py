@@ -14,6 +14,7 @@ import os
 import pathlib
 import re
 import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -120,6 +121,100 @@ class BuildFailsClosedTests(unittest.TestCase):
                                 MAC_NOTARY_PROFILE="p", MAC_NOTARY_KEY_PATH="/k.p8")
         self.assertEqual(result.returncode, 1)
         self.assertIn("incompletely", result.stderr)
+
+
+class ReleaseGateTests(unittest.TestCase):
+    """The notarized path's finish line, pinned.
+
+    Both of these were wrong the first time and only a real notarized artifact
+    revealed it, because the release path cannot be exercised without an Apple
+    account. Since the whole point is that a later edit cannot quietly undo them,
+    they are asserted here rather than trusted.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = BUILD_MACOS.read_text(encoding="utf-8")
+
+    def test_the_dmg_and_the_app_are_both_stapled(self):
+        """The app needs its own ticket or it fails offline.
+
+        Dragged to /Applications, an app with no stapled ticket is verified by an
+        online lookup to Apple. A recovery operator with no network would be
+        refused. One submission covers both artifacts, so this is free.
+        """
+        self.assertIn('xcrun stapler staple "$dmg"', self.text)
+        self.assertIn('xcrun stapler staple "$app"', self.text)
+
+    def test_the_dmg_and_the_app_are_both_validated(self):
+        self.assertIn('xcrun stapler validate "$dmg"', self.text)
+        self.assertIn('xcrun stapler validate "$app"', self.text)
+
+    def test_gatekeeper_assesses_the_app_not_the_dmg(self):
+        """A DMG is not code-signed, so spctl reports it as unsigned.
+
+        Measured against a genuinely notarized and stapled image:
+            spctl -a -t open  <dmg>  -> rejected, source=no usable signature
+            spctl -a -t exec  <app>  -> accepted, Notarized Developer ID
+        Assessing the DMG aborted a build that had notarized correctly.
+        """
+        gates = [line.strip() for line in self.text.splitlines()
+                 if line.strip().startswith("spctl ")]
+        self.assertEqual(len(gates), 1, f"expected exactly one Gatekeeper gate, found {gates}")
+        self.assertIn('"$app"', gates[0], "the Gatekeeper gate must assess the app")
+        self.assertNotIn('"$dmg"', gates[0],
+                         "a DMG reports 'no usable signature' even when correctly notarized")
+
+
+class BuildPythonSelectionTests(unittest.TestCase):
+    """The build must be told which Python to use.
+
+    Homebrew's python@3.12 keg ships python3.12 and deliberately NO python3, so the
+    script's old advice ("put it first on PATH") could not be followed. Both the
+    owner and a coding session had to invent a throwaway symlink directory to build
+    at all, which is the tell that the advice was impossible.
+    """
+
+    def run_build(self, **env):
+        return subprocess.run(["bash", str(BUILD_MACOS), APP_VERSION], cwd=ROOT,
+                              capture_output=True, text=True,
+                              env=clean_env(**env), timeout=120)
+
+    def test_the_interpreter_is_selectable_and_defaults_to_python3(self):
+        text = BUILD_MACOS.read_text(encoding="utf-8")
+        self.assertIn('python_bin="${PYTHON:-python3}"', text,
+                      "PYTHON must name the interpreter, defaulting to python3")
+
+    def test_the_chosen_interpreter_builds_the_venv(self):
+        """A hardcoded python3 there would silently ignore the override."""
+        text = BUILD_MACOS.read_text(encoding="utf-8")
+        self.assertIn('"$python_bin" -m venv .build-venv', text)
+        self.assertNotIn("\npython3 -m venv .build-venv", text)
+
+    def test_a_missing_interpreter_is_refused_with_a_usable_command(self):
+        result = self.run_build(PYTHON="python3.99-definitely-not-here")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("was not found on PATH", result.stderr)
+        self.assertIn("PYTHON=python3.12 bash scripts/build-macos.sh", result.stderr)
+
+    def test_an_unsupported_interpreter_names_the_override(self):
+        """Host-independent, using a stand-in interpreter that reports 3.14.
+
+        The real python3 is 3.14 on the owner's Mac and 3.12 on a CI runner, so the
+        guard cannot be exercised by relying on whichever one happens to be present.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            fake = pathlib.Path(temporary) / "python3"
+            fake.write_text('#!/bin/sh\n'
+                            'if [ "$1" = "-c" ]; then echo "3.14"; exit 0; fi\n'
+                            'exit 1\n', encoding="utf-8")
+            fake.chmod(0o755)
+            result = self.run_build(PYTHON=str(fake))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is Python 3.14", result.stderr)
+        self.assertIn("PYTHON=python3.12 bash scripts/build-macos.sh", result.stderr)
+        self.assertNotIn("put it first on PATH", result.stderr,
+                         "the old PATH advice could not be followed on macOS")
 
 
 if __name__ == "__main__":
