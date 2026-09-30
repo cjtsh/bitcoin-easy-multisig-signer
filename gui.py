@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 import sys
 import threading
@@ -56,8 +57,25 @@ LARGE_AMOUNT_SATS_FLOOR = 10_000_000
 DIAGNOSTIC_STAGES = frozenset({
     "wallet_import", "change_path", "wallet_scan", "transaction_prepare",
     "signer_check", "signer_response", "final_transaction", "broadcast",
-    "request",
 })
+# Which stage a rejected request belongs to. The route name and the stage name
+# never matched ("prepare" vs "transaction_prepare"), so every rejection used to
+# be recorded as an unattributable "request": a refused signature was
+# indistinguishable from a refused fee estimate.
+#
+# Routes absent from this map are convenience calls - fee estimates, price,
+# settings, status. Their rejections are ordinary interface feedback, so they are
+# deliberately not recorded: the buffer holds 80 events, and that chatter used to
+# push out the events that matter.
+DIAGNOSTIC_ROUTE_STAGES = {
+    "import": "wallet_import",
+    "scan": "wallet_scan",
+    "prepare": "transaction_prepare",
+    "devices": "signer_check",
+    "sign": "signer_response",
+    "finalize": "final_transaction",
+    "broadcast": "broadcast",
+}
 DIAGNOSTIC_OUTCOMES = frozenset({
     "passed", "declared", "standard", "missing", "complete", "incomplete",
     "consistent", "inconsistent", "verified", "rejected", "accepted", "unknown",
@@ -320,8 +338,23 @@ def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> 
     )
 
 
+def _clean_token(value) -> str:
+    """Reduce a value to a short lowercase identifier, or drop it.
+
+    Diagnostic events must never carry free text, so anything that is not a plain
+    token is discarded rather than escaped or truncated into something that looks
+    meaningful.
+    """
+    text = str(value or "").strip().lower()
+    return text if re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,19}", text) else ""
+
+
 def save_diagnostic_report(state: "LocalApp", folder: Path | None = None) -> dict:
-    """Export fixed-code events only; never wallet identifiers or raw errors."""
+    """Export fixed-code events only; never wallet identifiers or raw errors.
+
+    Each event carries the selected network and, when a device was involved, its
+    class. No path, serial, fingerprint, xpub, address or error text is written.
+    """
     with state.lock:
         report = {"app_version": APP_VERSION, "format": 1,
                   "events": list(state.diagnostic_events)}
@@ -384,15 +417,30 @@ class LocalApp:
             self.servers = default_servers()
             self.settings_error = str(exc)
 
-    def note(self, stage: str, outcome: str) -> None:
-        """Fixed vocabulary, bounded memory; no wallet data or exception text."""
+    def note(self, stage: str, outcome: str, device: str = "", found=()) -> None:
+        """Fixed vocabulary, bounded memory; no wallet data and no exception text.
+
+        The selected network and, where a device was involved, its *class* are
+        recorded because both change what a failure means: "broadcast accepted"
+        differs between a practice network and mainnet, and the devices behave
+        differently enough that "which one, when" is the first troubleshooting
+        question. A device model is not an identity - no path, serial,
+        fingerprint, xpub, address or error text can be written here.
+        """
         if stage not in DIAGNOSTIC_STAGES or outcome not in DIAGNOSTIC_OUTCOMES:
             return
+        cleaned = _clean_token(device)
+        classes = sorted({c for c in (_clean_token(x) for x in found) if c})
         with self.lock:
-            self.diagnostic_events.append({
+            event = {
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "stage": stage, "outcome": outcome,
-            })
+                "chain": self.chain, "stage": stage, "outcome": outcome,
+            }
+            if cleaned:
+                event["device"] = cleaned
+            if classes:
+                event["found"] = classes
+            self.diagnostic_events.append(event)
             del self.diagnostic_events[:-80]
 
     def handler(self):
@@ -555,8 +603,9 @@ class LocalApp:
                                      if txid and chain in CHAIN_CONFIGS else None),
                     })
                 except (ProbeError, WalletError, SettingsError) as exc:
-                    stage = self.path.removeprefix("/api/")
-                    state.note(stage if stage in DIAGNOSTIC_STAGES else "request", "rejected")
+                    rejected = DIAGNOSTIC_ROUTE_STAGES.get(self.path.removeprefix("/api/"))
+                    if rejected:
+                        state.note(rejected, "rejected")
                     self._send(400, {"error": str(exc)})
                 except (ValueError, TypeError, UnicodeError):
                     self._send(400, {"error": "Wallet request is malformed."})
@@ -685,7 +734,8 @@ class LocalApp:
                 # tb1 address prefix, so the xpub comparison is byte-exact either way.
                 hwi_chain = "main" if chain == "main" else "test"
                 detailed = probe_devices_detailed(record, "hwi", hwi_chain)
-                state.note("signer_check", "passed")
+                state.note("signer_check", "passed",
+                           found=[d.get("type") for d in detailed.get("signable") or []])
                 statuses = detailed["statuses"]
                 # Which of the wallet's cosigners have already signed, read from the
                 # prepared PSBT itself rather than tracked in the page. The signing
@@ -757,13 +807,13 @@ class LocalApp:
                 try:
                     accepted = accept_signature_update(before, after)
                 except SigningError as exc:
-                    state.note("signer_response", "rejected")
+                    state.note("signer_response", "rejected", device=device_type)
                     raise WalletError(str(exc)) from exc
                 with state.lock:
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The transaction changed while signing. Start again.")
                     state.prepared = replace(payment, psbt_base64=accepted.to_base64())
-                    state.note("signer_response", "verified")
+                    state.note("signer_response", "verified", device=device_type)
                 present, threshold = signatures_collected(accepted)
                 self._send(200, {
                     "signatures": present,

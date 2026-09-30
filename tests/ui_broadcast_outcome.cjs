@@ -64,6 +64,7 @@ const context = vm.createContext({
     return new Promise(() => {});
   },
   setTimeout: () => 1, clearTimeout() {},
+  setInterval: () => 1, clearInterval() {},
   console,
 });
 vm.runInContext(script, context);

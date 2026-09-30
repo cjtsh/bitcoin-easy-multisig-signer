@@ -48,8 +48,10 @@ const document = {
   addEventListener() {},
 };
 
-// Responses the app will see. Only /api/sign and /api/finalize are exercised.
-const route = {sign: null, finalize: null};
+// Responses the app will see. Only /api/sign, /api/finalize and /api/devices are
+// exercised. devicesGate lets a test hold the device re-scan open, so it can see
+// what the screen shows while that slow call is still in flight.
+const route = {sign: null, finalize: null, devicesGate: null};
 const scrolled = [];
 const reply = (body) => Promise.resolve({ok: true, json: async () => body});
 const context = vm.createContext({
@@ -57,10 +59,13 @@ const context = vm.createContext({
   fetch: (url) => {
     if (url === '/api/sign') return reply(route.sign);
     if (url === '/api/finalize') return reply(route.finalize);
-    if (url === '/api/devices') return reply({devices: [], signable: [], threshold: 2, keys: 3, signed: []});
+    if (url === '/api/devices') {
+      return route.devicesGate || reply({devices: [], signable: [], threshold: 2, keys: 3, signed: []});
+    }
     return new Promise(() => {});
   },
   setTimeout: () => 1, clearTimeout() {},
+  setInterval: () => 1, clearInterval() {},
   console,
 });
 vm.runInContext(script, context);
@@ -159,6 +164,34 @@ assert.ok(has(boxes()[2], 'optional'),
 assert.ok(!scrolled.includes('finalize-step'),
   'the final panel must not be flung to the top; the boxes stay in view');
 
+// --- an intermediate signature fills its box while the re-scan is still running
+// Regression from 0.4.7: the box was not updated until the following device
+// re-scan resolved, so the operator signed on the device and the screen kept
+// offering to sign for as long as that call took - five to ten seconds, or
+// minutes when the next device wants a PIN.
+route.sign = {complete: false, signatures: 1, threshold: 2, signers: [1]};
+render({threshold: 2, keys: 3, signed: [], signable: three});
+assert.ok(has(boxes()[0], 'ready'), 'precondition: nothing signed yet');
+
+let releaseScan = null;
+route.devicesGate = new Promise((resolve) => {
+  releaseScan = () => resolve({ok: true, json: async () => (
+    {devices: [], signable: [], threshold: 2, keys: 3, signed: [1]})});
+});
+context.__device = three[0];
+context.__box = boxes()[0];
+const inFlight = vm.runInContext('signWith(__device, __box)', context);
+// Let /api/sign resolve, but leave the device re-scan deliberately unresolved.
+for (let turn = 0; turn < 12 && !has(boxes()[0], 'signed'); turn += 1) {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+assert.ok(has(boxes()[0], 'signed'),
+  'the box must fill as soon as the signature is known, not after the device re-scan');
+assert.ok(!has(boxes()[2], 'optional'), 'the quota is not met with one of two');
+releaseScan();
+await inFlight;
+
 console.log('Signer boxes: one per cosigner, greyed only once the quota is met, '
-  + '2-of-3 and 3-of-5; the last signature fills its own box where it stands.');
+  + '2-of-3 and 3-of-5; each signature fills its own box where it stands, without '
+  + 'waiting for the device re-scan.');
 })().catch((error) => { console.error(error); process.exit(1); });

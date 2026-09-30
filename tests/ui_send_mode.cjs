@@ -42,6 +42,7 @@ const context = vm.createContext({
   document, location: {hash: '#token=test'},
   fetch: () => new Promise(() => {}),
   setTimeout: () => 1, clearTimeout() {},
+  setInterval: () => 1, clearInterval() {},
   console,
 });
 vm.runInContext(script + `
