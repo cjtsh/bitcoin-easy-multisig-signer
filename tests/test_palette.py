@@ -106,7 +106,31 @@ class PaletteShapeTests(unittest.TestCase):
                 self.assertTrue(block, f"mainnet has no {name} treatment")
                 self.assertIn("--header", block)
                 self.assertIn("--canvas", block)
-                self.assertIn("--accent", block)
+                # The CONTEXT the operator reads carries the alarm.
+                self.assertIn("--line", block)
+
+    def test_mainnet_does_not_repaint_the_action_colour(self):
+        """Red means danger, so it belongs on the dangerous thing.
+
+        Mainnet used to override --accent, which turned every primary button, link
+        and focused control burnt orange. That made "Review payment" - a step that
+        signs nothing, sends nothing, and in this build cannot broadcast at all -
+        look like the dangerous button. The owner read it exactly that way: you do
+        not want to click red things.
+
+        Severity on a control belongs to the one action that is truly
+        irreversible. The alarm belongs to the header, the canvas, the borders and
+        the pending banner: the context, not the controls.
+        """
+        action_roles = ("--accent", "--accent-hover", "--accent-ink", "--accent-soft",
+                        "--focus")
+        for selector in ("body.live-mode", '[data-theme="dark"] body.live-mode'):
+            with self.subTest(selector=selector):
+                overrides = token_names(token_block(self.css, selector))
+                self.assertEqual(
+                    sorted(set(action_roles) & overrides), [],
+                    f"{selector} repaints the action colour; a mode must never make a "
+                    "safe step look dangerous")
 
     def test_the_palette_stays_small_enough_to_hold_in_your_head(self):
         """Five hues, assigned to roles. The ceiling is deliberate.

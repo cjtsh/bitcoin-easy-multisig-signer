@@ -65,21 +65,26 @@
     }
     /* Mainnet. The same five hues, unmistakably alarming: an operator must
        never mistake real Bitcoin for a practice network. This is a mode, not a
-       second palette, so it overrides roles rather than declaring colours. */
+       second palette, so it overrides roles rather than declaring colours.
+
+       It deliberately does NOT touch --accent or --focus. Those carry the action
+       colour, and red already means danger; painting the controls red as well
+       made "Review payment" - a step that signs nothing, sends nothing, and in
+       this build cannot broadcast at all - look like the dangerous button. The
+       owner read it exactly that way: you do not want to click red things.
+
+       The alarm belongs to the context an operator reads - the header, the
+       canvas, the borders, the pending banner - not to the controls they press. */
     body.live-mode {
       --canvas:#fff7ed; --paper:#fffdfa; --sunken:#fff1e2;
       --header:#431407; --header-ink:#ffedd5; --header-muted:#fdba74; --header-rule:#ea580c;
       --line:#fed7aa; --line-strong:#fdba74;
-      --accent:#c2410c; --accent-hover:#9a3412; --accent-ink:#ffffff; --accent-soft:#ffedd5;
-      --focus:#ea580c;
       --pending:#7c2d12; --pending-bg:#ffedd5; --pending-line:#ea580c;
     }
     [data-theme="dark"] body.live-mode {
       --canvas:#1c1005; --paper:#241505; --sunken:#1e1206;
       --header:#3a1a05; --header-ink:#ffedd5; --header-muted:#fdba74; --header-rule:#f97316;
       --line:#4a2a0c; --line-strong:#6b3a11;
-      --accent:#fb923c; --accent-hover:#fdba74; --accent-ink:#2a1405; --accent-soft:#3a2107;
-      --focus:#fb923c;
       --pending:#fdba74; --pending-bg:#33200a; --pending-line:#ea580c;
     }
 
