@@ -615,9 +615,10 @@ Suite: **210 tests, 0 failures**, plus seven Node DOM tests.
 
 ## 0.4.13 — light and dark, one palette (current)
 
-**No application behaviour changed.** This release is appearance: the app now has a
-light theme and a dark theme, a moon/sun button in the header to switch between them,
-and a colour palette small enough to hold in your head.
+**No application behaviour changed.** This release is appearance and wording: a light
+theme and a dark theme with a **Dark Theme / Light Theme** button in the header, a
+colour palette small enough to hold in your head, and three things on the opening
+screen rewritten so they say what they mean.
 
 ### Why it was worth doing properly
 
@@ -641,6 +642,46 @@ Five hues now fill a fixed set of roles:
 Every rule names a role. Mainnet stopped being 13 override rules carrying their own
 hex values and became the same roles read more loudly, so it themes automatically and
 its alarm survives the change from light to dark.
+
+Real Bitcoin wears an **orange frame** and practice networks wear **green**, in both
+themes. Mainnet used to repaint the canvas, the header, the borders and the action
+colour, which turned "Review payment" burnt orange on a step that signs nothing and
+sends nothing. The owner read it exactly as written: *you do not want to click red
+things.* `body.live-mode` went from 12 overridden roles to **one** (`--frame`), so the
+interior is identical and a button means the same thing on every network.
+
+### Three things the owner could not read
+
+- **The theme control was a crescent moon.** *"It's a little bit too cute for me…
+  don't make people guess that it's a sun or a moon."* A crescent means *night*, or
+  *make it night*, or *the theme is dark*, depending on who reads it. It now says
+  **Dark Theme** or **Light Theme**: the theme you would get, in words.
+- **The network was a closed dropdown**, narrower than the file box beside it, so
+  neither the options nor the current choice were visible. It is now three labelled
+  cards — Mutinynet, Testnet4, Bitcoin LIVE — with the active one highlighted.
+  Everything that reads or sets the network goes through one function.
+- **The note beneath it was backwards:** *"A Testnet4 wallet needs a new Mutinynet
+  wallet and test coins."* It now reads *"Mutinynet and Testnet4 are separate test
+  networks. Each needs its own wallet and its own coins to work."*
+
+### The app inside the image is now stapled
+
+The v0.4.12 image was built from a copy of the app taken **before** any staple ran, so
+the app a downloader received carried no ticket of its own. Gatekeeper then verified it
+by an **online** lookup: accepted when connected, **refused offline** — the wrong way
+for a recovery tool to fail.
+
+The app is now notarised and stapled first, and the image is built from it. The build
+then **mounts its own finished image** and validates the copy inside, so an unstapled
+app fails the build rather than somebody's first offline launch.
+
+Two other faults went with it: `spctl` was assessing the **DMG**, which a disk image
+can never pass because it is not code-signed, and an `xattr -cr` on the staged copy was
+silently **stripping the staple back off**.
+
+This had been left undone because it needs a second Apple round trip and the first
+submission took 54 minutes. Measured: a later submission for the same team took about
+**40 seconds**. The objection no longer held.
 
 ### Why the theme cannot break the app
 
@@ -672,4 +713,4 @@ All four guards are mutation-checked: reintroducing each fault is detected.
 One existing test was itself holding the drift in place — `test_slow_work_shows_a_spinner`
 asserted the literal `#ffd447`. It now asserts the role.
 
-Suite: **224 tests, 0 failures**, plus eight Node DOM tests.
+Suite: **229 tests, 0 failures**, plus eight Node DOM tests.
