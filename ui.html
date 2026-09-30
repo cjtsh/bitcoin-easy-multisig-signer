@@ -113,9 +113,26 @@
     .network { display:inline-flex; border:1px solid var(--header-rule); border-radius:99px; padding:5px 12px;
       margin-top:20px; font-size:12px; letter-spacing:.045em; font-weight:750; color:var(--header-ink); }
     .network.live { border:3px solid var(--pending-line); background:var(--pending-bg); color:var(--pending); }
+    /* Three networks, all visible, with the active one highlighted. A closed
+       dropdown hid both the options and the current choice. */
+    .field-label { display:block; font-weight:680; margin:0 0 7px; font-size:14px; }
+    .chain-choice { display:flex; flex-direction:column; gap:8px; }
+    .chain-choice label { display:flex; align-items:baseline; gap:9px; margin:0;
+      border:2px solid var(--line); border-radius:10px; padding:11px 13px;
+      background:var(--paper); cursor:pointer; font-weight:400; }
+    .chain-choice label:hover { border-color:var(--line-strong); }
+    .chain-choice label.selected { border-color:var(--accent); background:var(--accent-soft); }
+    .chain-choice input { width:17px; height:17px; flex:0 0 17px; margin:0;
+      accent-color:var(--accent); align-self:center; }
+    .chain-choice b { font-size:15px; }
+    .chain-choice small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+    .chain-choice label.selected small { color:var(--accent); }
+    /* Words, not a pictogram. A moon means "it is night" or "make it night" or
+       "the theme is dark" depending on who is reading it, and the owner said so:
+       don't make people guess. The button names the theme you would get. */
     .theme-toggle { position:absolute; top:30px; right:max(22px,calc((100vw - 1060px)/2));
-      width:42px; height:42px; min-height:0; padding:0; display:grid; place-items:center;
-      font-size:18px; line-height:1; border-radius:99px; cursor:pointer;
+      min-height:0; width:auto; padding:9px 15px; border-radius:99px; cursor:pointer;
+      font:700 13px system-ui; letter-spacing:.01em; white-space:nowrap;
       background:var(--header-rule); color:var(--header); border:1px solid transparent; }
     .theme-toggle:hover { background:var(--header-ink); }
     .live-banner { background:var(--pending-bg); border:3px solid var(--pending-line); border-radius:12px;
@@ -262,11 +279,10 @@
     <span id="busy-elapsed" class="busy-elapsed" aria-hidden="true"></span>
   </div>
   <header class="top">
-    <!-- The only appearance control in the app. Its label states what pressing it
-         does rather than what state it is in, because that is what a screen
-         reader should read out. -->
+    <!-- The only appearance control in the app. It names the theme you would get,
+         in words, because a sun or moon makes people guess which way it goes. -->
     <button id="theme-toggle" class="theme-toggle" type="button"
-            aria-label="Switch to dark theme" title="Switch theme (T)">🌙</button>
+            aria-label="Switch to dark theme" title="Switch theme (T)">Dark theme</button>
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Bitcoin Easy Signer</h1>
     <p>Open an existing <strong>2-of-3</strong> wallet, review a payment, and approve it on two hardware devices.</p>
@@ -305,15 +321,27 @@
         </details></div>
       <p class="muted">Choose your wallet file—not a recovery phrase or private key.</p>
       <div class="grid">
-        <div><label for="chain">Bitcoin network</label>
-          <select id="chain"><option value="mutinynet">MUTINYNET · fast practice network</option>
-            <option value="testnet4">TESTNET4 · existing test wallets</option>
-            <option value="main">LIVE MAINNET · real BTC</option></select></div>
+        <div>
+          <!-- A visible choice, not a dropdown. The owner could not tell from a
+               closed select that there were three networks or which one was
+               active, and the control was far narrower than the file box beside
+               it. Three labelled cards show every option and highlight the one in
+               force, which is the same thing the frame colour is saying. -->
+          <span class="field-label" id="chain-label">Bitcoin network</span>
+          <div id="chain" class="chain-choice" role="radiogroup" aria-labelledby="chain-label">
+            <label><input type="radio" id="chain-mutinynet" name="chain" value="mutinynet" checked>
+              <b>Mutinynet</b><small>fast practice network</small></label>
+            <label><input type="radio" id="chain-testnet4" name="chain" value="testnet4">
+              <b>Testnet4</b><small>existing test wallets</small></label>
+            <label><input type="radio" id="chain-main" name="chain" value="main">
+              <b>Bitcoin LIVE</b><small>real BTC, dry run only</small></label>
+          </div>
+        </div>
         <div id="wallet-input">
           <label for="wallet-file">BSMS wallet file</label>
           <input id="wallet-file" type="file"></div>
       </div>
-      <p class="small muted">Mutinynet and Testnet4 are separate networks. A Testnet4 wallet needs a new Mutinynet wallet and test coins.</p>
+      <p class="small muted">Mutinynet and Testnet4 are separate test networks. Each needs its own wallet and its own coins to work.</p>
       <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
         <span id="explorer-consent-text">I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
@@ -632,9 +660,9 @@
           root.dataset.theme = theme === "dark" ? "dark" : "light";
           const button = document.getElementById && document.getElementById("theme-toggle");
           if (!button) return;
-          // The icon shows the CURRENT theme; the label says what the press does,
-          // because that is what a screen reader reads out.
-          button.textContent = theme === "dark" ? "\u2600\ufe0f" : "\ud83c\udf19";
+          // Words, not a pictogram. The label names the theme the press would give
+          // you, which is also what a screen reader should hear.
+          button.textContent = theme === "dark" ? "Light theme" : "Dark theme";
           if (button.setAttribute) {
             button.setAttribute("aria-label",
               `Switch to ${theme === "dark" ? "light" : "dark"} theme`);
@@ -737,7 +765,34 @@
       if (sats >= LARGE_AMOUNT_SATS_FLOOR) return true;
       return rate ? sats / 100000000 * rate.usd_per_btc >= 10000 : false;
     }
-    const selectedChain = () => $("chain").value;
+    // The three networks, in the order the cards appear. Everything that needs to
+    // read or set the selection goes through these two functions, so the control
+    // itself could change shape without touching the rest of the app.
+    const CHAIN_IDS = ["mutinynet", "testnet4", "main"];
+    const selectedChain = () => {
+      for (const id of CHAIN_IDS) {
+        const radio = $("chain-" + id);
+        if (radio && radio.checked) return id;
+      }
+      return "mutinynet";
+    };
+    function setChain(value) {
+      for (const id of CHAIN_IDS) {
+        const radio = $("chain-" + id);
+        if (radio) radio.checked = (id === value);
+      }
+      renderChainChoice();
+    }
+    function renderChainChoice() {
+      const current = selectedChain();
+      for (const id of CHAIN_IDS) {
+        const radio = $("chain-" + id);
+        if (radio && radio.closest) {
+          const card = radio.closest("label");
+          if (card && card.classList) card.classList.toggle("selected", id === current);
+        }
+      }
+    }
     function updateNetworkUI() {
       const main = selectedChain() === "main";
       const name = main ? "mainnet" : (selectedChain() === "mutinynet" ? "Mutinynet" : "Testnet4");
@@ -1150,7 +1205,7 @@
       renderFeeGuidance();
     }
     function showWallet(data) {
-      $("chain").value = data.network;
+      setChain(data.network);
       updateNetworkUI();
       walletCanPrepare = data.can_prepare;
       walletCanSendAll = Boolean(data.can_send_all);
@@ -1397,6 +1452,9 @@
       setText("send-choice-message", "No transaction prepared. Your wallet has not been changed.");
     });
     $("chain").addEventListener("change", () => {
+      // The highlight follows the choice immediately, before any network work, so
+      // the screen never shows the old network as selected while it reloads.
+      renderChainChoice();
       walletActionId++;
       walletCanPrepare = false; walletCanSendAll = false; lastScan = null;
       feeEstimate = null; feeQuote = null;
@@ -1854,7 +1912,7 @@
       try {
         const saved = await post("/api/status", {});
         if (started !== walletActionId || !saved.wallet) return;
-        $("chain").value = saved.chain;
+        setChain(saved.chain);
         if (saved.explorer_consent) {
           $("explorer-consent").checked = true;
         }
