@@ -137,5 +137,5 @@ release date, before drawing conclusions.
 ## Related
 
 - `THIRD-PARTY-NOTICES.md` — HWI's licence and those of the other bundled dependencies.
-- `PHASE-HANDOFF.md` — notarization and the other remaining release gates.
+- `PHASE-HANDOFF.md` — current release status and the remaining mainnet and operator-readiness gates.
 - `AGENTS.md` — the Python-version rule and the full release checklist.

@@ -1,12 +1,12 @@
 # Current handoff — Bitcoin Easy Signer
 
-## Current stop point — owner hold, 29 September 2026
+## Current stop point — 0.4.13, mainnet dry run pending
 
-The owner asked to **pause project work until their mainnet test run-through**. Do not treat Phase 5 as accepted or enable mainnet broadcast while waiting. The latest published build is [v0.4.3](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.3), built from `e7f97ac1c45081cbeabeea6b29941e05ac6bce78`; its source and Apple Silicon DMG passed the manual workflow and downloaded checksum/disk-image checks. The owner has not yet reported a physical run of 0.4.3. Earlier physical Mutinynet payments and one confirmed 0.4.1 Ledger + Jade payment are recorded below and in the patch notes. No mainnet payment has been prepared, signed, or broadcast by this app.
+The current published version is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13), with source version `0.4.13` in `version.py`. The owner has not reported a physical transaction walkthrough on 0.4.13. Do not treat Phase 5 as accepted or enable mainnet broadcast while its gates remain open. Earlier physical Mutinynet payments, including a confirmed 0.4.1 Ledger + Jade payment, are recorded in `RELEASE-HISTORY.md`. No mainnet payment has been prepared, signed, or broadcast by this app.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 
-**When the owner resumes:** start with the current `AGENTS.md`, this handoff, `CHANGE-ADDRESS-REVIEW.md`, and the current source. Ask for the outcome of their mainnet run-through, including the app version, which stages completed, and any privacy-limited diagnostic report if there was an error. The first mainnet gate is a **dry run** with the real wallet: import its BSMS, verify its change policy against that wallet and signer displays, prepare a small payment to an owner-controlled destination, obtain two device approvals, and independently check the finalized inputs, outputs, change, fee and txid. Keep the signed transaction private and **do not broadcast**. A live send requires a separate explicit mainnet-broadcast code change and fee-policy review; check the current Phase 5 roadmap before proceeding. The plain-language user guide, nontechnical-user walkthrough, and Developer ID/notarization are also unfinished. Do not ask the recovery operator for a second wallet file, a Nunchuk database, seed words, or path decisions.
+**Next owner gate:** complete a **mainnet dry run** with the real wallet: import its BSMS, verify its change policy against the wallet and signer displays, prepare a small payment to an owner-controlled destination, obtain two device approvals, and independently check the finalized inputs, outputs, change, fee, and txid. Keep the signed transaction private and **do not broadcast**. Record the app version and stages completed; if there is an error, use only the privacy-limited diagnostic report. A live send requires separate fee-policy review, a deliberate mainnet-broadcast code change, and explicit authorization. Do not ask the recovery operator for a second wallet file, a Nunchuk database, seed words, or path decisions.
 
 ## 0.4.1 accepted on Ledger and Jade; 0.4.3 change-path correction published
 
@@ -16,9 +16,9 @@ The owner's 0.4.0 Jade attempt was rejected twice after transaction preparation.
 
 ## Status and version policy
 
-The current published build is [v0.4.3](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.3). The full version-by-version record — including the 0.2.0 hardware-signing failure ("do not use"), the 0.2.1 field-order correction, the 0.3.x Mutinynet and one-file BSMS work, and the 0.4.x releases — lives in `RELEASE-HISTORY.md`. Physical evidence to date, in brief: confirmed Testnet4 payments through 0.2.1, two owner-reported Mutinynet sends on 0.3.2 (Ledger + Trezor, Jade + Trezor), and an owner-reported Ledger + Jade Mutinynet payment on 0.4.1 that confirmed on-chain with a verified diagnostic report. **The 0.4.2 longer Jade authorization wait and 0.4.3 itself are not yet physically exercised. Mainnet broadcast remains refused in code; no mainnet payment has ever been prepared, signed, or broadcast by this app.**
+The current published build is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13). The full version-by-version record — including the 0.2.0 hardware-signing failure ("do not use"), the 0.2.1 field-order correction, the 0.3.x Mutinynet and one-file BSMS work, the 0.4.1 physical payment, and the later interface and notarization work — lives in `RELEASE-HISTORY.md`. The owner has not reported a physical transaction walkthrough on 0.4.13. Mainnet broadcast remains refused in code; no mainnet payment has ever been prepared, signed, or broadcast by this app.
 
-Version scheme: **0.2.0 hot fixes**, **0.2.x corrections**, **0.3.0 warm fixes**, **0.3.x corrections**, **0.4.0 nice-to-have improvements**. The owner does not want repeated Mac installs for minor changes. The installed 0.2.1 app showed a new unsigned review above the previous payment's signing/final screen; **never broadcast from such a mixed screen — close the old app before installing a newer release.** The 0.3.0 regression test checks this reset. Mutinynet is the chosen fast practice path; Testnet4 remains for the old wallet.
+Use a new patch version for any correction to a published build. The owner prefers milestone-based Mac installs after extensive automation rather than repeated installs for small revisions. The installed 0.2.1 app showed a new unsigned review above the previous payment's signing/final screen; **never broadcast from such a mixed screen — close the old app before installing a newer release.** The UI regression tests cover that reset. Mutinynet is the fast practice path; Testnet4 remains available for the existing wallet.
 
 ## Product goal
 
@@ -50,47 +50,16 @@ The controlled 0.2.1 Testnet4 payment signed with two devices, was accepted by t
 
 Current UTXO checks still depend on public explorers (dual-source on mainnet, single-source recheck on practice networks), and fee replacement remains outside this app. Mainnet dry run and a deliberate owner-authorized real send are separate Phase 5 gates; do not enable mainnet broadcast merely because a practice-network walkthrough passes. The plain-language operator guide and the nontechnical-user walkthrough are also unfinished; see `ROADMAP.md` Phase 5 for the full sequence.
 
-## Notarization — wired, waiting only on Apple credentials
+## Developer ID signing and notarization — complete for published release
 
-The owner's Apple Developer Program enrollment was accepted on 30 September 2026; the membership purchase must still be completed before any credential exists.
+Version 0.4.12 was the first Developer ID-signed and Apple-notarized release. Version 0.4.13 corrected the staple order: the app is stapled before the DMG is built, then the finished image is mounted and the app copy inside is validated. See `RELEASE-HISTORY.md` for the release evidence and artifact checks.
 
-**The build path is finished.** `scripts/build-macos.sh` with `RELEASE=1` signs every nested Mach-O (including the bundled `hwi`) with the hardened runtime, seals the `.app`, submits the DMG with `notarytool`, staples it, validates the staple, and then requires `spctl` to accept the artifact. `scripts/notary-args.sh` chooses the credentials and refuses a partial or ambiguous configuration rather than guessing. The workflow exposes the path as an opt-in dispatch input:
+`scripts/build-macos.sh` with `RELEASE=1` signs nested Mach-O files (including bundled `hwi`) with the hardened runtime, seals the `.app`, submits to Apple, staples, validates, and checks Gatekeeper acceptance. `scripts/notary-args.sh` refuses partial or ambiguous credential configuration. The workflow exposes notarization as an explicit dispatch input:
 
 ```
 gh workflow run build-candidate.yml --ref main -f notarize=true
 ```
 
-With `notarize` off, the run produces the usual `-UNSIGNED-TEST.dmg`. With it on, the run **fails closed** unless the credentials below exist, so a "notarized" dispatch can never quietly produce an ad-hoc-signed DMG. Two guards prove that, plus `tests/test_notary_args.py` covering the credential choice without an Apple account.
+With `notarize` off, a run produces an `-UNSIGNED-TEST.dmg`. With it on, the run **fails closed** unless the signing and notarization credentials are present; it cannot quietly produce an ad-hoc-signed image under a notarized release path. Keep credential values in GitHub Actions secrets/variables or the local keychain, never in this repository or a chat. The separate Apple Developer instructions document is the canonical setup reference.
 
-**What the repository needs** (Settings → Secrets and variables → Actions). Variables are not secret:
-
-| Kind | Name | Value |
-|---|---|---|
-| Variable | `MAC_SIGN_IDENTITY` | `Developer ID Application: NAME (TEAMID)` |
-| Variable | `MAC_NOTARY_KEY_ID` | App Store Connect key ID |
-| Variable | `MAC_NOTARY_ISSUER_ID` | App Store Connect issuer UUID |
-| Secret | `MAC_CERT_P12_BASE64` | Developer ID Application `.p12`, base64 |
-| Secret | `MAC_CERT_PASSWORD` | the `.p12` export password |
-| Secret | `MAC_NOTARY_KEY_P8_BASE64` | the `AuthKey_*.p8`, base64 |
-
-```bash
-base64 -i cert.p12          | tr -d '\n' > cert.p12.b64
-base64 -i AuthKey_XXXX.p8   | tr -d '\n' > authkey.p8.b64
-```
-
-**Both of these were resolved by the first real notarized build on 30 September 2026.** The round trip ran and Apple returned `Accepted`; both faults it exposed are fixed and pinned by `ReleaseGateTests`.
-
-1. **The round trip works, and it is slow.** Apple accepted the submission — but took **54 minutes**, not the usual 2–10. The `notarytool --wait` in the terminal never returned and had to be killed, while Apple's own status said `Accepted` the whole time. Apple's developer forums carry a cluster of threads with exactly this symptom, one of them titled *"All notarization submissions stuck In Progress — new Developer ID account"*, with durations from 20 hours to 5 days. **A new team's first submissions are the known-affected case.** So: never judge progress by the `--wait` spinner, always by `notarytool info`. And never notarize during iteration — see the three build loops above.
-2. **The DMG is stapled; the app a downloader receives is not.** The image is built from a copy of the app taken *before* either staple runs, so stapling `$app` afterwards makes the copy in `dist/` self-contained but never reaches inside the DMG. Measured on the published v0.4.12 image: the DMG validates, the app inside reports *"does not have a ticket stapled to it"*.
-
-   **In practice:** a downloader is fine when online — `spctl` reports `accepted, source=Notarized Developer ID`, and a quarantined copy of the DMG opens through LaunchServices with no warning. **Offline, the first launch of the downloaded app may be refused.** For a recovery tool that is a real gap.
-
-   Closing it means notarizing and stapling the **app first**, then building the DMG from the stapled app — a **second Apple round trip per release**. Worth doing before the first public release, and worth measuring afterwards whether later submissions are as slow as the first (Apple is said to cache team signatures, which would make the extra trip cheap).
-
-   An earlier version of this file, of the build script and of a test docstring all claimed the app staple was free and covered the download. It does not, and the correction is recorded in all three rather than quietly reasserted.
-
-Verified against the real artifact: the DMG and the app both `stapler validate`, and `spctl` reports the app as `accepted, source=Notarized Developer ID`. A quarantined copy of the DMG mounts through LaunchServices, which is the download path a release recipient takes.
-
-**One trap worth recording:** the Gatekeeper gate originally assessed the DMG, which a disk image can never pass because it is not code-signed — measured, it reports `rejected, source=no usable signature` even when correctly notarized. The gate now assesses the **app**, which is the artifact Gatekeeper must actually accept. Had this not been caught, the first notarized release would have aborted at its final step having done everything right.
-
-Also note the release notes template in the workflow still carries stale boilerplate from an older release ("the supplied Sparrow and Nunchuk files…"). It is inaccurate for current versions and should be rewritten separately.
+Do not assess the DMG itself with `spctl`: a disk image is not executable code. Validate both staples and assess the app, including the copy mounted from the finished DMG. The build performs these checks. Keep release notes factual and version-specific; do not reuse claims that applied only to an earlier wallet export or build.

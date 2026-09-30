@@ -1,67 +1,31 @@
 # Current status — Bitcoin Easy Signer
 
-**Read this page first.** Current version, what is proven, what is not, and which
-documents are current. [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md) is the per-release
-changelog; there is no separate `CHANGELOG.md`.
+**Current version: 0.4.13.** This is the published Apple Silicon release. Its release record is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md); the code version is set in [`version.py`](version.py). This page summarizes current evidence and open gates. Older audit results and release notes remain historical evidence, not claims about the current release.
 
-**Current version: 0.4.6**, a signing-panel checklist on top of 0.4.5
-([`PATCH-0.4.6.md`](PATCH-0.4.6.md)). 0.4.4 remediates the two 0.4.3 audits
-([`PLAN-0.4.4.md`](PLAN-0.4.4.md)). Both audits reviewed `main` at **`7d622ef`**
-and neither exercised a mainnet transaction or a physical device; current source
-and tests take precedence over history.
+## What the app does
 
-## What is proven
+Bitcoin Easy Signer helps a nontechnical person make a payment from an existing 2-of-3 native-SegWit multisig wallet. It reads one BSMS file, checks public wallet and hardware identities, scans through a selected Esplora server, builds a PSBT, requests signatures through Bitcoin Core HWI, verifies the signatures and final transaction, and broadcasts on Testnet4 or Mutinynet after explicit review. One transaction engine serves Testnet4, Mutinynet, and mainnet.
 
-**Independently verified** (third-party review and independent decode; no hardware,
-no mainnet transaction):
+Mainnet preparation, signing, and finalization support a controlled dry run. **Mainnet broadcast is refused in code. No mainnet transaction has ever been prepared, signed, or broadcast by this app.** The app is experimental and not a production recovery tool; see [`DISCLAIMER.md`](DISCLAIMER.md).
 
-- Both 0.4.3 audits read the source and ran the suite: **172 automated tests**
-  (DeepSeek: 0 failures; Z.ai: 172 passing, 8 platform-dependent skips).
-- DeepSeek ran ~100 hostile cases and found **no fund-loss path**; a fully signed
-  mainnet transaction is refused at `/api/broadcast`. Z.ai verified input ownership,
-  exact fees, non-dust change, the reviewed-equals-broadcast binding, and
-  DER/`SIGHASH_ALL`/ECDSA verification; the 0.4.1 import keeps only verified signatures.
-- The 0.4.3 bare-`/*` change rule has a synthetic regression test, and the
-  Sparrow/Nunchuk comparison corroborates BIP48 change inference **for that practice
-  wallet only**. Two independent decoders agreed on every value of a real owner PSBT.
+## Evidence
 
-**Owner-reported** (physical acceptance; not independent verification):
+- Automated source and UI checks are recorded per release in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md). The 0.4.13 release record reports 229 Python tests and eight Node DOM tests passing.
+- Owner-reported physical acceptance includes confirmed Testnet4 payments through 0.2.1; two Mutinynet payments on 0.3.2 (Ledger + Trezor, then Jade + Trezor); and a confirmed 0.4.1 Ledger + Jade Mutinynet payment with a privacy-limited diagnostic report recording verified signatures, finalization, and accepted broadcast.
+- The owner has not reported a physical transaction walkthrough on 0.4.13. The 0.4.13 theme, network selector, copy, and release-build corrections are covered by automated checks; those checks do not establish hardware or mainnet acceptance.
+- The 0.4.3 DeepSeek and Z.ai audits reviewed an earlier source revision, `7d622ef`; neither used a physical device or performed a mainnet transaction. Their findings and the 0.4.4 remediation record remain useful historical review material, not an audit of 0.4.13.
+- The 0.4.12 release was the first Developer ID-signed and Apple-notarized build. The 0.4.13 build additionally staples the app before creating the DMG and validates the app copy inside the finished image. See the release history and [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md).
 
-- Confirmed Testnet4 payments through 0.2.1, signed by two devices.
-- 0.3.2: two Mutinynet sends, Ledger + Trezor then Jade + Trezor, the second without
-  restarting the app. No transaction IDs or diagnostics were supplied.
-- 0.4.1: a Ledger + Jade Mutinynet payment; the diagnostic recorded two verified
-  signer responses, a verified final transaction and an accepted broadcast, and the
-  owner-supplied public transaction later confirmed (device identities omitted).
-- **0.4.2 and 0.4.3 have not been physically exercised.**
+## Open gates and limitations
 
-**Recorded in-repo, not independently audited:** the v0.4.3 workflow's source/DMG checks
-passed and assets matched `SHA256SUMS` — integrity, not publisher identity or a code audit.
+- Verify the live mainnet wallet's change policy independently before relying on inferred change. Practice-wallet Sparrow/Nunchuk comparison does not prove another wallet's policy; see [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md).
+- Complete the mainnet dry run: verify change policy, prepare a small payment to an owner-controlled destination, obtain two device approvals, independently compare inputs, outputs, change, fee, and txid, then discard the signed transaction. Do not broadcast.
+- Decide how to handle fees above the current 25 sat/vB rate and 10,000-sat estimated-fee limits. There is no in-app fee-bump flow.
+- Public Esplora services provide balances, UTXOs, fees, and broadcast. Mainnet outpoints have a second-source check; practice networks use a fresh same-explorer check. A gap-limited scan can miss funds and is not a complete wallet sweep.
+- The plain-language operator guide, nontechnical-user walkthrough, and tested device/firmware matrix are still outstanding. The inherited stack (embit, HWI, libusb, pywebview, and PyInstaller) has not received an independent component audit.
 
-## What is NOT proven / open gates
+## Document map
 
-- **No mainnet transaction has ever been prepared, signed, or broadcast by this app.**
-  Mainnet broadcast is refused in code, not merely hidden in the UI.
-- **No notarized or Developer ID-signed build.** The DMG is ad-hoc signed and needs
-  right-click → Open; no recipient can attribute it to a publisher. The signing and
-  notarization path is now wired and fails closed without credentials, so this is
-  waiting only on the Apple Developer Program purchase and the certificates; see
-  `PHASE-HANDOFF.md` for the exact secrets.
-- **The live mainnet wallet's change policy is unverified.** Ambiguous BSMS exports use
-  a strictly gated BIP48 `/1/*` inference corroborated only for the practice wallet;
-  verify the first unused change address and its derivation before a mainnet send.
-- **Fee policy is unresolved.** The 1–25 sat/vB band and 10,000-sat ceiling can refuse
-  when a busy mempool demands more, and there is no fee-bump flow.
-- **Explorer dependence and scan limits.** Public Esplora instances supply balances,
-  UTXOs, fees and broadcast; practice rechecks are single-source, and a gap-limited
-  scan is not a complete wallet sweep.
-- **Still missing:** the operator guide, the device/firmware matrix, and notarization.
-  The inherited stack (embit, HWI, libusb, pywebview, PyInstaller) is not independently audited.
+**Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-## Document set — current vs archive
-
-**Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md) (this page), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`replit.md`](replit.md), [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`PATCH-0.4.6.md`](PATCH-0.4.6.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md).
-
-**Mixed:** [`ROADMAP.md`](ROADMAP.md) — top status block current, phase sections archive.
-
-**Archive/historical:** [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), [`AUDIT-BASELINE-0.1.27.md`](AUDIT-BASELINE-0.1.27.md), [`SECURITY-REVIEW-0.2.0.md`](SECURITY-REVIEW-0.2.0.md), the `PATCH-*.md` records ([`PATCH-0.2.1.md`](PATCH-0.2.1.md) onward), [`PLAN-0.3.0.md`](PLAN-0.3.0.md), [`MUTINYNET-0.3.0.md`](MUTINYNET-0.3.0.md). Anything not marked **Current** here is history.
+**Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), the 0.2.0 and 0.4.3 audits, old patch records, [`PLAN-0.3.0.md`](PLAN-0.3.0.md), and [`MUTINYNET-0.3.0.md`](MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.
