@@ -4,8 +4,9 @@
 
 1. `README.md` for current user-visible behavior and supported scope.
 2. `PHASE-HANDOFF.md` for current status, version gates and owner test.
-3. `CHANGE-ADDRESS-REVIEW.md` for the BSMS/change trust boundary, then `PATCH-0.4.2.md` for the Jade authorization wait correction, `PATCH-0.4.1.md` for the accepted Ledger + Jade signing correction, `PATCH-0.4.0.md` for the visual release and receipt behavior, `PATCH-0.3.2.md` for the BSMS-only BIP48 correction and owner walkthrough, `PATCH-0.3.1.md` for the earlier Send All correction, `PATCH-0.3.0.md` for warm release evidence, then `AUDIT-BASELINE-0.1.27.md` and `SECURITY-REVIEW-0.2.0.md` for the original findings. Read `PLAN-0.3.0.md` and `MUTINYNET-0.3.0.md` for the warm-work design and limits.
-4. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
+3. `RELEASE-HISTORY.md` for the version-by-version record; each entry links its full evidence file (`PATCH-*.md`, `AUDIT-BASELINE-0.1.27.md`, `SECURITY-REVIEW-0.2.0.md`, `PLAN-0.3.0.md`, `MUTINYNET-0.3.0.md`).
+4. `CHANGE-ADDRESS-REVIEW.md` for the BSMS/change trust boundary and the mainnet change-policy gate.
+5. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture
 

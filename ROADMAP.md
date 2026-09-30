@@ -2,19 +2,9 @@
 
 ## Current status — on hold at the owner's request
 
-The owner paused work on 29 September 2026 pending their **mainnet test run-through**. Current published version: [v0.4.3](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.3), with verified release assets. Phases 1–4 have practice-network evidence, including Testnet4 and Mutinynet hardware payments; 0.4.3 itself has no reported physical walkthrough yet. Mainnet broadcast is disabled. No mainnet transaction has been prepared, signed, or sent by this app. Resume only after the owner reports their run-through; `PHASE-HANDOFF.md` begins with the exact handoff and evidence limits.
+The owner paused work on 29 September 2026 pending their **mainnet test run-through**. Current published version: [v0.4.3](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.3), with verified release assets. Phases 1–4 have practice-network evidence, including Testnet4 and Mutinynet hardware payments; 0.4.3 itself has no reported physical walkthrough yet. Mainnet broadcast is disabled. No mainnet transaction has been prepared, signed, or sent by this app. Resume only after the owner reports their run-through; `PHASE-HANDOFF.md` begins with the exact handoff and evidence limits, and `RELEASE-HISTORY.md` holds the version-by-version correction record.
 
-The next gate is a **mainnet dry run without broadcast** using the actual live wallet: establish its change policy independently, review a small transaction to an owner-controlled address on two hardware devices, and compare the final transaction's inputs, destination, change, fee and txid with the review. A practice wallet's matching Sparrow/Nunchuk exports are strong evidence for that wallet's change derivation, but do not prove the live wallet's policy; see `CHANGE-ADDRESS-REVIEW.md`. A live Bitcoin send follows only after the dry run, fee-policy decision, deliberate mainnet-broadcast implementation and explicit authorization. The plain-language guide, nontechnical-user walkthrough, and signed/notarized distribution remain open product work. Avoid asking for a new test payment solely to verify 0.4.2/0.4.3 corrections.
-
-**0.4.3 change-path correction published:** a bare wildcard that directly matches a first address does not authorize BIP48 inferred change. See `CHANGE-ADDRESS-REVIEW.md`. Mainnet broadcast remains disabled.
-
-**0.4.2 Jade authorization wait published; 0.4.1 signed and broadcast:** installed 0.4.0 rejected a Jade signer response after approval. See `PATCH-0.4.1.md` for diagnostic evidence, the signature-only import boundary, automated tests and the completed Ledger + Jade Mutinynet walkthrough. See `PATCH-0.4.2.md` for the longer Jade device-authorization wait still needing physical confirmation. Do not infer a cause from the visual refresh. Do not proceed to a mainnet live-send gate until this is checked.
-
-**Previous visual release:** [v0.4.0](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.0) is published as a bounded visual refresh test build; see `PATCH-0.4.0.md`. It changes the light palette, layout and session-only payment receipt, with no new wallet or signing engine. The owner reported two successful Mutinynet payments using Ledger + Trezor and Jade + Trezor; the second worked without restarting the app. Mainnet broadcast remains disabled. `PATCH-0.3.2.md` records physical evidence; `PHASE-HANDOFF.md` states current boundaries. The detailed phase text below preserves earlier decisions and may describe older releases. `CHANGE-ADDRESS-REVIEW.md` records the BSMS change-path trust boundary and an additional fail-closed guard; review it before any mainnet gate.
-
-**0.3.1 correction published:** the owner encountered a receive-only BSMS export on Mutinynet. Keep the prohibition on partial sends without a verified declared change path, but never preselect a Send All sweep. Show the reason beside the amount and default the opening network to Mutinynet. `PATCH-0.3.1.md` records the fix and owner path. Do not ask for another transaction merely to verify the UI; Nunchuk's BSMS omits change restrictions; its first receive address alone cannot establish its internal branch. Find a same-wallet public policy proof accepted by the owner before a custom-send walkthrough.
-
-**0.3.2 published correction supersedes that last sentence:** the recovery operator will have **only a BSMS file**. The owner rejected a separate Nunchuk database import. BIP48 defines standard `/0/*` receive and `/1/*` change, and Nunchuk's own BSMS importer defaults an unspecified branch pair to `{0,1}`. For a strict 2-of-3 sorted native-SegWit BIP48 policy with an anchored first receive address, enable a custom amount from the BSMS alone and label change standard-derived. A custom branch layout remains unsupported. The owner reports two successful physical Mutinynet sends in 0.3.2. See `PATCH-0.3.2.md` for the evidence limits.
+The next gate is a **mainnet dry run without broadcast** using the actual live wallet: establish its change policy independently, review a small transaction to an owner-controlled address on two hardware devices, and compare the final transaction's inputs, destination, change, fee and txid with the review. A practice wallet's matching Sparrow/Nunchuk exports are strong evidence for that wallet's change derivation, but do not prove the live wallet's policy; see `CHANGE-ADDRESS-REVIEW.md`. A live Bitcoin send follows only after the dry run, the fee-policy decision, deliberate mainnet-broadcast implementation and explicit authorization. The plain-language guide, nontechnical-user walkthrough, and signed/notarized distribution remain open product work. Avoid asking for a new test payment solely to verify a 0.4.x correction.
 
 ## 0.4.0 visual refresh
 
@@ -312,10 +302,9 @@ that a payment is not finished until it confirms.
 **Standing by on the owner.** The owner is awaiting Apple Developer Program
 confirmation, so this step cannot start yet; signing secrets must also be added to the
 GitHub repository by the owner before CI can sign. This is a human dependency, not a
-coding task, and no workaround should be attempted. The full sequence, including why
-the bundle must not be sealed with `codesign --deep` and which entitlements the bundled
-Python runtime is likely to need, is recorded in `PHASE-HANDOFF.md` under *Standing by
-on the owner*.
+coding task, and no workaround should be attempted. Why the bundle must not be sealed
+with `codesign --deep` is recorded in `PROJECT-HISTORY.md`'s security-findings table;
+outstanding Phase 5 dependencies are summarized in `PHASE-HANDOFF.md`.
 
 **Acceptance.** A mainnet dry run whose decoded transaction matches the review on every
 value and whose device screens showed the same destination, amount and fee; then, only
