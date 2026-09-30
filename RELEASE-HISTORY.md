@@ -30,7 +30,8 @@ every version:
 | 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
 | 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
 | 0.4.6 | One signing box per cosigner, so the missing signer is visible at a glance | — |
-| **0.4.7** | **Current.** Correction: the final signature now fills its own box, and completing does not scroll the boxes off screen | — |
+| 0.4.7 | Correction: the final signature fills its own box, and completing does not scroll the boxes off screen | — |
+| **0.4.8** | **Current.** Attributable diagnostics, and visible progress that never advertises a wait | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -317,7 +318,7 @@ signing *mechanics* are untouched — only how progress is presented. No change 
 the PSBT construction path, the signature-verification rules, fee policy, or the
 set of networks on which broadcast is possible.
 
-## 0.4.7 — the last signature fills its own box (current)
+## 0.4.7 — the last signature fills its own box
 
 Correction to 0.4.6, found by the owner on the first real payment through it.
 
@@ -385,3 +386,72 @@ so a new `tests/ui_*.cjs` runs without a workflow edit.
 Suite: **189 tests, 0 failures**, plus four Node DOM tests. No change to the
 PSBT construction path, the signature-verification rules, fee policy, or the set
 of networks on which broadcast is possible.
+
+## 0.4.8 — attributable diagnostics and visible progress (current)
+
+Two threads, both from the owner reading a real 0.4.7 diagnostic report from a
+successful two-device Mutinynet payment.
+
+### The report could not say what had been refused
+
+`DIAGNOSTIC_STAGES` used stage names (`transaction_prepare`, `signer_response`)
+while the rejection handler derived a *route* name (`prepare`, `sign`). The two
+never matched, so **13 of 14 routes** were recorded as an unattributable
+`request`. Only `/api/broadcast` lined up, by coincidence. A refused signature
+therefore logged exactly like a refused fee estimate: if a device had rejected
+that payment, the report could not have said so.
+
+Rejections are now attributed through an explicit `DIAGNOSTIC_ROUTE_STAGES` map.
+Routes deliberately absent from it — fee estimates, price, settings, status — are
+ordinary interface feedback and now record **nothing**: six of the twenty-two
+events in the owner's report were debounced estimate calls, and the buffer holds
+only 80 events, so chatter was evicting the events that matter.
+
+### The report had no network and no device
+
+Each event now carries the selected **network** and, where a device was involved,
+its **class** — the two things that decide what a failure means, since
+"broadcast accepted" differs between a practice network and mainnet, and the
+devices behave differently enough that "which one, when" is the first
+troubleshooting question. `signer_check` records which classes it saw;
+`signer_response` records which one signed or refused. A device *model* is not an
+identity: the value passes a token check and anything else is dropped rather than
+escaped, so no path, serial, fingerprint, address or error text can be written.
+Timestamps stay — the owner's 45-second-versus-46-second timeout catch was made
+with them.
+
+### The screen showed nothing during the slowest step
+
+After a device signed, `signWith` waited for a **full device re-enumeration**
+before redrawing the boxes. The server had already said which signer signed, so
+the box could have filled immediately; instead the operator signed on the device
+and the screen kept offering to sign for five to ten seconds, or minutes when the
+next device wanted a PIN. That dead zone is manufactured, not inherent, and it is
+the most likely reason someone clicks a second time. The box now fills from the
+response, and the re-scan happens afterwards.
+
+The progress bar also gains **elapsed seconds**, shown only after five seconds so
+a quick step is never made to look slow. Counting up is the one signal that
+proves progress instead of asserting it. The slow-step wording now matches the
+phase it is actually in.
+
+### No wait duration is advertised anywhere
+
+The Ledger wait used to read "the app will wait up to 10 minutes", and Jade's PIN
+entry "may take several minutes". **Both are gone, and a test now forbids
+advertising a wait.** The internal timeouts (180s enumeration, 180s identity
+check, 600s signature) exist so a slow human is never cut off mid-review —
+someone finding their reading glasses should not be raced. Publishing such a
+number invites the operator to treat it as a licence to walk away while a signing
+ceremony is open. The screen says the app is working and waits; it never says for
+how long.
+
+A one-line dismissible note now sets that expectation up front: this app talks to
+the Bitcoin network and to signing devices, so a click can take a few seconds —
+please wait rather than clicking again.
+
+Suite: **192 tests, 0 failures**, plus five Node DOM tests. Changes are confined
+to the diagnostic vocabulary, the progress bar and its copy. No change to the
+PSBT construction path, the signature-verification rules, fee policy, or the set
+of networks on which broadcast is possible. Mainnet broadcast remains refused in
+code.

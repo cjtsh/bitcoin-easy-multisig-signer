@@ -2,6 +2,7 @@
 
 import json
 import io
+import re
 import tempfile
 import threading
 import time
@@ -226,10 +227,36 @@ class LocalGuiTests(unittest.TestCase):
         # Each wait the owner can hit, including both they reported.
         for message in ("Reading your wallet file",
                         "Checking the blockchain for your balance",
-                        "Please wait while we search for your device",
-                        "Jade may ask for PINs and take several minutes"):
+                        "Looking for your signing device",
+                        "Check each screen carefully"):
             self.assertIn(message, page, f"missing progress message: {message}")
         self.assertIn("background:#ffd447", page)
+        # The wait must be visible, but its length must not be. The internal
+        # timeouts exist so a slow human is never cut off mid-review; advertising
+        # one reads as permission to walk away while a signing ceremony is open.
+        for duration in ("10 minutes", "several minutes", "minutes"):
+            self.assertNotIn(duration, page, f"the page must not advertise a wait: {duration}")
+        # Elapsed seconds prove the app is still working, which is what actually
+        # stops people clicking a second time.
+        self.assertIn('id="busy-elapsed"', page)
+        self.assertIn("setInterval", page)
+
+    def test_the_page_says_up_front_that_steps_take_time(self):
+        """The operator should not have to guess that the app is still working.
+
+        The DOM tests cannot see this: they build elements on demand and never
+        parse the markup, so a `hidden` attribute is invisible to them. What the
+        served page actually renders has to be asserted here.
+        """
+        page = self.get_page()
+        self.assertIn("please wait rather than clicking again", page)
+        note = re.search(r'<section id="patience-note"[^>]*>', page)
+        self.assertIsNotNone(note, "the note must be in the served page")
+        self.assertNotIn("hidden", note.group(0),
+                         "the note must be visible at the start, not hidden")
+        dismiss = re.search(r'<button id="patience-dismiss"[^>]*>', page)
+        self.assertIsNotNone(dismiss, "the note must be dismissible")
+        self.assertIn('$("patience-dismiss").addEventListener("click"', page)
 
     def test_the_main_screen_asks_nothing_technical_of_the_user(self):
         """A lawyer or a spouse must not be asked to assert wallet internals.

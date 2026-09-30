@@ -477,6 +477,33 @@ class TransactionJourneyTests(ApiTestCase):
             sorted(referenced - declared), [],
             "the page script looks up elements the markup never declares")
 
+    def test_a_rejected_money_action_is_attributed_and_chatter_is_not_recorded(self):
+        """A refused signature must not look like a refused fee estimate.
+
+        Until 0.4.8 every rejection was recorded as an unattributable "request",
+        because the route name and the stage name never matched: a refused
+        signature was indistinguishable from a refused fee estimate.
+        """
+        # No wallet is open, so a fee estimate is refused. That is ordinary
+        # interface feedback, produced by typing an amount, and it must not
+        # occupy the 80-event buffer at all.
+        status, _body = self.post("/api/estimate", {"chain": "mutinynet",
+                                                    "send_all": False,
+                                                    "amount_sats": 1000})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.state.diagnostic_events, [],
+                         "convenience-call rejections must not be recorded")
+
+        # A refused signing request is a money stage and must name itself.
+        status, _body = self.post("/api/sign", {"preparation_id": "not-a-review",
+                                                "device_type": "jade",
+                                                "device_path": "/dev/x"})
+        self.assertEqual(status, 400)
+        self.assertEqual(
+            [(event["stage"], event["outcome"]) for event in self.state.diagnostic_events],
+            [("signer_response", "rejected")],
+            "a refused signature must be attributed to the signing stage")
+
 
 class LargeAmountGateTests(ApiTestCase):
     """The high-value confirmation must not depend on a remote price feed."""

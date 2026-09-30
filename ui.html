@@ -28,6 +28,9 @@
     .pending-banner h2 { margin:0 0 5px; }
     .outcome-card { border:2px solid #37957c; background:#e8f5ee; }
     .outcome-card h2 { margin:0 0 6px; }
+    .patience-note { background:#eef5f0; border:1px solid #cfe2d7; border-radius:12px;
+      padding:15px 18px; margin:0 0 19px; color:#1d3b2e; }
+    .patience-note p { margin:0 0 11px; }
     .pending-banner p { margin:0 0 12px; }
     body.live-mode { background:#fff5e3; }
     body.live-mode .top { background:#332713; border-bottom:8px solid #db7918; }
@@ -165,6 +168,7 @@
       animation:spin .8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .spinner { animation-duration:2.4s; } }
+    .busy-elapsed { margin-left:auto; font-variant-numeric:tabular-nums; opacity:.75; }
     @media(max-width:680px) {
       .grid, .balance-primary { grid-template-columns:1fr; }
       .card { padding:21px; }
@@ -181,6 +185,7 @@
   <div id="busy" class="busy-bar" hidden role="status" aria-live="polite">
     <span class="spinner" aria-hidden="true"></span>
     <span id="busy-text"></span>
+    <span id="busy-elapsed" class="busy-elapsed" aria-hidden="true"></span>
   </div>
   <header class="top">
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
@@ -205,6 +210,13 @@
       <h2 id="receipt-title">Latest payment in this session</h2>
       <p id="receipt-status">Sent. Waiting for one confirmation.</p>
       <a id="receipt-explorer" target="_blank" rel="noopener noreferrer">View this payment on the block explorer</a>
+    </section>
+
+    <section id="patience-note" class="patience-note" role="note">
+      <p><strong>This app is not instant.</strong> Every step talks to the Bitcoin network and to your
+        signing devices, so a click can take a few seconds and a device can take longer. If nothing
+        seems to be happening yet, it is still working — please wait rather than clicking again.</p>
+      <button id="patience-dismiss" class="secondary" type="button">Got it</button>
     </section>
 
     <section class="card" aria-labelledby="open-title">
@@ -850,12 +862,24 @@
       const name = { slow: "Slow", medium: "Medium", fast: "Fast" }[selectedTier];
       setText("fee-selected", "Selected: " + (name || "Custom") + " · " + value + " sat/vB");
     }
+    let busyTimer = null, busySince = 0;
     function setBusy(text) {
       const busy = Boolean(text);
       $("busy").hidden = !busy;
       // Reserve the space the fixed bar occupies, so it never covers the page.
       document.body.classList.toggle("busy-mode", busy);
       setText("busy-text", text || "");
+      if (busyTimer !== null) { clearInterval(busyTimer); busyTimer = null; }
+      $("busy-elapsed").textContent = "";
+      if (!busy) return;
+      // Counting the seconds is the one signal that proves progress rather than
+      // asserting it, which is what stops people clicking again. Nothing shows in
+      // the first few seconds, so a quick step never looks like a slow one.
+      busySince = Date.now();
+      busyTimer = setInterval(() => {
+        const seconds = Math.floor((Date.now() - busySince) / 1000);
+        $("busy-elapsed").textContent = seconds >= 5 ? seconds + "s" : "";
+      }, 1000);
     }
     function feeTooHighForNetwork(value) {
       return value > Math.max(5, feeQuote ? 2 * feeQuote.fastest : 5);
@@ -1300,7 +1324,7 @@
       button.disabled = true;
       button.classList.add("searching");
       button.textContent = "Searching for devices…";
-      setBusy("Please wait while we search for your device. Jade may ask for PINs and take several minutes; take your time on the device…");
+      setBusy("Looking for your signing device. Jade may ask for PINs — take your time on the device screen…");
       setText(messageId, "Searching for connected devices. If Jade asks for PINs, finish them carefully; this check signs nothing.");
       $(resultsId).replaceChildren();
       try {
@@ -1418,7 +1442,7 @@
       button.disabled = true;
       button.classList.add("searching");
       button.textContent = "Searching for devices…";
-      setBusy("Please wait while we search for your device. Jade may ask for PINs and take several minutes; take your time on the device…");
+      setBusy("Looking for your signing device. Jade may ask for PINs — take your time on the device screen…");
       setText("sign-progress", "Searching for connected devices. If Jade asks for PINs, finish them carefully.");
       try { await refreshSignable(); }
       finally {
@@ -1434,8 +1458,8 @@
       signing = true;
       box.classList.add("busy");
       const ledger = String(device.type || "").toLowerCase().includes("ledger");
-      setBusy(ledger ? "Ledger may show many small review screens, sometimes twice. Take your time checking them; the app will wait up to 10 minutes…" :
-        "Waiting for the device to sign…");
+      setBusy(ledger ? "Ledger may show many small review screens, sometimes twice. Check each screen carefully — the app waits for you." :
+        "Waiting for the device to sign. Approve on the device screen.");
       $("sign-progress").className = "";
       setText("sign-progress", ledger ?
         "Read each Ledger screen carefully. Check the destination, amount and fee each time, then wait for the app to confirm the signature. There is no need to rush." :
@@ -1448,19 +1472,16 @@
           " Signer" + (result.signers.length > 1 ? "s " : " ") + result.signers.join(" and ") + " signed." : "";
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
           " collected." + who);
-        if (result.complete) {
-          // Fill the boxes from the authoritative signer list BEFORE handing off.
-          // Returning straight to showFinal left the last box still reading
-          // "Click here to sign with this device" while the status line said the
-          // signature had been collected: the screen contradicted itself.
-          signerState.signed = (result.signers || []).slice();
-          renderSignerSlots();
-          await showFinal(reviewId);
-          return;
-        }
-        // Refresh first, so the next device's button is already there, then say
-        // where things stand.
-        setBusy("Signature received. Searching for another device; Jade PIN entry may take several minutes…");
+        // Acknowledge the signature FIRST. The server has already said which
+        // signer signed, so the box can fill now; waiting for the device re-scan
+        // below left a five-to-ten second dead zone in which the operator had
+        // signed on the device while the screen still offered to sign.
+        signerState.signed = (result.signers || []).slice();
+        renderSignerSlots();
+        if (result.complete) { await showFinal(reviewId); return; }
+        // Then look for the next device. That is the slow part, so it now happens
+        // after the acknowledgement rather than in front of it.
+        setBusy("Signature verified. Looking for the next device…");
         await refreshSignable();
         if (actionId !== sendActionId || reviewId !== preparationId) return;
         setText("sign-progress", "Signature " + result.signatures + " of " + result.threshold +
@@ -1579,6 +1600,7 @@
     });
     $("pending-check").addEventListener("click", refresh);
     $("outcome-check").addEventListener("click", refresh);
+    $("patience-dismiss").addEventListener("click", () => { $("patience-note").hidden = true; });
     $("save-diagnostics").addEventListener("click", async () => {
       $("save-diagnostics").disabled = true;
       try {
