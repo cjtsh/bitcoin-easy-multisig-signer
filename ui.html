@@ -26,6 +26,8 @@
     .pending-banner { background:#fff0c6; border:2px solid #d69b27; border-radius:12px;
       color:#49350e; padding:17px 19px; margin:0 0 19px; }
     .pending-banner h2 { margin:0 0 5px; }
+    .outcome-card { border:2px solid #37957c; background:#e8f5ee; }
+    .outcome-card h2 { margin:0 0 6px; }
     .pending-banner p { margin:0 0 12px; }
     body.live-mode { background:#fff5e3; }
     body.live-mode .top { background:#332713; border-bottom:8px solid #db7918; }
@@ -487,6 +489,16 @@
       </div>
       </div>
     </section>
+    <section id="send-outcome" class="card outcome-card" role="status" aria-live="polite" hidden>
+      <h2 id="outcome-title">Payment sent · waiting for one confirmation</h2>
+      <p id="outcome-detail">The network has received your payment. It is waiting to be added to a
+        block. You can make another payment from this wallet after one confirmation.</p>
+      <p class="small muted">Transaction ID <code id="outcome-txid" class="mono"></code></p>
+      <p><a id="outcome-explorer" target="_blank" rel="noopener noreferrer" hidden>View this payment on the block explorer</a></p>
+      <button id="outcome-check" class="secondary" type="button">↻ Check again</button>
+      <p class="small muted">This notice stays on screen where the payment was prepared. The banner at
+        the top of the page tracks the same payment until it confirms.</p>
+    </section>
     <footer>Experimental software. Verify every output and fee on your signing devices.
       Never enter seed words or private keys.
       <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Full disclaimer</a>.
@@ -770,6 +782,7 @@
       $("clear-signed").disabled = true;
       $("confirm-review").checked = false; $("confirm-fee").checked = false;
       $("confirm-sweep").checked = false; $("sweep-ack-row").hidden = true;
+      $("send-outcome").hidden = true;
     }
     function updateSendMode() {
       // Missing change ownership makes partial sends unsafe, but must never
@@ -1034,6 +1047,28 @@
       link.hidden = !pendingExplorerUrl;
       if (pendingExplorerUrl) link.href = pendingExplorerUrl;
       else link.removeAttribute("href");
+    }
+    function showSendOutcome({txid = null, explorer = null, unknown = false} = {}) {
+      // The outcome is shown where the transaction was prepared, because that is
+      // where the operator is looking. Hiding the whole send card and relying on a
+      // scroll to the banner at the top left the screen apparently empty, so
+      // payments looked as though they had simply vanished.
+      setText("outcome-title", unknown ?
+        "Payment status unknown · check before continuing" :
+        "Payment sent · waiting for one confirmation");
+      setText("outcome-detail", unknown ?
+        "The network may have received your payment, but this app did not get a clear reply. "
+          + "Do not send it again until you have checked." :
+        "The network has received your payment. It is waiting to be added to a block. You can "
+          + "make another payment from this wallet after one confirmation.");
+      setText("outcome-txid", txid || "not returned by the server");
+      const link = $("outcome-explorer");
+      link.hidden = !explorer;
+      if (explorer) link.href = explorer;
+      else link.removeAttribute("href");
+      $("send-outcome").hidden = false;
+      // "nearest" only moves the page if the notice is genuinely off screen.
+      $("send-outcome").scrollIntoView({behavior:"smooth", block:"nearest"});
     }
     function showReceipt(explorerUrl, waiting) {
       receiptExplorerUrl = explorerUrl;
@@ -1513,15 +1548,15 @@
         showPendingPayment(true, sent.explorer);
         showReceipt(sent.explorer, true);
         $("send-card").hidden = true;
+        showSendOutcome({txid: sent.txid, explorer: sent.explorer});
         $("balance-send-status").hidden = false;
         setText("balance-send-status", "This wallet is waiting for one confirmation before another payment.");
-        $("pending-payment").scrollIntoView({behavior:"smooth", block:"start"});
       } catch (e) {
         if (actionId !== sendActionId || reviewId !== preparationId) return;
         if (e.outcomeUnknown) {
           showPendingPayment(true, e.explorer, true);
           $("send-card").hidden = true;
-          $("pending-payment").scrollIntoView({behavior:"smooth", block:"start"});
+          showSendOutcome({explorer: e.explorer, unknown: true});
         }
         const holder = $("broadcast-message");
         holder.className = "error";
@@ -1543,6 +1578,7 @@
       } finally { updateDownload(); }
     });
     $("pending-check").addEventListener("click", refresh);
+    $("outcome-check").addEventListener("click", refresh);
     $("save-diagnostics").addEventListener("click", async () => {
       $("save-diagnostics").disabled = true;
       try {

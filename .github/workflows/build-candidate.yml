@@ -52,9 +52,14 @@ jobs:
             echo "Tests were skipped; a dependency is missing." >&2
             exit 1
           fi
-      - run: node tests/ui_state_reuse.cjs
-      - run: node tests/ui_send_mode.cjs
-      - run: node tests/ui_signer_slots.cjs
+      - name: Run the UI DOM tests
+        run: |
+          set -euo pipefail
+          # Glob, not a list: a new tests/ui_*.cjs must run without a workflow edit.
+          for test in tests/ui_*.cjs; do
+            echo "== $test"
+            node "$test"
+          done
       - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
       # Run the tests FROM the archive. An archive missing a test helper still
       # builds and still uploads, so nothing caught it until the tests were run
@@ -66,9 +71,10 @@ jobs:
           tar xzf "dist/bitcoin-easy-multisig-signer-v${version}.tar.gz" -C "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/bitcoin-easy-multisig-signer-v${version}"
           python -m unittest discover -s tests -q
-          node tests/ui_state_reuse.cjs
-          node tests/ui_send_mode.cjs
-          node tests/ui_signer_slots.cjs
+          for test in tests/ui_*.cjs; do
+            echo "== $test"
+            node "$test"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: source-archive
@@ -122,9 +128,14 @@ jobs:
             echo "Tests were skipped; a dependency is missing." >&2
             exit 1
           fi
-      - run: node tests/ui_state_reuse.cjs
-      - run: node tests/ui_send_mode.cjs
-      - run: node tests/ui_signer_slots.cjs
+      - name: Run the UI DOM tests
+        run: |
+          set -euo pipefail
+          # Glob, not a list: a new tests/ui_*.cjs must run without a workflow edit.
+          for test in tests/ui_*.cjs; do
+            echo "== $test"
+            node "$test"
+          done
       - name: The signed-release path must fail closed without credentials
         run: |
           set -euo pipefail
