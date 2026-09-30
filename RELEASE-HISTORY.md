@@ -1,10 +1,13 @@
 # Release history and correction record
 
-This is the consolidated, chronological record of every published version: what
-changed, what the evidence was, and what was later corrected. Each entry links
-its full evidence file. **Current status and next gates live in
-[`PHASE-HANDOFF.md`](PHASE-HANDOFF.md); current capabilities live in
-[`README.md`](README.md).** Two standing facts apply to every version below:
+This is the consolidated, chronological record of the published versions that
+carry a reviewed evidence file: what changed, what the evidence was, and what
+was later corrected. Each entry links its full evidence file. The earlier
+`0.0.x`–`0.1.26` iteration tags predate that practice and are recorded by tag
+and commit subject below rather than given individual entries. **Current status
+and next gates live in [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md); current
+capabilities live in [`README.md`](README.md).** Two standing facts apply to
+every version:
 
 - **Mainnet broadcast is refused in code.** No version of this app has ever
   prepared, signed, or broadcast a mainnet transaction.
@@ -39,6 +42,59 @@ signer-response binding), is preserved in
 history is in [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md). Every one of those
 hot findings was subsequently fixed and regression-tested — see 0.2.0 through
 0.4.1 below.
+
+## 0.0.x–0.1.26 — iteration tags
+
+These tags were rapid prototyping on 27–28 September 2026: 35 tags over two
+days, 64 commits by the end, most of them single-purpose fixes. None carries a
+separate evidence file, so each is recorded here by tag and by the subject of
+the commit it points at; `git show <tag>` remains the authoritative record.
+`v0.0.4-rc1` and `v0.1.0-unsigned-test` point at the same commits as `v0.0.4`
+and `v0.1.0` respectively.
+
+| Tag | Date | Commit subject |
+| --- | --- | --- |
+| `v0.0.1` | 2026-09-27 | Add read-only BSMS and USB discovery probe |
+| `v0.0.2` | 2026-09-27 | Put experimental software disclaimer on repository front page |
+| `v0.0.3` | 2026-09-27 | Add explicit Testnet4 read-only probe and guarded faucet address |
+| `v0.0.4` | 2026-09-27 | Add Testnet4 local GUI preview and unsigned PSBT flow |
+| `v0.0.4-rc1` | 2026-09-27 | Add Testnet4 local GUI preview and unsigned PSBT flow |
+| `v0.0.5` | 2026-09-27 | Show BTC/USD size references and per-address balances |
+| `v0.0.6` | 2026-09-27 | Add LiveNet/Testnet4 switch, wallet refresh, and safer fee review |
+| `v0.1.0` | 2026-09-27 | Enable unsigned v0.1.0 Mac and source candidate builds |
+| `v0.1.0-unsigned-test` | 2026-09-27 | Enable unsigned v0.1.0 Mac and source candidate builds |
+| `v0.1.1` | 2026-09-27 | Make BSMS files easy to select in the macOS import dialog (v0.1.1) |
+| `v0.1.2` | 2026-09-27 | Make macOS balance lookup resilient and verify bundled Testnet4 HTTPS |
+| `v0.1.3` | 2026-09-27 | Fix desktop wallet picker without JavaScript bridge |
+| `v0.1.4` | 2026-09-27 | Show BTC first with sats and USD in balance summary |
+| `v0.1.5` | 2026-09-28 | Prepare unsigned Apple Silicon test build 0.1.5 with contextual help |
+| `v0.1.6` | 2026-09-28 | Restore side-by-side sats and remove unrequested balance copy field |
+| `v0.1.7` | 2026-09-28 | Publish v0.1.7 test release after successful builds |
+| `v0.1.8` | 2026-09-28 | Add explicit transaction preparation choices and review flow |
+| `v0.1.9` | 2026-09-28 | Build transaction review and hardware recognition flow |
+| `v0.1.10` | 2026-09-28 | Fix CI paths for Bitcoin Easy Signer app bundle |
+| `v0.1.11` | 2026-09-28 | Simplify the interface and add test-first / explorer-confirmation guidance |
+| `v0.1.12` | 2026-09-28 | Bump to 0.1.12: one version per published build |
+| `v0.1.13` | 2026-09-28 | Resolve the change addresses instead of asking the owner to vouch for them |
+| `v0.1.14` | 2026-09-28 | Show the selected fee speed, and show that slow work is happening |
+| `v0.1.15` | 2026-09-28 | Make checking the hardware wallets step 3, before a payment is built |
+| `v0.1.16` | 2026-09-28 | Pass the icon to PyInstaller where the build actually reads it |
+| `v0.1.17` | 2026-09-28 | Make a hardware-wallet problem diagnosable before the first device arrives |
+| `v0.1.18` | 2026-09-28 | Report why a detected device cannot be read |
+| `v0.1.19` | 2026-09-28 | Accept a Sparrow BSMS record, and show the descriptor checksum |
+| `v0.1.20` | 2026-09-28 | Survive a device that locks mid-check, and ship a runnable source archive |
+| `v0.1.21` | 2026-09-28 | Install the dependency a Jade needs to unlock, and verify it at build time |
+| `v0.1.22` | 2026-09-28 | Tell the owner the one thing that applies to their device |
+| `v0.1.23` | 2026-09-28 | Ask HWI for a chain the Jade understands |
+| `v0.1.24` | 2026-09-28 | Ship signing.py in the source archive |
+| `v0.1.25` | 2026-09-28 | Publish the account xpubs so a Ledger can sign, and refresh the device list itself |
+| `v0.1.26` | 2026-09-28 | Stop treating a pending spend as a corrupted balance |
+
+Note `v0.1.24` — "Ship signing.py in the source archive". A root file missing
+from the curated archive copy list has now happened three times: `signing.py`,
+`safe_http.py` (see the comment in `scripts/build-source.sh`), and
+`RELEASE-HISTORY.md` itself. The module list is guarded by an assertion; as of
+0.4.3 the document list is too.
 
 ## 0.2.0 — hot-item security work; hardware signing broken
 
