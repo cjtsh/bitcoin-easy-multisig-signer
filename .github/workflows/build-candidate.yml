@@ -127,18 +127,48 @@ jobs:
             echo "KEYCHAIN_PATH=$keychain"
             echo "KEYCHAIN_PASSWORD=$keychain_password"
           } >> "$GITHUB_ENV"
-      - name: Write the App Store Connect key
+      - name: Provide notary credentials
+        # Two routes, because a keychain profile cannot travel to a runner but an
+        # Apple ID can. Whichever secret exists decides:
+        #   App Store Connect API key  -> the key triple build-macos.sh takes directly
+        #   Apple ID + app-specific pw -> the SAME keychain profile the local build
+        #                                 uses, rebuilt here, so the script needs no
+        #                                 special case for CI.
+        # This exists because App Store Connect API access needs an Admin role and a
+        # separate Apple approval; the Apple ID route needs neither and is what the
+        # owner already validated locally.
         if: ${{ inputs.notarize }}
         env:
-          MAC_NOTARY_KEY_P8_BASE64: ${{ secrets.MAC_NOTARY_KEY_P8_BASE64 }}
+          APPLE_ID: ${{ vars.MAC_APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.MAC_APP_SPECIFIC_PASSWORD }}
+          TEAM_ID: ${{ vars.MAC_TEAM_ID }}
+          KEY_P8_BASE64: ${{ secrets.MAC_NOTARY_KEY_P8_BASE64 }}
+          KEY_ID: ${{ vars.MAC_NOTARY_KEY_ID }}
+          ISSUER_ID: ${{ vars.MAC_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
-          : "${MAC_NOTARY_KEY_P8_BASE64:?MAC_NOTARY_KEY_P8_BASE64 is not set, so notarisation cannot authenticate}"
-          key="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$MAC_NOTARY_KEY_P8_BASE64" | tr -d '\n' \
-            | openssl base64 -d -A -out "$key"
-          chmod 600 "$key"
-          echo "MAC_NOTARY_KEY_PATH=$key" >> "$GITHUB_ENV"
+          if [[ -n "${KEY_P8_BASE64:-}" ]]; then
+            : "${KEY_ID:?MAC_NOTARY_KEY_ID is not set}"
+            : "${ISSUER_ID:?MAC_NOTARY_ISSUER_ID is not set}"
+            key="$RUNNER_TEMP/AuthKey.p8"
+            printf '%s' "$KEY_P8_BASE64" | tr -d '\n' \
+              | openssl base64 -d -A -out "$key"
+            chmod 600 "$key"
+            {
+              echo "MAC_NOTARY_KEY_PATH=$key"
+              echo "MAC_NOTARY_KEY_ID=$KEY_ID"
+              echo "MAC_NOTARY_ISSUER_ID=$ISSUER_ID"
+            } >> "$GITHUB_ENV"
+            echo "Notarisation will use an App Store Connect API key."
+          else
+            : "${APPLE_ID:?MAC_APPLE_ID is not set, and no API key is configured either}"
+            : "${APP_PASSWORD:?MAC_APP_SPECIFIC_PASSWORD is not set}"
+            : "${TEAM_ID:?MAC_TEAM_ID is not set}"
+            xcrun notarytool store-credentials "eas-notary" \
+              --apple-id "$APPLE_ID" --password "$APP_PASSWORD" --team-id "$TEAM_ID"
+            echo "MAC_NOTARY_PROFILE=eas-notary" >> "$GITHUB_ENV"
+            echo "Notarisation will use the Apple ID credential profile."
+          fi
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           # Same HWI <3.13 constraint as the source job; do not bump one alone.
@@ -221,8 +251,9 @@ jobs:
           # never quietly ship an ad-hoc-signed artifact.
           RELEASE: ${{ inputs.notarize && '1' || '0' }}
           MAC_SIGN_IDENTITY: ${{ vars.MAC_SIGN_IDENTITY }}
-          MAC_NOTARY_KEY_ID: ${{ vars.MAC_NOTARY_KEY_ID }}
-          MAC_NOTARY_ISSUER_ID: ${{ vars.MAC_NOTARY_ISSUER_ID }}
+          # The notary credential — a profile name, or the API key triple — is
+          # exported by the "Provide notary credentials" step, so it arrives through
+          # the environment rather than being duplicated here.
         run: bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
       - name: Verify the DMG, the signature and the bundled app
         run: |

@@ -1,6 +1,8 @@
 .DS_Store
 .venv/
 .build-venv/
+.dev-venv/
+.pyinstaller-cache/
 build/
 dist/
 *.spec
