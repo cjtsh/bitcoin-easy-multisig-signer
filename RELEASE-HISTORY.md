@@ -32,7 +32,8 @@ every version:
 | 0.4.6 | One signing box per cosigner, so the missing signer is visible at a glance | — |
 | 0.4.7 | Correction: the final signature fills its own box, and completing does not scroll the boxes off screen | — |
 | 0.4.8 | Attributable diagnostics, and visible progress that never advertises a wait | — |
-| **0.4.9** | **Current.** A fraction of a Bitcoin no longer needs a leading zero | — |
+| 0.4.9 | A fraction of a Bitcoin no longer needs a leading zero | — |
+| **0.4.10** | **Current.** One progress bar, and only the operation that owns it may change or clear it | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -457,7 +458,7 @@ PSBT construction path, the signature-verification rules, fee policy, or the set
 of networks on which broadcast is possible. Mainnet broadcast remains refused in
 code.
 
-## 0.4.9 — a fraction of a Bitcoin needs no leading zero (current)
+## 0.4.9 — a fraction of a Bitcoin needs no leading zero
 
 Reported by the owner from the amount box: typing a fraction without a leading
 zero left the amount apparently broken. `btcToSats` matched
@@ -499,4 +500,40 @@ whenever a check runs, as an explicit `[]` when nothing usable was seen.
 Suite: **193 tests, 0 failures**, plus six Node DOM tests; the three mutations that
 reintroduce each fault are all detected. No change to the PSBT construction path,
 the signature-verification rules, fee policy, or the set of networks on which
+broadcast is possible.
+
+## 0.4.10 — the progress bar has an owner (current)
+
+Reported by the owner from the confirmation screen: pressing **Check again** —
+the control that asks the explorer whether the payment has confirmed — brought up
+the progress bar showing *"connect your Jade"*, an old device-search message,
+rather than *"checking the blockchain"*. The payment then showed as confirmed and
+the bar disappeared.
+
+The bar had **no owner**. `setBusy` was a single global slot that several
+operations wrote to — a balance check, a device search, a signing request, a
+broadcast — so whichever spoke last owned the text and whichever finished first
+cleared it. Two consequences, both reachable whenever operations overlap:
+
+- a device search could surface **during** a blockchain check, which is the
+  message the owner saw; and
+- an operation that had already finished could **wipe the message of one still
+  running**, so a slow step looked like it had silently stopped.
+
+`setBusy` now returns a handle holding a token, and only the newest holder may
+change the text or clear the bar. A late finisher can do neither. Every call site
+— the balance refresh, the wallet import, both device searches, signing and
+broadcast — claims its own token and finishes through its own handle, and the
+signing path uses `busy.say` to move from "waiting for the device" to "signature
+verified" without releasing ownership.
+
+`tests/ui_busy_ownership.cjs` reproduces the reported sequence: a device search
+still running when Check again is pressed. It asserts the check's message replaces
+the device message, that the finished search can neither hide the bar nor blank
+nor overwrite it, that the device text is unreachable while the check owns the bar,
+and that only the newest holder can end it.
+
+Suite: **193 tests, 0 failures**, plus seven Node DOM tests; each reintroduced
+fault is detected by mutation. No change to the PSBT construction path, the
+signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
