@@ -403,16 +403,22 @@ class LocalApp:
                 # Do not log wallet identifiers, browser requests or PSBTs.
                 pass
 
-            def _headers(self, status, content_type, size):
+            def _headers(self, status, content_type, size, script_nonce=None):
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(size))
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
+                # A per-response nonce replaces 'unsafe-inline' for scripts. This
+                # server has exactly one document and rebuilds it for every
+                # request, so a fresh nonce costs nothing, and any script reaching
+                # the page without it has no allowance to hide behind.
+                script_src = (f"'nonce-{script_nonce}'" if script_nonce
+                              else "'self'")
                 self.send_header(
                     "Content-Security-Policy",
-                    "default-src 'none'; script-src 'self' 'unsafe-inline'; "
+                    f"default-src 'none'; script-src {script_src}; "
                     "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
                     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
                 )
@@ -437,12 +443,15 @@ class LocalApp:
                     # The access token is deliberately NOT placed in this
                     # unauthenticated response. It travels in the URL fragment of
                     # the launch URL, which a browser never sends to the server.
+                    script_nonce = secrets.token_urlsafe(18)
                     body = (page.replace("__LOCAL_TOKEN__", "")
                             .replace("__APP_VERSION__", APP_VERSION)
                             .replace("__DESKTOP_MODE__", "true" if state.desktop else "false")
                             .replace("__DESKTOP_HIDE_QUIT__", "hidden" if state.desktop else "")
+                            .replace("<script>", f'<script nonce="{script_nonce}">', 1)
                             .encode("utf-8"))
-                    self._headers(200, "text/html; charset=utf-8", len(body))
+                    self._headers(200, "text/html; charset=utf-8", len(body),
+                                  script_nonce=script_nonce)
                     self.wfile.write(body)
                 elif self.path == "/api/price":
                     with state.lock:
@@ -512,6 +521,8 @@ class LocalApp:
                         self._prepare(request)
                     elif self.path == "/api/save":
                         self._save(request)
+                    elif self.path == "/api/clear":
+                        self._clear(request)
                     elif self.path == "/api/sign":
                         self._sign(request)
                     elif self.path == "/api/finalize":
@@ -858,6 +869,24 @@ class LocalApp:
 
             def _save(self, data):
                 self._send(200, save_prepared_psbt(state, data.get("chain")))
+
+            def _clear(self, data):
+                """Discard the prepared, possibly signed, payment from this session.
+
+                A signed-but-unbroadcast transaction is spend authority in its own
+                right: anyone holding its bytes can submit them. Its lifetime in
+                app state should therefore be something the operator ends
+                deliberately rather than something they have to remember.
+                """
+                with state.lock:
+                    if state.prepared is None:
+                        raise WalletError("There is no prepared transaction to clear.")
+                    if data.get("preparation_id") != state.prepared.review_id:
+                        raise WalletError("Review the current transaction before clearing it.")
+                    state.prepared = None
+                    state.scan_generation += 1
+                    state.note("final_transaction", "rejected")
+                self._send(200, {"cleared": True})
 
             def _estimate(self, data):
                 with state.lock:

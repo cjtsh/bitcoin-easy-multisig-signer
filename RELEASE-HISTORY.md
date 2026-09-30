@@ -27,7 +27,8 @@ every version:
 | 0.4.1 | Signature-only signer-response import; longer signing window | [`PATCH-0.4.1.md`](PATCH-0.4.1.md) |
 | 0.4.2 | Three-minute device discovery/authorization waits (Jade) | [`PATCH-0.4.2.md`](PATCH-0.4.2.md) |
 | 0.4.3 | Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
-| **0.4.4** | **Current.** Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
+| 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
+| **0.4.5** | **Current.** CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -204,7 +205,7 @@ gate: [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md). **0.4.3 itself
 has no reported physical walkthrough yet; mainnet broadcast remains
 disabled.**
 
-## 0.4.4 — audit remediation and hardening (current)
+## 0.4.4 — audit remediation and hardening
 
 Two independent audits of `main` at `7d622ef` — one by DeepSeek, one by Z.ai —
 were reconciled into [`PLAN-0.4.4.md`](PLAN-0.4.4.md). This release carries the
@@ -253,5 +254,32 @@ in any environment with a read-only `$HOME`. It is confined to a temporary
 directory now.
 
 Suite: **182 tests, 0 failures.** No change to the PSBT construction path, the
+signature-verification rules, fee policy, or the set of networks on which
+broadcast is possible.
+
+## 0.4.5 — the three deferred interface items (current)
+
+[`PLAN-0.4.4.md`](PLAN-0.4.4.md) held back three Tier 1 items because they change
+what the page renders, and 0.4.4 shipped without a browser walkthrough. They land
+here, unchanged in intent.
+
+- **`script-src` no longer allows `'unsafe-inline'`.** This server has exactly one
+  document and rebuilds it for every request, so the page now carries a fresh
+  per-response nonce. Tests assert that the header's nonce matches the injected
+  `<script>` tag and that every load gets a new one.
+- **Send All requires its own acknowledgement.** It moves every confirmed output
+  the scan found, and the generic review checkbox said nothing about that. The
+  coverage line now also names the **20-address gap** instead of saying only
+  "standard gap scan".
+- **A session control to clear the signed transaction.** `POST /api/clear`
+  discards the prepared, possibly signed, payment; it is bound to the reviewed
+  preparation id and refuses a replay. A signed-but-unbroadcast transaction is
+  spend authority in its own right, so ending its life in app state is now a
+  deliberate operator action with a visible control.
+
+Suite: **187 tests, 0 failures.** Twelve mutation checks confirm that each guard
+added here, and each guard added in 0.4.4, is detected when deleted. Mainnet
+broadcast remains refused in code and no mainnet transaction has ever been
+prepared, signed or broadcast. No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
