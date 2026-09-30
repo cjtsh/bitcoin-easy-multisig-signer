@@ -28,7 +28,8 @@ every version:
 | 0.4.2 | Three-minute device discovery/authorization waits (Jade) | [`PATCH-0.4.2.md`](PATCH-0.4.2.md) |
 | 0.4.3 | Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
 | 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
-| **0.4.5** | **Current.** CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
+| 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
+| **0.4.6** | **Current.** One signing box per cosigner, so the missing signer is visible at a glance | — |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -257,7 +258,7 @@ Suite: **182 tests, 0 failures.** No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
 
-## 0.4.5 — the three deferred interface items (current)
+## 0.4.5 — the three deferred interface items
 
 [`PLAN-0.4.4.md`](PLAN-0.4.4.md) held back three Tier 1 items because they change
 what the page renders, and 0.4.4 shipped without a browser walkthrough. They land
@@ -283,3 +284,34 @@ broadcast remains refused in code and no mainnet transaction has ever been
 prepared, signed or broadcast. No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
+
+## 0.4.6 — one signing box per cosigner (current)
+
+The signing screen listed the devices it had found and reported progress in a
+sentence underneath ("Signature 1 of 2 collected…"). The owner's feedback, from
+using it on a real payment, was that it is not obvious where you are: nothing
+anchors "one down, one to go".
+
+It now draws **one box per cosigner** — three for a 2-of-3, five for a 3-of-5 —
+each labelled with the detected device, falling back to the signer number when
+that signer's device is not attached.
+
+- A box with a detected device is the button: "Click here to sign with this
+  device."
+- A box whose signer has signed turns green and reads "Signed ✓".
+- A box whose device is missing reads "No device found for this signer", so the
+  absent signer is visible rather than merely absent from a list.
+- **A box only greys out as "Not needed" once the quota is met.** A 2-of-3 needs
+  *any* two, so marking a particular box optional in advance would tell the owner
+  something false — and could make them think they are stuck when they are not.
+- "Look for more devices" hides once the quota is met.
+
+The box state is read server-side from the signed PSBT on every device check
+rather than remembered by the page, so the boxes cannot drift from what has
+actually been signed, and they stay correct if the page is reloaded mid-signing.
+
+Suite: **188 tests, 0 failures**, plus three Node DOM tests; a new
+`tests/ui_signer_slots.cjs` pins the box states for both 2-of-3 and 3-of-5. The
+signing *mechanics* are untouched — only how progress is presented. No change to
+the PSBT construction path, the signature-verification rules, fee policy, or the
+set of networks on which broadcast is possible.

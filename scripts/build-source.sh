@@ -51,7 +51,7 @@ if (( ${#missing_docs[@]} )); then
   exit 1
 fi
 cp tests/test_*.py tests/support.py tests/fake_explorer.py \
-  tests/ui_state_reuse.cjs tests/ui_send_mode.cjs "$stage/$root/tests/"
+  tests/ui_*.cjs "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
 cp scripts/build-source.sh scripts/build-macos.sh scripts/build-sbom.py scripts/hwi_entry.py \
