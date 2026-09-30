@@ -42,15 +42,30 @@ fi
 # hwi 3.2.0 declares Requires-Python >=3.9,<3.13 and is bundled into the app, so a
 # newer interpreter cannot install it. Fail here with an actionable message
 # instead of deep inside pip.
-python_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+#
+# PYTHON names the interpreter, because on macOS the right one usually is NOT
+# reachable as "python3". Homebrew's versioned kegs ship only python3.12, and the
+# unversioned python3 belongs to whatever the default formula is. Telling somebody
+# to "put 3.12 first on PATH" therefore cannot work - no python3 exists in that
+# directory - and the shim it forces people to invent is easy to get wrong.
+# Naming the interpreter outright is the only advice that holds on every machine.
+python_bin="${PYTHON:-python3}"
+command -v "$python_bin" >/dev/null 2>&1 || {
+  echo "PYTHON=$python_bin was not found on PATH." >&2
+  echo "Name a Python 3.9-3.12 interpreter, for example:" >&2
+  echo "  PYTHON=python3.12 bash scripts/build-macos.sh <version>" >&2
+  exit 1
+}
+python_minor="$("$python_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 case "$python_minor" in
   3.9|3.10|3.11|3.12) ;;
   *)
-    echo "This build needs Python 3.9-3.12; found Python $python_minor." >&2
+    echo "This build needs Python 3.9-3.12; $python_bin is Python $python_minor." >&2
     echo "The bundled hardware-wallet tool (hwi 3.2.0) requires >=3.9,<3.13." >&2
-    echo "Install Python 3.12 (for example: brew install python@3.12), put it" >&2
-    echo "first on PATH, or build through the GitHub Actions workflow, which" >&2
-    echo "pins Python 3.12." >&2
+    echo "Name a supported interpreter explicitly:" >&2
+    echo "  PYTHON=python3.12 bash scripts/build-macos.sh $version" >&2
+    echo "Homebrew's kegs provide python3.12 but deliberately no python3, so adding" >&2
+    echo "them to PATH does not help. The GitHub Actions workflow pins 3.12 already." >&2
     exit 1
     ;;
 esac
@@ -58,7 +73,7 @@ esac
 # an earlier run (possibly with tampered or outdated dependencies) must never be
 # reused to produce a build.
 rm -rf .build-venv
-python3 -m venv .build-venv
+"$python_bin" -m venv .build-venv
 .build-venv/bin/python -m pip install --disable-pip-version-check --require-hashes \
   -r requirements-desktop.lock
 [[ -f assets/AppIcon.icns ]] || { echo "assets/AppIcon.icns is missing." >&2; exit 1; }
