@@ -14,6 +14,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -77,6 +78,17 @@ class NotaryArgsTests(unittest.TestCase):
         self.assertIn("not both", result.stderr)
 
 
+# The credential logic is pure shell and runs anywhere. Tests that EXECUTE
+# build-macos.sh cannot: the script's first act is to refuse anything but macOS
+# ("DMGs must be built and tested on macOS."), so on the Ubuntu source job they fail
+# for a reason that has nothing to do with what they assert. They still run in the
+# macOS job of the same workflow, which is where the guard matters anyway.
+requires_macos = unittest.skipUnless(
+    sys.platform == "darwin",
+    "executes build-macos.sh, which refuses to run on anything but macOS")
+
+
+@requires_macos
 class BuildFailsClosedTests(unittest.TestCase):
     """RELEASE=1 must never quietly produce an ad-hoc-signed artifact.
 
@@ -191,12 +203,14 @@ class BuildPythonSelectionTests(unittest.TestCase):
         self.assertIn('"$python_bin" -m venv .build-venv', text)
         self.assertNotIn("\npython3 -m venv .build-venv", text)
 
+    @requires_macos
     def test_a_missing_interpreter_is_refused_with_a_usable_command(self):
         result = self.run_build(PYTHON="python3.99-definitely-not-here")
         self.assertEqual(result.returncode, 1)
         self.assertIn("was not found on PATH", result.stderr)
         self.assertIn("PYTHON=python3.12 bash scripts/build-macos.sh", result.stderr)
 
+    @requires_macos
     def test_an_unsupported_interpreter_names_the_override(self):
         """Host-independent, using a stand-in interpreter that reports 3.14.
 
