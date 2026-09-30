@@ -81,7 +81,13 @@ base64 -i AuthKey_XXXX.p8   | tr -d '\n' > authkey.p8.b64
 **Both of these were resolved by the first real notarized build on 30 September 2026.** The round trip ran and Apple returned `Accepted`; both faults it exposed are fixed and pinned by `ReleaseGateTests`.
 
 1. **The round trip works, and it is slow.** Apple accepted the submission — but took **54 minutes**, not the usual 2–10. The `notarytool --wait` in the terminal never returned and had to be killed, while Apple's own status said `Accepted` the whole time. Apple's developer forums carry a cluster of threads with exactly this symptom, one of them titled *"All notarization submissions stuck In Progress — new Developer ID account"*, with durations from 20 hours to 5 days. **A new team's first submissions are the known-affected case.** So: never judge progress by the `--wait` spinner, always by `notarytool info`. And never notarize during iteration — see the three build loops above.
-2. **The app is now stapled as well as the DMG.** Only the DMG carried a ticket, leaving the app to be verified by an online lookup to Apple, which would refuse an operator working offline. Both now staple from the **same** submission, so the offline fix costs no extra Apple round trip.
+2. **The DMG is stapled; the app a downloader receives is not.** The image is built from a copy of the app taken *before* either staple runs, so stapling `$app` afterwards makes the copy in `dist/` self-contained but never reaches inside the DMG. Measured on the published v0.4.12 image: the DMG validates, the app inside reports *"does not have a ticket stapled to it"*.
+
+   **In practice:** a downloader is fine when online — `spctl` reports `accepted, source=Notarized Developer ID`, and a quarantined copy of the DMG opens through LaunchServices with no warning. **Offline, the first launch of the downloaded app may be refused.** For a recovery tool that is a real gap.
+
+   Closing it means notarizing and stapling the **app first**, then building the DMG from the stapled app — a **second Apple round trip per release**. Worth doing before the first public release, and worth measuring afterwards whether later submissions are as slow as the first (Apple is said to cache team signatures, which would make the extra trip cheap).
+
+   An earlier version of this file, of the build script and of a test docstring all claimed the app staple was free and covered the download. It does not, and the correction is recorded in all three rather than quietly reasserted.
 
 Verified against the real artifact: the DMG and the app both `stapler validate`, and `spctl` reports the app as `accepted, source=Notarized Developer ID`. A quarantined copy of the DMG mounts through LaunchServices, which is the download path a release recipient takes.
 
