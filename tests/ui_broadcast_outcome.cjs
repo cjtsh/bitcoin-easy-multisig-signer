@@ -53,10 +53,13 @@ const route = {
   broadcast: {txid: TXID, explorer: EXPLORER, network: 'mutinynet'},
 };
 const reply = (body) => Promise.resolve({ok: true, json: async () => body});
+const reject_ = (body) => Promise.resolve({ok: false, json: async () => body});
 const context = vm.createContext({
   document, location: {hash: '#token=test'},
   fetch: (url) => {
-    if (url === '/api/broadcast') return reply(route.broadcast);
+    if (url === '/api/broadcast') {
+      return route.reject ? reject_(route.reject) : reply(route.broadcast);
+    }
     if (url === '/api/scan') return reply({});
     return new Promise(() => {});
   },
@@ -66,18 +69,21 @@ const context = vm.createContext({
 vm.runInContext(script, context);
 
 const get = (id) => document.getElementById(id);
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const arm = () => {
+  // The state the page is in when the operator presses Broadcast.
+  vm.runInContext('preparationId = "reviewed-1"; finalTxid = "' + TXID + '";', context);
+  get('broadcast').disabled = false;
+  get('send-card').hidden = false;
+  get('send-outcome').hidden = true;
+  scrolled.length = 0;
+  get('broadcast').listeners.click();
+};
 
-// The state the page is in when the operator presses Broadcast.
-vm.runInContext('preparationId = "reviewed-1"; finalTxid = "' + TXID + '";', context);
-get('broadcast').disabled = false;
-get('send-card').hidden = false;
-get('send-outcome').hidden = true;
-
-scrolled.length = 0;
-get('broadcast').listeners.click();
-
-// The handler is async; give its microtasks a turn.
-setImmediate(() => {
+(async () => {
+  // --- a successful broadcast -------------------------------------------------
+  arm();
+  await settle();
   assert.equal(get('send-card').hidden, true, 'the prepared transaction card is retired');
 
   const outcome = get('send-outcome');
@@ -92,5 +98,21 @@ setImmediate(() => {
   // operator managing to see it.
   assert.equal(get('pending-payment').hidden, false, 'the persistent banner still tracks it');
 
-  console.log('Broadcast outcome: shown in place where the payment was prepared, with the txid and explorer link.');
-});
+  // --- an unknown outcome: the transport failed after submission ---------------
+  // This is the more dangerous case, because the wrong advice invites a resend.
+  route.reject = {error: 'The broadcast result is unknown. Do not send this payment again.',
+                  outcome_unknown: true, explorer: null};
+  arm();
+  await settle();
+  assert.equal(get('send-outcome').hidden, false,
+    'an unknown outcome must also be reported in place, where the operator is looking');
+  assert.match(get('outcome-title').textContent, /status unknown/,
+    'and must say the status is unknown rather than claiming success');
+  assert.match(get('outcome-detail').textContent, /Do not send it again/,
+    'and must tell the operator not to resend');
+  assert.equal(get('pending-payment').hidden, false, 'the banner mirrors the unknown state too');
+
+  console.log('Broadcast outcome: shown in place for both a sent payment and an unknown result, '
+    + 'with the txid and explorer link.');
+})().catch((error) => { console.error(error); process.exit(1); });
+
