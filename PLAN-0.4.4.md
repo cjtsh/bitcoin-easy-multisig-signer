@@ -138,10 +138,16 @@ process has no browser walkthrough: the automated checks cover the Python API,
 the DOM state machine in Node, and the served headers, but nothing loads the page
 and executes it. A CSP nonce that does not match the injected `<script>` tag, or
 a misplaced acknowledgement control, would present as a blank or broken window —
-a worse outcome than the defence-in-depth gap A-15 closes. They are small,
-self-contained changes that deserve to be seen on a screen, so they belong in a
-release that includes the owner's next walkthrough rather than in the one that is
-being published now.
+a worse outcome than the defence-in-depth gap A-15 closes.
+
+**Status: all three landed in 0.4.5**, the release immediately after 0.4.4, rather
+than waiting for the next owner walkthrough. Each carries an automated assertion
+on the served page — the header nonce must match the injected `<script>` tag and
+change per load; a sweep must have its own acknowledgement and the coverage line
+must name the 20-address gap; `/api/clear` must discard the payment, refuse a
+stale preparation id and refuse a replay — and all twelve mutation checks are
+detected. The residual risk is visual presentation, which is why a browser
+walkthrough of this pair is still worth doing.
 
 This is a deliberate scope call under the rule at the top of this file, not an
 oversight: A-7 and A-8 are user-interface additions rather than strictly
