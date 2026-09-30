@@ -139,6 +139,28 @@ class PaletteShapeTests(unittest.TestCase):
         self.assertIn("pointer-events:none", rules.replace(" ", ""),
                       "the frame must never intercept a click")
 
+    def test_only_real_bitcoin_can_turn_the_frame_orange(self):
+        """Three networks, two frames, one question: is this real money?
+
+        The app knows mainnet, Mutinynet and Testnet4. Both practice networks wear
+        green, because neither is real Bitcoin and neither should look like it. Only
+        mainnet wears orange.
+
+        If a practice network could ever show the mainnet frame, the frame would
+        stop meaning anything - and the frame is the entire signal. So this is
+        asserted structurally: live-mode, which is what turns the frame orange, is
+        toggled by the mainnet condition and by nothing else.
+        """
+        html = UI.read_text(encoding="utf-8")
+        self.assertIn('const main = selectedChain() === "main";', html,
+                      "the frame decision must come from the selected chain")
+        self.assertIn('classList.toggle("live-mode", main)', html,
+                      "live-mode must follow the mainnet condition alone")
+        # The two practice networks share a frame colour, so the badge has to keep
+        # naming them apart: green means "practice", the label says which practice.
+        self.assertIn('selectedChain() === "mutinynet" ? "Mutinynet" : "Testnet4"', html,
+                      "the badge must still distinguish the two practice networks")
+
     def test_the_palette_stays_small_enough_to_hold_in_your_head(self):
         """Five hues, assigned to roles. The ceiling is deliberate.
 
