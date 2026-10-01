@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f4ef">
-  <meta name="description" content="Bitcoin Easy Signer helps a trusted helper review and sign a payment from an existing Bitcoin multisig wallet using hardware keys.">
+  <meta name="description" content="Bitcoin Easy Signer is free, open-source Bitcoin multisig software designed to help families and trusted helpers spend from an existing wallet.">
   <meta property="og:title" content="Bitcoin Easy Signer">
-  <meta property="og:description" content="A straightforward way to review a payment from an existing Bitcoin multisig wallet.">
+  <meta property="og:description" content="Built to make multisig easier for families, trustees, lawyers, accountants, and the people they trust.">
   <meta property="og:type" content="website">
   <meta property="og:image" content="https://cjtsh.github.io/bitcoin-easy-multisig-signer/assets/icon.svg">
-  <title>Bitcoin Easy Signer — Review together. Sign with hardware.</title>
+  <title>Bitcoin Easy Signer — Multisig for the people you trust.</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <style>
     :root {
@@ -146,14 +146,14 @@
   <main id="top">
     <section class="wrap hero" aria-labelledby="hero-title">
       <div>
-        <p class="eyebrow">Bitcoin multisig · Version 0.4.14</p>
-        <h1 id="hero-title">Review together.<br>Sign with hardware.</h1>
-        <p class="hero-copy">A straightforward way for a trusted helper to review a payment from an existing Bitcoin multisig wallet and approve it using the wallet’s hardware keys.</p>
+        <p class="eyebrow">Free, open-source Bitcoin multisig · Version 0.4.14</p>
+        <h1 id="hero-title">Multisig for the people you trust.</h1>
+        <p class="hero-copy">Bitcoin Easy Signer is built for families and the trusted helpers they may rely on: a spouse, trustee, lawyer, or accountant. It aims to make spending from an existing multisig wallet clear enough to follow, even if you didn’t set it up.</p>
         <div class="actions">
           <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.4.14/Bitcoin-Easy-Signer-v0.4.14-macOS.dmg">Download for Mac ↗</a>
           <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">View the project</a>
         </div>
-        <p class="microcopy">For Apple Silicon Macs · Free download · Open source</p>
+        <p class="microcopy">For Apple Silicon Macs · Free to use · Open source</p>
       </div>
       <div class="art" aria-label="Illustration of three hardware signers and a wallet-defined signing requirement">
         <div class="art-halo"></div>
@@ -178,25 +178,27 @@
     </aside>
 
     <section class="wrap" id="how-it-works">
-      <p class="section-kicker">A simple, deliberate flow</p>
-      <h2>From wallet file to reviewed payment.</h2>
-      <p class="section-intro">The app works with a wallet that already exists. It reads the wallet definition, prepares a payment for review, and asks the required hardware keys to sign.</p>
+      <p class="section-kicker">Why I built it</p>
+      <h2>Self-custody only works if someone you trust can help.</h2>
+      <p class="section-intro">When I moved to multisig, I expected different wallet apps and hardware keys to work together. In practice, support was fragmented, setup was difficult, and even wallet-definition files could differ. I got my own wallet working. Then I asked the harder question: could my wife—or a trustee, lawyer, or accountant—use it if I couldn’t help?</p>
+      <p class="section-intro">News that a firmware flaw had weakened seed generation in some earlier Coldcard versions made that question feel urgent to me. The devices themselves had not been hacked; a software defect affected how some seeds were generated. It shook my confidence in relying on any single device or maker, and pushed me toward multisig with keys from different manufacturers. <a class="text-link" href="https://blog.coinkite.com/adding-to-public-record/">Coinkite’s account of the incident ↗</a></p>
+      <p class="section-intro">Bitcoin Easy Signer is my attempt to make the spending side of multisig easier for the people families may depend on. It works from one public wallet-definition file and guides a helper through review and hardware approvals—without asking the app user to enter seed words or private keys.</p>
       <div class="steps">
         <article class="step"><span class="step-num">01</span><h3>Open the wallet file</h3><p>Choose the single BSMS wallet definition provided by the wallet owner. The wallet’s own signing policy determines how many keys must approve.</p></article>
         <article class="step"><span class="step-num">02</span><h3>Review the payment</h3><p>Check the destination, amount, network, fee, and any change before asking a hardware device to approve.</p></article>
-        <article class="step"><span class="step-num">03</span><h3>Approve on the devices</h3><p>Unlock each hardware key on the device itself. Confirm its display, then review the finished transaction in the app.</p></article>
+        <article class="step"><span class="step-num">03</span><h3>Approve on the devices</h3><p>Connect compatible hardware keys, confirm the payment on each device, then review the finished transaction in the app.</p></article>
       </div>
     </section>
 
     <section class="scope" id="scope">
       <div class="wrap scope-grid">
         <div>
-          <p class="section-kicker">Designed for existing wallets</p>
-          <h2>Use the wallet you already have.</h2>
-          <p class="scope-copy">Bitcoin Easy Signer does not create wallets or keys. It helps a person use an existing multisig wallet whose public setup is described in one BSMS file.</p>
+          <p class="section-kicker">For families and trusted helpers</p>
+          <h2>Make a recovery plan a person can actually follow.</h2>
+          <p class="scope-copy">Bitcoin Easy Signer is free because I want it to be useful to the Bitcoin community. It does not create wallets or keys. It helps someone spend from an existing wallet using its BSMS definition and compatible hardware signers. The goal is to make the process approachable for a loved one, trustee, lawyer, accountant, or other helper—not only the person who built the wallet.</p>
         </div>
         <div class="scope-list">
-          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Up to three physical keys.</strong> The wallet file defines the signing requirement, including how many keys must approve.</p></div>
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Up to three physical keys.</strong> The wallet file defines the threshold. Supported hardware depends on the app’s bundled HWI library; not every device is supported.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Hardware signing.</strong> Signing happens on the hardware wallets; the app never asks for seed words or private keys.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Practice networks.</strong> Testnet4 and Mutinynet are available for practice. Their coins are not real Bitcoin and do not transfer to mainnet.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">!</span><p><strong>Mainnet broadcasts are disabled.</strong> The app is experimental. Do not rely on it to protect or recover real funds.</p></div>
@@ -205,9 +207,9 @@
     </section>
 
     <section class="wrap closing">
-      <p class="section-kicker">Start with the project</p>
-      <h2>Read the details. Try it only on a practice network.</h2>
-      <p>Download the current Mac release, read the full safety notice, and browse the source code and release history.</p>
+      <p class="section-kicker">A contribution to the Bitcoin community</p>
+      <h2>Free to use. Built to make multisig easier to hand on.</h2>
+      <p>Bitcoin Easy Signer is a work in progress. Read what it supports, review its safety limits, and try it only with practice-network Bitcoin.</p>
       <div class="actions" style="justify-content:center">
         <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14">See release &amp; downloads ↗</a>
         <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Read the safety notice</a>
