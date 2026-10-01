@@ -229,9 +229,6 @@
                 <figure><img src="assets/app-preview-mutinynet-light.svg?v=carousel-1" alt="Illustrative preview of the app's wallet-opening screen in the light theme on Mutinynet, with a green practice-network frame."><figcaption><strong>Mutinynet · Light theme</strong><span>Fast practice network · No real Bitcoin</span></figcaption></figure>
               </div>
               <div class="carousel-slide" data-carousel-slide aria-hidden="true">
-                <figure><img src="assets/app-preview-testnet4-dark.svg?v=carousel-1" alt="Illustrative preview of the app's wallet-opening screen in the dark theme on Testnet4, with a green practice-network frame."><figcaption><strong>Testnet4 · Dark theme</strong><span>Practice with a separate test wallet</span></figcaption></figure>
-              </div>
-              <div class="carousel-slide" data-carousel-slide aria-hidden="true">
                 <figure><img src="assets/app-preview-mutinynet-dark.svg?v=carousel-1" alt="Illustrative preview of the app's wallet-opening screen in the dark theme on Mutinynet."><figcaption><strong>Mutinynet · Dark theme</strong><span>The same practice workflow in dark mode</span></figcaption></figure>
               </div>
               <div class="carousel-slide" data-carousel-slide aria-hidden="true">
@@ -242,14 +239,13 @@
           <div class="carousel-controls">
             <button class="carousel-arrow" type="button" data-carousel-prev aria-label="Previous screen">‹</button>
             <div class="carousel-dots" aria-label="Choose a screen">
-              <button class="carousel-dot" type="button" data-carousel-dot="0" aria-label="Show screen 1 of 4" aria-current="true"></button>
-              <button class="carousel-dot" type="button" data-carousel-dot="1" aria-label="Show screen 2 of 4" aria-current="false"></button>
-              <button class="carousel-dot" type="button" data-carousel-dot="2" aria-label="Show screen 3 of 4" aria-current="false"></button>
-              <button class="carousel-dot" type="button" data-carousel-dot="3" aria-label="Show screen 4 of 4" aria-current="false"></button>
+              <button class="carousel-dot" type="button" data-carousel-dot="0" aria-label="Show screen 1 of 3" aria-current="true"></button>
+              <button class="carousel-dot" type="button" data-carousel-dot="1" aria-label="Show screen 2 of 3" aria-current="false"></button>
+              <button class="carousel-dot" type="button" data-carousel-dot="2" aria-label="Show screen 3 of 3" aria-current="false"></button>
             </div>
             <button class="carousel-arrow" type="button" data-carousel-next aria-label="Next screen">›</button>
           </div>
-          <p class="gallery-note" data-carousel-status aria-live="polite">Screen 1 of 4. These are illustrative previews of the current wallet-opening screen. Real wallet-review and hardware-signing screenshots will be added after a device walkthrough.</p>
+          <p class="gallery-note" data-carousel-status aria-live="polite">Screen 1 of 3. These are illustrative previews of the current wallet-opening screen. Real wallet-review and hardware-signing screenshots will be added after a device walkthrough.</p>
         </div>
       </div>
     </section>
@@ -306,7 +302,7 @@
       const dots = Array.from(carousel.querySelectorAll("[data-carousel-dot]"));
       const status = carousel.querySelector("[data-carousel-status]");
       let current = 0;
-      const names = ["Mutinynet light theme", "Testnet4 dark theme", "Mutinynet dark theme", "Bitcoin light theme"];
+      const names = ["Mutinynet light theme", "Mutinynet dark theme", "Bitcoin live mode"];
       function show(index) {
         current = (index + slides.length) % slides.length;
         track.style.transform = `translateX(-${current * 100}%)`;
