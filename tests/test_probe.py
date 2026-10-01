@@ -20,8 +20,9 @@ from probe import (
 
 
 def test_record(short_path: bool = False, dual_branch: bool = False,
-                bsms_template: bool = False) -> tuple[str, list[bip32.HDKey]]:
-    roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
+                bsms_template: bool = False, threshold: int = 2,
+                key_count: int = 3) -> tuple[str, list[bip32.HDKey]]:
+    roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in range(1, key_count + 1)]
     path = "m/48h/1h/0h/2h"
     suffix = ("/**" if bsms_template else
               "/<0;1>/*" if dual_branch else "/*" if short_path else "/0/*")
@@ -30,7 +31,7 @@ def test_record(short_path: bool = False, dual_branch: bool = False,
         f"{root.derive(path).to_public().to_base58()}{suffix}"
         for root in roots
     ]
-    descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
+    descriptor = f"wsh(sortedmulti({threshold},{','.join(keys)}))"
     full_descriptor = descriptor + "#" + checksum(descriptor)
     canonical = (descriptor.replace("/**", "/0/*") if bsms_template else
                  descriptor.replace("/<0;1>/*", "/0/*") if dual_branch else
@@ -75,6 +76,20 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual((wallet.threshold, len(wallet.keys)), (2, 3))
         self.assertEqual(wallet.reference_status, "verified")
         self.assertEqual(wallet.network, "test")
+
+    def test_any_valid_quorum_with_two_or_three_keys_is_accepted(self):
+        for key_count in (2, 3):
+            for threshold in range(1, key_count + 1):
+                with self.subTest(threshold=threshold, key_count=key_count):
+                    text, _ = test_record(threshold=threshold, key_count=key_count)
+                    wallet = self.write(text)
+                    self.assertEqual((wallet.threshold, len(wallet.keys)),
+                                     (threshold, key_count))
+
+    def test_more_than_three_keys_are_refused(self):
+        text, _ = test_record(key_count=4)
+        with self.assertRaisesRegex(ProbeError, "two or three keys"):
+            self.write(text)
 
     def test_sparrow_style_record_without_a_checksum_is_accepted(self):
         text, _ = sparrow_record()

@@ -47,6 +47,27 @@ def sign(packet, keys):
 
 
 class FinalizeTests(unittest.TestCase):
+    def test_every_quorum_with_two_or_three_keys_signs_and_finalizes(self):
+        for key_count in (2, 3):
+            for threshold in range(1, key_count + 1):
+                with self.subTest(threshold=threshold, key_count=key_count):
+                    text, roots = test_record(
+                        bsms_template=True, threshold=threshold, key_count=key_count)
+                    record = parse_bsms(text)
+                    layout = wallet_layout(record)
+                    explorer = three_output_wallet(layout, NETWORKS["test"])
+                    scan = scan_wallet(record, explorer)
+                    recipient = layout.receive.derive(5).address(NETWORKS["test"])
+                    prepared = build_unsigned_psbt(
+                        record, scan, recipient, 100_000, 5, explorer)
+                    packet = E.PSBT.parse(base64.b64decode(prepared["psbt_base64"]))
+                    keys = [root.derive("m/48h/1h/0h/2h/0/0") for root in roots]
+                    sign(packet, keys[:threshold])
+                    self.assertTrue(is_complete(packet))
+                    self.assertEqual(signatures_collected(packet), (threshold, threshold))
+                    final = finalize_multisig(packet, prepared["txid"])
+                    self.assertEqual(final["txid"], prepared["txid"])
+
     def test_a_complete_multisig_psbt_finalises_to_a_valid_transaction(self):
         packet, keys, result = prepared_psbt()
         txid = packet.tx.txid().hex()

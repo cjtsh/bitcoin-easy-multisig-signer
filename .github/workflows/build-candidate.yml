@@ -393,13 +393,13 @@ jobs:
 
           Built from \`${GITHUB_REF_NAME}\` at commit \`${GITHUB_SHA:0:12}\`.
 
-          - Opens an existing BSMS 2-of-3 multisig wallet and checks its public balance.
+          - Opens an existing BSMS native-SegWit multisig wallet with two or three physical keys; the file defines the quorum, and the app checks its public balance.
           - Prepares a partial send with a declared change branch or the guarded
             standard BIP48 /1/* branch anchored by the BSMS first receive address.
             Unsupported layouts can explicitly Send All without change. Shows final outputs and fee.
           - Refuses inferred change when a bare wildcard matches the first address
             directly instead of anchoring the BIP48 /0/0 receiving branch.
-          - Uses bundled HWI 3.2.0 over stdin to request two hardware signatures.
+          - Uses bundled HWI 3.2.0 over stdin to request the number of hardware signatures required by the BSMS quorum.
             Only signatures verifying against the reviewed PSBT are retained;
             signer-returned metadata is discarded before finalization.
           - Gives each device discovery and authorization check up to three minutes and deliberate on-device signing

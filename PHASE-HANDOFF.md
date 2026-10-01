@@ -1,8 +1,8 @@
 # Current handoff — Bitcoin Easy Signer
 
-## Current stop point — 0.4.13, mainnet dry run pending
+## Current stop point — v0.4.14 release candidate
 
-The current published version is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13), with source version `0.4.13` in `version.py`. The owner has not reported a physical transaction walkthrough on 0.4.13. Do not treat Phase 5 as accepted or enable mainnet broadcast while its gates remain open. Earlier physical Mutinynet payments, including a confirmed 0.4.1 Ledger + Jade payment, are recorded in `RELEASE-HISTORY.md`. No mainnet payment has been prepared, signed, or broadcast by this app.
+The current published version is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13). The local v0.4.14 candidate supports BSMS quorums with two or three total keys; publish only after the GitHub notarized workflow succeeds. The owner reports the local v0.4.14 installation works; no physical transaction walkthrough on its newly supported quorum types has been reported. Do not treat Phase 5 as accepted or enable mainnet broadcast while its gates remain open. Earlier physical Mutinynet payments, including a confirmed 0.4.1 Ledger + Jade payment, are recorded in `RELEASE-HISTORY.md`. No mainnet payment has been prepared, signed, or broadcast by this app.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 
@@ -16,13 +16,13 @@ The owner's 0.4.0 Jade attempt was rejected twice after transaction preparation.
 
 ## Status and version policy
 
-The current published build is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13). The full version-by-version record — including the 0.2.0 hardware-signing failure ("do not use"), the 0.2.1 field-order correction, the 0.3.x Mutinynet and one-file BSMS work, the 0.4.1 physical payment, and the later interface and notarization work — lives in `RELEASE-HISTORY.md`. The owner has not reported a physical transaction walkthrough on 0.4.13. Mainnet broadcast remains refused in code; no mainnet payment has ever been prepared, signed, or broadcast by this app.
+The current published build is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13). The working tree is an unreleased v0.4.14 local candidate for multisig quorums with at most three keys. The full published version-by-version record — including the 0.2.0 hardware-signing failure ("do not use"), the 0.2.1 field-order correction, the 0.3.x Mutinynet and one-file BSMS work, the 0.4.1 physical payment, and the later interface and notarization work — lives in `RELEASE-HISTORY.md`. The owner reports the local v0.4.14 installation works, but has not reported a physical transaction walkthrough using its new quorum support. Mainnet broadcast remains refused in code; no mainnet payment has ever been prepared, signed, or broadcast by this app.
 
 Use a new patch version for any correction to a published build. The owner prefers milestone-based Mac installs after extensive automation rather than repeated installs for small revisions. The installed 0.2.1 app showed a new unsigned review above the previous payment's signing/final screen; **never broadcast from such a mixed screen — close the old app before installing a newer release.** The UI regression tests cover that reset. Mutinynet is the fast practice path; Testnet4 remains available for the existing wallet.
 
 ## Product goal
 
-The user is a spouse, lawyer, accountant, or estate planner with little Bitcoin knowledge, recovering from an existing multi-vendor 2-of-3 multisig wallet. Keep the screen's decisions plain. Put descriptor and key technicalities in automatic checks or optional wallet details. Never ask this person to certify a derivation path or inspect a PSBT to make the tool work. They must still compare the payment on each hardware device and confirm the final transaction.
+The user is a spouse, lawyer, accountant, or estate planner with little Bitcoin knowledge, recovering from an existing multisig wallet defined by one BSMS file. The current local candidate accepts any valid quorum with two or three total keys; the wallet file supplies the threshold. Keep the screen's decisions plain. Put descriptor and key technicalities in automatic checks or optional wallet details. Never ask this person to certify a derivation path or inspect a PSBT to make the tool work. They must still compare the payment on each hardware device and confirm the final transaction.
 
 ## Current behavior and safety boundaries
 
@@ -50,7 +50,7 @@ The controlled 0.2.1 Testnet4 payment signed with two devices, was accepted by t
 
 Current UTXO checks still depend on public explorers (dual-source on mainnet, single-source recheck on practice networks), and fee replacement remains outside this app. Mainnet dry run and a deliberate owner-authorized real send are separate Phase 5 gates; do not enable mainnet broadcast merely because a practice-network walkthrough passes. The plain-language operator guide and the nontechnical-user walkthrough are also unfinished; see `ROADMAP.md` Phase 5 for the full sequence.
 
-## Developer ID signing and notarization — complete for published release
+## Developer ID signing and notarization — local path validated; GitHub release pending
 
 Version 0.4.12 was the first Developer ID-signed and Apple-notarized release. Version 0.4.13 corrected the staple order: the app is stapled before the DMG is built, then the finished image is mounted and the app copy inside is validated. See `RELEASE-HISTORY.md` for the release evidence and artifact checks.
 

@@ -38,6 +38,11 @@ SATOSHI_DUST_FLOOR = 546
 MAX_ESTIMATED_FEE_SATS = 10_000
 
 
+def supported_multisig_policy(record: WalletRecord) -> bool:
+    """The currently supported wallet quorums, all with at most three keys."""
+    return 2 <= len(record.keys) <= 3 and 1 <= record.threshold <= len(record.keys)
+
+
 class WalletError(ProbeError):
     pass
 
@@ -385,14 +390,14 @@ def wallet_summary(record: WalletRecord, chain: str | None = None) -> dict:
     layout = wallet_layout(record)
     config = CHAIN_CONFIGS[_chain(record, chain)]
     network = NETWORKS[record.network]
-    supported_policy = record.threshold == 2 and len(record.keys) == 3
+    supported_policy = supported_multisig_policy(record)
     can_prepare = bool(layout.change and (layout.change_verified or layout.change_assumed)
                        and supported_policy)
     can_send_all = supported_policy
-    if record.threshold != 2 or len(record.keys) != 3:
+    if not supported_policy:
         prepare_reason = (
-            "This app prepares transactions only for a 2-of-3 multisig wallet. "
-            "You can still view this wallet's balance."
+            "This app supports multisig wallets with two or three keys. "
+            "This wallet's quorum is not supported."
         )
     elif layout.change is None:
         prepare_reason = (
@@ -592,9 +597,9 @@ def _compact_size_length(value: int) -> int:
 
 def _estimated_signed_vbytes(
     chosen: list[dict], output_scripts: list[script.Script],
-    witness_script_lengths: dict[str, int],
+    witness_script_lengths: dict[str, int], threshold: int = 2,
 ) -> int:
-    """Estimate native P2WSH 2-of-3 signed weight with 73-byte signatures.
+    """Estimate native P2WSH signed weight with 73-byte signatures.
 
     Signatures are not present yet; this is a conservative size estimate, not
     the guaranteed final sat/vB rate. The PSBT's absolute fee is exact.
@@ -606,14 +611,14 @@ def _estimated_signed_vbytes(
     witness = 2  # SegWit marker and flag.
     for utxo in chosen:
         size = witness_script_lengths[utxo["branch"]]
-        witness += 1 + 1 + 2 * (1 + 73) + _compact_size_length(size) + size
+        witness += 1 + 1 + threshold * (1 + 73) + _compact_size_length(size) + size
     return (4 * base + witness + 3) // 4
 
 
 def _select_inputs(
     candidates: list[dict], amount: int | None, fee_rate: int,
     output_scripts: list[script.Script], witness_script_lengths: dict[str, int],
-    *, send_all: bool,
+    *, send_all: bool, threshold: int = 2,
 ) -> tuple[list[dict], int, int]:
     """Choose inputs and compute the fee for the transaction that will be built.
 
@@ -627,7 +632,7 @@ def _select_inputs(
         # change output, so the fee comes out of the recipient amount.
         total = sum(u["value"] for u in ordered)
         fee = _estimated_signed_vbytes(
-            ordered, output_scripts, witness_script_lengths
+            ordered, output_scripts, witness_script_lengths, threshold
         ) * fee_rate
         return ordered, total, fee
     chosen: list[dict] = []
@@ -637,7 +642,7 @@ def _select_inputs(
         chosen.append(utxo)
         total += utxo["value"]
         fee = _estimated_signed_vbytes(
-            chosen, output_scripts, witness_script_lengths
+            chosen, output_scripts, witness_script_lengths, threshold
         ) * fee_rate
         if amount is not None and total >= amount + fee + SATOSHI_DUST_FLOOR:
             break
@@ -656,6 +661,8 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
     """
     if scan.get("pending_outgoing"):
         raise WalletError("A payment from this wallet is waiting for one confirmation. Check again later before preparing another payment.")
+    if not supported_multisig_policy(record):
+        raise WalletError("This app supports multisig wallets with two or three keys only.")
     layout = wallet_layout(record)
     if layout.change is None and not send_all:
         raise WalletError(
@@ -686,7 +693,7 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
         script_lengths["change"] = len(layout.change.derive(0).witness_script().data)
     chosen, total, fee = _select_inputs(
         confirmed, amount, fee_rate, output_scripts, script_lengths,
-        send_all=send_all,
+        send_all=send_all, threshold=record.threshold,
     )
     if not chosen:
         raise WalletError("No confirmed outputs are available to estimate.")
@@ -701,7 +708,8 @@ def estimate_fee_preview(record: WalletRecord, scan: dict, send_all: bool,
             "Use fewer inputs or a lower sat/vB rate."
         )
     return {
-        "estimated_vbytes": _estimated_signed_vbytes(chosen, output_scripts, script_lengths),
+        "estimated_vbytes": _estimated_signed_vbytes(
+            chosen, output_scripts, script_lengths, record.threshold),
         "input_count": len(chosen),
         "selected_sats": total,
         "method": ("exact input selection for this amount" if amount is not None
@@ -734,10 +742,14 @@ def build_unsigned_psbt(
         raise WalletError("Wallet and scanned network differ; no unsigned transaction was prepared.")
     if scan.get("pending_outgoing"):
         raise WalletError("A payment from this wallet is waiting for one confirmation. Check again later before preparing another payment.")
-    if record.threshold != 2 or len(record.keys) != 3 or (layout.change is None and not send_all):
+    if not supported_multisig_policy(record):
         raise WalletError(
-            "Preparing this transaction requires a 2-of-3 wallet and, for a smaller "
-            "send, a supported BIP48 change path."
+            "This app supports multisig wallets with two or three keys only."
+        )
+    if layout.change is None and not send_all:
+        raise WalletError(
+            "Preparing a smaller send requires a supported BIP48 change path. "
+            "Choose Send All or import a wallet file that declares change."
         )
     if scan.get("source") != (base_url or EXPLORERS[chain]):
         raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
@@ -776,7 +788,7 @@ def build_unsigned_psbt(
     output_scripts = [destination] if send_all else [destination, change_script]
     chosen, total, fee = _select_inputs(
         candidates, None if send_all else amount, fee_rate,
-        output_scripts, script_lengths, send_all=send_all,
+        output_scripts, script_lengths, send_all=send_all, threshold=record.threshold,
     )
     if send_all:
         if total != scan["confirmed_sats"]:

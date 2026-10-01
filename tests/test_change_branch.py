@@ -39,6 +39,20 @@ class ChangeBranchTests(unittest.TestCase):
         self.assertEqual([key.suffix for key in wallet_layout(record).change.keys],
                          ["/1/*"] * 3)
 
+    def test_nunchuk_style_two_of_two_does_not_infer_change(self):
+        for key_count in (2, 3):
+            for threshold in range(1, key_count + 1):
+                if (threshold, key_count) == (2, 3):
+                    continue  # This exact standard policy retains its tested fallback.
+                with self.subTest(threshold=threshold, key_count=key_count):
+                    record = parse_bsms(test_record(
+                        short_path=True, threshold=threshold, key_count=key_count)[0])
+                    summary = wallet_summary(record)
+                    self.assertFalse(summary["can_prepare"])
+                    self.assertTrue(summary["can_send_all"])
+                    self.assertFalse(summary["change_assumed"])
+                    self.assertIsNone(wallet_layout(record).change)
+
     def test_nonstandard_wallet_can_only_sweep_without_creating_change(self):
         roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
         keys = [f"[{root.my_fingerprint.hex()}/48h/1h/0h/3h]"
@@ -104,17 +118,10 @@ class ChangeBranchTests(unittest.TestCase):
         self.assertNotEqual(layout.change.derive(0).address(NETWORKS["test"]),
                             record.reference_address)
 
-    def test_a_wallet_that_is_not_2_of_3_is_not_prepared(self):
-        text, _ = test_record(short_path=True)
-        lines = text.splitlines()
-        descriptor = lines[1].split("#")[0].replace("sortedmulti(2,", "sortedmulti(3,")
-        lines[1] = f"{descriptor}#{checksum(descriptor)}"
-        # A consistent reference address for the changed policy.
-        canonical = Descriptor.from_string(descriptor.replace("/*", "/0/*"))
-        lines[3] = canonical.derive(0).address(NETWORKS["test"])
-        summary = wallet_summary(parse_bsms("\n".join(lines) + "\n"))
-        self.assertFalse(summary["can_prepare"])
-        self.assertIn("2-of-3", summary["prepare_reason"])
+    def test_a_wallet_with_more_than_three_keys_is_refused(self):
+        text, _ = test_record(key_count=4)
+        with self.assertRaisesRegex(ProbeError, "two or three keys"):
+            parse_bsms(text)
 
 
 class FeePreviewTests(unittest.TestCase):

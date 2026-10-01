@@ -36,7 +36,8 @@ every version:
 | 0.4.10 | One progress bar, and only the operation that owns it may change or clear it | — |
 | 0.4.11 | The amount box states that a leading zero is optional | — |
 | 0.4.12 | The first **notarized** release: installs with a normal double-click | — |
-| **0.4.13** | **Current.** Light and dark themes, one palette of roles, and a toggle | — |
+| 0.4.13 | Light and dark themes, one palette of roles, and a toggle | — |
+| **0.4.14** | **Current.** Follow the BSMS quorum for wallets with up to three hardware keys | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -714,3 +715,23 @@ One existing test was itself holding the drift in place — `test_slow_work_show
 asserted the literal `#ffd447`. It now asserts the role.
 
 Suite: **229 tests, 0 failures**, plus eight Node DOM tests.
+
+
+## 0.4.14 — BSMS quorum, up to three physical keys (current)
+
+This release accepts native-SegWit multisig BSMS wallets with two or three
+cosigner keys and follows the threshold recorded in the wallet definition. The
+threshold can be any valid value for those key counts. Signing, transaction size
+estimates, input selection, signer slots, and finalization use that policy. Wallets
+with more than three keys remain unsupported. The opening screen says: “Supports
+hardware multisig wallets with up to three physical keys.”
+
+Change handling remains guarded: the standard BIP48 inferred change route is still
+limited to its anchored sorted 2-of-3 case. Other partial sends require a declared
+change path; otherwise the operator must deliberately choose Send All, which creates
+no change output. The app does not build wallets or create keys.
+
+Automated evidence and the local Apple build/notarization checks are recorded in
+[`PATCH-0.4.14.md`](PATCH-0.4.14.md). The owner reported the local install worked;
+that is not evidence of a physical transaction using every supported quorum.
+Mainnet broadcast remains disabled.

@@ -109,6 +109,7 @@
     .top p { margin:0; color:var(--header-muted); max-width:660px; }
     .top p strong { color:var(--header-ink); }
     .top .platform-note { margin-top:10px; font-size:14px; color:var(--header-ink); }
+    .top .support-scope { margin-top:10px; font-size:15px; font-weight:800; color:var(--header-ink); }
     .top .secondary { margin-top:14px; }
     .network { display:inline-flex; border:1px solid var(--header-rule); border-radius:99px; padding:5px 12px;
       margin-top:20px; font-size:12px; letter-spacing:.045em; font-weight:750; color:var(--header-ink); }
@@ -285,7 +286,8 @@
             aria-label="Switch to dark theme" title="Switch theme (T)">Dark Theme</button>
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Bitcoin Easy Signer</h1>
-    <p>Open an existing <strong>2-of-3</strong> wallet, review a payment, and approve it on two hardware devices.</p>
+    <p>Open an existing multisig wallet, review a payment, and approve it on the required hardware signers.</p>
+    <p class="support-scope">Supports hardware multisig wallets with up to three physical keys.</p>
     <div id="network-badge" class="network">● MUTINYNET · NO REAL BITCOIN</div>
     <div><button id="refresh-top" class="secondary" hidden>↻ Refresh balance</button></div>
   </header>
@@ -441,7 +443,7 @@
         <details class="context-help"><summary aria-label="Why check the devices before preparing a payment?">?</summary>
           <div class="help-popout"><strong>Why check them first?</strong><p>This wallet needs more than one device before any Bitcoin can move, and none of your keys are in this app. Checking the devices here means a missing or mismatched one is found calmly, now, instead of at the last step of a payment.</p></div>
         </details></div>
-      <p class="muted">Your wallet is a <strong id="signer-policy"></strong>. Spending needs more than one of those devices, so check now that they are here and that they belong to this wallet — before you build a payment.</p>
+      <p class="muted">Your wallet is a <strong id="signer-policy"></strong>. Check now that the required signing devices are here and belong to this wallet — before you build a payment.</p>
       <button id="check-signers-now" type="button">Look for my hardware wallets</button>
       <div id="preflight-message" role="status" aria-live="polite"></div>
       <ul id="preflight-results"></ul>
@@ -466,7 +468,7 @@
       <p class="muted">First prepare and review the transaction. Nothing is signed or sent here.</p>
       <div id="send-choice" role="group" aria-label="Choose whether to prepare a transaction">
         <h3>Would you like to prepare a Bitcoin transaction?</h3>
-        <p class="small muted">Enter the destination and amount, review every output, then approve signing on two hardware devices. Practice-network payments can then be broadcast.</p>
+        <p class="small muted">Enter the destination and amount, review every output, then approve signing on the required hardware devices. Practice-network payments can then be broadcast.</p>
         <div id="test-send-tip" class="tip"><strong>Recommended: send a small test amount first.</strong>
           Confirm that a small payment arrives before you move a large amount. Nothing here is
           forced — a test transaction is simply the cheapest insurance there is.</div>
@@ -540,7 +542,7 @@
         <div class="tip"><strong>What happens next</strong>
           <ol class="small">
             <li>Save the unsigned file to your Downloads folder.</li>
-            <li>Continue below to approve signing on two hardware devices. The saved file is an optional backup.</li>
+            <li>Continue below to approve signing on the required hardware devices. The saved file is an optional backup.</li>
             <li>On a practice network, confirm the final transaction and broadcast it. Mainnet broadcast remains disabled.</li>
           </ol></div>
         <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
@@ -564,7 +566,7 @@
         <p class="small muted">The next screen only checks whether connected devices match this wallet. It does not ask for a PIN, sign, or send.</p>
         <section id="signer-step" class="review" hidden>
           <h3>Connect your hardware wallets</h3>
-          <p>Connect a device and unlock it using the device itself. This app will only check whether its public identity matches one of this wallet’s three signers. It will not ask for or store your PIN.</p>
+          <p>Connect a device and unlock it using the device itself. This app checks whether its public identity matches a signer in this wallet. It will not ask for or store your PIN.</p>
           <button id="check-signers" type="button">Check connected devices</button>
           <div id="signer-message" role="status" aria-live="polite"></div>
           <ul id="signer-results"></ul>
@@ -1684,8 +1686,7 @@
           state.className = "small tick";
           state.textContent = "Signed ✓";
         } else if (quotaMet) {
-          // Only greyed once the quota is met: a 2-of-3 needs ANY two, so no box
-          // is optional until the operator actually has enough signatures.
+          // Only greyed once the wallet's required signature quota is met.
           box.classList.add("optional");
           state.textContent = "Not needed — you already have enough signatures.";
         } else if (device) {

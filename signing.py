@@ -86,8 +86,8 @@ def verified_input_signatures(psbt) -> list[set[bytes]]:
         if scope.witness_script is None or scope.witness_utxo is None:
             raise SigningError(f"Input {index + 1} is missing its script or previous output.")
         threshold, keys = parse_multisig_script(scope.witness_script.data)
-        if threshold != 2 or len(keys) != 3:
-            raise SigningError("Only 2-of-3 native-SegWit signatures are supported.")
+        if not 1 <= threshold <= len(keys) or not 2 <= len(keys) <= 3:
+            raise SigningError("Only native-SegWit multisig wallets with two or three keys are supported.")
         expected_script = b"\x00\x20" + sha256(scope.witness_script.data).digest()
         if scope.witness_utxo.script_pubkey.data != expected_script:
             raise SigningError(f"Input {index + 1} has a witness script that does not own its output.")

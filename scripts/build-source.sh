@@ -20,7 +20,7 @@ mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
 cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
   RELEASE-HISTORY.md PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md \
   AUDIT-DEEPSEEK-0.4.3.md AUDIT-ZAI-0.4.3.md SECURITY-REVIEW-0.2.0.md \
-  PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md PATCH-0.4.0.md PATCH-0.4.1.md PATCH-0.4.2.md PATCH-0.4.6.md CHANGE-ADDRESS-REVIEW.md \
+  PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md PATCH-0.4.0.md PATCH-0.4.1.md PATCH-0.4.2.md PATCH-0.4.6.md PATCH-0.4.14.md CHANGE-ADDRESS-REVIEW.md \
   PLAN-0.3.0.md PLAN-0.4.4.md MUTINYNET-0.3.0.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \

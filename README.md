@@ -1,14 +1,14 @@
 # Bitcoin Easy Signer
 
-**Current version: 0.4.13** — the [published Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13). The app has practice-network evidence: confirmed Testnet4 payments signed by Jade, Trezor Safe 3 and Ledger Nano S Plus, plus owner-reported Mutinynet payments through the same engine, most recently Ledger + Jade on 0.4.1. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has ever been prepared, signed, or tested by this app. This is not a production recovery tool — read [the risk notice](DISCLAIMER.md). The version-by-version record of changes, corrections and evidence is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md).
+**Published version: 0.4.14** — [Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14). The app has practice-network evidence: confirmed Testnet4 payments signed by Jade, Trezor Safe 3 and Ledger Nano S Plus, plus owner-reported Mutinynet payments through the same engine, most recently Ledger + Jade on 0.4.1. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has ever been prepared, signed, or tested by this app. This is not a production recovery tool — read [the risk notice](DISCLAIMER.md). The version-by-version record of changes, corrections and evidence is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md).
 
-Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** 2-of-3 multisig wallet. It does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on two hardware devices, and confirm the final transaction.
+Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** native-SegWit multisig wallet with two or three keys. The wallet definition determines its signing threshold. The app does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on the required hardware devices, and confirm the final transaction.
 
-Standing cautions that survive across versions: Mutinynet needs a funded 2-of-3 BSMS wallet, and existing Testnet4 coins cannot move between networks. Very old installed builds (0.2.1) could show stale signing/final details when a new payment was prepared; **never broadcast from a screen that mixes two payments** — close the old app and install the current release. Never send a sweep to work around a missing change path, and never sweep a real wallet merely to test Send All.
+Standing cautions that survive across versions: Mutinynet needs a funded BSMS wallet, and existing Testnet4 coins cannot move between networks. Very old installed builds (0.2.1) could show stale signing/final details when a new payment was prepared; **never broadcast from a screen that mixes two payments** — close the old app and install the current release. Never send a sweep to work around a missing change path, and never sweep a real wallet merely to test Send All.
 
 ## What this version does
 
-- Imports a BSMS 1.0 definition for a 2-of-3 native-SegWit multisig wallet. The app checks its reference receive address, public cosigner identities, and selected network.
+- Imports a BSMS 1.0 definition for a native-SegWit multisig wallet with two or three keys. It follows the quorum in the file, for any valid threshold, and checks the reference receive address, public cosigner identities, and selected network.
 - Scans receive and established change branches through a selected Esplora server. A gap-limited scan is an observation, not proof of a complete balance. Derived addresses are disclosed to that server after consent; seeds and private keys remain on hardware.
 - Builds a PSBT from confirmed, independently checked previous outputs. Partial sends use a BSMS-declared change branch or the strict BIP48 standard `/1/*` branch for an anchored 2-of-3 native-SegWit sorted wallet. The latter is labelled as standard-derived, since the BSMS does not explicitly declare it. If neither route applies, the owner can explicitly choose **Send All confirmed outputs found by the scan**, producing no change.
 - Checks connected hardware signers through bundled Bitcoin Core HWI, asks them to sign, and shows **one box per cosigner** so the missing signer is visible at a glance rather than described in a sentence. Retains only signatures that verify against the reviewed transaction, and discards all returned wallet metadata before finalization. Each device must display the intended payment; the person using the app must check its screen.
@@ -24,21 +24,21 @@ The app uses **one** wallet/PSBT/signing engine. [`network_config.py`](network_c
 
 The published DMG is for Apple Silicon and is signed with Bitseeker LLC's Developer ID, notarized by Apple, and stapled. The app inside the DMG is stapled before the image is built, so its ticket is available for offline Gatekeeper checks. Verify the download against the release's `SHA256SUMS` before opening it. macOS may still show its ordinary first-open confirmation for downloaded software; do not disable Gatekeeper globally.
 
-The release record documents the v0.4.12 notarized build and the v0.4.13 source/UI updates. Physical-use evidence remains owner-reported and belongs to earlier releases: two Mutinynet sends on 0.3.2 and a confirmed Ledger + Jade Mutinynet payment on 0.4.1. The 0.4.13 appearance changes have not been separately exercised in a physical transaction walkthrough. Any payment must still be checked on each hardware device: destination, amount, fee and change must match the intended payment. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Keep wallet files, xpubs, addresses, PSBTs, and raw signed transactions out of public issue reports and the repository.
+The v0.4.14 local notarized installation was reported to work. Physical-use evidence remains owner-reported and belongs to earlier releases: two Mutinynet sends on 0.3.2 and a confirmed Ledger + Jade Mutinynet payment on 0.4.1. The 0.4.13 appearance changes have not been separately exercised in a physical transaction walkthrough. Any payment must still be checked on each hardware device: destination, amount, fee and change must match the intended payment. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Keep wallet files, xpubs, addresses, PSBTs, and raw signed transactions out of public issue reports and the repository.
 
 If neither declared nor guarded standard change is available, the app offers a no-change Send All path. **Do not sweep a real wallet merely to test this feature.**
 
 ## Supported scope and limitations
 
-| Item | Current support (0.4.13) |
+| Item | Published support (0.4.14) |
 | --- | --- |
-| Wallet | Existing BSMS 1.0, 2-of-3 P2WSH multisig with xpub origins |
+| Wallet | Existing BSMS 1.0, P2WSH multisig with two or three keys and xpub origins; threshold comes from the file |
 | Networks | Testnet4, Mutinynet and mainnet through one engine; mainnet broadcast disabled |
 | Hardware exercised | Jade, Trezor Safe 3, Ledger Nano S Plus — Testnet4 through 0.2.1; Mutinynet on 0.3.2 and 0.4.1. Owner-reported, not independently reproduced; no firmware versions are recorded |
 | Distribution | Apple Silicon Developer ID-signed and notarized DMG, source archive; see the release assets and `SHA256SUMS` |
 | Fees | Mainnet mempool.space guidance for mainnet/Testnet4; Mutinynet's Esplora reference in Mutinynet mode; 1–25 sat/vB and 10,000-sat estimated fee caps |
 | Scan | 20-address unused gap, at most 100 addresses per known branch; historical or unusual funds can be missed |
-| Recovery | No built-in fee bump, no support for arbitrary wallet policies or legacy address types |
+| Recovery | No built-in fee bump, no support for wallets with more than three keys or legacy address types |
 
 ## Developer and reviewer entry point
 

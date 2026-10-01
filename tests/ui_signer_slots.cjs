@@ -2,7 +2,7 @@
 // which signer is still missing instead of reading a sentence about progress.
 //
 // A 2-of-3 needs ANY two, so no box may be presented as optional until the quota
-// has actually been met. These assertions pin that off, plus the 3-of-5 shape.
+// has actually been met. These assertions pin that behavior through a 3-of-3.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -121,16 +121,15 @@ assert.ok(has(boxes()[1], 'waiting') && has(boxes()[2], 'waiting'),
 assert.match(stateOf(boxes()[1]), /No device found/);
 assert.match(titleOf(boxes()[1]), /Signer 2/, 'falls back to the signer number');
 
-// --- 3-of-5 generalises: five boxes, three then grey ------------------------
-const five = [1, 2, 3, 4, 5].map((n) => ({model: 'D' + n, signer: n, type: 'trezor', path: 'p' + n}));
-render({threshold: 3, keys: 5, signed: [], signable: five});
-assert.equal(boxes().length, 5, 'one box per cosigner for 3-of-5');
+// --- 3-of-3: every signer is required until the threshold is met ------------
+render({threshold: 3, keys: 3, signed: [], signable: three});
+assert.equal(boxes().length, 3, 'one box per cosigner for 3-of-3');
 assert.equal(elements.get('sign-threshold').textContent, '3');
-assert.ok(boxes().every((b) => has(b, 'ready')), 'all five open before any signature');
-render({threshold: 3, keys: 5, signed: [1, 2, 3], signable: five});
-assert.equal(boxes().filter((b) => has(b, 'optional')).length, 2,
-  'exactly the two surplus boxes grey out');
-assert.equal(boxes().filter((b) => has(b, 'signed')).length, 3);
+assert.ok(boxes().every((b) => has(b, 'ready')), 'all three open before any signature');
+render({threshold: 3, keys: 3, signed: [1, 2], signable: three});
+assert.equal(boxes().filter((b) => has(b, 'optional')).length, 0,
+  'no signer is optional until all three signatures are present');
+assert.equal(boxes().filter((b) => has(b, 'signed')).length, 2);
 
 // --- the last signature must fill its own box, in place ---------------------
 // Regression from 0.4.6: signWith returned straight to showFinal, so the final
@@ -192,6 +191,6 @@ releaseScan();
 await inFlight;
 
 console.log('Signer boxes: one per cosigner, greyed only once the quota is met, '
-  + '2-of-3 and 3-of-5; each signature fills its own box where it stands, without '
+  + '2-of-3 and 3-of-3; each signature fills its own box where it stands, without '
   + 'waiting for the device re-scan.');
 })().catch((error) => { console.error(error); process.exit(1); });

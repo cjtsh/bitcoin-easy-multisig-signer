@@ -152,6 +152,7 @@ class LocalGuiTests(unittest.TestCase):
         """The owner has to be able to sign and send from this screen, and the
         transaction id they confirm must be the one that is broadcast."""
         page = self.get_page()
+        self.assertIn("Supports hardware multisig wallets with up to three physical keys.", page)
         for element in ('id="sign-step"', 'id="sign-buttons"', 'id="sign-progress"',
                         'id="finalize-step"', 'id="final-amount"', 'id="final-fee"',
                         'id="final-vsize"', 'id="final-signers"', 'id="final-txid"',
@@ -293,7 +294,7 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn('id="review-txid"', page)
         self.assertIn('id="review-explorer"', page)
         self.assertIn("A payment is not finished until it is confirmed.", page)
-        self.assertIn("Continue below to approve signing on two hardware devices.", page)
+        self.assertIn("Continue below to approve signing on the required hardware devices.", page)
         self.assertIn("explorer_web", page)
 
     def test_prepare_reports_a_final_transaction_id(self):
