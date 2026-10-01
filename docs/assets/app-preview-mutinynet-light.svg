@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
 <title id="title">Bitcoin Easy Signer Mutinynet light theme preview</title>
-<desc id="desc">Illustrative screen preview based on the current app interface. No wallet is loaded and no payment is shown.</desc>
+<desc id="desc">Illustrative preview based on the current app interface. No wallet is loaded and no payment is shown.</desc>
 <style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.brand{font-size:15px;font-weight:750;letter-spacing:2px}.hero{font-size:42px;font-weight:750;letter-spacing:-1.5px}.copy{font-size:17px}.scope{font-size:19px;font-weight:800}.label{font-size:16px;font-weight:700}.small{font-size:13px}.panel-title{font-size:26px;font-weight:750;letter-spacing:-.6px}.hint{font-size:16px}</style>
 <rect width="1400" height="900" fill="#f6f8fa"/>
 <rect x="3" y="3" width="1394" height="894" rx="19" fill="none" stroke="#4ade80" stroke-width="7"/>
-<path d="M12 16a4 4 0 0 1 4-4h1368a4 4 0 0 1 4 4v216H12z" fill="#0f172a"/>
-<path d="M12 229h1376" stroke="#14b8a6" stroke-width="4"/>
+<path d="M12 16a4 4 0 0 1 4-4h1368a4 4 0 0 1 4 4v272H12z" fill="#0f172a"/>
+<path d="M12 286h1376" stroke="#14b8a6" stroke-width="4"/>
 <text x="43" y="47" class="brand" fill="#9fb0c7">BITCOIN EASY SIGNER · V0.4.14 · EXPERIMENTAL</text>
 <rect x="1204" y="28" width="151" height="42" rx="21" fill="#14b8a6"/>
 <text x="1225" y="55" class="label" fill="#0f172a">Dark Theme</text>
@@ -13,31 +13,30 @@
 <text x="43" y="143" class="copy" fill="#9fb0c7">Open an existing multisig wallet, review a payment, and approve it on the required</text>
 <text x="43" y="169" class="copy" fill="#9fb0c7">hardware signers.</text>
 <text x="43" y="203" class="scope" fill="#f1f5f9">Supports hardware multisig wallets with up to three physical keys.</text>
-<rect x="43" y="254" width="405" height="43" rx="22" fill="#0f172a" stroke="#14b8a6" stroke-width="2"/>
-<text x="60" y="281" class="label" fill="#f1f5f9">● MUTINYNET · NO REAL BITCOIN</text>
+<rect x="43" y="229" width="405" height="43" rx="22" fill="#0f172a" stroke="#14b8a6" stroke-width="2"/>
+<text x="60" y="256" class="label" fill="#f1f5f9">● MUTINYNET · NO REAL BITCOIN</text>
 
-<rect x="45" y="242" width="1310" height="646" rx="18" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
-<text x="78" y="292" class="panel-title" fill="#0f172a">1. Open your existing wallet</text>
-<path d="M78 312h1244" stroke="#e3e8ef"/>
-<text x="79" y="347" class="hint" fill="#64748b">Choose your wallet file—not a recovery phrase or private key.</text>
-<text x="78" y="395" class="label" fill="#0f172a">Bitcoin network</text>
-<text x="727" y="395" class="label" fill="#0f172a">BSMS wallet file</text>
-<rect x="72" y="568" width="590" height="62" rx="12" fill="#e6f4f1" stroke="#0f766e" stroke-width="2"/>
-<circle cx="99" cy="599" r="9" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
-<text x="123" y="597" class="label" fill="#0f172a">Mutinynet</text>
-<text x="123" y="617" class="small" fill="#64748b">fast practice network</text><rect x="72" y="648" width="590" height="62" rx="12" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
-<circle cx="99" cy="679" r="9" fill="none" stroke="#cbd5e1" stroke-width="2"/>
-<text x="123" y="677" class="label" fill="#0f172a">Testnet4</text>
-<text x="123" y="697" class="small" fill="#64748b">existing test wallets</text><rect x="72" y="728" width="590" height="62" rx="12" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
-<circle cx="99" cy="759" r="9" fill="none" stroke="#cbd5e1" stroke-width="2"/>
-<text x="123" y="757" class="label" fill="#92400e">Bitcoin LIVE</text>
-<text x="123" y="777" class="small" fill="#64748b">real BTC, dry run only</text>
-<rect x="727" y="416" width="580" height="98" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-<rect x="747" y="436" width="165" height="54" rx="9" fill="#eef2f7" stroke="#cbd5e1"/>
-<text x="766" y="470" class="label" fill="#0f766e">Choose File</text>
-<text x="930" y="470" class="hint" fill="#64748b">no file selected</text>
-<text x="727" y="559" class="small" fill="#64748b">Choose the wallet definition, not a seed phrase or private key.</text>
-<rect x="727" y="607" width="580" height="60" rx="11" fill="#0f766e"/>
-<text x="777" y="644" class="label" fill="#ffffff">Open wallet &amp; check balance</text>
-<text x="78" y="715" class="small" fill="#64748b">Practice networks are separate. Each wallet needs its own network and coins.</text>
+<rect x="45" y="315" width="1310" height="485" rx="18" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
+<text x="78" y="363" class="panel-title" fill="#0f172a">1. Open your existing wallet</text>
+<path d="M78 382h1244" stroke="#e3e8ef"/>
+<text x="79" y="418" class="hint" fill="#64748b">Choose your wallet file—not a recovery phrase or private key.</text>
+<text x="78" y="461" class="label" fill="#0f172a">Bitcoin network</text>
+<text x="727" y="461" class="label" fill="#0f172a">BSMS wallet file</text>
+<rect x="72" y="480" width="590" height="58" rx="12" fill="#e6f4f1" stroke="#0f766e" stroke-width="2"/>
+<circle cx="99" cy="509" r="9" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<text x="123" y="507" class="label" fill="#0f172a">Mutinynet</text>
+<text x="123" y="527" class="small" fill="#64748b">fast practice network</text><rect x="72" y="548" width="590" height="58" rx="12" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
+<circle cx="99" cy="577" r="9" fill="none" stroke="#cbd5e1" stroke-width="2"/>
+<text x="123" y="575" class="label" fill="#0f172a">Testnet4</text>
+<text x="123" y="595" class="small" fill="#64748b">existing test wallets</text><rect x="72" y="616" width="590" height="58" rx="12" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
+<circle cx="99" cy="645" r="9" fill="none" stroke="#cbd5e1" stroke-width="2"/>
+<text x="123" y="643" class="label" fill="#92400e">Bitcoin LIVE</text>
+<text x="123" y="663" class="small" fill="#64748b">real BTC, dry run only</text>
+<rect x="727" y="480" width="580" height="83" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<rect x="747" y="495" width="165" height="52" rx="9" fill="#eef2f7" stroke="#cbd5e1"/>
+<text x="766" y="528" class="label" fill="#0f766e">Choose File</text>
+<text x="930" y="528" class="hint" fill="#64748b">no file selected</text>
+<text x="727" y="588" class="small" fill="#64748b">Choose the wallet definition, not a seed phrase or private key.</text>
+<rect x="727" y="607" width="580" height="52" rx="11" fill="#0f766e"/>
+<text x="777" y="639" class="label" fill="#ffffff">Open wallet &amp; check balance</text>
 </svg>
