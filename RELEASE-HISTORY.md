@@ -39,7 +39,7 @@ every version:
 | 0.4.13 | Light and dark themes, one palette of roles, and a toggle | — |
 | 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) |
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) |
-| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) |
+| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400` and tagged `v0.5.0` locally; not pushed, not published, and no live send is reported | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -616,7 +616,7 @@ notarize only to publish.
 
 Suite: **210 tests, 0 failures**, plus seven Node DOM tests.
 
-## 0.4.13 — light and dark, one palette (current)
+## 0.4.13 — light and dark, one palette
 
 **No application behaviour changed.** This release is appearance and wording: a light
 theme and a dark theme with a **Dark Theme / Light Theme** button in the header, a
@@ -736,7 +736,8 @@ no change output. The app does not build wallets or create keys.
 Automated evidence and the local Apple build/notarization checks are recorded in
 [`PATCH-0.4.14.md`](PATCH-0.4.14.md). The owner reported the local install worked;
 that is not evidence of a physical transaction using every supported quorum.
-Mainnet broadcast remains disabled.
+Mainnet broadcast remained disabled in this release. 0.5.0 is the release that
+changes that, behind the final-screen and backend gates recorded below.
 
 ## 0.4.15 candidate — OneKey Classic 1S through HWI's Trezor backend
 
@@ -758,3 +759,51 @@ show no broadcast and subsequent clearing of the signed transaction. This is an
 owner-reported dry run, not an on-chain payment; no independent raw-transaction decode
 report was supplied. The candidate is not a published release. Full evidence is in
 [`PATCH-0.4.15.md`](PATCH-0.4.15.md).
+
+## Release anchors and artifact provenance
+
+A tag is the only authority for what a release contained. This table records the
+commit each tag resolves to, and the SHA-256 of the assets that were actually
+published, read back from the `SHA256SUMS` attached to each GitHub release.
+
+| Tag | Resolves to | Published source archive | Published DMG |
+| --- | --- | --- | --- |
+| `v0.4.12` | `4e85d64` | `f3937c30a69aca4129595d27aac02113508eac801a6b463815a39158fd62c26b` | `21b3c80e3d452ff27343fec011467cc0256b30b4305185337692e51875ba02f8` |
+| `v0.4.13` | `351e126` | `f61b58265c4539467fb33e3d0a26d8373a15cbe78301859620b0d4b6ec65f97a` | `d961255d788ef39dbb4b04667bbc73316bedbdb2dce05c685cdd4a3af74a7c0d` |
+| `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
+| `v0.5.0` | `51ea400` | not published | not published |
+
+`v0.4.14` resolves to `d530a221de87`, the commit [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md)
+already records as the one GitHub Actions built and published. `v0.5.0` is tagged
+locally only: the tag exists on the build machine, nothing is pushed, and the
+release does not yet exist.
+
+### Local build output is not a published asset
+
+`dist/` is not tracked (it is in `.gitignore`), and the 0.4.14 artifacts under it
+are a **pre-publication candidate**, not the shipped release. Their status text
+still reads "GitHub Actions must repeat the release checks", and their hashes
+differ from the published ones:
+
+| Asset | Published | Local `dist/` |
+| --- | --- | --- |
+| 0.4.14 source archive | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `5102d09f31f40d199d43dc67577d4afbcb5d9f2399aa92bfb9c875495a04a4da` |
+| 0.4.14 macOS DMG | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` | `c168b41aece1ff66829f57c7fb7aec77543b846e4fb6f59cddbbde5a7ac3969c` |
+
+Never quote a `dist/` hash as the hash of a released artifact. Rebuilding is not
+reproducible byte-for-byte, so the published `SHA256SUMS` is the only authority.
+
+### 0.4.15 has no tag, and its source survives only locally
+
+0.4.15 was built, signed, notarized and handed to the owner to test, but it was
+never published and **has no commit of its own**: the OneKey work lived in the
+working tree alongside the later 0.5.0 changes and was committed once, in
+`51ea400`. Its source survives only as
+`dist/bitcoin-easy-multisig-signer-v0.4.15.tar.gz`, SHA-256
+`261c537b061bf547e4075fde6c15deb4757e3152ffcbdb87621dba0a8af48117`, plus the
+0.4.15 portion of the `51ea400` diff. Because `dist/` is untracked, that archive
+currently exists only on the build machine. The 0.5.0 source archive is
+`dist/bitcoin-easy-multisig-signer-v0.5.0.tar.gz`, SHA-256
+`3a65fe936023dcd5b44735648ccec1afc69d73dcdc1f21935960efdb7d5d854f`, and is
+likewise local-only until 0.5.0 is published. Preserve both archives when
+publishing, or the source for these two builds is lost.
