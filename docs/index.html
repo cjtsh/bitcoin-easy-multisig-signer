@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ef">
+  <meta name="description" content="Bitcoin Easy Signer helps a trusted helper review and sign a payment from an existing Bitcoin multisig wallet using hardware keys.">
+  <meta property="og:title" content="Bitcoin Easy Signer">
+  <meta property="og:description" content="A straightforward way to review a payment from an existing Bitcoin multisig wallet.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://cjtsh.github.io/bitcoin-easy-multisig-signer/assets/icon.svg">
+  <title>Bitcoin Easy Signer — Review together. Sign with hardware.</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f4ef;
+      --white: #fffefa;
+      --ink: #202323;
+      --muted: #626966;
+      --line: #dedbd2;
+      --orange: #e68113;
+      --orange-dark: #a74c00;
+      --orange-pale: #fff0d8;
+      --green: #176b56;
+      --green-pale: #e4f2eb;
+      --serif: Georgia, "Times New Roman", serif;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    .wrap { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+    .topbar { height: 82px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .brand { display: inline-flex; gap: 12px; align-items: center; text-decoration: none; font-size: 15px; font-weight: 750; letter-spacing: -.025em; }
+    .brand img { width: 34px; height: 34px; }
+    .nav { display: flex; align-items: center; gap: 28px; color: var(--muted); font-size: 13px; font-weight: 600; }
+    .nav a { text-decoration: none; }
+    .nav a:hover, .text-link:hover { color: var(--orange-dark); }
+    .hero { display: grid; grid-template-columns: 1.08fr .92fr; align-items: center; gap: 50px; padding: 88px 0 92px; }
+    .eyebrow { margin: 0 0 20px; color: var(--orange-dark); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 640px; margin-bottom: 22px; font: 500 clamp(48px, 6.5vw, 78px)/.99 var(--serif); letter-spacing: -.055em; }
+    .hero-copy { max-width: 555px; margin-bottom: 30px; color: #4f5753; font: 19px/1.65 var(--sans); }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .button { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; padding: 0 20px; border: 1px solid var(--ink); border-radius: 4px; background: var(--ink); color: white; font-size: 14px; font-weight: 700; text-decoration: none; transition: transform .15s ease, background .15s ease; }
+    .button:hover { transform: translateY(-1px); background: #343a37; }
+    .button.secondary { background: transparent; color: var(--ink); }
+    .button.secondary:hover { background: var(--white); }
+    .microcopy { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+    .art { position: relative; min-height: 395px; display: grid; place-items: center; }
+    .art-halo { position: absolute; width: min(370px, 80vw); aspect-ratio: 1; border-radius: 50%; background: #f1ddbd; }
+    .review-card { position: relative; width: min(365px, 91%); padding: 24px; border: 1px solid #e9e4d8; border-radius: 8px; background: var(--white); box-shadow: 0 22px 65px #4b3d241f; transform: rotate(-2deg); }
+    .card-top { display: flex; justify-content: space-between; align-items: center; padding-bottom: 18px; border-bottom: 1px solid #ebe7df; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+    .status-dot { display: inline-flex; align-items: center; gap: 7px; color: var(--green); letter-spacing: 0; text-transform: none; }
+    .status-dot::before { width: 7px; height: 7px; border-radius: 50%; background: #2d9b71; content: ""; }
+    .card-title { margin: 20px 0 3px; font-size: 18px; font-weight: 700; letter-spacing: -.03em; }
+    .card-sub { margin: 0 0 24px; color: var(--muted); font-size: 12px; }
+    .signer-row { display: flex; align-items: center; gap: 12px; margin-top: 11px; }
+    .key-icon { width: 35px; height: 35px; display: grid; place-items: center; border: 1px solid #e5dfd4; border-radius: 50%; background: #f8f6f1; color: var(--orange-dark); font-size: 14px; }
+    .signer-name { flex: 1; font-size: 12px; font-weight: 650; }
+    .signer-check { color: var(--green); font-size: 12px; font-weight: 700; }
+    .threshold { display: flex; justify-content: space-between; gap: 10px; margin-top: 23px; padding: 13px 14px; border-radius: 4px; background: #f5f2eb; color: #414843; font-size: 11px; }
+    .threshold strong { color: var(--ink); }
+    .floating-note { position: absolute; right: -4px; bottom: 20px; padding: 14px 17px; border: 1px solid #d7e8dc; border-radius: 5px; background: var(--green-pale); color: #225843; box-shadow: 0 10px 24px #314b3012; font-size: 12px; font-weight: 650; transform: rotate(2deg); }
+    .notice { border-top: 1px solid #ead9be; border-bottom: 1px solid #ead9be; background: #fbefd9; }
+    .notice-inner { display: flex; align-items: flex-start; gap: 15px; padding: 21px 0; }
+    .notice-mark { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: #f1d8ae; color: #77410b; font-weight: 800; }
+    .notice p { margin: 0; color: #604c32; font-size: 13px; line-height: 1.6; }
+    .notice strong { color: #3d3020; }
+    section { padding: 84px 0; }
+    .section-kicker { margin-bottom: 14px; color: var(--orange-dark); font-size: 11px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    h2 { max-width: 720px; margin-bottom: 16px; font: 500 clamp(35px, 4.8vw, 53px)/1.08 var(--serif); letter-spacing: -.045em; }
+    .section-intro { max-width: 610px; color: var(--muted); font-size: 16px; line-height: 1.7; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 42px; border-top: 1px solid var(--line); }
+    .step { padding: 26px 25px 0 0; }
+    .step-num { color: var(--orange-dark); font: 18px var(--serif); }
+    .step h3 { margin: 19px 0 9px; font-size: 17px; letter-spacing: -.02em; }
+    .step p { max-width: 295px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .scope { background: #e9eee9; }
+    .scope-grid { display: grid; grid-template-columns: .85fr 1.15fr; gap: 70px; align-items: start; }
+    .scope-copy { max-width: 450px; color: #56615b; line-height: 1.7; }
+    .scope-list { border-top: 1px solid #cbd5cc; }
+    .scope-item { display: grid; grid-template-columns: 32px 1fr; gap: 13px; padding: 18px 0; border-bottom: 1px solid #cbd5cc; }
+    .scope-mark { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: #d5e7d9; color: var(--green); font-size: 12px; font-weight: 800; }
+    .scope-item p { margin: 0; color: #4f5a53; font-size: 14px; line-height: 1.6; }
+    .scope-item strong { color: var(--ink); }
+    .closing { padding: 88px 0; text-align: center; }
+    .closing h2 { max-width: 640px; margin: 0 auto 17px; }
+    .closing p { max-width: 560px; margin: 0 auto 26px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+    footer { border-top: 1px solid var(--line); }
+    .footer-inner { min-height: 86px; display: flex; justify-content: space-between; align-items: center; gap: 20px; color: var(--muted); font-size: 12px; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { text-decoration: none; }
+    .footer-links a:hover { color: var(--orange-dark); }
+    @media (max-width: 760px) {
+      .wrap { width: min(100% - 36px, 560px); }
+      .topbar { height: 70px; }
+      .nav { gap: 15px; font-size: 12px; }
+      .hero { grid-template-columns: 1fr; gap: 15px; padding: 64px 0 52px; }
+      .hero-copy { font-size: 17px; }
+      .art { min-height: 335px; }
+      .floating-note { right: 0; bottom: 8px; }
+      section { padding: 64px 0; }
+      .steps { grid-template-columns: 1fr; }
+      .step { display: grid; grid-template-columns: 30px 1fr; column-gap: 12px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+      .step-num { grid-row: span 2; }
+      .step h3 { margin: 0 0 7px; }
+      .scope-grid { grid-template-columns: 1fr; gap: 30px; }
+      .footer-inner { align-items: flex-start; flex-direction: column; justify-content: center; padding: 22px 0; }
+    }
+    @media (max-width: 420px) {
+      .nav a:first-child { display: none; }
+      h1 { font-size: 47px; }
+      .actions { align-items: stretch; flex-direction: column; }
+      .button { width: 100%; }
+      .review-card { padding: 19px; }
+      .floating-note { font-size: 11px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap topbar">
+    <a class="brand" href="#top" aria-label="Bitcoin Easy Signer home">
+      <img src="assets/icon.svg" alt="">
+      <span>Bitcoin Easy Signer</span>
+    </a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="#how-it-works">How it works</a>
+      <a href="#scope">What it supports</a>
+      <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">Project &amp; source ↗</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="wrap hero" aria-labelledby="hero-title">
+      <div>
+        <p class="eyebrow">Bitcoin multisig · Version 0.4.14</p>
+        <h1 id="hero-title">Review together.<br>Sign with hardware.</h1>
+        <p class="hero-copy">A straightforward way for a trusted helper to review a payment from an existing Bitcoin multisig wallet and approve it using the wallet’s hardware keys.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.4.14/Bitcoin-Easy-Signer-v0.4.14-macOS.dmg">Download for Mac ↗</a>
+          <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">View the project</a>
+        </div>
+        <p class="microcopy">For Apple Silicon Macs · Free download · Open source</p>
+      </div>
+      <div class="art" aria-label="Illustration of three hardware signers and a wallet-defined signing requirement">
+        <div class="art-halo"></div>
+        <div class="review-card">
+          <div class="card-top"><span>Illustration · example only</span><span class="status-dot">Wallet-defined</span></div>
+          <p class="card-title">Your wallet sets the rules</p>
+          <p class="card-sub">The required approvals come from its definition.</p>
+          <div class="signer-row"><span class="key-icon" aria-hidden="true">⌁</span><span class="signer-name">Hardware key one</span><span class="signer-check">Connected</span></div>
+          <div class="signer-row"><span class="key-icon" aria-hidden="true">⌁</span><span class="signer-name">Hardware key two</span><span class="signer-check">Connected</span></div>
+          <div class="signer-row"><span class="key-icon" aria-hidden="true">⌁</span><span class="signer-name">Hardware key three</span><span class="signer-check">Available</span></div>
+          <div class="threshold"><span>Signing policy</span><strong>Set by your wallet</strong></div>
+        </div>
+        <div class="floating-note">Your keys stay on your devices</div>
+      </div>
+    </section>
+
+    <aside class="notice" aria-label="Important safety notice">
+      <div class="wrap notice-inner">
+        <span class="notice-mark" aria-hidden="true">!</span>
+        <p><strong>Experimental software.</strong> This is not a production-ready recovery tool or a substitute for independent review. Practice-network broadcasts only; mainnet broadcast is disabled. Verify every payment on your hardware devices.</p>
+      </div>
+    </aside>
+
+    <section class="wrap" id="how-it-works">
+      <p class="section-kicker">A simple, deliberate flow</p>
+      <h2>From wallet file to reviewed payment.</h2>
+      <p class="section-intro">The app works with a wallet that already exists. It reads the wallet definition, prepares a payment for review, and asks the required hardware keys to sign.</p>
+      <div class="steps">
+        <article class="step"><span class="step-num">01</span><h3>Open the wallet file</h3><p>Choose the single BSMS wallet definition provided by the wallet owner. The wallet’s own signing policy determines how many keys must approve.</p></article>
+        <article class="step"><span class="step-num">02</span><h3>Review the payment</h3><p>Check the destination, amount, network, fee, and any change before asking a hardware device to approve.</p></article>
+        <article class="step"><span class="step-num">03</span><h3>Approve on the devices</h3><p>Unlock each hardware key on the device itself. Confirm its display, then review the finished transaction in the app.</p></article>
+      </div>
+    </section>
+
+    <section class="scope" id="scope">
+      <div class="wrap scope-grid">
+        <div>
+          <p class="section-kicker">Designed for existing wallets</p>
+          <h2>Use the wallet you already have.</h2>
+          <p class="scope-copy">Bitcoin Easy Signer does not create wallets or keys. It helps a person use an existing multisig wallet whose public setup is described in one BSMS file.</p>
+        </div>
+        <div class="scope-list">
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Up to three physical keys.</strong> The wallet file defines the signing requirement, including how many keys must approve.</p></div>
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Hardware signing.</strong> Signing happens on the hardware wallets; the app never asks for seed words or private keys.</p></div>
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Practice networks.</strong> Testnet4 and Mutinynet are available for practice. Their coins are not real Bitcoin and do not transfer to mainnet.</p></div>
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">!</span><p><strong>Mainnet broadcasts are disabled.</strong> The app is experimental. Do not rely on it to protect or recover real funds.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap closing">
+      <p class="section-kicker">Start with the project</p>
+      <h2>Read the details. Try it only on a practice network.</h2>
+      <p>Download the current Mac release, read the full safety notice, and browse the source code and release history.</p>
+      <div class="actions" style="justify-content:center">
+        <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14">See release &amp; downloads ↗</a>
+        <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Read the safety notice</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <span>Bitcoin Easy Signer · Experimental open-source software</span>
+      <div class="footer-links">
+        <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">Source code</a>
+        <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/RELEASE-HISTORY.md">Release history</a>
+        <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Safety notice</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
