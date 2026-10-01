@@ -27,9 +27,11 @@ has no change output.
 - The owner reported that the local installation worked. No physical transaction
   using the newly supported quorum shapes has been reported; automated fixtures
   are not hardware acceptance evidence.
-- GitHub Actions must repeat the release checks and publish the immutable v0.4.14
-  tag and assets. The GitHub job signs with the configured Developer ID
-  certificate and submits to Apple when dispatched with notarization enabled.
+- GitHub Actions run `36794617048` passed: source tests and archived-source tests,
+  UI tests, signed Apple Silicon build, packaged-app checks, notarization,
+  checksums, SBOM, and immutable release publication. It signed with the configured
+  Developer ID certificate and submitted the build to Apple. Published assets are
+  the notarized DMG, source archive, `BUILD-SBOM.json`, and `SHA256SUMS`.
 
 Mainnet broadcast remains disabled. No wallet material, transaction data, or
 private device identifiers are included in this record.

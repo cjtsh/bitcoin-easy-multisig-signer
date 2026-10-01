@@ -10,9 +10,9 @@ Mainnet preparation, signing, and finalization support a controlled dry run. **M
 
 ## Evidence
 
-- Automated source and UI checks are recorded per release in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md). The 0.4.14 release evidence records 233 Python tests and the UI DOM suite passing locally; GitHub release checks must pass before publication.
+- Automated source and UI checks are recorded per release in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md). The GitHub v0.4.14 workflow passed the Python suite, UI DOM suite, source archive tests, signed Apple Silicon build, notarization, packaged-app checks, and release artifact publication.
 - Owner-reported physical acceptance includes confirmed Testnet4 payments through 0.2.1; two Mutinynet payments on 0.3.2 (Ledger + Trezor, then Jade + Trezor); and a confirmed 0.4.1 Ledger + Jade Mutinynet payment with a privacy-limited diagnostic report recording verified signatures, finalization, and accepted broadcast.
-- The owner has not reported a physical transaction walkthrough on 0.4.13. The 0.4.13 theme, network selector, copy, and release-build corrections are covered by automated checks; those checks do not establish hardware or mainnet acceptance.
+- The owner reports the local v0.4.14 installation works, but has not reported a physical transaction walkthrough using its newly supported quorum types. Automated checks do not establish hardware or mainnet acceptance; those checks do not establish hardware or mainnet acceptance.
 - The 0.4.3 DeepSeek and Z.ai audits reviewed an earlier source revision, `7d622ef`; neither used a physical device or performed a mainnet transaction. Their findings and the 0.4.4 remediation record remain useful historical review material, not an audit of 0.4.13.
 - The 0.4.12 release was the first Developer ID-signed and Apple-notarized build. The 0.4.13 build additionally staples the app before creating the DMG and validates the app copy inside the finished image. See the release history and [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md).
 
