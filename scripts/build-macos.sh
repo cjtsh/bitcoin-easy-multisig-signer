@@ -160,7 +160,16 @@ fi
 sign_nested_executable() {
   local target="$1"
   echo "Signing nested executable: $target"
-  codesign "${sign_flags[@]}" --sign "$sign_identity" "$target"
+  if [[ "$target" == "$hwi_bin" && -n "${MAC_SIGN_IDENTITY:-}" ]]; then
+    # HWI is a one-file PyInstaller helper. At runtime it extracts the bundled
+    # libusb dylib (Homebrew-signed ad hoc) to its private temp directory. The
+    # hardened runtime otherwise rejects that nested library before HWI can
+    # enumerate any USB devices. Scope the exception to HWI, never the GUI app.
+    codesign "${sign_flags[@]}" --entitlements scripts/hwi-entitlements.plist \
+      --sign "$sign_identity" "$target"
+  else
+    codesign "${sign_flags[@]}" --sign "$sign_identity" "$target"
+  fi
 }
 
 hwi_bin="$app/Contents/MacOS/hwi"
@@ -184,6 +193,19 @@ done < <(find "$app/Contents/MacOS" -type f -print0)
   echo "Bundled hwi ($hwi_bin) was not signed as a Mach-O executable; refusing to continue." >&2
   exit 1
 }
+
+# Exercise the exact packaged USB stack before sealing the app. This loads libusb
+# and queries USB descriptors without opening a hardware wallet or prompting it.
+# On current macOS this launch can add a provenance xattr, so the bundle is cleaned
+# again below before the outer code signature is made.
+if ! "$hwi_bin" --dsh-check-libusb >/dev/null; then
+  echo "Bundled HWI could not load libusb and query USB devices." >&2
+  exit 1
+fi
+
+# macOS can attach com.apple.provenance while a nested helper is executed. Strip
+# build-time xattrs after that preflight and before sealing the outer app.
+xattr -cr "$app"
 
 # Seal the .app last, with no recursive signing.
 codesign "${sign_flags[@]}" --sign "$sign_identity" "$app"

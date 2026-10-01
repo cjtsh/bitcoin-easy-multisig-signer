@@ -338,8 +338,8 @@ class SendFlowTests(unittest.TestCase):
             self.assertEqual(err.exception.code, 400)
             send.assert_not_called()
 
-    def test_broadcasting_real_bitcoin_is_not_enabled(self):
-        """The mainnet lock is the most important refusal in this file.
+    def test_mainnet_broadcast_requires_separate_per_transaction_opt_in(self):
+        """The explicit mainnet gate is exercised after signing and finalization.
 
         This drives a real mainnet wallet through the whole flow, so the refusal
         is reached with the payment reviewed, signed by two devices and
@@ -368,9 +368,15 @@ class SendFlowTests(unittest.TestCase):
                                              "confirm": True,
                                              "confirmed_txid": result["txid"]})
             self.assertEqual(err.exception.code, 400)
-            self.assertIn("not enabled in this build",
+            self.assertIn("separate mainnet warning",
                           json.load(err.exception)["error"])
-        send.assert_not_called()
+            send.assert_not_called()
+            sent = self.post("/api/broadcast", {
+                "preparation_id": "reviewed-1", "confirm": True,
+                "mainnet_opt_in": True, "confirmed_txid": result["txid"],
+            })
+        self.assertEqual(sent["txid"], result["txid"])
+        self.assertTrue(send.call_args.kwargs["mainnet_opt_in"])
 
     def test_wallet_import_waits_until_broadcast_submission_finishes(self):
         """A concurrent import cannot replace the reviewed payment mid-submit."""
@@ -384,7 +390,7 @@ class SendFlowTests(unittest.TestCase):
         import_done = threading.Event()
         outcomes = {}
 
-        def delayed_broadcast(*_args):
+        def delayed_broadcast(*_args, **_kwargs):
             entered.set()
             if not release.wait(3):
                 raise RuntimeError("Timed out waiting for race test")

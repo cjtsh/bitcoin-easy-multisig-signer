@@ -62,6 +62,22 @@ needs attention. `probe.py` carries tailored advice for:
 Anything else HWI can drive would be discovered and matched, but would fall back
 to generic advice rather than a device-specific instruction.
 
+### OneKey Classic 1S (detection confirmed; signing walkthrough pending)
+
+The owner-connected [OneKey Classic 1S](https://onekey.so/products/onekey-classic-1s/)
+was enumerated by direct and bundled HWI 3.2.0 as `type=trezor`,
+`label=OneKey Classic 1S`, `model=trezor_1`. OneKey documents that Trezor Compatibility Mode is enabled by
+default on Classic 1S; see [OneKey's compatibility guide](https://help.onekey.so/en/articles/12058029-introduction-to-trezor-compatibility-mode-features)
+and the [Classic 1S firmware source](https://github.com/OneKeyHQ/firmware-classic1s).
+This is HWI's Trezor transport and signing backend, not a separate OneKey HWI
+driver. The 0.4.15 candidate preserves HWI's OneKey label in the app and fixes
+the hardened-runtime loading of the bundled libusb in its HWI helper.
+
+Enumeration proves only that the host can identify the device. App-driven wallet
+xpub matching and a physical Testnet4 or Mutinynet multisig signature still need
+the owner's walkthrough. Do not claim tested transaction support until that is
+recorded. HWI version and Python remain unchanged.
+
 ### The Jade's PIN relay is an HWI-specific trap
 
 A Jade cannot be unlocked at all unless HWI can reach Blockstream's PIN server.

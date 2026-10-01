@@ -162,6 +162,8 @@ class LocalGuiTests(unittest.TestCase):
         # Broadcasting requires the tick, and the confirmed id is what is sent.
         self.assertIn('$("confirm-broadcast").addEventListener("change"', page)
         self.assertIn("confirmed_txid: finalTxid", page)
+        self.assertIn("mainnet_opt_in: finalChain === \"main\"", page)
+        self.assertIn("Mainnet sends real Bitcoin", page)
         # The broadcast button is disabled until the tick is set.
         self.assertIn('$("broadcast").disabled = true', page)
         self.assertIn('$("broadcast").disabled = !$("confirm-broadcast").checked', page)
@@ -544,6 +546,17 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(restored["wallet"]["reference_address"], result["reference_address"])
         self.assertEqual(restored["balance"]["observed_sats"], 100_000)
         self.assertNotIn("utxos", restored["balance"])
+        self.app.prepared = PreparedPayment.create(
+            self.app.record, "main", self.app.scan_generation, "mainnet-review",
+            SYNTHETIC_PSBT, {"txid": SYNTHETIC_TXID},
+        )
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/broadcast", {
+                "preparation_id": "mainnet-review", "confirm": True,
+                "confirmed_txid": SYNTHETIC_TXID,
+            })
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("separate mainnet warning", err.exception.read().decode())
         with self.assertRaises(HTTPError) as err:
             self.post("/api/prepare", {"chain": "testnet4", "recipient": "tb1wrong",
                                         "amount_sats": 1000})
@@ -558,7 +571,7 @@ class LocalGuiTests(unittest.TestCase):
                 "explorer_url": main_url, "broadcaster_url": broadcast_url,
             })
         self.assertEqual(settings["explorer_url"], main_url)
-        self.assertFalse(settings["broadcasting_available"])
+        self.assertTrue(settings["broadcasting_available"])
         self.assertEqual(verify.call_count, 2)
         self.assertEqual(self.post("/api/settings", {
             "chain": "testnet4", "action": "read",

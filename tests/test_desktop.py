@@ -221,6 +221,22 @@ class DesktopTests(unittest.TestCase):
         build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
         self.assertIn("--collect-all requests", build)
 
+    def test_hardened_hwi_gets_scoped_usb_library_validation_exception(self):
+        root = Path(__file__).resolve().parents[1]
+        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
+        entitlement = root / "scripts" / "hwi-entitlements.plist"
+        self.assertTrue(entitlement.is_file())
+        self.assertIn("com.apple.security.cs.disable-library-validation",
+                      entitlement.read_text(encoding="utf-8"))
+        self.assertIn("--entitlements scripts/hwi-entitlements.plist", build)
+        self.assertIn("--dsh-check-libusb", build)
+        # The exception is applied while signing HWI only; the app's final
+        # signature keeps the existing hardened-runtime flags.
+        self.assertIn('[[ "$target" == "$hwi_bin"', build)
+        self.assertIn('codesign "${sign_flags[@]}" --sign "$sign_identity" "$app"', build)
+        source = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
+        self.assertIn("scripts/*.plist", source)
+
     def test_bundle_check_requires_the_licence_and_notices(self):
         """The bundle redistributes libusb under LGPL-2.1-or-later.
 

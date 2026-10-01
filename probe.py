@@ -341,6 +341,15 @@ def _device_label(model: str) -> str:
     return "".join(char for char in label if char.isprintable())[:40] or "Device"
 
 
+def _hwi_device_label(device: dict) -> str:
+    """Prefer HWI's human-readable vendor/model label when it is safe to show."""
+    reported = device.get("label")
+    if (isinstance(reported, str)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .+()_-]{0,39}", reported)):
+        return reported
+    return _device_label(str(device.get("model") or device.get("type") or "Device"))
+
+
 SIGNER_MATCHED = "public xpub matched"
 
 # What to tell the owner, given the device and what HWI said. A generic list of
@@ -409,7 +418,7 @@ def _probe_devices_into(record: WalletRecord, executable: str, chain: str,
         if not isinstance(device, dict):
             statuses.append("Unrecognized USB response; no match claimed.")
             continue
-        model = _device_label(str(device.get("model") or device.get("type") or "Device"))
+        model = _hwi_device_label(device)
         if device.get("error"):
             # HWI knows exactly what is wrong -- "Ledger is not in either the
             # Bitcoin or Bitcoin Testnet app", for instance -- and replacing that

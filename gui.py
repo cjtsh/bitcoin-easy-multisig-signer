@@ -874,16 +874,12 @@ class LocalApp:
                 _record, chain, payment = self._current_prepared(
                     data, "broadcasting it")
                 txid = payment.txid
-                # Broadcasting real Bitcoin is not enabled in this build. Enabling
-                # it needs a deliberate review and separate release, rather than
-                # a setting anyone can flip by accident.
-                if chain == "main":
-                    raise WalletError(
-                        "Broadcasting real Bitcoin is not enabled in this build. "
-                        "Only practice-network broadcast is available in this release."
-                    )
                 if data.get("confirm") is not True:
                     raise WalletError("Confirm the final transaction before broadcasting it.")
+                if chain == "main" and data.get("mainnet_opt_in") is not True:
+                    raise WalletError(
+                        "Confirm the separate mainnet warning before broadcasting real Bitcoin."
+                    )
                 if str(data.get("confirmed_txid") or "") != (txid or ""):
                     raise WalletError(
                         "The confirmed transaction is not the one prepared. Nothing was sent."
@@ -908,8 +904,11 @@ class LocalApp:
                     if CHAIN_CONFIGS[chain].checkpoint_height is not None:
                         verify_esplora(chain, broadcaster)
                     try:
-                        sent = broadcast_transaction(final["raw_transaction_hex"], chain,
-                                                     broadcaster)
+                        sent = broadcast_transaction(
+                            final["raw_transaction_hex"], chain, broadcaster,
+                            mainnet_opt_in=(chain == "main"
+                                            and data.get("mainnet_opt_in") is True),
+                        )
                         if sent != txid:
                             raise BroadcastOutcomeUnknown(
                                 "The server reported a different transaction ID. The result "
@@ -1007,7 +1006,7 @@ class LocalApp:
                     "chain": chain, "explorer_url": active["explorer"],
                     "broadcaster_url": active["broadcaster"],
                     "default_url": CHAIN_CONFIGS[chain].explorer_url,
-                    "broadcasting_available": False,
+                    "broadcasting_available": True,
                     "settings_error": error,
                 })
 

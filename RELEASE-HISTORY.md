@@ -9,8 +9,8 @@ and next gates live in [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md); current
 capabilities live in [`README.md`](README.md).** Two standing facts apply to
 every version:
 
-- **Mainnet broadcast is refused in code.** No version of this app has ever
-  prepared, signed, or broadcast a mainnet transaction.
+- **Mainnet broadcast requires a final-screen per-transaction opt-in.** No
+  mainnet broadcast by this app is currently reported as confirmed.
 - Every published release is immutable: one version per build, `SHA256SUMS`
   verified, CycloneDX SBOM attached. Never republish under an existing tag.
 
@@ -37,7 +37,9 @@ every version:
 | 0.4.11 | The amount box states that a leading zero is optional | — |
 | 0.4.12 | The first **notarized** release: installs with a normal double-click | — |
 | 0.4.13 | Light and dark themes, one palette of roles, and a toggle | — |
-| **0.4.14** | **Current.** Follow the BSMS quorum for wallets with up to three hardware keys | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) |
+| 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) |
+| **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) |
+| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -717,7 +719,7 @@ asserted the literal `#ffd447`. It now asserts the role.
 Suite: **229 tests, 0 failures**, plus eight Node DOM tests.
 
 
-## 0.4.14 — BSMS quorum, up to three physical keys (current)
+## 0.4.14 — BSMS quorum, up to three physical keys
 
 This release accepts native-SegWit multisig BSMS wallets with two or three
 cosigner keys and follows the threshold recorded in the wallet definition. The
@@ -735,3 +737,24 @@ Automated evidence and the local Apple build/notarization checks are recorded in
 [`PATCH-0.4.14.md`](PATCH-0.4.14.md). The owner reported the local install worked;
 that is not evidence of a physical transaction using every supported quorum.
 Mainnet broadcast remains disabled.
+
+## 0.4.15 candidate — OneKey Classic 1S through HWI's Trezor backend
+
+HWI 3.2.0 already enumerates the OneKey Classic 1S through its Trezor-compatible
+interface and returns the human-readable label `OneKey Classic 1S`. The installed
+Developer ID build's hardened HWI helper could not load its bundled libusb. A
+temporary HWI helper signed with Apple's `disable-library-validation` runtime
+exception enumerated the device successfully. The candidate scopes that exception
+to the HWI helper, leaves the main app's signing policy unchanged, and checks that
+libusb can query USB descriptors during the Mac build without opening a wallet. The UI uses HWI's safe model label so the signer
+appears as OneKey Classic 1S rather than Trezor 1.
+
+HWI version and Python requirements are unchanged. The owner reports the locally
+notarized app worked perfectly with a OneKey Classic 1S and its newly created
+wallet. The owner then completed and cleared a mainnet dry run on candidate 0.4.15.
+The diagnostics record a declared change path, consistent complete scan, transaction
+preparation, two verified signer responses, and verified finalization. The screenshots
+show no broadcast and subsequent clearing of the signed transaction. This is an
+owner-reported dry run, not an on-chain payment; no independent raw-transaction decode
+report was supplied. The candidate is not a published release. Full evidence is in
+[`PATCH-0.4.15.md`](PATCH-0.4.15.md).

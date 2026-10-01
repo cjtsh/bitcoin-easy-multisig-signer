@@ -59,6 +59,10 @@ class ApiTestCase(unittest.TestCase):
 
     def setUp(self):
         self.text, self.roots = self.bsms()
+        self.record = parse_bsms(self.text)
+        self.layout = wallet_layout(self.record)
+        self.explorer = three_output_wallet(self.layout, NETWORKS[self.record.network])
+        self._patch()
         self.state = gui.LocalApp()
         self.token = self.state.token
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.state.handler())
@@ -66,10 +70,6 @@ class ApiTestCase(unittest.TestCase):
         self.base = f"http://127.0.0.1:{self.port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self._stop)
-        self.record = parse_bsms(self.text)
-        self.layout = wallet_layout(self.record)
-        self.explorer = three_output_wallet(self.layout, NETWORKS[self.record.network])
-        self._patch()
 
     def _stop(self):
         self.server.shutdown()

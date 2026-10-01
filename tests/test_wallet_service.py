@@ -1,5 +1,6 @@
 """Only synthetic public test-wallet data; no real BSMS export is checked in."""
 
+import io
 import ssl
 import tempfile
 import unittest
@@ -52,17 +53,22 @@ class BroadcastOutcomeTests(unittest.TestCase):
         self.assertNotIsInstance(caught.exception, BroadcastOutcomeUnknown)
         self.assertIn("refused", str(caught.exception))
 
-    def test_real_bitcoin_is_refused_at_the_engine_boundary(self):
-        """The mainnet refusal must not depend on the HTTP handler alone.
-
-        gui.py is the gate the operator sees and explains. This proves the engine
-        underneath it cannot be asked to submit a mainnet transaction by any
-        other caller - a future CLI, a second endpoint, or a refactor.
-        """
+    def test_mainnet_broadcast_requires_explicit_opt_in_at_engine_boundary(self):
         with patch("wallet_service.urlopen") as send:
-            with self.assertRaisesRegex(WalletError, "not enabled in this build"):
+            with self.assertRaisesRegex(WalletError, "Explicit mainnet"):
                 broadcast_transaction("00" * 50, chain="main")
         send.assert_not_called()
+
+    def test_mainnet_broadcast_uses_selected_esplora_after_opt_in(self):
+        response = io.BytesIO(b"a" * 64)
+        with patch("wallet_service.urlopen", return_value=response) as send:
+            result = broadcast_transaction(
+                "00" * 50, chain="main", base_url="https://explorer.example/api",
+                mainnet_opt_in=True,
+            )
+        self.assertEqual(result, "a" * 64)
+        self.assertEqual(send.call_args.args[0].full_url,
+                         "https://explorer.example/api/tx")
 
 
 def mainnet_roots():

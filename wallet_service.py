@@ -1,7 +1,7 @@
-"""Public-data wallet view and unsigned PSBT preparation for selected networks.
+"""Public-data wallet view, PSBT preparation and guarded broadcast for selected networks.
 
-No seeds, signing keys, signing operations, or broadcast endpoints live here.
-Address queries disclose the queried addresses to the configured public explorer.
+No seeds or signing keys live here. Address queries disclose queried addresses to
+the configured public explorer.
 """
 
 from __future__ import annotations
@@ -67,7 +67,8 @@ def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
 
 
 def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
-                          base_url: str | None = None) -> str:
+                          base_url: str | None = None,
+                          mainnet_opt_in: bool = False) -> str:
     """Submit a finalised transaction to an Esplora endpoint and return its txid.
 
     Redirects are refused and TLS is verified, exactly as for every other outbound
@@ -76,13 +77,8 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
     """
     if chain not in EXPLORERS:
         raise WalletError("Unsupported broadcast network.")
-    if chain == "main":
-        # Real Bitcoin is refused here as well as in the HTTP handler. The
-        # handler is the gate the operator sees and explains; this one means a
-        # future CLI, an additional endpoint or a refactor cannot submit a
-        # mainnet transaction by calling the engine directly. Enabling it is a
-        # deliberate release decision, not a parameter.
-        raise WalletError("Broadcasting real Bitcoin is not enabled in this build.")
+    if chain == "main" and mainnet_opt_in is not True:
+        raise WalletError("Explicit mainnet broadcast confirmation is required.")
     raw = (raw_transaction_hex or "").strip().lower()
     if len(raw) < 100 or len(raw) > 2_000_000 or len(raw) % 2:
         raise WalletError("The finalised transaction is not a usable size.")

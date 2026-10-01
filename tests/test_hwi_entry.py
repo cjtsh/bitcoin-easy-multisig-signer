@@ -42,6 +42,45 @@ def load_hwi_entry(usb1_module):
 
 
 class HwiEntryTests(unittest.TestCase):
+    def test_libusb_preflight_lists_descriptors_without_opening_wallets(self):
+        class Handle:
+            def releaseInterface(self, interface):  # noqa: N802
+                return None
+
+        class Context:
+            entered = False
+            options = []
+
+            def __enter__(self):
+                Context.entered = True
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def getDeviceList(self, *, skip_on_error):  # noqa: N802
+                Context.options.append(skip_on_error)
+                return []
+
+        usb1 = types.ModuleType("usb1")
+        usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
+        usb1.USBDeviceHandle = Handle
+        usb1.USBContext = Context
+        module = load_hwi_entry(usb1)
+        # load_hwi_entry restores sys.modules; put the stub back while exercising
+        # the deferred import inside _check_libusb.
+        old_usb1 = sys.modules.get("usb1")
+        sys.modules["usb1"] = usb1
+        try:
+            self.assertEqual(module._check_libusb(), 0)
+        finally:
+            if old_usb1 is None:
+                sys.modules.pop("usb1", None)
+            else:
+                sys.modules["usb1"] = old_usb1
+        self.assertTrue(Context.entered)
+        self.assertEqual(Context.options, [True])
+
     def test_a_vanished_device_does_not_kill_enumeration(self):
         class USBErrorNotFound(Exception):
             pass

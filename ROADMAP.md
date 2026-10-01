@@ -1,10 +1,10 @@
 # Roadmap and agent handoff
 
-## Current status — v0.4.13; mainnet dry run pending
+## Current status — v0.4.14 published; v0.5.0 mainnet-broadcast candidate
 
-The current published version is [v0.4.13](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.13). The owner has not reported a physical transaction walkthrough on 0.4.13. Phases 1–4 have practice-network evidence, including Testnet4 and Mutinynet hardware payments. Mainnet broadcast is disabled. No mainnet transaction has been prepared, signed, or sent by this app. The next owner gate is the mainnet dry run described in `PHASE-HANDOFF.md`; `RELEASE-HISTORY.md` holds the version-by-version evidence and correction record.
+The current published version is [v0.4.14](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14). Candidate 0.4.15 is locally Developer ID-signed and notarized. The owner reports OneKey Classic 1S support worked perfectly and completed a mainnet dry run with a declared change path, consistent scan, two verified signatures, and verified finalization. The owner cleared the signed transaction; no broadcast occurred. Candidate 0.5.0 adds mainnet broadcast behind explicit final-screen and backend opt-ins. It keeps the 25 sat/vB and 10,000-sat ceilings. A live mainnet send remains the next owner walkthrough, not something performed by packaging.
 
-The next gate is a **mainnet dry run without broadcast** using the actual live wallet: establish its change policy independently, review a small transaction to an owner-controlled address on two hardware devices, and compare the final transaction's inputs, destination, change, fee and txid with the review. A practice wallet's matching Sparrow/Nunchuk exports are evidence for that wallet's change derivation, but do not prove the live wallet's policy; see `CHANGE-ADDRESS-REVIEW.md`. A live Bitcoin send follows only after the dry run, the fee-policy decision, deliberate mainnet-broadcast implementation and explicit authorization. The plain-language guide, nontechnical-user walkthrough, and tested device/firmware matrix remain open product work. Developer ID signing and notarization are now implemented for published releases. Avoid asking for a new test payment solely to verify a 0.4.x correction.
+The mainnet dry-run gate has been exercised on candidate 0.4.15 and the signed transaction was cleared. Candidate 0.5.0 implements mainnet submission after final-screen confirmation. Its fee decision is to retain the established 25 sat/vB rate and 10,000-sat fee ceilings; when a live standard quote exceeds the rate ceiling, preparation stops. Fee replacement is not implemented in-app. No independent full-tool review or 0.5.0 live send has been recorded. Operator guide, nontechnical-user walkthrough, and tested device/firmware matrix remain open product work. Candidate 0.5.0 is a local, unpublished build; signing and notarization validate distribution, not an on-chain payment.
 
 ---
 
@@ -16,7 +16,8 @@ The next gate is a **mainnet dry run without broadcast** using the actual live w
 > broadcast are "future scope", "not implemented", or do not exist were true when
 > written and are now superseded: Phase 4 implemented hardware signing and
 > practice-network broadcast and accepted them on hardware on 29 September 2026.
-> Only mainnet broadcast remains refused in code.
+> The statement that mainnet broadcast remained refused describes this archived
+> snapshot; candidate 0.5.0 now enables it behind explicit confirmation.
 
 ---
 
@@ -79,7 +80,6 @@ is a code change rather than a setting (Phase 5).
   a mainnet transaction. Only `_broadcast` refuses mainnet today, so a mainnet **dry
   run** — prepare, sign with two devices, finalise in memory, verify independently,
   never broadcast — needs no code change. Only afterwards, and only on the owner's
-  explicit instruction, open mainnet broadcast behind a deliberate per-transaction
   opt-in, and settle the fee behaviour: the live mainnet fee reference is bounded to
   1–25 sat/vB, which a busy mempool can exceed. Distribution hardening — Developer ID
   signing and notarisation so the DMG opens without a Gatekeeper warning — belongs in
@@ -280,59 +280,74 @@ changing that boundary, the supported devices, and the intended send workflow. I
 
 **Final handoff:** Provide the supported wallet/signers/network matrix, reproducible non-sensitive test procedure, reviewed source and release identifiers, security findings and dispositions, manual Mac results, remaining limitations, and a precise list of operations still prohibited. If there is no owner approval for signing/broadcast, close this phase as *not authorized*, not *complete*.
 
-## Phase 5 — Real Bitcoin: dry run first, then the deliberate switch
+## Phase 5 — LIVE Bitcoin transactions: dry run, then guarded mainnet sends
 
-**Status: on hold before the dry run. This is the only phase that touches real money.**
+**Status: guarded mainnet broadcast implemented in candidate 0.5.0; owner live-send acceptance remains open.**
 
 **Goal.** Prove the whole pipeline on mainnet without risking funds, then — as a
 separate, explicitly authorised act — make a real send possible, and make the app
 trustworthy in the hands of a non-technical user.
 
-**Why the dry run comes first.** Every value verified to date was verified on a practice network.
-The app has never derived a mainnet address from a real wallet, never had a real mainnet
-payment approved on a device screen, and never had its mainnet fee guidance exercised
-against a busy mempool. A dry run finds all of that with nothing at stake, because the
-one thing that could lose money — broadcast — is already refused by code.
+**Why the dry run comes first.** Until this owner-reported walkthrough, the app had not
+derived a mainnet address from a real wallet or had a real-mainnet dry run approved on
+hardware. Mainnet fee guidance still has not been exercised against a busy mempool. The
+dry run probes the real wallet and signing path while broadcast remains refused by code.
 
 **Step 1, the dry run (no code change).**
-Load a mainnet 2-of-3 BSMS, prepare a small payment to one of the owner's own
-addresses, sign with two devices, finalise in memory, and verify independently: decode
+Load the live wallet's single mainnet BSMS file, prepare a small payment to one of
+the owner's own addresses, obtain the approval quorum specified by the file, finalise
+in memory, and verify independently: decode
 the raw transaction, check each input's witness against the wallet's own witness
 script, compare every output, the change address and the fee against the review screen,
 and confirm the txid shown before signing equals the txid after signing. **Never
 broadcast.** Treat the signed bytes as sensitive: anyone holding them can broadcast.
 
-**Step 2, the switch (owner's explicit authorisation required).**
-Open mainnet broadcast behind a deliberate, visible, per-transaction opt-in that names
-mainnet. Keep the refusal as the default, keep the network and reference checks, and
-keep the rule that the confirmed transaction id must equal the prepared one. Tests must
-prove mainnet broadcast is impossible without the opt-in.
+**Owner evidence (0.4.15):** the owner reports the live-Bitcoin checks were good.
+The privacy-limited diagnostic report records a declared change path, consistent
+complete scan, transaction preparation, two verified signer responses and verified
+finalization; the screenshots show the OneKey Classic 1S among the two signers, no
+broadcast, and then confirmation that the signed transaction was cleared. No wallet
+or transaction identifiers are retained. The owner did not supply an independent
+raw-transaction decode report, so the record claims the app's verification and the
+owner's successful walkthrough, not a separately reproduced decode.
 
-**Step 3, fees on mainnet.**
-Live guidance already exists and is labelled `mempool.space mainnet`, but the user's
-rate is bounded to 1–25 sat/vB. In a busy mempool the recommended fastest rate exceeds
-that, so the app would clamp or refuse exactly when the user needs to pay more. Decide
-deliberately and test the busy path with a stubbed high quote. Decide also whether the
-app implements fee bumping (the replacement is possible: every input already signals
-RBF) or states plainly that a stuck payment must be bumped elsewhere.
+**Step 2, the switch (implemented in 0.5.0).**
+Mainnet submission requires the final screen's explicit transaction confirmation,
+which names real Bitcoin, plus a distinct backend `mainnet_opt_in` value. The
+transport helper also refuses mainnet without that opt-in. The selected mainnet
+explorer/broadcaster checks and prepared-vs-confirmed txid equality remain in force.
+Automated tests prove the transport boundary refusal and handler refusal without
+the opt-in. This authorizes the feature, not a particular transaction; the user
+must review each payment and check every signer display before confirmation.
+
+**Step 3, fees on mainnet (decision recorded in 0.5.0).**
+Keep live `mempool.space mainnet` fee guidance and retain the existing 1–25 sat/vB
+and 10,000-sat estimated-fee ceilings. A standard quote above 25 sat/vB fails closed;
+the app does not silently clamp or change servers. The operator must wait or use an
+established wallet. There is no in-app fee bump. Transactions signal RBF, so a
+compatible external wallet may be able to replace a stuck transaction; this is not
+guaranteed and should be checked before broadcasting.
 
 **Step 4, make it usable by the person it is for.**
-Developer ID signing and notarisation so the DMG opens with a double-click; a
-reverse-DNS `CFBundleIdentifier` first; and a one-page plain-language guide covering
-the three devices, the recommended test payment, what a missing device looks like, and
-that a payment is not finished until it confirms.
+Developer ID signing and notarisation so the DMG opens with a double-click (now
+demonstrated on local candidate 0.4.15); a reverse-DNS `CFBundleIdentifier` first;
+and a one-page plain-language guide covering supported devices, the recommended test
+payment, what a missing device looks like, and that a payment is not finished until it
+confirms.
 
-**Standing by on the owner.** The owner is awaiting Apple Developer Program
-confirmation, so this step cannot start yet; signing secrets must also be added to the
-GitHub repository by the owner before CI can sign. This is a human dependency, not a
-coding task, and no workaround should be attempted. Why the bundle must not be sealed
-with `codesign --deep` is recorded in `PROJECT-HISTORY.md`'s security-findings table;
-outstanding Phase 5 dependencies are summarized in `PHASE-HANDOFF.md`.
+**Current operational state.** Apple Developer ID signing and the local `eas-notary`
+profile are configured. Candidate 0.4.15 is locally signed and notarized, but remains
+unpublished. Confirm repository-side release credentials and workflow readiness before
+any public release. Why the bundle must not be sealed with `codesign --deep` is recorded
+in `PROJECT-HISTORY.md`'s security-findings table; outstanding Phase 5 dependencies are
+summarized in `PHASE-HANDOFF.md`.
 
-**Acceptance.** A mainnet dry run whose decoded transaction matches the review on every
-value and whose device screens showed the same destination, amount and fee; then, only
-if authorised, one completed mainnet send verified independently. A non-technical user
-can install the DMG without a Gatekeeper warning.
+**Acceptance.** The dry run is owner-reported complete and cleared. The 0.5.0 code
+gate is tested; remaining acceptance is a signed/notarized Mac build and a separate
+owner walkthrough that sends a small mainnet payment, verifies its txid on an
+independent explorer, and waits for confirmation. Until that occurs, do not say the
+app has completed a mainnet payment. A non-technical user must be able to install the
+DMG without a Gatekeeper warning.
 
 **Constraints.** No wallet data in the repository. No mainnet broadcast without the
 deliberate opt-in. No seed words, ever. Do not describe mainnet as tested until a real

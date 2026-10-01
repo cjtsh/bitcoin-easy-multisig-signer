@@ -364,8 +364,9 @@
       <label for="broadcaster-url">Broadcast server · Esplora HTTP API base</label>
       <input id="broadcaster-url" type="text" inputmode="url" autocomplete="off"
         spellcheck="false" placeholder="https://example.com/api">
-      <p class="small muted">Practice-network broadcasting uses this server after two device
-        signatures and your final confirmation. Mainnet broadcasting is disabled.
+      <p class="small muted">Broadcasting uses this server after the required device
+        signatures and your final confirmation. Mainnet sends real Bitcoin and require a
+        separate confirmation on the final screen.
         Electrum TLS servers use a different protocol and cannot be entered here.</p>
       <button id="save-servers" class="action">Save these server URLs</button>
       <button id="reset-servers" class="secondary">Restore network defaults</button>
@@ -468,7 +469,7 @@
       <p class="muted">First prepare and review the transaction. Nothing is signed or sent here.</p>
       <div id="send-choice" role="group" aria-label="Choose whether to prepare a transaction">
         <h3>Would you like to prepare a Bitcoin transaction?</h3>
-        <p class="small muted">Enter the destination and amount, review every output, then approve signing on the required hardware devices. Practice-network payments can then be broadcast.</p>
+        <p class="small muted">Enter the destination and amount, review every output, then approve signing on the required hardware devices. A final confirmation is required before any broadcast.</p>
         <div id="test-send-tip" class="tip"><strong>Recommended: send a small test amount first.</strong>
           Confirm that a small payment arrives before you move a large amount. Nothing here is
           forced — a test transaction is simply the cheapest insurance there is.</div>
@@ -543,7 +544,7 @@
           <ol class="small">
             <li>Save the unsigned file to your Downloads folder.</li>
             <li>Continue below to approve signing on the required hardware devices. The saved file is an optional backup.</li>
-            <li>On a practice network, confirm the final transaction and broadcast it. Mainnet broadcast remains disabled.</li>
+            <li>Confirm the final transaction before broadcast. Mainnet sends real Bitcoin and cannot be undone.</li>
           </ol></div>
         <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
           <details class="context-help"><summary aria-label="What is change in a Bitcoin transaction?">?</summary>
@@ -598,8 +599,9 @@
             <div class="kv"><b>Transaction id — the same one shown at review</b>
               <code id="final-txid" class="mono"></code></div>
             <label class="check"><input id="confirm-broadcast" type="checkbox">
-              <span>I checked the destination, amount and fee above, and I want to broadcast this
-                exact transaction to the selected practice network. This cannot be undone.</span></label>
+              <span>I checked the destination, amount, change and fee above, and I want to broadcast
+                this exact transaction to the selected network. Mainnet sends real Bitcoin; this
+                cannot be undone.</span></label>
             <button id="broadcast" type="button" disabled>Broadcast payment</button>
             <button id="clear-signed" type="button" class="secondary" disabled>Clear this signed transaction</button>
             <p class="small muted">A signed transaction that has not been broadcast can still be submitted by
@@ -747,7 +749,7 @@
     // distinguish them: slow/medium/fast are often the same whole sat/vB.
     let selectedTier = "custom";
     // The finalised transaction: the id the owner confirms is the id broadcast.
-    let finalTxid = null;
+    let finalTxid = null, finalChain = null;
     let feeEstimate = null;
     let preparationId = null;
     let pendingExplorerUrl = null;
@@ -861,7 +863,7 @@
         $("broadcaster-url").value = settings.broadcaster_url;
         lastScan = null; invalidateReview();
         $("balance-card").hidden = true; $("send-card").hidden = true;
-        msg("settings-message", "Server URLs saved on this Mac. Broadcasting remains unavailable.");
+        msg("settings-message", "Server URLs saved on this Mac.");
         if (!$("wallet-card").hidden) {
           msg("message", "Explorer settings changed. Refresh the wallet balance before preparing an unsigned transaction.");
         }
@@ -1786,13 +1788,13 @@
         setText("final-vsize", fmt(final.vsize));
         setText("final-signers", (final.signers || []).join(", "));
         setText("final-txid", final.txid);
+        finalChain = final.network;
         $("confirm-broadcast").checked = false;
         $("broadcast").disabled = true;
-        const mainnetDryRun = final.network === "main";
-        $("confirm-broadcast").closest("label").hidden = mainnetDryRun;
-        $("broadcast").hidden = mainnetDryRun;
-        setText("broadcast-message", mainnetDryRun ?
-          "Mainnet dry run complete. This build cannot broadcast real Bitcoin." : "");
+        $("confirm-broadcast").closest("label").hidden = false;
+        $("broadcast").hidden = false;
+        setText("broadcast-message", final.network === "main" ?
+          "This is real Bitcoin. Check every field and confirm only if you intend to send this payment." : "");
         $("finalize-step").hidden = false;
         // Deliberately no scrollIntoView here. Slamming the final panel to the top
         // threw the just-completed boxes off screen at the exact moment the
@@ -1832,7 +1834,8 @@
       const busy = setBusy("Checking that the selected Bitcoin is still available, then sending…");
       try {
         const sent = await post("/api/broadcast", {preparation_id: reviewId,
-          confirm: true, confirmed_txid: finalTxid});
+          confirm: true, mainnet_opt_in: finalChain === "main",
+          confirmed_txid: finalTxid});
         if (actionId !== sendActionId || reviewId !== preparationId) return;
         const holder = $("broadcast-message");
         holder.className = "success";

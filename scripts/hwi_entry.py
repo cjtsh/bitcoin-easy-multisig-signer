@@ -71,6 +71,19 @@ def _report_capabilities() -> int:
     return 0
 
 
+def _check_libusb() -> int:
+    """Load libusb and query USB descriptors without opening any device."""
+    import usb1
+
+    with usb1.USBContext() as context:
+        list(context.getDeviceList(skip_on_error=True))
+    return 0
+
+
+if "--dsh-check-libusb" in sys.argv:
+    sys.exit(_check_libusb())
+
+
 if "--dsh-capabilities" in sys.argv:
     sys.exit(_report_capabilities())
 

@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer
 
-**Published version: 0.4.14** — [Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14). The app has practice-network evidence: confirmed Testnet4 payments signed by Jade, Trezor Safe 3 and Ledger Nano S Plus, plus owner-reported Mutinynet payments through the same engine, most recently Ledger + Jade on 0.4.1. Mainnet preparation, signing, and finalization are available for a controlled dry run, but **mainnet broadcast is refused in code**. No real-Bitcoin transaction has ever been prepared, signed, or tested by this app. This is not a production recovery tool — read [the risk notice](DISCLAIMER.md). The version-by-version record of changes, corrections and evidence is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md).
+**Published version: 0.4.14** — [Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14). **Current candidate: 0.5.0 — LIVE BTC transactions.** Candidate 0.5.0 enables real mainnet sends behind a separate, explicit confirmation on the final transaction screen. The owner previously completed and cleared an unbroadcast mainnet dry run on 0.4.15 with two verified hardware signatures and finalization. The first live mainnet send with 0.5.0 is still to be owner-tested; no mainnet transaction is reported sent or confirmed by this candidate yet. This is not a production recovery tool — read [the risk notice](DISCLAIMER.md). The version-by-version record of changes, corrections and evidence is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md).
 
 Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** native-SegWit multisig wallet with two or three keys. The wallet definition determines its signing threshold. The app does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on the required hardware devices, and confirm the final transaction.
 
@@ -12,7 +12,7 @@ Standing cautions that survive across versions: Mutinynet needs a funded BSMS wa
 - Scans receive and established change branches through a selected Esplora server. A gap-limited scan is an observation, not proof of a complete balance. Derived addresses are disclosed to that server after consent; seeds and private keys remain on hardware.
 - Builds a PSBT from confirmed, independently checked previous outputs. Partial sends use a BSMS-declared change branch or the strict BIP48 standard `/1/*` branch for an anchored 2-of-3 native-SegWit sorted wallet. The latter is labelled as standard-derived, since the BSMS does not explicitly declare it. If neither route applies, the owner can explicitly choose **Send All confirmed outputs found by the scan**, producing no change.
 - Checks connected hardware signers through bundled Bitcoin Core HWI, asks them to sign, and shows **one box per cosigner** so the missing signer is visible at a glance rather than described in a sentence. Retains only signatures that verify against the reviewed transaction, and discards all returned wallet metadata before finalization. Each device must display the intended payment; the person using the app must check its screen.
-- Shows the destination, amount, network, every change output, fee, effective fee rate, and transaction ID together at the final confirmation. Practice-network broadcast requires a separate explicit action. Mainnet broadcast remains disabled.
+- Shows the destination, amount, network, every change output, fee, effective fee rate, and transaction ID together at the final confirmation. Every network requires a separate explicit broadcast confirmation. Mainnet is labelled real Bitcoin and the backend independently requires its mainnet opt-in flag.
 - Shows what it is doing while it waits: a fixed progress bar with a spinner and **elapsed seconds**, so a slow step is visibly working rather than apparently frozen. A one-line note explains that steps talk to the network and to hardware devices and can take a few seconds. **No wait duration is ever advertised** — the internal timeouts exist so a slow human is never cut off mid-review, and publishing one would read as permission to walk away during a signing ceremony. Each signature fills its box as soon as it verifies, without waiting for the next device search. The bar belongs to **one operation at a time**: an operation that has finished cannot clear or overwrite the message of one still running, so a stale device prompt cannot appear during a balance check.
 - After an outgoing payment is accepted, shows a prominent notice that it is waiting for one confirmation and offers **Check again**. Another payment from that wallet is paused until the refreshed explorer state confirms it. Pending incoming funds alone do not pause confirmed outputs.
 - In 0.4.0, after that confirmation the app keeps a visible explorer-link receipt for the latest payment in the current browser session. It is cleared when opening a different wallet or changing networks and is not long-term transaction history.
@@ -30,13 +30,13 @@ If neither declared nor guarded standard change is available, the app offers a n
 
 ## Supported scope and limitations
 
-| Item | Published support (0.4.14) |
+| Item | Published support (0.4.14); candidate changes in 0.4.15 |
 | --- | --- |
 | Wallet | Existing BSMS 1.0, P2WSH multisig with two or three keys and xpub origins; threshold comes from the file |
-| Networks | Testnet4, Mutinynet and mainnet through one engine; mainnet broadcast disabled |
-| Hardware exercised | Jade, Trezor Safe 3, Ledger Nano S Plus — Testnet4 through 0.2.1; Mutinynet on 0.3.2 and 0.4.1. Owner-reported, not independently reproduced; no firmware versions are recorded |
+| Networks | Testnet4, Mutinynet and mainnet through one engine; mainnet broadcast requires an explicit per-transaction final confirmation |
+| Hardware exercised | Jade, Trezor Safe 3, Ledger Nano S Plus — Testnet4 through 0.2.1; Mutinynet on 0.3.2 and 0.4.1. Owner reports OneKey Classic 1S signed in the 0.4.15 mainnet dry run; no transaction was broadcast |
 | Distribution | Apple Silicon Developer ID-signed and notarized DMG, source archive; see the release assets and `SHA256SUMS` |
-| Fees | Mainnet mempool.space guidance for mainnet/Testnet4; Mutinynet's Esplora reference in Mutinynet mode; 1–25 sat/vB and 10,000-sat estimated fee caps |
+| Fees | Mainnet mempool.space guidance for mainnet/Testnet4; Mutinynet's Esplora reference in Mutinynet mode; 1–25 sat/vB and 10,000-sat estimated fee caps. No in-app fee bump |
 | Scan | 20-address unused gap, at most 100 addresses per known branch; historical or unusual funds can be missed |
 | Recovery | No built-in fee bump, no support for wallets with more than three keys or legacy address types |
 

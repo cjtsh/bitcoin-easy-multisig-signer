@@ -14,7 +14,8 @@ from embit.networks import NETWORKS
 
 from probe import (
     ProbeError, _same_xpub, _validate_chain, funding_address,
-    _device_label, device_advice, devices_need_attention, invoke_hwi, load_bsms,
+    _device_label, _hwi_device_label, device_advice, devices_need_attention,
+    invoke_hwi, load_bsms,
     main, probe_devices,
 )
 
@@ -184,6 +185,32 @@ class ProbeTests(unittest.TestCase):
             result, ["Jade: signer 1 of 3 public xpub matched (not a signing test)."]
         )
 
+    def test_hwi_reported_onekey_label_is_preserved_for_matched_signer(self):
+        record, roots = test_record()
+        wallet = self.write(record)
+        fp = roots[0].my_fingerprint.hex()
+        correct = roots[0].derive("m/48h/1h/0h/2h").to_public().to_base58()
+
+        def fake_hwi(_executable, _chain, *args, **options):
+            if args == ("enumerate",):
+                return [{"type": "trezor", "label": "OneKey Classic 1S",
+                         "model": "trezor_1", "path": "test-port",
+                         "fingerprint": fp}]
+            return {"xpub": correct}
+
+        with patch("probe.invoke_hwi", side_effect=fake_hwi):
+            result = probe_devices(wallet, "hwi", "testnet4")
+        self.assertEqual(
+            result,
+            ["OneKey Classic 1S: signer 1 of 3 public xpub matched (not a signing test)."],
+        )
+
+    def test_hwi_label_rejects_control_or_markup_characters(self):
+        self.assertEqual(_hwi_device_label({"label": "OneKey Classic 1S"}),
+                         "OneKey Classic 1S")
+        self.assertEqual(_hwi_device_label({"label": "<script>", "model": "trezor_1"}),
+                         "Trezor 1")
+
     def test_a_device_that_errors_reports_hwis_own_reason(self):
         """The owner's Ledger was unlocked, so "unavailable or locked" sent them
         looking for the wrong fault. HWI knew the real answer and it was discarded."""
@@ -228,6 +255,9 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(_device_label("trezor_one"), "Trezor One")
         self.assertEqual(_device_label("coldcard_mk4"), "Coldcard Mk4")
         self.assertEqual(_device_label(""), "Device")
+        self.assertEqual(_hwi_device_label({"label": "OneKey Classic 1S",
+                                            "model": "trezor_1"}),
+                         "OneKey Classic 1S")
         # Only a matched signer needs nothing further from the owner.
         self.assertTrue(devices_need_attention([]))
         self.assertTrue(devices_need_attention(["Ledger Nano S Plus: not a signer in this BSMS file."]))

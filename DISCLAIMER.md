@@ -7,12 +7,15 @@ hardware behavior, misleading information, or missing functionality.
 Bitcoin transactions can be irreversible, and a mistake can result in the
 permanent loss of some or all funds.
 
-Version 0.4.13 runs one engine across Testnet4, Mutinynet and mainnet. It asks
-hardware devices to sign through Bitcoin Core HWI (HWI), and it can broadcast
-only to the practice networks, Testnet4 and Mutinynet. **Mainnet broadcast is
-refused in code.** A signed but unbroadcast mainnet transaction can still be
-submitted by anyone who obtains its bytes. Do not rely on a version number or
-GitHub "Latest" label as proof of production safety.
+The local 0.5.0 candidate is the first build with full Bitcoin mainnet
+broadcast capability. It runs one engine across Testnet4, Mutinynet and
+mainnet, and asks hardware devices to sign through Bitcoin Core HWI (HWI).
+Mainnet submission requires explicit confirmation on the final review screen
+and a backend opt-in; nothing is broadcast automatically. The candidate has
+not yet had an owner-confirmed mainnet transaction. A signed but unbroadcast
+transaction can still be submitted by anyone who obtains its bytes. Do not
+rely on a version number or GitHub "Latest" label as proof of production
+safety.
 
 ## No promises or warranties
 
