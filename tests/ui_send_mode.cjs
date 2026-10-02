@@ -36,11 +36,16 @@ const document = {
 // The opening network is Bitcoin, and the network cards are behind the
 // developer-mode gate. Somebody spending real Bitcoin should not be asked to
 // weigh a choice they cannot act on, and must not be able to land on a practice
-// network by pressing a card they never went looking for. The cards are still
-// the same three cards, and still on the page, once the gate is open.
-assert.match(html, /<input type="radio" id="chain-main" name="chain" value="main">/,
-  'the Bitcoin card should still exist');
-assert.doesNotMatch(html, /id="chain-(mutinynet|testnet4|main)"[^>]*\schecked/,
+// network by pressing a card they never went looking for. The gate holds the two
+// practice networks and nothing else: live Bitcoin is not a choice inside it, it
+// is the network the gate returns to.
+assert.doesNotMatch(html, /id="chain-main"/,
+  'live Bitcoin must not be offered as a card inside developer mode');
+assert.match(html, /<input type="radio" id="chain-mutinynet" name="chain" value="mutinynet">/,
+  'the Mutinynet card is missing');
+assert.match(html, /<input type="radio" id="chain-testnet4" name="chain" value="testnet4">/,
+  'the Testnet4 card is missing');
+assert.doesNotMatch(html, /id="chain-(mutinynet|testnet4)"[^>]*\schecked/,
   'no network card may be preselected in the markup');
 assert.match(html, /<div id="chain-panel" hidden>/,
   'the network cards must start hidden behind the developer gate');
@@ -66,12 +71,12 @@ vm.runInContext(script, context);
 // testing if the two ever came apart.
 assert.equal(vm.runInContext('selectedChain()', context), 'main',
   'the app must open on Bitcoin');
-for (const id of ['mutinynet', 'testnet4', 'main']) {
+for (const id of ['mutinynet', 'testnet4']) {
   document.getElementById('chain-' + id).checked = true;
 }
 assert.equal(vm.runInContext('selectedChain()', context), 'main',
   'a stray checked radio must not move the app off Bitcoin');
-for (const id of ['mutinynet', 'testnet4', 'main']) {
+for (const id of ['mutinynet', 'testnet4']) {
   document.getElementById('chain-' + id).checked = false;
 }
 assert.equal(document.getElementById('chain-panel').hidden, true,
@@ -94,8 +99,11 @@ assert.equal(vm.runInContext('selectedChain()', context), 'mutinynet',
   'a practice-network wallet must select its own network');
 assert.equal(document.getElementById('chain-mutinynet').checked, true,
   'the cards must follow the wallet that was opened');
-assert.equal(document.getElementById('chain-main').checked, false,
-  'the cards must follow the wallet that was opened');
+// The stub builds an element whenever the page asks for one, so a mainnet card
+// exists in the map even though the page has none; what matters is that nothing
+// can have selected it, and that the script above ran without it.
+assert.equal(elements.get('chain-main').checked, false,
+  'no mainnet card can be selected, because the page does not have one');
 const get = id => elements.get(id);
 assert.equal(get('send-all').checked, false, 'sweep was selected without consent');
 assert.equal(get('send-all').disabled, false, 'owner must be able to opt in');
@@ -122,25 +130,36 @@ assert.equal(get('amount').disabled, false, 'BIP48 custom amount must be availab
 assert.equal(get('send-mode-note').hidden, true);
 console.log('Standard BIP48 custom amount works; nonstandard change requires an explicit sweep.');
 
-// The three network cards are still one visible radio group inside the gate, and
-// setChain must drive both the in-memory selection and the cards. It is the single
-// place the rest of the app asks which network it is on, so it has to follow the
-// control however the control is built and wherever the control is shown.
+// The practice-network cards are still one visible radio group inside the gate,
+// and setChain must drive both the in-memory selection and the cards. It is the
+// single place the rest of the app asks which network it is on, so it has to
+// follow the control however the control is built and wherever it is shown.
 assert.match(html, /role="radiogroup"/,
   'the network choice should be a visible radio group, not a dropdown');
+const panel = html.split('id="chain-panel"')[1].split('</div>')[0];
 for (const [id, label] of [['chain-mutinynet', 'Mutinynet'],
-                           ['chain-testnet4', 'Testnet4'],
-                           ['chain-main', 'Bitcoin LIVE']]) {
-  assert.match(html, new RegExp(`id="${id}"`), `the ${label} network card is missing`);
+                           ['chain-testnet4', 'Testnet4']]) {
+  assert.match(panel, new RegExp(`id="${id}"`), `the ${label} network card is missing`);
 }
-for (const chosen of ['mutinynet', 'testnet4', 'main']) {
+assert.doesNotMatch(panel, /id="chain-main"/,
+  'the panel inside developer mode must not carry a live-Bitcoin card');
+for (const chosen of ['mutinynet', 'testnet4']) {
   vm.runInContext(`setChain(${JSON.stringify(chosen)})`, context);
   assert.equal(vm.runInContext('selectedChain()', context), chosen,
     `selectedChain must follow the chosen network (${chosen})`);
-  for (const id of ['mutinynet', 'testnet4', 'main']) {
+  for (const id of ['mutinynet', 'testnet4']) {
     assert.equal(document.getElementById('chain-' + id).checked, id === chosen,
       `the ${id} card must follow the chosen network (${chosen})`);
   }
+}
+// Bitcoin is still a network this app can be on - it is what the gate itself
+// returns to - so setChain must still accept it. No card may claim it.
+vm.runInContext('setChain("main")', context);
+assert.equal(vm.runInContext('selectedChain()', context), 'main',
+  'setChain must still be able to return to Bitcoin');
+for (const id of ['mutinynet', 'testnet4']) {
+  assert.equal(document.getElementById('chain-' + id).checked, false,
+    `the ${id} card must not stay selected on Bitcoin`);
 }
 
 // And the copy still names the two practice networks correctly. The old sentence

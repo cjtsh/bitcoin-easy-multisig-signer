@@ -109,7 +109,12 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("sats at this address", page)
         self.assertIn('value="testnet4"', page)
         self.assertIn('value="mutinynet"', page)
-        self.assertIn('value="main"', page)
+        # Live Bitcoin is not one of the radio cards: the gate returns to it, and
+        # a scripted or stale attempt to select mainnet inside developer mode is
+        # refused, because that is the one state where the orange frame and the
+        # network badge would disagree with the mode.
+        self.assertNotIn('value="main"', page)
+        self.assertIn('if (developerMode && value === "main") return;', page)
         self.assertIn('id="refresh-top"', page)
         self.assertIn('id="pending-payment"', page)
         self.assertIn('id="pending-check"', page)

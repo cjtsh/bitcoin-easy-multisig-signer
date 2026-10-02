@@ -1,13 +1,20 @@
-# v0.6.0 — developer-mode network gate
+# v0.6.1 — developer-mode network gate
 
-**Status: candidate. Not published yet.** A signed and notarized candidate build
-exists — workflow run
-[36954844052](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36954844052)
-from commit `f147141` — and it was made with a non-publishing dispatch, so no tag
-and no release were created. The published release remains
+**Status: candidate. Not published yet.** No 0.6.x version has been published; the
+published release remains
 [v0.5.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.5.1).
-The artifact names, hashes and verification below describe that candidate, not a
-release.
+
+The version moved from 0.6.0 to 0.6.1 before publication, so nothing was ever
+published as 0.6.0 and no `v0.6.0` tag exists. A signed and notarized 0.6.0
+candidate was built first and is superseded: workflow run
+[36954844052](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36954844052)
+from commit `f147141`, made with a non-publishing dispatch, so no tag and no
+release were created. Opening that candidate is what found the defect 0.6.1
+fixes: live Bitcoin was one of the cards inside developer mode, so one window
+could say "practice coins only" and "MAINNET · REAL BITCOIN" at the same time.
+The artifact names, hashes and verification immediately below are the 0.6.0
+candidate's record, kept because it is what the owner opened; the 0.6.1
+candidate record follows it.
 
 ## Change
 
@@ -31,7 +38,10 @@ adds a way to get the network wrong. The capability is kept, not removed — it
 moves, and the documentation now names it.
 
 - The network cards and their explanation are inside a hidden panel that only
-  developer mode reveals. The Mutinynet card no longer carries `checked`.
+  developer mode reveals. The panel offers **Mutinynet and Testnet4 only**: live
+  Bitcoin is not one of its options, because it is the network the gate returns
+  to rather than a choice inside it, and `setChain("main")` is refused while the
+  gate is open. The Mutinynet card no longer carries `checked`.
 - **Enter Developer Mode** opens a dialog stating that the operator is leaving
   live Bitcoin, that practice coins have no value and no other use, that the app
   provides neither a practice wallet nor its coins, and that a payment to the
@@ -42,7 +52,7 @@ moves, and the documentation now names it.
   and any prepared payment, then reloads the server settings and fee quote for
   the new network — the same clearing the network cards already performed.
 - The selected network stays in memory for the session. It is written to no
-  settings file, so reopening the app returns to mainnet. Before 0.6.0 it was
+  settings file, so reopening the app returns to mainnet. Before 0.6.1 it was
   already session-only; this release must not introduce persistence, because a
   practice network that outlived a restart is the specific hazard the gate could
   create.
@@ -67,8 +77,10 @@ the app's primary purpose, with the honest limits: the app cannot fund a
 practice wallet, the selection is session-only, and the frame and badge always
 name the network in force.
 
-`version.py` moves to `0.6.0`. A minor version is used because the opening
-screen and the default network change, not because the engine did.
+`version.py` moves to `0.6.1`. A minor version is used because the opening screen
+and the default network change, not because the engine did. The version was taken
+to 0.6.0 for the first candidate and to 0.6.1 before anything was published; the
+engine code is identical in both.
 
 ## Verification
 
@@ -95,7 +107,7 @@ screen and the default network change, not because the engine did.
   `.github/workflows/build-candidate.yml` (`workflow_dispatch`, `notarize=true`,
   `publish=false`).
 
-## Candidate build evidence
+## Candidate build evidence — the superseded 0.6.0 candidate
 
 A candidate was dispatched so the owner could install and open it before anything
 is published. `publish=false` is a second, independent dispatch input added for
@@ -155,8 +167,13 @@ artifacts stay on the workflow run. No `v0.6.0` tag exists and
   and asking for a notarized build to test before anything is published: m00981.
   The build was made as a candidate dispatch (`publish=false`), so the test
   artifact is the artifact that would ship, with no release created.
+- After opening the 0.6.0 candidate: live Bitcoin must not be an option inside
+  developer mode, only the practice networks, and the version becomes 0.6.1
+  (m01190, "Live Bitcoin does not belong in the developer mode, remove it Only
+  the test nets. make 1.6.1"). The panel, the refusal in `setChain`, the step-1
+  note and both UI test files were changed for it; the transaction path was not.
 - The full agreed scope, including the out-of-scope list, is
-  [`releases/SCOPE-0.6.0.md`](SCOPE-0.6.0.md). It moved out of the repository root
+  [`releases/SCOPE-0.6.1.md`](SCOPE-0.6.1.md). It moved out of the repository root
   with the other per-version records so that `scripts/build-source.sh` ships it in
   the source archive, which it does for everything under `releases/`.
 
@@ -207,6 +224,6 @@ exists, so nothing becomes public and nothing can be published by accident.
 that would ship, not a differently-built one.
 
 The auto-written release notes were also corrected: they still said "Mutinynet is
-the opening network", which 0.6.0 makes false. A release would have told every
+the opening network", which 0.6.1 makes false. A release would have told every
 downloader to expect the opposite of what the build does. A test now renders the
 notes block and fails if that claim returns.

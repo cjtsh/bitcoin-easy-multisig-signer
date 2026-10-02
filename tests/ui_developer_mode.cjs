@@ -138,6 +138,16 @@ assert.equal(get('live-banner').hidden, true,
 assert.equal(get('dev-note').hidden, false, 'developer mode must say it is on');
 assert.match(get('dev-note').textContent, /this session only/,
   'developer mode must say the app reopens on Bitcoin');
+// What the gate offers is the two practice networks. Live Bitcoin is not a third
+// card: inside developer mode it said "practice coins only" and "real BTC,
+// cannot be undone" on one screen, and choosing it left the app on mainnet with
+// a green frame. The way home is the gate button, which already says so.
+assert.match(html, /id="chain-mutinynet"/, 'the Mutinynet card is missing');
+assert.match(html, /id="chain-testnet4"/, 'the Testnet4 card is missing');
+assert.doesNotMatch(html, /id="chain-main"/,
+  'live Bitcoin must not be a card inside developer mode');
+assert.doesNotMatch(html, /Bitcoin LIVE/,
+  'no card may be labelled live Bitcoin inside the gate');
 // The way out must be on the screen and pressable. A gate that cannot be left is
 // worse than no gate: the operator would have to restart the app to get home.
 assert.equal(get('dev-mode-toggle').textContent, 'Return to Bitcoin',
@@ -148,31 +158,42 @@ assert.equal(get('dev-mode-toggle').title, 'Leave developer mode and return to l
   'the way out must say what it does');
 
 // 6. The frame follows the network, and the badge follows the frame. Every
-//    network is walked, so the two can never describe different chains.
-for (const [chosen, live, badge] of [
-  ['mutinynet', false, '● MUTINYNET · NO REAL BITCOIN'],
-  ['testnet4', false, '● TESTNET4 · NO REAL BITCOIN'],
-  ['main', true, '● MAINNET · REAL BITCOIN'],
-  ['mutinynet', false, '● MUTINYNET · NO REAL BITCOIN'],
+//    network the gate can reach is walked, so the two can never describe
+//    different chains.
+for (const [chosen, badge] of [
+  ['mutinynet', '● MUTINYNET · NO REAL BITCOIN'],
+  ['testnet4', '● TESTNET4 · NO REAL BITCOIN'],
+  ['mutinynet', '● MUTINYNET · NO REAL BITCOIN'],
 ]) {
   vm.runInContext(`setChain(${JSON.stringify(chosen)})`, context);
   assert.equal(chain(), chosen, `setChain must select ${chosen}`);
-  assert.equal(vm.runInContext('document.body.classList.contains("live-mode")', context), live,
-    `the frame on ${chosen} must ${live ? '' : 'not '}be the live frame`);
-  assert.equal(get('network-badge').classList.contains('live'), live,
-    `the badge on ${chosen} must ${live ? '' : 'not '}be the live badge`);
+  assert.equal(vm.runInContext('document.body.classList.contains("live-mode")', context), false,
+    `the frame on ${chosen} must not be the live frame`);
+  assert.equal(get('network-badge').classList.contains('live'), false,
+    `the badge on ${chosen} must not be the live badge`);
   assert.equal(get('network-badge').textContent, badge, `the badge must name ${chosen}`);
-  assert.equal(get('live-banner').hidden, live ? false : true,
-    `the live warning must follow ${chosen}`);
-  // A practice network is unreachable from the opening screen but always
-  // reachable here, and Bitcoin is reachable again without leaving the mode.
+  assert.equal(get('live-banner').hidden, true,
+    `the live warning must stay off on ${chosen}`);
   assert.equal(get('chain-panel').hidden, false,
     `developer mode must survive a move to ${chosen}`);
 }
+// The third network still exists in the app; it is simply not reachable from
+// inside the gate. A stale card, a restored selection or anything else asking for
+// mainnet while the gate is open must be refused, because the alternative is a
+// screen that says "practice coins only" while sitting on real Bitcoin.
+vm.runInContext('setChain("main")', context);
+assert.equal(chain(), 'mutinynet',
+  'developer mode must not be able to select live Bitcoin');
+assert.equal(get('network-badge').textContent, '● MUTINYNET · NO REAL BITCOIN',
+  'a refused mainnet selection must leave the badge on the practice network');
+assert.equal(vm.runInContext('document.body.classList.contains("live-mode")', context), false,
+  'a refused mainnet selection must leave the practice frame on');
+assert.equal(get('live-banner').hidden, true,
+  'a refused mainnet selection must not raise the live warning');
 
 // 7. Bitcoin is not a practice network, so leaving developer mode is the only
 //    way back - and it must put the app back where it opens.
-vm.runInContext('setChain("main")', context);
+assert.equal(chain(), 'mutinynet', 'the gate must still be open before leaving');
 vm.runInContext('leaveDeveloperMode()', context);
 assert.equal(chain(), 'main', 'leaving developer mode must land on Bitcoin');
 assert.equal(get('chain-panel').hidden, true, 'leaving must hide the cards again');
@@ -217,9 +238,9 @@ assert.equal(get('dev-mode-toggle').title, 'Leave developer mode and return to l
 //    that throws leaves a developer with a picker that does nothing, and no
 //    assertion about setChain would notice.
 //    A browser unchecks the other cards when one is chosen; the stub does not, so
-//    choosing a card means unchecking its two siblings by hand.
+//    choosing a card means unchecking its siblings by hand.
 const chooseCard = (id) => {
-  for (const other of ['mutinynet', 'testnet4', 'main']) {
+  for (const other of ['mutinynet', 'testnet4']) {
     get('chain-' + other).checked = ('chain-' + other) === id;
   }
   get('chain').listeners.change();

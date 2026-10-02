@@ -1,12 +1,17 @@
-# Scope — version 0.6.0: the developer-mode network gate
+# Scope — version 0.6.1: the developer-mode network gate
 
 Status: **signed off by the owner (m00128: "Use my draft as written", "Yes —
 confirm switches to Mutinynet", "Build it now") and implemented on the
-`dev-mode-0.6.0` branch, off `main` at `fcaa327`.** `version.py` is bumped to
-0.6.0 there and the implementation, tests and documentation are complete; the
-release is **not published** and no 0.6.0 DMG has been built. The delivered
-record is [`PATCH-0.6.0.md`](PATCH-0.6.0.md); this file stays as the agreed scope
-it was written against and is not rewritten to match. It sits in `releases/` with
+`dev-mode-0.6.0` branch, off `main` at `fcaa327`.** The implementation, tests and
+documentation are complete, and the release is **not published**: no published
+DMG exists and nothing has been published under any 0.6.x version. `version.py`
+was taken to 0.6.0 for a first candidate and moved to **0.6.1** before
+publication, after the owner opened that candidate and directed that live
+Bitcoin must not be an option inside developer mode (m01190); the amendment at
+the end of this file records exactly what changed. The delivered record is
+[`PATCH-0.6.1.md`](PATCH-0.6.1.md); this file stays as the agreed scope it was
+written against and is not rewritten to match apart from that amendment. It sits
+in `releases/` with
 the other per-version records, which is where the source archive picks it up.
 
 ## Why this release exists
@@ -184,7 +189,7 @@ orange frame.
 
 ## Version and release policy
 
-The owner directed **0.6.0**. The reasoning, recorded:
+The owner directed **0.6.0**, and the version moved to **0.6.1** before publication (see the amendment at the end). The reasoning, recorded:
 
 - `AGENTS.md` requires a new version for any transaction-logic change. This
   release has none, so the minimum bar would be a patch. The owner chose a
@@ -195,7 +200,7 @@ The owner directed **0.6.0**. The reasoning, recorded:
   `RELEASE-HISTORY.md` entry must state plainly that **the transaction and
   signing engine is unchanged from 0.5.1** — the build that sent real Bitcoin.
   Nothing in this release may be described as new transaction capability.
-- `version.py` (`APP_VERSION = "0.6.0"`), user-facing version references,
+- `version.py` (`APP_VERSION = "0.6.1"`), user-facing version references,
   `CURRENT-STATUS.md`, `PHASE-HANDOFF.md`, `RELEASE-HISTORY.md` and the
   `releases/` evidence file are bumped together at release time, per the
   existing rule that a version bump, commit and tag are one step.
@@ -232,8 +237,9 @@ Existing tests that **will fail and must be rewritten**:
   `checked` attribute moves to Bitcoin and the message must be rewritten.
 - `tests/ui_send_mode.cjs:91` asserts `role="radiogroup"` is on the main screen,
   and `tests/ui_send_mode.cjs:93-97` asserts each of `chain-mutinynet`,
-  `chain-testnet4` and `chain-main` is on the main screen. All three now appear
-  only after the gate opens.
+  `chain-testnet4` and `chain-main` is on the main screen. All three moved
+  behind the gate in the first draft; from 0.6.1 the panel holds the two practice
+  networks and the mainnet card is removed (see the amendment at the end).
 - `tests/ui_send_mode.cjs:98` iterates `['mutinynet', 'testnet4', 'main']` to
   exercise each selected chain; that loop must set its chain inside developer
   mode rather than relying on a pre-checked radio.
@@ -263,3 +269,38 @@ New or updated coverage:
   exists and `tests/test_palette.py` must stay green.
 - No theme change. The frame is decoration and must remain unable to break the
   app.
+
+## Amendment — 0.6.1: developer mode is the practice networks, and only those
+
+After installing and opening the 0.6.0 candidate, the owner directed (m01190,
+verbatim): "Live Bitcoin does not belong in the developer mode, remove it Only
+the test nets. make 1.6.1" — meaning version 0.6.1. The defect he saw: inside
+developer mode the panel offered a third card, **Bitcoin LIVE**, so a window
+whose own note read "practice coins only" could sit on mainnet with a green
+frame, and choosing that card returned the app to live Bitcoin without closing
+the gate. The frame and the badge would then have disagreed with the mode, which
+is exactly what the seventh decision above forbids.
+
+What changed, and nothing else:
+
+- The mainnet card is removed from `ui.html`. The panel inside developer mode
+  offers Mutinynet and Testnet4 only, so "practice network" is the whole of the
+  choice.
+- The way back to live Bitcoin is the gate button, which already read "Return to
+  Bitcoin". The gate's own confirmation still switches to Mutinynet.
+- `setChain("main")` is refused while developer mode is open, so a stale card, a
+  restored selection or any future caller cannot leave the app on mainnet with
+  the practice frame and badge. `leaveDeveloperMode()` closes the gate first, so
+  the ordinary way home is unaffected.
+- The step-1 note no longer says "you are on mainnet" while the gate is open; it
+  names the practice network actually in force.
+- `tests/ui_developer_mode.cjs` pins all of this (no mainnet card, a scripted
+  mainnet selection refused, frame/badge/live banner staying on the practice
+  side) and `tests/ui_send_mode.cjs` pins that live Bitcoin is not a card at all
+  and that mainnet remains selectable once the gate is closed.
+- The version moved to 0.6.1 and the 0.6.0 candidate is superseded. No 0.6.0
+  artifact was published, so there is no published build to correct and no need
+  to reach the change through a patch above 0.6.0.
+
+Nothing about the transaction, signing or broadcast path changed, this amendment
+does not widen the scope above, and it does not shorten the out-of-scope list.

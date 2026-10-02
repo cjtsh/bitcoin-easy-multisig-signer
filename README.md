@@ -24,7 +24,7 @@ The app uses **one** wallet/PSBT/signing engine. [`network_config.py`](network_c
 
 This app exists to move **real** Bitcoin out of an existing multisig wallet. It is not a testnet tool, and the person it is written for — a spouse, an executor, an accountant — will never need a practice network. Reaching Mutinynet or Testnet4 is therefore behind a deliberate step rather than sitting on the opening screen.
 
-The app opens on **Bitcoin mainnet**. A button at the top of the opening screen, **Enter Developer Mode**, explains that you are leaving live Bitcoin and, on confirmation, reveals the network cards and switches to Mutinynet. **Mutinynet is the default practice network**, because a default has to be chosen, and its blocks come quickly; Testnet4 remains available for a wallet that already holds Testnet4 coins.
+The app opens on **Bitcoin mainnet**. A button at the top of the opening screen, **Enter Developer Mode**, explains that you are leaving live Bitcoin and, on confirmation, reveals the network cards and switches to Mutinynet. The cards it reveals are the two practice networks: live Bitcoin is what the **Return to Bitcoin** button goes back to, not a choice inside the panel, so the gate cannot leave the app on mainnet while it still calls itself developer mode. **Mutinynet is the default practice network**, because a default has to be chosen, and its blocks come quickly; Testnet4 remains available for a wallet that already holds Testnet4 coins.
 
 This is a genuine test bench, and developers are welcome to use it. You can point the app at a practice wallet file and walk the whole path — import, scan, build, sign on real hardware, review, broadcast — against coins that cost nothing. It is easy to use this way, and a practice run is the right way to learn the interface before touching a real wallet.
 
@@ -32,7 +32,7 @@ What it will not do: the app cannot fund a practice wallet, and it cannot give y
 
 The selected network is kept **in memory for the current session only**. The app does not write it to any settings file, so reopening the app always returns to live Bitcoin — a practice network can never be left switched on by accident. While a payment is prepared, the gate refuses to change network and says why. The orange or green frame around the window and the network badge are always visible and always name the network actually in force: orange means real Bitcoin, green means practice coins. Those two signals cannot be hidden or disagree.
 
-Developer mode is part of the **0.6.0** build. In the published 0.5.1 build the network cards still sit on the opening screen.
+Developer mode is part of the **0.6.1** build. In the published 0.5.1 build the network cards still sit on the opening screen.
 
 ## Mac installation and one-session test
 
@@ -47,7 +47,7 @@ If neither declared nor guarded standard change is available, the app offers a n
 | Item | Published support (0.5.1) |
 | --- | --- |
 | Wallet | Existing BSMS 1.0, P2WSH multisig with two or three keys and xpub origins; threshold comes from the file |
-| Networks | Testnet4, Mutinynet and mainnet through one engine. Mainnet broadcast requires one explicit per-transaction confirmation on the final screen plus a backend opt-in that fails closed when omitted. Before 0.5.0 every build refused a mainnet broadcast in code. From 0.6.0 the app opens on mainnet and reaches the practice networks only through developer mode |
+| Networks | Testnet4, Mutinynet and mainnet through one engine. Mainnet broadcast requires one explicit per-transaction confirmation on the final screen plus a backend opt-in that fails closed when omitted. Before 0.5.0 every build refused a mainnet broadcast in code. From 0.6.1 the app opens on mainnet and reaches the practice networks only through developer mode, whose panel offers Mutinynet and Testnet4 and keeps live Bitcoin behind "Return to Bitcoin" |
 | Hardware exercised | Jade, Trezor Safe 3, Ledger Nano S Plus — Testnet4 through 0.2.1; Mutinynet on 0.3.2 and 0.4.1. OneKey Classic 1S (HWI Trezor backend) and Ledger Nano S signed the first live mainnet payment on 0.5.0 |
 | Distribution | Apple Silicon Developer ID-signed and notarized DMG, source archive; see the release assets and `SHA256SUMS` |
 | Fees | Mainnet mempool.space guidance for mainnet/Testnet4; Mutinynet's Esplora reference in Mutinynet mode; 1–25 sat/vB and 10,000-sat estimated fee caps. No in-app fee bump |

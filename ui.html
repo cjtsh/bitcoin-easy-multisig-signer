@@ -392,20 +392,24 @@
                A visible three-way control here asked every executor and trustee
                to weigh a choice they cannot act on, so the capability moved
                behind the gate at the top of the screen. The cards keep their
-               shape: every option is still visible and the active one is still
-               highlighted, which is the same thing the frame colour is saying. -->
+               shape: every practice network is still visible and the active one
+               is still highlighted, which is the same thing the frame colour is
+               saying. Live Bitcoin is deliberately not one of the cards. Inside
+               developer mode it was a third choice that put the app back on
+               mainnet while the same screen said "practice coins only", which
+               is how one window came to promise two different networks at once.
+               The way back to live Bitcoin is the gate button itself, which is
+               already on the screen and already says "Return to Bitcoin". -->
           <p id="dev-mode-note" class="small muted" hidden></p>
           <div id="chain-panel" hidden>
-            <span class="field-label" id="chain-label">Bitcoin network</span>
+            <span class="field-label" id="chain-label">Practice network</span>
             <div id="chain" class="chain-choice" role="radiogroup" aria-labelledby="chain-label">
               <label><input type="radio" id="chain-mutinynet" name="chain" value="mutinynet">
                 <b>Mutinynet</b><small>fast practice network</small></label>
               <label><input type="radio" id="chain-testnet4" name="chain" value="testnet4">
                 <b>Testnet4</b><small>existing test wallets</small></label>
-              <label><input type="radio" id="chain-main" name="chain" value="main">
-                <b>Bitcoin LIVE</b><small>real BTC, cannot be undone</small></label>
             </div>
-            <p class="small muted">Mutinynet and Testnet4 are separate test networks. Each needs its own wallet and its own coins to work.</p>
+            <p class="small muted">Mutinynet and Testnet4 are separate test networks. Each needs its own wallet and its own coins to work. "Return to Bitcoin" at the top of the screen goes back to live Bitcoin.</p>
           </div>
         </div>
         <div id="wallet-input">
@@ -819,7 +823,7 @@
     // that chose it. The app opens on Bitcoin deliberately. The person this is
     // built for - an executor or trustee moving real Bitcoin - should not have
     // to notice which network they are on, let alone choose one, so the choice
-    // and the three cards it lives in stay behind the developer-mode gate.
+    // and the cards it lives in stay behind the developer-mode gate.
     let currentChain = "main";
     let developerMode = false;
     // Which speed button the user actually chose. Rate values alone cannot
@@ -846,16 +850,25 @@
       if (sats >= LARGE_AMOUNT_SATS_FLOOR) return true;
       return rate ? sats / 100000000 * rate.usd_per_btc >= 10000 : false;
     }
-    // The three networks, in the order the cards appear. Everything that needs
-    // to read or set the selection goes through these functions, so the control
-    // itself can change shape without touching the rest of the app. The
-    // selection is the in-memory currentChain, not "whichever radio is checked":
-    // the cards are hidden until developer mode opens, and screens are built
-    // before they are ever revealed.
+    // Every network this app can talk to, in the order the cards used to appear.
+    // The cards themselves are the two practice networks; "main" stays in this
+    // list because setChain still validates it and it is the value the gate
+    // returns to. Everything that needs to read or set the selection goes
+    // through these functions, so the control itself can change shape without
+    // touching the rest of the app. The selection is the in-memory currentChain,
+    // not "whichever radio is checked": the cards are hidden until developer
+    // mode opens, and screens are built before they are ever revealed.
     const CHAIN_IDS = ["mutinynet", "testnet4", "main"];
     const CHAIN_NAMES = {mutinynet: "Mutinynet", testnet4: "Testnet4", main: "mainnet"};
     const selectedChain = () => currentChain;
     function setChain(value) {
+      // Mainnet is not one of the choices inside the gate. It is the network the
+      // gate returns to, so a request for main while the gate is open is ignored
+      // rather than honoured: it is what keeps "developer mode is practice coins"
+      // and "MAINNET · REAL BITCOIN" from ever being true on the same screen.
+      // leaveDeveloperMode closes the gate first and then calls this, which is
+      // why the guard does not block the way home.
+      if (developerMode && value === "main") return;
       currentChain = CHAIN_IDS.indexOf(value) >= 0 ? value : "main";
       syncChainChoice();
       renderChainChoice();
@@ -894,8 +907,8 @@
       const note = $("dev-mode-note");
       note.hidden = !developerMode;
       setText("dev-mode-note",
-        "Developer mode: you are on " + name + ". Mutinynet and Testnet4 use practice " +
-        "coins that have no value. This app cannot give that wallet test coins.");
+        "Developer mode: you are on " + name + ". It uses practice coins that have no " +
+        "value. This app cannot give that wallet test coins.");
       const toggle = $("dev-mode-toggle");
       // The gate button names what pressing it gives you, the same way the theme
       // button names the theme it switches to: "Enter Developer Mode" crosses to

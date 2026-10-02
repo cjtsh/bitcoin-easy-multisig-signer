@@ -421,6 +421,8 @@ jobs:
           - Opens on Bitcoin mainnet. The practice networks are reached only through
             the "Enter Developer Mode" gate on the opening screen, which asks for
             confirmation first and lasts for the session: the app reopens on mainnet.
+            Inside the gate the choice is Mutinynet or Testnet4: live Bitcoin is the
+            network the gate returns to, not one of its options.
             Send All is never preselected; a nonstandard wallet without an established
             change branch explains why a smaller payment is unavailable.
           - Clears old signer/final details whenever a new payment is prepared.
