@@ -158,6 +158,7 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertEqual(promote["if"], "${{ inputs.publish }}")
         for required in (
                 "gh api", "head_sha", "conclusion", "head_branch",
+                '.path == ".github/workflows/build-candidate.yml"',
                 "CANDIDATE-MANIFEST.txt", "notarize=true", "publish=false",
                 "shasum -a 256 -c SHA256SUMS"):
             with self.subTest(required=required):
