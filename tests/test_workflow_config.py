@@ -156,8 +156,9 @@ class WorkflowConfigTests(unittest.TestCase):
         promote = next(step for step in checksums["steps"]
                        if step.get("name") == "Download and verify the tested candidate artifacts")
         self.assertEqual(promote["if"], "${{ inputs.publish }}")
+        self.assertEqual(promote["env"]["GH_REPO"], "${{ github.repository }}")
         for required in (
-                "gh api", "head_sha", "conclusion", "head_branch",
+                "gh api", "gh run download", "head_sha", "conclusion", "head_branch",
                 '.path == ".github/workflows/build-candidate.yml"',
                 "CANDIDATE-MANIFEST.txt", "notarize=true", "publish=false",
                 "shasum -a 256 -c SHA256SUMS"):
