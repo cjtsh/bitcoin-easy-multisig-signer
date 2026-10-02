@@ -98,6 +98,10 @@ screen and the default network change, not because the engine did.
   primary goal: owner message m00089.
 - Sign-off on the written scope, the approved dialog wording as drafted, and
   confirmation switching straight to Mutinynet: m00128.
+- Closing the change-address display question as not answerable on the devices,
+  and asking for a notarized build to test before anything is published: m00981.
+  The build was made as a candidate dispatch (`publish=false`), so the test
+  artifact is the artifact that would ship, with no release created.
 - The full agreed scope, including the out-of-scope list, is
   [`releases/SCOPE-0.6.0.md`](SCOPE-0.6.0.md). It moved out of the repository root
   with the other per-version records so that `scripts/build-source.sh` ships it in
@@ -118,12 +122,38 @@ screen and the default network change, not because the engine did.
 - The plain-language operator guide and the nontechnical-user walkthrough remain
   open Phase 5 items. This release documents developer mode; it does not write
   the trustee-facing guide, which the owner should shape. One paragraph of that
-  guide is already owed by this change: the trustee never sees the gate, and a
-  practice send does not by itself prove how a given firmware displays a change
-  address.
-- The untested device question stands: neither the OneKey Classic 1S nor the
-  Ledger Nano S displayed the change address on the first live payment. Whether
-  each firmware independently re-derives and checks the change script rather than
-  trusting the host's marker is still unknown. A practice transaction whose
-  change output deliberately points elsewhere is the experiment that would settle
-  it, and it must never be run on mainnet.
+  guide is already owed by this change: the trustee never sees the gate, and the
+  change address is checked in the wallet software that holds the wallet file,
+  not on a device screen.
+- The change-address display question is **closed by the owner as not answerable
+  on these devices** (m00981): the small hardware signers do not display the
+  change address and will not, so the experiment that would have settled whether
+  each firmware re-derives the change script is no longer worth building. The app
+  keeps marking the change output as belonging to the wallet in the reviewed
+  PSBT, and the standing guidance is unchanged — check the change address in the
+  wallet software, not on a device screen. The owner's alternative, giving the
+  operator some other place where the app shows it is doing the right thing, is
+  recorded here as a documentation idea for the operator guide, not as work in
+  this release.
+
+## A candidate build can now be made without publishing
+
+Recorded separately because it changes the release machinery, not the app. The
+workflow published on every successful dispatch, and `tests/test_workflow_config.py`
+enforced that a dispatch was a publication. That made the first dispatch of a
+version the point of no return: a published tag is never rebuilt, so the only way
+to correct an artifact nobody had opened yet was to bump the version.
+
+`workflow_dispatch` now takes a second, independent boolean, `publish`
+(default `true`, so an ordinary dispatch behaves exactly as before). With
+`publish=false` the release job stops before it creates a tag or a release and
+writes the notes into the run summary instead; the DMG, the source archive, the
+SBOM and `SHA256SUMS` stay attached to the run as artifacts. No release object
+exists, so nothing becomes public and nothing can be published by accident.
+`notarize` and `publish` are deliberately separate: the owner tests the artifact
+that would ship, not a differently-built one.
+
+The auto-written release notes were also corrected: they still said "Mutinynet is
+the opening network", which 0.6.0 makes false. A release would have told every
+downloader to expect the opposite of what the build does. A test now renders the
+notes block and fails if that claim returns.

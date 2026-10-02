@@ -3,6 +3,10 @@ name: Build macOS DMG and release
 # Explicit dispatch only. A push cannot publish a money-moving app. The version
 # and tag are immutable once released; failed candidate runs may be corrected
 # and dispatched again before publication.
+#
+# Two independent choices, because building and publishing are not the same act:
+#   notarize=true  build the artifact that would be published
+#   publish=false  build it, upload it to the run, and publish nothing at all
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +14,10 @@ on:
         description: "Notarize the DMG for public distribution. Needs the Apple credentials; off builds an unsigned test DMG."
         type: boolean
         default: false
+      publish:
+        description: "Publish the GitHub release. Off builds a candidate: the artifacts stay on the run, with no tag and no release."
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -405,13 +413,16 @@ jobs:
           - Gives each device discovery and authorization check up to three minutes and deliberate on-device signing
             up to ten minutes, including Ledger's multiple review screens.
           - Offers Bitcoin mainnet plus the Testnet4 and Mutinynet practice networks
-            through one engine. A custom-Signet checkpoint distinguishes Mutinynet from
-            ordinary Signet.
+            through one engine. The practice networks are a test bench for developers,
+            not what this app is for. A custom-Signet checkpoint distinguishes Mutinynet
+            from ordinary Signet.
             A new Mutinynet wallet and practice coins are required; Testnet4 coins
             do not transfer across networks.
-          - Mutinynet is the opening network. Send All is never preselected;
-            a nonstandard wallet without an established change branch explains
-            why a smaller payment is unavailable.
+          - Opens on Bitcoin mainnet. The practice networks are reached only through
+            the "Enter Developer Mode" gate on the opening screen, which asks for
+            confirmation first and lasts for the session: the app reopens on mainnet.
+            Send All is never preselected; a nonstandard wallet without an established
+            change branch explains why a smaller payment is unavailable.
           - Clears old signer/final details whenever a new payment is prepared.
             Rechecks selected confirmed outputs before preparation and broadcast;
             a lost broadcast response is treated as outcome unknown, never retried.
@@ -433,6 +444,29 @@ jobs:
           Hardware signers commonly hide the change output, so check the change address
           in the wallet software that holds the wallet file, not on a device screen.
           EOF
+          # publish=false stops here, before anything is created. A dispatch that
+          # builds a candidate must be able to test the exact artifact a release
+          # would ship without committing the version to it: publishing is
+          # irreversible by policy below, so the alternative is bumping the version
+          # to correct a build nobody had opened yet. No tag is created and no
+          # release exists, so nothing is downloadable by the public; the DMG and
+          # the source archive stay attached to this workflow run as artifacts.
+          if [[ "${{ inputs.publish }}" != "true" ]]; then
+            {
+              echo "### Candidate build of v${VERSION} — not published"
+              echo
+              echo "Nothing was published and no tag was created. The release notes"
+              echo "this run would have used are in \`notes.md\` below."
+              echo
+              echo "Download the \`macos-dmg\` artifact for the DMG and"
+              echo "\`BUILD-SBOM.json\`, and \`sha256sums\` for \`SHA256SUMS\`."
+              echo
+              echo "Expected DMG name: \`${dmg_name}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "==> Candidate build: v${VERSION} was built and NOT published."
+            cat notes.md
+            exit 0
+          fi
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which
           # is exactly what happened to v0.1.11 five times. If this version is already
