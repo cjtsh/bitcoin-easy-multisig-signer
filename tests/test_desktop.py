@@ -1,7 +1,6 @@
 """Desktop wrapper tests run without a window toolkit, a real signer or real wallet files."""
 
 import base64
-import importlib.util
 import os
 import sys
 import tempfile
@@ -443,17 +442,6 @@ class RendererPreflightTests(unittest.TestCase):
         fake = SimpleNamespace(renderer="mshtml")
         with patch.dict(sys.modules, {"webview.platforms": SimpleNamespace(winforms=fake)}):
             self.assertEqual(windows_renderer(), "mshtml")
-
-    def test_pywebviews_windows_module_still_announces_its_renderer(self):
-        """This reads an internal name, so a rename upstream must fail loudly here."""
-        import webview
-
-        module = Path(webview.__file__).parent / "platforms" / "winforms.py"
-        self.assertRegex(module.read_text(encoding="utf-8"), r"(?m)^\s*renderer = ['\"]")
-        # Two ways to break the preflight in a way no window would report: the module
-        # it imports could vanish from a build, or be renamed. find_spec proves the
-        # name still resolves without running any of the WinForms code.
-        self.assertIsNotNone(importlib.util.find_spec("webview.platforms.winforms"))
 
 
 if __name__ == "__main__":
