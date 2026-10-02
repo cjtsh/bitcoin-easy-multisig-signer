@@ -257,19 +257,53 @@ def check_device_bridge() -> None:
 
 
 def webview_renderer() -> str:
-    """pywebview's renderer, pinned rather than auto-selected.
+    """The renderer to ask pywebview for, named rather than left to chance.
 
-    macOS has one option. On Windows pywebview falls back to the legacy MSHTML
-    engine when WebView2 is missing, and this interface uses modern CSS that
-    engine cannot lay out — the window would open and quietly render wrong.
-    Pinning EdgeChromium turns a missing runtime into a clear startup error
-    instead, which is the failure this app can act on.
+    macOS has one option. On Windows the name states the intent, but asking is not
+    the same as being obeyed: pywebview picks EdgeChromium when the WebView2
+    runtime is present and imports the legacy MSHTML engine when it is not, with no
+    error either way. ``require_edge_chromium`` checks which engine it actually
+    chose, because this interface uses modern CSS that MSHTML cannot lay out.
     """
     return "edgechromium" if sys.platform == "win32" else "cocoa"
 
 
+def windows_renderer() -> str:
+    """Which engine pywebview will really use on this Windows machine.
+
+    pywebview decides once, when its Windows platform module is imported, and never
+    revisits it, so asking that module is the only truthful answer. Kept separate
+    from the check so the check can be tested without a Windows toolkit.
+    """
+    from webview.platforms import winforms
+
+    return winforms.renderer
+
+
+def require_edge_chromium() -> None:
+    """Refuse to open a window that would render in the legacy IE engine.
+
+    A window that opens and renders wrong is the one failure a user cannot
+    describe, and the shipped bundle has no other way to notice it: pywebview
+    reports no error when the WebView2 runtime is missing, so nothing would reach
+    the startup reporter. Failing here turns that silence into a message naming
+    the fix.
+    """
+    if sys.platform != "win32":
+        return
+    renderer = windows_renderer()
+    if renderer != "edgechromium":
+        raise RuntimeError(
+            "The Microsoft Edge WebView2 runtime is not installed, so the window "
+            f"would fall back to the legacy {renderer} engine that cannot display "
+            "this interface. Install the WebView2 runtime (free, from Microsoft) "
+            "and start the app again."
+        )
+
+
 def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
+    require_edge_chromium()
     state = LocalApp(desktop=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
     port = server.server_address[1]

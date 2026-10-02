@@ -45,7 +45,7 @@ Porting surface, in the order it matters:
 
 | Area | Change |
 | --- | --- |
-| `desktop.py` | Runs on Windows too: the platform guard accepts `win32`, and pywebview is pinned to the `edgechromium` renderer so a missing WebView2 fails loudly instead of silently degrading to legacy MSHTML. |
+| `desktop.py` | Runs on Windows too: the platform guard accepts `win32`, and `require_edge_chromium()` reads pywebview's own renderer choice and refuses to open a window on its silent fallback to legacy MSHTML when the WebView2 runtime is missing. |
 | `gui.py` | New `assert_private_file()`: Windows `chmod` only toggles the read-only attribute and `st_mode` always reports `0666`, so "is this file private?" is answered by the OS access list (the file must live under the user's own profile) instead of POSIX mode bits. |
 | `probe.py` | The frozen HWI helper is looked up as `hwi.exe` on Windows. |
 | `network_settings.py` | Settings live in `%APPDATA%\Easy Bitcoin Multisig\settings.json`. |
@@ -171,11 +171,12 @@ the build, which is the point: a silent pass would otherwise be indistinguishabl
 from a check that never ran.
 
 The same blindness applies to the window itself once the release is in a user's
-hands. If `webview.start()` raises — no WebView2 runtime, a missing native
-dependency, a corrupted unpack — a `--windowed` build shows nothing at all, and the
-only evidence available is "I double-clicked it and nothing happened", which cannot
-be acted on. So `main()` catches a failed start, writes the traceback to
-`desktop-startup-error.log` beside the app's settings file, and on Windows shows the
-error and that path in a message box. The dialog exists because a console-less
-build has no other way to speak; the file exists because a screenshot of a dialog
-is not a bug report.
+hands. If opening the window fails — a missing WebView2 runtime, raised before the
+window is built because pywebview would otherwise fall back to the legacy engine
+without a word; a missing native dependency; a corrupted unpack — a `--windowed`
+build shows nothing at all, and the only evidence available is "I double-clicked it
+and nothing happened", which cannot be acted on. So `main()` catches a failed start,
+writes the traceback to `desktop-startup-error.log` beside the app's settings file,
+and on Windows shows the error and that path in a message box. The dialog exists
+because a console-less build has no other way to speak; the file exists because a
+screenshot of a dialog is not a bug report.

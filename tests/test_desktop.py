@@ -1,6 +1,7 @@
 """Desktop wrapper tests run without a window toolkit, a real signer or real wallet files."""
 
 import base64
+import importlib.util
 import os
 import sys
 import tempfile
@@ -15,7 +16,8 @@ import safe_http
 from support import real_ca_bundle
 from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources,
                      check_device_bridge, check_psbt_save, configure_packaged_tls,
-                     main, report, report_startup_failure, run_desktop, webview_renderer)
+                     main, report, report_startup_failure, require_edge_chromium,
+                     run_desktop, webview_renderer, windows_renderer)
 from probe import ProbeError
 from gui import LocalApp, PreparedPayment, assert_private_file, ui_path
 from dataclasses import replace
@@ -128,7 +130,10 @@ class DesktopTests(unittest.TestCase):
                     page = response.read().decode()
                 self.page = page
         fake = FakeWebview()
-        run_desktop(fake)
+        # The renderer the machine really has is not this test's subject, and the
+        # preflight would refuse to start where WebView2 is genuinely absent.
+        with patch.object(desktop, "windows_renderer", return_value="edgechromium"):
+            run_desktop(fake)
         self.assertEqual(fake.asserted_gui, webview_renderer())
         self.assertTrue(fake.url.startswith("http://127.0.0.1:"))
         self.assertIs(fake.bridge.window, fake.window)
@@ -392,6 +397,63 @@ class StartupFailureTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 1)
         reported.assert_called_once()
         self.assertIsInstance(reported.call_args.args[0], RuntimeError)
+
+
+class RendererPreflightTests(unittest.TestCase):
+    """Asking pywebview for EdgeChromium is not the same as getting it.
+
+    When the WebView2 runtime is missing, pywebview imports the legacy MSHTML engine
+    and opens the window anyway — no error, nothing for the startup reporter to
+    catch. This preflight is the only thing between a missing runtime and a user
+    staring at a window that renders wrong.
+    """
+
+    def test_windows_refuses_the_legacy_engine(self):
+        with patch.object(desktop.sys, "platform", "win32"), patch.object(
+            desktop, "windows_renderer", return_value="mshtml"
+        ):
+            with self.assertRaises(RuntimeError) as caught:
+                require_edge_chromium()
+        message = str(caught.exception)
+        self.assertIn("WebView2", message)
+        self.assertIn("mshtml", message)
+
+    def test_windows_accepts_the_engine_it_asked_for(self):
+        with patch.object(desktop.sys, "platform", "win32"), patch.object(
+            desktop, "windows_renderer", return_value="edgechromium"
+        ):
+            require_edge_chromium()
+
+    def test_other_platforms_never_ask_pywebview(self):
+        with patch.object(desktop.sys, "platform", "darwin"), patch.object(
+            desktop, "windows_renderer"
+        ) as renderer:
+            require_edge_chromium()
+        renderer.assert_not_called()
+
+    def test_the_check_runs_before_the_window_is_built(self):
+        with patch.object(desktop, "require_edge_chromium") as required, patch.object(
+            desktop, "LocalApp", side_effect=RuntimeError("stopped here")
+        ):
+            with self.assertRaises(RuntimeError):
+                run_desktop(SimpleNamespace())
+        required.assert_called_once()
+
+    def test_the_answer_still_comes_from_pywebviews_own_decision(self):
+        fake = SimpleNamespace(renderer="mshtml")
+        with patch.dict(sys.modules, {"webview.platforms": SimpleNamespace(winforms=fake)}):
+            self.assertEqual(windows_renderer(), "mshtml")
+
+    def test_pywebviews_windows_module_still_announces_its_renderer(self):
+        """This reads an internal name, so a rename upstream must fail loudly here."""
+        import webview
+
+        module = Path(webview.__file__).parent / "platforms" / "winforms.py"
+        self.assertRegex(module.read_text(encoding="utf-8"), r"(?m)^\s*renderer = ['\"]")
+        # Two ways to break the preflight in a way no window would report: the module
+        # it imports could vanish from a build, or be renamed. find_spec proves the
+        # name still resolves without running any of the WinForms code.
+        self.assertIsNotNone(importlib.util.find_spec("webview.platforms.winforms"))
 
 
 if __name__ == "__main__":
