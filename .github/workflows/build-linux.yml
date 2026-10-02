@@ -1,0 +1,284 @@
+name: Build the Linux AppImage
+
+# Produces the Linux x86_64 artifact: one AppImage and one tarball that needs
+# no FUSE at all.
+#
+# This workflow never touches main and never rewrites a published release. It
+# is dispatched on linux-port, builds here, and -- only when asked, and only
+# from the bytes of an earlier successful candidate run of this same commit --
+# attaches its platform-named files to the release page the audited macOS
+# pipeline created for that version. One version, one page, every platform.
+#
+# The push trigger exists so the branch can be iterated on without publishing.
+# A push run can never be promoted: the promotion step refuses a candidate
+# whose event was not workflow_dispatch.
+on:
+  push:
+    branches:
+      - linux-port
+    paths:
+      - .github/workflows/build-linux.yml
+      - .github/workflows/linux-inputs.yml
+      - requirements-desktop-linux.txt
+      - requirements-desktop-linux.lock
+      - requirements.txt
+      - requirements.lock
+      - requirements-ci.lock
+      - scripts/build-linux.sh
+      - scripts/build-sbom.py
+      - scripts/linux_entry.py
+      - scripts/hwi_entry.py
+      - gui.py
+      - probe.py
+      - desktop.py
+      - wallet_service.py
+      - signing.py
+      - safe_http.py
+      - network_config.py
+      - network_settings.py
+      - version.py
+      - ui.html
+      - tests/**
+      - vendor/**
+      - assets/**
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to the version's release page instead of only building a candidate"
+        type: boolean
+        default: false
+      candidate_run_id:
+        description: "Run id of the successful candidate whose bytes are being promoted. Required when publish is true."
+        type: string
+        required: false
+        default: ""
+      release_tag:
+        description: "Release page to attach to. Must be the plain version tag, for example v0.6.4. Required when publish is true."
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      commit: ${{ steps.read.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: read
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^APP_VERSION = "\(.*\)"$/\1/p' version.py)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version.py does not declare a version: '$version'" >&2
+            exit 1
+          fi
+          if [[ "$PUBLISH" == "true" ]]; then
+            if [[ "$GITHUB_REF" != "refs/heads/linux-port" ]]; then
+              echo "Linux releases are dispatched from linux-port, not $GITHUB_REF." >&2
+              exit 1
+            fi
+            if [[ ! "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo "publish=true requires candidate_run_id: the run whose bytes are being promoted." >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux x86_64 AppImage
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          # HWI 3.2.0 (the bundled hardware-wallet dependency) requires <3.13.
+          python-version: "3.12"
+      - name: Install the test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements.lock
+          # PyYAML only lints the workflow; its own lock keeps it out of the
+          # packaged application. Without it the lint module skips, and a skip
+          # looks exactly like success.
+          python -m pip install --require-hashes -r requirements-ci.lock
+      - name: Run the suite and refuse a silent skip
+        run: |
+          set -euo pipefail
+          output="$(python -m unittest discover -s tests 2>&1)" || status=$?
+          echo "$output"
+          if [ "${status:-0}" -ne 0 ]; then
+            echo "The test suite failed." >&2
+            exit 1
+          fi
+          if grep -qE "skipped=[1-9]" <<<"$output"; then
+            echo "Tests were skipped; a dependency is missing." >&2
+            exit 1
+          fi
+          for test in tests/ui_*.cjs; do
+            echo "== $test"
+            node "$test"
+          done
+      - name: Install the packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          # squashfs-tools provides mksquashfs, the AppImage payload format.
+          # librsvg2-bin rasterises assets/icon.svg into the AppDir icon.
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools librsvg2-bin build-essential
+      - name: Prepare the hash-locked build environment
+        env:
+          # The lock is resolved on Linux and pinned by hash; this step is the
+          # only place it is installed, so a lock that does not match its
+          # requirements file fails here rather than inside a build.
+          PREPARE_ONLY: "1"
+        run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+      - name: Build the AppImage and the tarball
+        env:
+          BUILD_DEPS_PREPARED: "1"
+        run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+      - name: Name the files for one release page with every platform
+        run: |
+          set -euo pipefail
+          cd dist
+          mv BUILD-SBOM.json BUILD-SBOM-linux-x86_64.json
+          sha256sum Bitcoin-Easy-Signer-*-linux-x86_64.AppImage \
+                    Bitcoin-Easy-Signer-*-linux-x86_64.tar.gz \
+                    BUILD-SBOM-linux-x86_64.json > SHA256SUMS-linux-x86_64.txt
+          sha256sum -c SHA256SUMS-linux-x86_64.txt
+          cat SHA256SUMS-linux-x86_64.txt
+          {
+            echo "version=${{ needs.version.outputs.version }}"
+            echo "commit=${{ needs.version.outputs.commit }}"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "publish=${{ inputs.publish }}"
+            echo "release_tag=${{ inputs.release_tag }}"
+          } > CANDIDATE-MANIFEST.txt
+          cat CANDIDATE-MANIFEST.txt
+          ls -l
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-desktop
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, linux]
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Download the candidate bytes, not a rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          # A push run cannot be promoted: it was never dispatched, so nobody
+          # chose its inputs and it was not reviewed as a release candidate.
+          event="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" --jq '.event')"
+          if [[ "$event" != "workflow_dispatch" ]]; then
+            echo "Candidate run $CANDIDATE_RUN_ID was a '$event' run; only a dispatched candidate may be promoted." >&2
+            exit 1
+          fi
+          mkdir -p dist
+          gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name linux-desktop --dir dist
+          ls -l dist
+      - name: Verify the candidate by identity, not by hope
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cd dist
+          grep -Fx "version=${{ needs.version.outputs.version }}" CANDIDATE-MANIFEST.txt
+          grep -Fx "commit=${{ needs.version.outputs.commit }}" CANDIDATE-MANIFEST.txt
+          grep -Fx "run_id=${{ inputs.candidate_run_id }}" CANDIDATE-MANIFEST.txt
+          grep -Fx "publish=false" CANDIDATE-MANIFEST.txt
+          # The candidate was built without a release tag; the promotion names
+          # the page it may join, and that name is checked again below.
+          grep -Fx "release_tag=" CANDIDATE-MANIFEST.txt
+          sha256sum -c SHA256SUMS-linux-x86_64.txt
+          test -f "$(ls Bitcoin-Easy-Signer-*-linux-x86_64.AppImage)"
+          test -f "$(ls Bitcoin-Easy-Signer-*-linux-x86_64.tar.gz)"
+      - name: Refuse to publish anywhere but the version's own page
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "Attach only to the plain version tag (v$version); got '$RELEASE_TAG'." >&2
+            exit 1
+          fi
+          tag_status=0
+          git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1 || tag_status=$?
+          if [[ "$tag_status" != "0" ]]; then
+            echo "The release for $RELEASE_TAG does not exist yet." >&2
+            echo "Publish the macOS release for $version first; this build joins $RELEASE_TAG." >&2
+            exit 1
+          fi
+      - name: Attach the Linux files without replacing anything
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.version.outputs.version }}"
+          cd dist
+          appimage="$(ls Bitcoin-Easy-Signer-*-linux-x86_64.AppImage)"
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name')"
+          for asset in "$appimage" \
+                       "$(ls Bitcoin-Easy-Signer-*-linux-x86_64.tar.gz)" \
+                       BUILD-SBOM-linux-x86_64.json SHA256SUMS-linux-x86_64.txt; do
+            if grep -Fxq "$asset" <<<"$existing"; then
+              echo "$RELEASE_TAG already carries $asset; a published asset is never replaced." >&2
+              exit 1
+            fi
+          done
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .body > existing-notes.md
+          cat > linux-section.md <<NOTES
+
+          ---
+
+          ## Linux x86_64
+
+          \`$appimage\` is the whole app in one file: make it executable and run it.
+          \`Bitcoin-Easy-Signer-v$version-linux-x86_64.tar.gz\` is the same app for a machine
+          where an AppImage cannot mount itself; unpack it and run \`./run-me.sh\`.
+
+          The launcher inside the AppImage is loaded from a pinned, statically linked
+          AppImage runtime, so it does not need the host's \`libfuse.so.2\` -- the library
+          whose absence has always made a downloaded AppImage do nothing at all on a
+          modern Ubuntu.
+
+          Hardware wallets reach the app through udev rules, which travel inside both
+          artifacts. From the AppImage: \`./$appimage --dsh-install-udev-rules\`.
+
+          This build was not code-signed. It is a separate codebase from the audited
+          macOS build and has not been through that audit.
+          NOTES
+          cat existing-notes.md linux-section.md > notes.md
+          # Upload first, then the notes: a failed note update then leaves a
+          # complete page, and a retry fails on the asset names instead of
+          # double-attaching.
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            "$appimage" \
+            "$(ls Bitcoin-Easy-Signer-*-linux-x86_64.tar.gz)" \
+            BUILD-SBOM-linux-x86_64.json SHA256SUMS-linux-x86_64.txt
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            -F body=@notes.md >/dev/null
