@@ -14,11 +14,13 @@ import os
 import subprocess
 import sys
 import threading
+import traceback
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import safe_http
 from gui import LocalApp, assert_private_file, launch_url, save_prepared_psbt, ui_path
+from network_settings import settings_path
 from probe import ProbeError, _hwi_path, invoke_hwi
 from wallet_service import WalletError
 
@@ -288,6 +290,53 @@ def run_desktop(webview_module) -> None:
             thread.join(timeout=5)
 
 
+def startup_error_log() -> Path:
+    """Where a window that failed to start leaves its traceback.
+
+    A ``--windowed`` build has no console on any platform, so the app cannot be
+    run "in a terminal" to see why it stopped: a failure to open the window looks
+    like nothing happening at all. The report goes beside the settings file the
+    app already owns, inside the user's own profile.
+    """
+    return settings_path().parent / "desktop-startup-error.log"
+
+
+def windows_error_dialog(title: str, text: str) -> None:
+    """A modal error box, the only way a console-less Windows app can speak."""
+    import ctypes
+
+    ctypes.windll.user32.MessageBoxW(None, text, title, 0x00000010)
+
+
+def report_startup_failure(error: BaseException) -> None:
+    """Say why the window did not open, where the operator can find it.
+
+    Windows has no crash reporter and a windowed build has no console, so a
+    failed start is invisible. The traceback is written next to the app's
+    settings and, on Windows, shown in a message box naming that file.
+    """
+    details = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    destination: Path | None = None
+    try:
+        destination = startup_error_log()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(details, encoding="utf-8")
+    except OSError:
+        destination = None
+    if sys.platform == "win32":
+        where = (
+            f"The full report is in:\n{destination}"
+            if destination is not None
+            else "The report could not be written to disk."
+        )
+        windows_error_dialog(
+            "Bitcoin Easy Signer",
+            f"Bitcoin Easy Signer could not open its window.\n\n{error}\n\n{where}",
+        )
+    else:
+        print(details)
+
+
 def main() -> None:
     configure_packaged_tls()
     if "--check-bundle" in sys.argv[1:]:
@@ -307,8 +356,14 @@ def main() -> None:
             "The desktop window bundle is built for macOS and Windows; "
             "other systems can use gui.py in a browser."
         )
-    import webview
-    run_desktop(webview)
+    try:
+        import webview
+        run_desktop(webview)
+    except Exception as error:
+        # Nothing is watching stderr in a windowed build, so an unreported failure
+        # here is indistinguishable from the app doing nothing at all.
+        report_startup_failure(error)
+        raise SystemExit(1) from error
 
 
 if __name__ == "__main__":

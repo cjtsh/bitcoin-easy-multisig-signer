@@ -169,3 +169,13 @@ build has no console on Windows — `sys.stdout` is `None` and `print` writes no
 the workflow reads that file. A check that exits 0 while producing no report fails
 the build, which is the point: a silent pass would otherwise be indistinguishable
 from a check that never ran.
+
+The same blindness applies to the window itself once the release is in a user's
+hands. If `webview.start()` raises — no WebView2 runtime, a missing native
+dependency, a corrupted unpack — a `--windowed` build shows nothing at all, and the
+only evidence available is "I double-clicked it and nothing happened", which cannot
+be acted on. So `main()` catches a failed start, writes the traceback to
+`desktop-startup-error.log` beside the app's settings file, and on Windows shows the
+error and that path in a message box. The dialog exists because a console-less
+build has no other way to speak; the file exists because a screenshot of a dialog
+is not a bug report.

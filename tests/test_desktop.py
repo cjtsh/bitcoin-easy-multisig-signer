@@ -2,6 +2,7 @@
 
 import base64
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,11 +10,12 @@ from types import SimpleNamespace
 from urllib.request import urlopen
 from unittest.mock import patch
 
+import desktop
 import safe_http
 from support import real_ca_bundle
 from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources,
                      check_device_bridge, check_psbt_save, configure_packaged_tls,
-                     main, report, run_desktop, webview_renderer)
+                     main, report, report_startup_failure, run_desktop, webview_renderer)
 from probe import ProbeError
 from gui import LocalApp, PreparedPayment, assert_private_file, ui_path
 from dataclasses import replace
@@ -340,6 +342,49 @@ class SelfCheckReportTests(unittest.TestCase):
         ):
             check_bundle_resources()
         self.assertIn("check out", self.log.read_text(encoding="utf-8"))
+
+
+class StartupFailureTests(unittest.TestCase):
+    """A window that will not open must say why; a --windowed build has no console."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.settings = Path(self.temp.name) / "settings.json"
+        path_patch = patch("desktop.settings_path", return_value=self.settings)
+        path_patch.start()
+        self.addCleanup(path_patch.stop)
+        self.log = Path(self.temp.name) / "desktop-startup-error.log"
+
+    def test_a_failed_start_writes_the_traceback_beside_the_settings(self):
+        report_startup_failure(ValueError("the WebView2 runtime is missing"))
+        text = self.log.read_text(encoding="utf-8")
+        self.assertIn("ValueError", text)
+        self.assertIn("the WebView2 runtime is missing", text)
+
+    def test_windows_also_shows_a_dialog_naming_the_report(self):
+        with patch.object(desktop, "windows_error_dialog") as dialog, patch.object(
+            desktop.sys, "platform", "win32"
+        ):
+            report_startup_failure(ValueError("no edge"))
+        dialog.assert_called_once()
+        title, text = dialog.call_args.args[:2]
+        self.assertEqual(title, "Bitcoin Easy Signer")
+        self.assertIn("could not open its window", text)
+        self.assertIn("no edge", text)
+        self.assertIn(str(self.log), text)
+
+    def test_main_reports_a_window_that_fails_instead_of_dying_silently(self):
+        with patch.dict(sys.modules, {"webview": SimpleNamespace()}), patch.object(
+            desktop.sys, "platform", "win32"
+        ), patch.object(
+            desktop, "run_desktop", side_effect=RuntimeError("no window toolkit")
+        ), patch.object(desktop, "report_startup_failure") as reported:
+            with self.assertRaises(SystemExit) as caught:
+                main()
+        self.assertEqual(caught.exception.code, 1)
+        reported.assert_called_once()
+        self.assertIsInstance(reported.call_args.args[0], RuntimeError)
 
 
 if __name__ == "__main__":
