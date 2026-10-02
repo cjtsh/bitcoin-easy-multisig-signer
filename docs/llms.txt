@@ -1,0 +1,13 @@
+# Bitcoin Easy Signer
+
+> Bitcoin Easy Signer is a free, open-source Mac application that helps a trusted person make a payment from an existing supported Bitcoin multisig wallet using one BSMS definition file and the required hardware signers.
+
+The app does not create wallets, hold private keys, or recover seed words. It checks the public wallet identity and funding, prepares a payment, requests signatures on hardware devices, verifies the signed transaction, and requires final review and explicit confirmation before broadcast. It supports native SegWit multisig wallets with two or three total keys; the signing threshold comes from the wallet file. It is intended for spouses, trustees, lawyers, accountants, and other helpers who need to move Bitcoin without having set up the wallet.
+
+## Pages
+
+- [Project homepage](https://bitcoineasysigner.com/): Product overview, scope, download, and safety notice.
+- [User manual](https://bitcoineasysigner.com/user-manual.html): Plain-language payment walkthrough and limitations.
+- [Privacy notice](https://bitcoineasysigner.com/privacy.html): Website and app data handling.
+- [Current release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/latest): Signed Mac download and release files.
+- [Source and release history](https://github.com/cjtsh/bitcoin-easy-multisig-signer): Public source, version evidence, and documentation.

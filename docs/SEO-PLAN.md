@@ -1,37 +1,37 @@
-# Website SEO and sharing handoff
+# Search and sharing notes for Bitcoin Easy Signer
 
-## Canonical site
+## Product description
 
-- Homepage: https://bitcoineasysigner.com/
-- User manual: https://bitcoineasysigner.com/user-manual.html
-- Privacy notice: https://bitcoineasysigner.com/privacy.html
-- Sitemap: https://bitcoineasysigner.com/sitemap.xml
-- Crawler rules: https://bitcoineasysigner.com/robots.txt
+Bitcoin Easy Signer is a free, open-source Mac application that helps a spouse, trustee, lawyer, accountant, or other trusted person make a payment from an existing supported Bitcoin multisig wallet. The wallet owner supplies one BSMS definition file and the required hardware signers. The app checks the public wallet identity and funding, prepares the payment, requests hardware signatures, verifies the signed transaction, and broadcasts only after a final review and explicit confirmation. It does not create a wallet, hold private keys, or recover seed words.
 
-The canonical host is the apex HTTPS domain. The pages declare canonical URLs, unique titles and descriptions, Open Graph metadata, and large X cards. The 1200 × 630 PNG share graphic is at `assets/social-card-v2.png`. LinkedIn, WhatsApp, and Telegram generally read Open Graph previews; X reads the Twitter card fields. Share links are also provided on the homepage.
+This is the source of truth for SEO and social copy. Do not describe the product as a wallet, wallet software, wallet creation, an inheritance service, or seed recovery. The supported scope is native SegWit multisig with two or three total keys; the threshold comes from the file. Do not imply that three signatures are always required.
 
-## Search intent and natural language
+## Pages and metadata
 
-Focus the homepage on the product and audience rather than repeating a keyword list:
+- Home: https://bitcoineasysigner.com/ — product and trusted-helper use case.
+- User manual: https://bitcoineasysigner.com/user-manual.html — operator steps and limits.
+- Privacy notice: https://bitcoineasysigner.com/privacy.html — website and app privacy.
+- The homepage title and social copy describe *sending Bitcoin from an existing multisig wallet*. The visible homepage prose is preserved from before this metadata work.
+- Each page has a canonical URL, a distinct description, Open Graph tags and an X large-image card. The share image is `assets/social-card-v3.png` (1200 × 630 PNG). LinkedIn, WhatsApp and Telegram can use the Open Graph tags; X can use its card tags. Share links on the homepage use the same factual language.
 
-- Bitcoin multisig software for families, trustees, and estate professionals
-- Bitcoin multisig user manual for spouses, trustees, and estate professionals
-- free, open-source Bitcoin multisig software for macOS
-- Bitcoin multisig hardware wallet transaction review
-- helping a family member use an existing Bitcoin multisig wallet
+## Search topics
 
-The homepage now names the product category in its title, main heading, description, and share card. The manual targets the related how-to intent in its own title and description. Google does not use the `meta keywords` tag for web ranking, so no keyword-stuffing tag is included. Keep claims aligned with the documented wallet, device, network, and safety scope.
+Use these phrases only where they answer a visitor's question in natural copy. They are search-intent hypotheses, not measured volumes or ranking promises.
 
-## Google Search Console handoff
+- Brand: Bitcoin Easy Signer; Bitcoin Easy Signer user manual.
+- Task: send Bitcoin from an existing multisig wallet; make a Bitcoin multisig payment with hardware signers.
+- Workflow: use a BSMS wallet file to make a payment; review and sign a multisig Bitcoin transaction.
+- Audience context: a spouse, trustee, lawyer, accountant or estate helper who needs to move Bitcoin from an existing wallet.
 
-1. Add the **Domain** property `bitcoineasysigner.com` in Google Search Console.
-2. Copy the exact TXT verification record Google gives you and add it at the domain's DNS provider. Do not guess or reuse a verification token. Once DNS propagates, verify ownership.
-3. Open the verified property, choose **Sitemaps**, enter `sitemap.xml`, and submit it.
-4. Use **URL inspection** for the homepage and `/user-manual.html`; request indexing if available. Indexing and display timing are controlled by Google.
-5. Return to Search Console's Page indexing and Performance reports after Google has crawled the pages.
+Do not target “multisig wallet software”, “create a multisig wallet”, or “recover a seed phrase”. Google does not use `meta keywords` for web ranking, so no keyword list is inserted into page metadata.
 
-Domain-property verification needs a DNS TXT record; this repo cannot create that record because the unique value comes from your Search Console account and DNS host. No analytics tracker is installed. Search Console provides search performance; if you also want visitor analytics later, decide on a privacy notice/consent approach before adding a third-party analytics tag.
+## Crawl and submission
+
+- `robots.txt` allows the public site and points to `sitemap.xml`; the canonical HTML is available without login or client-side rendering. `llms.txt` is a compact, optional map for AI agents. It is an emerging convention, not an indexing guarantee. General crawler access does not guarantee inclusion in search or AI answers.
+- The sitemap contains the three canonical HTML pages. Update it only for real page additions; do not invent `lastmod` timestamps.
+- In Google Search Console, add the Domain property `bitcoineasysigner.com`, verify with the exact DNS TXT record Google supplies, submit `sitemap.xml`, and inspect the homepage and manual URLs. Search Console is distinct from Google Analytics. No analytics tracker is installed; the site's privacy notice says it does not use project-run analytics.
+- After publishing a new card, inspect the live HTML and PNG. Social platforms may cache old previews; use their refresh tools where available and reshare the URL.
 
 ## Maintenance
 
-When page copy or site URLs change, update the matching canonical/social URL and sitemap. Keep share image dimensions at 1200 × 630 and check previews after deployment in each platform's share/debug tool. Share previews may be cached by social platforms.
+When the public app version or its supported scope changes, align the download link, structured data, page metadata, card text and image, and manual. Make claims only where the current release evidence supports them.
