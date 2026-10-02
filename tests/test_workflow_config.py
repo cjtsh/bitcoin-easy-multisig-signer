@@ -196,9 +196,11 @@ class WorkflowConfigTests(unittest.TestCase):
                 continue
             # On stdin, not on a temp file: a Windows temp path handed to bash as
             # C:\Users\... is not the path MSYS bash opens, which makes a valid
-            # block look like a syntax error.
+            # block look like a syntax error. The encoding is explicit because the
+            # YAML carries typographic punctuation and Windows would otherwise
+            # encode stdin with the console code page (cp1252) and raise instead.
             result = subprocess.run([bash, "-n"], input=body, capture_output=True,
-                                    text=True)
+                                    text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0,
                              f"{name}/{step} is not valid shell:\n{result.stderr}")
 
@@ -425,9 +427,12 @@ class ReleaseNotesTests(unittest.TestCase):
             )
             # The script arrives on stdin rather than as a -c argument: bash reads a
             # command string off argv with platform-specific quirks on Windows, and
-            # `shell: bash` feeds the step a file.
+            # `shell: bash` feeds the step a file. The encoding is explicit because
+            # the notes carry typographic punctuation; without it Windows encodes
+            # stdin with the console code page (cp1252) and raises on the arrow.
             result = subprocess.run([bash_executable()], input=script, cwd=work,
-                                    env=environment, capture_output=True, text=True)
+                                    env=environment, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0,
                              f"{result.stderr}\n{result.stdout}")
             return (work / "notes.md").read_text(encoding="utf-8")

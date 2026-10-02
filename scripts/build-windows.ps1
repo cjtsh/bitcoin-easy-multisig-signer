@@ -186,8 +186,11 @@ Write-Host "libusb integrity check passed (sha256 $libusbSha256)."
 # PyInstaller separates --add-data source and destination with the platform path
 # separator, which is ';' here and ':' on macOS. Passing them as array elements
 # keeps PowerShell from treating the semicolon as a statement separator.
+#
+# The array is not called $args: that is one of PowerShell's own automatic
+# variables, and reusing the name invites a subtle failure at the worst moment.
 $appName = 'Bitcoin Easy Signer'
-$args = @(
+$pyInstallerArguments = @(
     '--noconfirm', '--clean', '--windowed', '--onedir', '--name', $appName,
     '--icon', 'assets\AppIcon.ico',
     '--add-data', 'ui.html;.', '--add-data', 'LICENSE;.', '--add-data', 'DISCLAIMER.md;.',
@@ -195,7 +198,7 @@ $args = @(
     '--add-data', 'vendor\libusb-COPYING;.',
     '--collect-data', 'certifi', '--distpath', 'dist', 'desktop.py'
 )
-& $venvPython -m PyInstaller @args
+& $venvPython -m PyInstaller @pyInstallerArguments
 if ($LASTEXITCODE -ne 0) { Fail 'PyInstaller did not build the desktop app.' }
 
 $appDir = Join-Path 'dist' $appName
