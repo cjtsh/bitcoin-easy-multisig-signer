@@ -285,12 +285,8 @@ jobs:
           # BUNDLED store is the one the app configured for use.
           SSL_CERT_FILE=/nonexistent/ca.pem "$exe" --check-network > ca-file.log 2>&1
           SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network > ca-dir.log 2>&1
-      - name: Check the bundle's layout, icon and archive
-        run: |
-          set -euo pipefail
-          ./.build-venv/Scripts/python.exe scripts/verify-windows-bundle.py \
-            --version "${{ needs.version.outputs.version }}" \
-            --sbom dist/BUILD-SBOM.json
+      # The inventory comes first because the layout check reads dist/BUILD-SBOM.json
+      # and refuses a release that ships without one.
       - name: Inventory the built dependencies
         env:
           LIBUSB_SHA256: ${{ vars.LIBUSB_WINDOWS_SHA256 }}
@@ -298,6 +294,12 @@ jobs:
           set -euo pipefail
           ./.build-venv/Scripts/python.exe scripts/build-sbom.py \
             --libusb-sha "$LIBUSB_SHA256" --output dist/BUILD-SBOM.json
+      - name: Check the bundle's layout, icon and archive
+        run: |
+          set -euo pipefail
+          ./.build-venv/Scripts/python.exe scripts/verify-windows-bundle.py \
+            --version "${{ needs.version.outputs.version }}" \
+            --sbom dist/BUILD-SBOM.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-bundle

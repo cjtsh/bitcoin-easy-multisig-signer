@@ -216,10 +216,16 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIn("scripts/verify-windows-bundle.py", layout)
         inventory = self.step_body("Inventory the built dependencies")
         self.assertIn("scripts/build-sbom.py", inventory)
-        # The verification has to happen in the job that built it, before upload.
+        # The verification has to happen in the job that built it, before upload,
+        # and the inventory has to precede the layout check, because that check
+        # reads dist/BUILD-SBOM.json and refuses to pass without one.
         self.assertLess(self.step_index("Verify the built bundle", job="windows"),
                         self.step_index("Inventory the built dependencies", job="windows"))
         self.assertLess(self.step_index("Inventory the built dependencies", job="windows"),
+                        self.step_index("Check the bundle's layout, icon and archive",
+                                        job="windows"))
+        self.assertLess(self.step_index("Check the bundle's layout, icon and archive",
+                                        job="windows"),
                         len(self.jobs["windows"]["steps"]) - 1)
 
     def test_the_uploaded_artifact_is_the_zip_and_the_sbom(self) -> None:
