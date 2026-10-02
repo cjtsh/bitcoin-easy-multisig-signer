@@ -7,8 +7,9 @@ hardware behavior, misleading information, or missing functionality.
 Bitcoin transactions can be irreversible, and a mistake can result in the
 permanent loss of some or all funds.
 
-The current release, 0.5.1, is the first published build with Bitcoin mainnet
-broadcast capability. It runs one engine across Testnet4, Mutinynet and
+The current release, 0.6.1, is an interface release: the transaction and signing
+engine is unchanged from 0.5.1, which was the first published build with Bitcoin
+mainnet broadcast capability. It runs one engine across Testnet4, Mutinynet and
 mainnet, and asks hardware devices to sign through Bitcoin Core HWI (HWI).
 Mainnet submission requires explicit confirmation on the final review screen
 and a backend opt-in; nothing is broadcast automatically. One mainnet

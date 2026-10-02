@@ -111,7 +111,43 @@ engine code is identical in both.
   `.github/workflows/build-candidate.yml` (`workflow_dispatch`, `notarize=true`,
   `publish=false`).
 
-## Candidate build evidence — 0.6.1
+## Published build — 2026-10-02
+
+Published as tag [`v0.6.1`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.1)
+from commit `2977930`, built by workflow run
+[36957927251](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36957927251)
+dispatched with `notarize=true publish=true`. Release published 2026-10-02T03:01:28Z
+with four assets:
+
+- `Bitcoin-Easy-Signer-v0.6.1-macOS.dmg` — 34,870,612 bytes, SHA-256
+  `22f0280fb010fc7595c48a79ae15894a5b24501b351764d99d2f0ccae47cb7d8`
+- `bitcoin-easy-multisig-signer-v0.6.1.tar.gz` — 704,507 bytes, SHA-256
+  `144df834ecae0f983c5c23bf1a86f85509ce0cf00f7dffc6c5d937451e44f5ca`
+- `BUILD-SBOM.json` — SHA-256
+  `b99b7d6a724995d08ffdb5302d06628f31df1efddf4b81563d82cd1688069952`
+- `SHA256SUMS`
+
+Both hashes recomputed from the downloaded release assets match the published
+`SHA256SUMS`. The published DMG is **not byte-identical** to the candidate built
+earlier in run 36956904445 (34,877,254 bytes), because it is a fresh build of the
+same commit; both records are kept, and the published hashes above are the ones
+that apply to the download.
+
+Verified on the downloaded published DMG: `hdiutil verify` VALID; the bundle
+reports `CFBundleShortVersionString 0.6.1`; `codesign -dvvv` reports
+`Authority=Developer ID Application: Bitseeker LLC (B8G5L7M8TB)`,
+`TeamIdentifier=B8G5L7M8TB` and `CDHash=19b8dee9e1107c57aebff95080558fcde842e072`;
+`codesign --verify --strict --deep` OK; `spctl -a -t exec -vv` reports
+`accepted source=Notarized Developer ID`; `xcrun stapler validate` works on the
+app inside the image. Apple's record (`xcrun notarytool history --keychain-profile
+eas-notary`) lists the DMG `ea2fbcf3-c84b-4c7a-8249-ac3b536cbc3b` and the app zip
+`d26e2113-151a-4da3-bd0f-5dcafb9d0814`, both **Accepted**.
+
+The published build has not been installed or opened. Nothing here shows that
+0.6.1 works; the checks show that the published files are the ones the workflow
+built, signed by Bitseeker LLC and notarized by Apple.
+
+## Candidate build evidence — the superseded candidate (run 36956904445, commit `caf8b4f`)
 
 Built by a non-publishing dispatch of the manual build workflow, so the run
 produced artifacts and created no tag and no release.

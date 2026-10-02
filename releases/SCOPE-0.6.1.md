@@ -3,8 +3,9 @@
 Status: **signed off by the owner (m00128: "Use my draft as written", "Yes —
 confirm switches to Mutinynet", "Build it now") and implemented on the
 `dev-mode-0.6.0` branch, off `main` at `fcaa327`.** The implementation, tests and
-documentation are complete, and the release is **not published**: no published
-DMG exists and nothing has been published under any 0.6.x version. `version.py`
+documentation are complete, and the release was **published on 2026-10-02** as
+tag `v0.6.1` from commit `2977930` (workflow run 36957927251), built from this
+branch; nothing was ever published as 0.6.0. `version.py`
 was taken to 0.6.0 for a first candidate and moved to **0.6.1** before
 publication, after the owner opened that candidate and directed that live
 Bitcoin must not be an option inside developer mode (m01190); the amendment at

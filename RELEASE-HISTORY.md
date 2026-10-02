@@ -52,7 +52,7 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
 | **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400`, tagged `v0.5.0-rc1` locally, never pushed or published. **This is the build that made the project's first live mainnet payment** | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
 | **0.5.1** | First published mainnet-broadcast release: publishes the 0.5.0 engine unchanged, corrects the change-address guidance the live run showed to be wrong, and restates the risk language | [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md) |
-| **0.6.1 candidate — not published** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only, since live Bitcoin is the network the gate returns to rather than a card in it. The transaction and signing engine is unchanged from 0.5.1. A signed and notarized 0.6.0 candidate was built from `f147141` in run 36954844052 and is superseded before publication: no 0.6.x tag and no 0.6.x release exist | [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md), [`releases/SCOPE-0.6.1.md`](releases/SCOPE-0.6.1.md) |
+| **0.6.1** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only, since live Bitcoin is the network the gate returns to rather than a card in it. The transaction and signing engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.1` from commit `2977930` (run 36957927251). A first candidate carried the same idea at 0.6.0 from `f147141` in run 36954844052 and is superseded before publication, so no 0.6.0 tag or release exists | [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md), [`releases/SCOPE-0.6.1.md`](releases/SCOPE-0.6.1.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -811,9 +811,12 @@ repository. It is public, and this is the owner's live wallet.
 The full record, including the artifact hashes, is in
 [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md).
 
-## 0.6.1 candidate — the practice networks move behind a gate
+## 0.6.1 — the practice networks move behind a gate
 
-**Not published.** The published release remains 0.5.1. The version moved from
+**Published 2026-10-02** as tag `v0.6.1` from commit `2977930`, built by workflow
+run 36957927251: source archive
+`144df834ecae0f983c5c23bf1a86f85509ce0cf00f7dffc6c5d937451e44f5ca`, DMG
+`22f0280fb010fc7595c48a79ae15894a5b24501b351764d99d2f0ccae47cb7d8`. The version moved from
 0.6.0 to 0.6.1 before publication: the owner opened the first candidate and
 directed that live Bitcoin must not be an option inside developer mode (m01190),
 so the gate now offers the two practice networks only and the gate button is the
@@ -919,6 +922,7 @@ published, read back from the `SHA256SUMS` attached to each GitHub release.
 | `v0.4.13` | `351e126` | `f61b58265c4539467fb33e3d0a26d8373a15cbe78301859620b0d4b6ec65f97a` | `d961255d788ef39dbb4b04667bbc73316bedbdb2dce05c685cdd4a3af74a7c0d` |
 | `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
 | `v0.5.1` | `e833162` | `b1b3f7e4018fdd1d94758867ccaa05fd083c35f7624bc1ad2ba8abb1ee1c8ba9` | `73691cc4fd71591cd53acc22f08273a97b20cf09593e6c8009bd5b39706387d0` |
+| `v0.6.1` | `2977930` | `144df834ecae0f983c5c23bf1a86f85509ce0cf00f7dffc6c5d937451e44f5ca` | `22f0280fb010fc7595c48a79ae15894a5b24501b351764d99d2f0ccae47cb7d8` |
 
 `v0.4.14` resolves to `d530a221de87`, the commit the published assets were built from.
 
