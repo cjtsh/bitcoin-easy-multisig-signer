@@ -125,6 +125,19 @@ artifacts stay on the workflow run. No `v0.6.0` tag exists and
   `source=no usable signature`. That is expected and unchanged from every
   published 0.4.12+ release — the app inside is signed and notarized, and the
   stapled ticket is what Gatekeeper assesses on a normal double-click.
+- Notarization, from Apple's own submission history (`xcrun notarytool history`)
+  and the per-submission logs (`xcrun notarytool log`): the app zip was submission
+  `81f48a4e-e06f-4b28-9680-20fcfd724e10` (uploaded 02:19:26Z, **Accepted**) and the
+  DMG was submission `58b5f4b8-e73b-48a4-9a5e-d372be8d68cd` (uploaded 02:20:13Z,
+  **Accepted**), both with `issues: None`. The DMG's `ticketContents` names the
+  app's CDHash `bddc6c8c1bd067e09ae60c3062c3b5b9e00f2347`, which is the CDHash
+  reported by `codesign -dvvv` for the app inside the downloaded image, so the
+  ticket belongs to exactly this build. No submission timed out and none had to be
+  retried: a rejected submission cannot be stapled, and the staple is present.
+- For comparison, Apple's history shows the retry pattern this project has hit
+  before — two submissions for v0.4.14 and five for v0.4.13, all Accepted; each
+  version in the history has an Accepted DMG and an Accepted app zip, including
+  the published v0.5.1.
 - Not yet done: the candidate has not been installed, opened or used by the owner.
   Until that happens, nothing here is evidence that 0.6.0 works, and no claim
   should be made that it has been tested.
