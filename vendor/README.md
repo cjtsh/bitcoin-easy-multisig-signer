@@ -76,7 +76,12 @@ Until a digest is recorded here, in `$reviewedLibusbSha256` in
 variable, the Windows build and the vendor test both fail closed rather than
 accept whatever file happens to be in `vendor/`.
 
-Build settings used, so the DLL can be rebuilt and compared: Visual Studio 2022
-x64, with `LIBUSB_BUILD_EXAMPLES=OFF`, `LIBUSB_BUILD_TESTS=OFF`,
-`LIBUSB_BUILD_TESTING=OFF`, `LIBUSB_BUILD_BENCHMARKS=OFF` and
-`LIBUSB_ENABLE_UDEV=OFF`. `libusb-COPYING` above is the license for both builds.
+Build settings used, so the DLL can be rebuilt and compared: libusb's own MSVC
+project, `msvc\libusb_dll.vcxproj` from inside this same tarball, built with
+MSBuild and the Visual Studio 2022 x64 toolset as `Release-MT` -- the `-MT`
+variant links the C runtime statically, so the shipped DLL does not make the app
+depend on the Visual C++ redistributable. `libusb-1.0.30.tar.bz2` is the
+autotools `make dist` archive: it carries `configure`, the MSVC projects and a
+pre-generated `msvc\config.h`, but no `CMakeLists.txt`, which is why the MSVC
+project is used rather than CMake. `libusb-COPYING` above is the license for both
+builds.

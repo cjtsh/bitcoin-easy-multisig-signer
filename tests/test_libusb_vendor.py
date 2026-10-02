@@ -72,9 +72,14 @@ class LibusbVendorTests(unittest.TestCase):
         text = inputs.read_text(encoding="utf-8")
         self.assertIn(LIBUSB_SOURCE_SHA256, text)
         self.assertIn(LIBUSB_SOURCE, text)
-        # It compiles for x64 and turns off everything that is not the library.
-        self.assertIn("-A x64", text)
-        self.assertIn("LIBUSB_BUILD_TESTS=OFF", text)
+        # The tarball is the autotools dist, so the DLL comes from libusb's own
+        # MSVC project -- x64, Release, static C runtime -- and not from CMake.
+        self.assertIn(r"msvc\libusb_dll.vcxproj", text)
+        self.assertIn("/p:Platform=x64", text)
+        self.assertIn("/p:Configuration=Release-MT", text)
+        # No CMake step survives: the pinned tarball has nothing for it to read.
+        self.assertNotIn("cmake -S", text)
+        self.assertNotIn("cmake --build", text)
 
 
 if __name__ == "__main__":

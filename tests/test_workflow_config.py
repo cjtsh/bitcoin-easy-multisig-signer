@@ -178,7 +178,14 @@ class WorkflowConfigTests(unittest.TestCase):
     def test_the_libusb_input_is_compiled_from_the_pinned_source(self) -> None:
         inputs = INPUTS_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf", inputs)
-        self.assertIn("cmake", inputs)
+        # The pinned tarball is libusb's autotools dist: it carries the MSVC
+        # projects and configure, but no CMakeLists.txt, so the DLL is built with
+        # upstream's own MSVC project rather than with CMake.
+        self.assertIn(r"msvc\libusb_dll.vcxproj", inputs)
+        self.assertIn("/p:Platform=x64", inputs)
+        # A statically linked C runtime keeps the Visual C++ redistributable out
+        # of the install instructions.
+        self.assertIn("/p:Configuration=Release-MT", inputs)
         self.assertIn("LIBUSB_WINDOWS_SHA256", inputs)
 
     # ---- the build itself -------------------------------------------------

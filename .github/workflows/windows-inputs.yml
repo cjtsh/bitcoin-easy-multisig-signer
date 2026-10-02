@@ -87,15 +87,26 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path .windows-inputs -Force | Out-Null
           tar -xjf vendor\libusb-1.0.30.tar.bz2 -C .windows-inputs
-          if (-not (Test-Path .windows-inputs\libusb-1.0.30\CMakeLists.txt)) { throw 'the tarball did not unpack as expected' }
-          cmake -S .windows-inputs\libusb-1.0.30 -B .windows-inputs\cmake-build `
-            -G 'Visual Studio 17 2022' -A x64 `
-            -DLIBUSB_BUILD_EXAMPLES=OFF -DLIBUSB_BUILD_TESTS=OFF `
-            -DLIBUSB_BUILD_TESTING=OFF -DLIBUSB_BUILD_BENCHMARKS=OFF `
-            -DLIBUSB_ENABLE_UDEV=OFF
-          if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }
-          cmake --build .windows-inputs\cmake-build --config Release
-          if ($LASTEXITCODE -ne 0) { throw 'cmake build failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'unpacking the pinned libusb tarball failed' }
+          # The release tarball is the autotools dist: it ships configure and
+          # libusb's own MSVC projects, but no CMakeLists.txt. CMake is therefore
+          # not an option and the MSVC project is upstream's Windows build.
+          $project = '.windows-inputs\libusb-1.0.30\msvc\libusb_dll.vcxproj'
+          if (-not (Test-Path $project)) { throw 'the tarball did not unpack as expected' }
+          $msbuild = (Get-Command msbuild -ErrorAction SilentlyContinue).Source
+          if (-not $msbuild) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+            if (Test-Path $vswhere) {
+              $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild `
+                -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+            }
+          }
+          if (-not $msbuild) { throw 'MSBuild was not found on this runner' }
+          Write-Host "MSBuild: $msbuild"
+          # Release-MT links the C runtime statically, so the DLL this repo ships
+          # does not make the app need the Visual C++ redistributable.
+          & $msbuild $project /p:Configuration=Release-MT /p:Platform=x64 /m /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'the libusb MSVC build failed' }
           # The licence must be the same file the repository ships, because the DLL
           # is redistributed under it.
           if (-not (Get-FileHash .windows-inputs\libusb-1.0.30\COPYING -Algorithm SHA256).Hash.Equals(
