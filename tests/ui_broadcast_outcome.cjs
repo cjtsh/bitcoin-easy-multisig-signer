@@ -52,12 +52,14 @@ const EXPLORER = 'https://mutinynet.com/tx/' + TXID;
 const route = {
   broadcast: {txid: TXID, explorer: EXPLORER, network: 'mutinynet'},
 };
+const sentBodies = [];
 const reply = (body) => Promise.resolve({ok: true, json: async () => body});
 const reject_ = (body) => Promise.resolve({ok: false, json: async () => body});
 const context = vm.createContext({
   document, location: {hash: '#token=test'},
-  fetch: (url) => {
+  fetch: (url, options) => {
     if (url === '/api/broadcast') {
+      sentBodies.push(JSON.parse((options && options.body) || '{}'));
       return route.reject ? reject_(route.reject) : reply(route.broadcast);
     }
     if (url === '/api/scan') return reply({});
@@ -113,7 +115,37 @@ const arm = () => {
     'and must tell the operator not to resend');
   assert.equal(get('pending-payment').hidden, false, 'the banner mirrors the unknown state too');
 
+  // --- a retired review must not leave its network behind ----------------------
+  // The broadcast posts mainnet_opt_in from finalChain. A payment finalized on
+  // mainnet and then retired must not leave "main" in that variable, or the next
+  // practice-network payment would ask the backend to opt in to mainnet.
+  route.reject = undefined;
+  vm.runInContext('preparationId = "mainnet-review"; finalTxid = "' + TXID + '"; '
+    + 'finalChain = "main";', context);
+  vm.runInContext('invalidateReview();', context);
+  assert.equal(vm.runInContext('finalChain', context), null,
+    'retiring a review must also retire the chain the mainnet opt-in is read from');
+  sentBodies.length = 0;
+  arm();
+  await settle();
+  assert.equal(sentBodies.length, 1, 'the broadcast still goes out after a retired review');
+  assert.equal(sentBodies[0].mainnet_opt_in, false,
+    'a payment finalized on no network must not inherit the mainnet opt-in');
+  assert.equal(sentBodies[0].confirmed_txid, TXID, 'and still names the transaction it was given');
+
+  // The flag must still work when the payment in front of the operator really was
+  // finalized on mainnet.
+  sentBodies.length = 0;
+  vm.runInContext('preparationId = "mainnet-review-2"; finalTxid = "' + TXID + '"; '
+    + 'finalChain = "main";', context);
+  get('broadcast').disabled = false;
+  get('broadcast').listeners.click();
+  await settle();
+  assert.equal(sentBodies[0].mainnet_opt_in, true,
+    'a payment finalized on mainnet still carries the opt-in the backend requires');
+
   console.log('Broadcast outcome: shown in place for both a sent payment and an unknown result, '
-    + 'with the txid and explorer link.');
+    + 'with the txid and explorer link; a retired review leaves no network behind for the '
+    + 'next payment to inherit.');
 })().catch((error) => { console.error(error); process.exit(1); });
 

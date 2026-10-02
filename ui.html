@@ -1225,7 +1225,10 @@
       // A browser page can survive multiple payments. Retire every visible and
       // actionable part of the previous review before a new request starts.
       sendActionId++;
-      currentPsbt = null; preparationId = null; finalTxid = null;
+      // The finalized network belongs to this review too: the broadcast posts
+      // mainnet_opt_in from it, so a retired review must not leave its chain
+      // behind for a later payment to inherit.
+      currentPsbt = null; preparationId = null; finalTxid = null; finalChain = null;
       reviewAmountSats = null; reviewFeeSats = null;
       $("review").hidden = true; $("download").disabled = true;
       $("next-signers").disabled = true; $("signer-step").hidden = true;
@@ -1844,7 +1847,7 @@
         devices: result.signable || [],
       };
       step.hidden = false;
-      if (reset) { $("finalize-step").hidden = true; finalTxid = null; }
+      if (reset) { $("finalize-step").hidden = true; finalTxid = null; finalChain = null; }
       renderSignerSlots();
       if (!signerState.devices.length) {
         setText("sign-progress", "No signing device is readable right now. Unlock the device, "
@@ -2008,7 +2011,7 @@
       }
       // Keep the panel visible so the confirmation can be read, but retire every
       // value it was showing: the signed bytes are gone and must not look live.
-      finalTxid = null; preparationId = null;
+      finalTxid = null; finalChain = null; preparationId = null;
       $("confirm-broadcast").checked = false; $("broadcast").disabled = true;
       $("clear-signed").disabled = true;
       for (const id of ["final-amount", "final-fee", "final-vsize", "final-signers",

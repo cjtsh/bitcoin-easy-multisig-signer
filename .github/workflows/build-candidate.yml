@@ -425,7 +425,8 @@ jobs:
             network the gate returns to, not one of its options.
             Send All is never preselected; a nonstandard wallet without an established
             change branch explains why a smaller payment is unavailable.
-          - Clears old signer/final details whenever a new payment is prepared.
+          - Clears old signer/final details whenever a new payment is prepared,
+            including the network the retired final screen was bound to.
             Rechecks selected confirmed outputs before preparation and broadcast;
             a lost broadcast response is treated as outcome unknown, never retried.
           - Broadcasts on the selected network after a separate confirmation. Mainnet

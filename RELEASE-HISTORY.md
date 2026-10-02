@@ -52,6 +52,7 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
 | **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400`, tagged `v0.5.0-rc1` locally, never pushed or published. **This is the build that made the project's first live mainnet payment** | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
 | **0.5.1** | First published mainnet-broadcast release: publishes the 0.5.0 engine unchanged, corrects the change-address guidance the live run showed to be wrong, and restates the risk language | [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md) |
+| **0.6.2 candidate — not published** | Internal state fix: retiring a review also retires the network it was bound to, so the mainnet opt-in posted with a broadcast can never be inherited from an earlier payment. No user-visible change; the engine is unchanged from 0.5.1 | [`releases/PATCH-0.6.2.md`](releases/PATCH-0.6.2.md) |
 | **0.6.1** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only, since live Bitcoin is the network the gate returns to rather than a card in it. The transaction and signing engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.1` from commit `2977930` (run 36957927251). A first candidate carried the same idea at 0.6.0 from `f147141` in run 36954844052 and is superseded before publication, so no 0.6.0 tag or release exists | [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md), [`releases/SCOPE-0.6.1.md`](releases/SCOPE-0.6.1.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
@@ -810,6 +811,30 @@ repository. It is public, and this is the owner's live wallet.
 
 The full record, including the artifact hashes, is in
 [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md).
+
+## 0.6.2 candidate — retiring a review also retires its network
+
+**Not published.** The owner chose this fix as the next release (m01412), after
+0.6.1 was published.
+
+`ui.html`'s `invalidateReview()` cleared `finalTxid` but left `finalChain`, and
+the two other places that retire a review had the same gap: the clear-signed
+handler and the signer-step reset. `finalChain` is what the broadcast posts as
+`mainnet_opt_in`, so a stale value from a retired review was the one way the
+mainnet opt-in could be derived from the wrong payment. It was not reachable —
+a broadcast also needs a current `finalTxid`, which is only ever set beside
+`finalChain` — so this is hygiene and defence in depth rather than a live fund
+risk, and it is recorded that way rather than as a vulnerability.
+
+All three sites now clear the chain with the rest of the review, and
+`tests/ui_broadcast_outcome.cjs` reads the broadcast request body to pin three
+things: a retired review leaves no network behind, a broadcast with no finalized
+network sends `mainnet_opt_in: false`, and a payment genuinely finalized on
+mainnet still sends `true`. The new assertions were checked against the unfixed
+file, where they fail on the first of the three.
+
+Nothing about how a payment is built, signed, finalized or submitted changed;
+the engine is unchanged from 0.5.1.
 
 ## 0.6.1 — the practice networks move behind a gate
 
