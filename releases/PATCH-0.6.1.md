@@ -1,7 +1,11 @@
 # v0.6.1 — developer-mode network gate
 
-**Status: candidate. Not published yet.** No 0.6.x version has been published; the
-published release remains
+**Status: candidate. Not published yet.** A signed and notarized 0.6.1 candidate
+was built in workflow run
+[36956904445](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36956904445)
+from commit `caf8b4f` with a non-publishing dispatch; its evidence is recorded
+below and the artifact has not yet been installed or opened, so nothing yet shows
+that 0.6.1 works. No 0.6.x version has been published; the published release remains
 [v0.5.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.5.1).
 
 The version moved from 0.6.0 to 0.6.1 before publication, so nothing was ever
@@ -106,6 +110,48 @@ engine code is identical in both.
   not the reviewed artifact. The candidate was built in CI by
   `.github/workflows/build-candidate.yml` (`workflow_dispatch`, `notarize=true`,
   `publish=false`).
+
+## Candidate build evidence — 0.6.1
+
+Built by a non-publishing dispatch of the manual build workflow, so the run
+produced artifacts and created no tag and no release.
+
+- Workflow run
+  [36956904445](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36956904445),
+  head commit `caf8b4f`, queued 2026-10-02T02:42:58Z, all five jobs successful,
+  dispatched with `notarize=true` and `publish=false`. The publish job logged
+  `==> Candidate build: v0.6.1 was built and NOT published.` The repository's
+  releases still end at v0.5.1 and `git ls-remote --tags origin 'refs/tags/v0.6*'`
+  is empty.
+- `Bitcoin-Easy-Signer-v0.6.1-macOS.dmg` — 34,877,254 bytes, SHA-256
+  `ce4f8a781fec2657d42fa8459b0f9d0d40e6bd4c195fa8d3df26ab85bc7b565e`
+- `bitcoin-easy-multisig-signer-v0.6.1.tar.gz` — SHA-256
+  `8c52b38a139cc4878ed9dbe21ce448a0f553941561d7e6ec6bb6f6d293eea54e`
+- `BUILD-SBOM.json` — SHA-256
+  `65c4a3f4ba574bb1b4bd53aafe38a7db931cb992809285b27feab98acf4663bd`
+
+All three hashes match the run's `SHA256SUMS`. The workflow artifacts expire
+2026-12-31T02:43:01Z.
+
+Verification of the downloaded file: `hdiutil verify` reports the checksum VALID;
+the mounted bundle reports `CFBundleShortVersionString 0.6.1`; `codesign -dvv`
+reports `Authority=Developer ID Application: Bitseeker LLC (B8G5L7M8TB)` and
+`TeamIdentifier=B8G5L7M8TB`; `codesign --verify --strict --deep` is OK;
+`spctl -a -t exec -vv` on the app reports `accepted source=Notarized Developer ID`;
+`xcrun stapler validate` works on the app inside the image and on the disk image
+itself. Apple's own record (`xcrun notarytool history --keychain-profile
+eas-notary`) lists the app zip `1c5a990b-37ab-4bcf-8e8a-dbbf5191b8be` and the DMG
+`e00f19a2-3a37-4c1a-b818-714d17345c15`, both **Accepted** with `issues: None`. The
+DMG submission's `ticketContents` contains the app's CDHash
+`5a314ab32963f80bbc05f6e20f0c714c7776dee8`, which is exactly the CDHash
+`codesign -dvvv` reports for the app inside the downloaded image, so the ticket
+belongs to this build.
+
+A copy was placed at `~/Downloads/Bitcoin-Easy-Signer-v0.6.1-macOS.dmg` with the
+same SHA-256. The candidate has **not been installed or opened**. Nothing here
+shows that 0.6.1 works: the checks show that the artifact is the one the workflow
+built, signed by Bitseeker LLC and notarized by Apple. The owner's walkthrough is
+what would close that gap.
 
 ## Candidate build evidence — the superseded 0.6.0 candidate
 
