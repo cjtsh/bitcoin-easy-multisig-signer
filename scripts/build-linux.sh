@@ -39,6 +39,10 @@ REVIEWED_LIBUSB_VERSION="1.0.30"
 
 APP_SLUG="bitcoin-easy-signer"
 DISPLAY_NAME="Bitcoin Easy Signer"
+# The name of the FILES, as opposed to the name the desktop shows. A file
+# name with a space in it arrives as %20 and has to be quoted everywhere;
+# the other platforms' artifacts are hyphenated for the same reason.
+ARTIFACT_NAME="Bitcoin-Easy-Signer"
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 note() { printf '==> %s\n' "$*"; }
@@ -264,7 +268,7 @@ EOF
 chmod 755 "$appdir/AppRun"
 
 # ---- the AppImage ------------------------------------------------------
-appimage="dist/$DISPLAY_NAME-v$version-linux-x86_64.AppImage"
+appimage="dist/$ARTIFACT_NAME-v$version-linux-x86_64.AppImage"
 note "Packing $appimage"
 rm -f build/appdir.squashfs
 mksquashfs "$appdir" build/appdir.squashfs -root-owned -noappend -comp gzip -no-progress >/dev/null
@@ -297,7 +301,7 @@ done
     || fail "the packed AppImage carries no udev rules"
 
 # ---- the tarball, for a machine with no FUSE at all --------------------
-tarball="dist/$DISPLAY_NAME-v$version-linux-x86_64.tar.gz"
+tarball="dist/$ARTIFACT_NAME-v$version-linux-x86_64.tar.gz"
 note "Packing $tarball"
 tarball_root="build/tarball"
 rm -rf "$tarball_root"
@@ -330,11 +334,11 @@ copied outside this directory.
 
 The AppImage
 ------------
-$DISPLAY_NAME-v$version-linux-x86_64.AppImage from the same release page is
+$ARTIFACT_NAME-v$version-linux-x86_64.AppImage from the same release page is
 the same program in one file: make it executable and run it.
 
-    chmod +x $DISPLAY_NAME-v$version-linux-x86_64.AppImage
-    ./$DISPLAY_NAME-v$version-linux-x86_64.AppImage
+    chmod +x $ARTIFACT_NAME-v$version-linux-x86_64.AppImage
+    ./$ARTIFACT_NAME-v$version-linux-x86_64.AppImage
 
 It should simply start. The launcher inside it does not need libfuse.so.2 --
 the library whose absence has always made a downloaded AppImage do nothing at
@@ -344,7 +348,7 @@ If it still does nothing, your machine has no /dev/fuse or no fusermount
 (Ubuntu: sudo apt install fuse3). You do not need either for this tarball, and
 the AppImage can also start itself without them:
 
-    APPIMAGE_EXTRACT_AND_RUN=1 ./$DISPLAY_NAME-v$version-linux-x86_64.AppImage
+    APPIMAGE_EXTRACT_AND_RUN=1 ./$ARTIFACT_NAME-v$version-linux-x86_64.AppImage
 
 Hardware wallets
 ----------------
@@ -357,7 +361,7 @@ wallet is not detected:
 
 From the AppImage the same thing is one command:
 
-    ./$DISPLAY_NAME-v$version-linux-x86_64.AppImage --dsh-install-udev-rules
+    ./$ARTIFACT_NAME-v$version-linux-x86_64.AppImage --dsh-install-udev-rules
 
 Unplug and replug the device afterwards.
 

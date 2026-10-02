@@ -163,6 +163,13 @@ class LinuxBuildScriptTests(unittest.TestCase):
         self.assertIn("run-me.sh", self.script)
         self.assertIn("linux-x86_64.tar.gz", self.script)
 
+    def test_the_artifact_name_has_no_spaces_in_it(self):
+        # A file name with a space reaches the user as %20 in the download URL
+        # and has to be quoted in every command that touches it.
+        self.assertIn('ARTIFACT_NAME="Bitcoin-Easy-Signer"', self.script)
+        self.assertNotIn('"$DISPLAY_NAME-v$version', self.script)
+        self.assertIn('dist/$ARTIFACT_NAME-v$version-linux-x86_64.AppImage', self.script)
+
     def test_the_image_is_a_concatenation_not_a_second_tool(self):
         self.assertIn("mksquashfs", self.script)
         self.assertIn('cat "$runtime" build/appdir.squashfs > "$appimage"', self.script)
