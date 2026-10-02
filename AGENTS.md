@@ -8,7 +8,8 @@
 4. `RELEASE-HISTORY.md` for the version-by-version record; each entry links its full evidence file where one exists.
 5. `CHANGE-ADDRESS-REVIEW.md` for the BSMS/change trust boundary and the mainnet change-policy gate.
 6. `HWI-DEPENDENCY.md` before touching the Python version, the device list, or a dependency bump. HWI decides which devices work, which Python the app builds on, and when a rebuild is mandatory.
-7. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
+7. `RELEASE-PROCESS.md` before building a DMG or changing release controls. It is the agent-neutral build and promotion contract.
+8. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture
 
@@ -35,6 +36,14 @@ One engine serves Testnet4, Mutinynet and mainnet. `probe.py` parses BSMS and ch
 - Do not commit or emit BSMS records, xpubs, addresses, PSBTs, raw transactions, settings, device paths, or real wallet/test artifacts. Diagnostic reports use only fixed codes, the selected network, a validated device **class** and timestamps. A device model is not an identity: no path, serial, fingerprint, address, error text or other free text may be written, and anything failing that token check is dropped rather than escaped. Rejections are attributed to a real stage via `DIAGNOSTIC_ROUTE_STAGES`; convenience routes (estimates, price, settings, status) record nothing, so chatter cannot crowd the 80-event buffer. A caller that passes `found` always gets the key — `signer_check` writes an explicit `[]` when no usable device was visible, because an absent key is indistinguishable from a field that is never written.
 
 ## Development and release
+
+These rules apply to every coding agent and tool. Follow `RELEASE-PROCESS.md`
+for every candidate and public release. Build only through the checked-in script
+or manually dispatched workflow; keep `publish=false` until the owner has tested
+the signed candidate. Publish the exact verified DMG the owner tested, never a
+silent rebuild under the same version. The workflow defaults to nonpublishing
+and refuses an unsigned public release. Do not skip the dependency, libusb,
+packaged-app, SBOM, checksum, notarization, or hardware acceptance gates.
 
 Use Python 3.12 because bundled downstream dependency Bitcoin Core HWI 3.2.0 declares `Requires-Python >=3.9,<3.13`; Python 3.14 is outside that range. It is the only dependency that caps Python. **`HWI-DEPENDENCY.md` is the canonical record** of the pinned version, supported devices, rebuild triggers and cost of a bump; read it before changing any of them. The desktop build script rejects unsupported versions, both workflow jobs pin 3.12, and both hash lock files were generated for 3.12. Upgrade HWI, regenerate/test locks, and change all pins together before considering a newer Python. Run the full suite, JS syntax, `bash -n`, source archive tests and packaged Apple Silicon checks. Dependency locks are hash-verified. `LIBUSB_SHA256` is mandatory for the Mac build. Publish the CycloneDX `BUILD-SBOM.json` with the DMG and include it in `SHA256SUMS`. The GitHub workflow is manually dispatched; pushes alone must not publish. Never replace an existing release's assets. The current published version is **0.6.2**, a maintenance release whose transaction and signing engine is unchanged from 0.5.1: it retires the network of a finished review together with the review, so a broadcast can never inherit an earlier payment's mainnet opt-in. Version 0.6.1 is the interface release whose transaction and signing engine is unchanged from 0.5.1: it opens on Bitcoin mainnet and reaches Mutinynet and Testnet4 only through the "Enter Developer Mode" gate, whose panel offers those two practice networks and never live Bitcoin. 0.4.15 was the signed/notarized OneKey owner-test candidate, and 0.5.0 was the unpublished mainnet-broadcast candidate whose engine 0.5.1 publishes. Its final screen carries **one** confirmation, which names real Bitcoin; the backend additionally requires a mainnet opt-in flag that `broadcast_transaction` defaults to `False`, so a caller that omits it fails closed. That is one operator checkbox, not two — the backend flag is defence in depth against a caller, not a second human action. Use a new patch version for corrections and update `version.py`, release notes and user-facing version references together.
 

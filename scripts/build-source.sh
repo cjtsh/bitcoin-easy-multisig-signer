@@ -17,7 +17,7 @@ mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci" "$stage/$root/releases"
-cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md PRIVACY.md SECURITY.md CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
+cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md PRIVACY.md SECURITY.md CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
   RELEASE-HISTORY.md PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
   requirements-ci.txt requirements-ci.lock version.py \

@@ -134,6 +134,10 @@ class WorkflowConfigTests(unittest.TestCase):
         trigger = self.data.get("on", self.data.get(True))
         self.assertIn("workflow_dispatch", trigger)
         self.assertNotIn("push", trigger)
+        inputs = trigger["workflow_dispatch"]["inputs"]
+        self.assertIs(inputs["publish"]["default"], False)
+        self.assertIn("Refuse an unsigned public release", self.text)
+        self.assertIn("Refusing to publish an unsigned or unnotarized build", self.text)
 
     def test_a_candidate_dispatch_builds_without_publishing(self):
         """Building and publishing are separate acts.
@@ -142,13 +146,13 @@ class WorkflowConfigTests(unittest.TestCase):
         made the first dispatch of a version the point of no return, so the only way
         to correct an artifact nobody had opened yet was to bump the version. The
         candidate path must leave before the release step creates anything, and
-        publishing must stay the default for a deliberate dispatch.
+        an ordinary dispatch must stay nonpublishing.
         """
         trigger = self.data.get("on", self.data.get(True))
         inputs = trigger["workflow_dispatch"]["inputs"]
         self.assertIn("publish", inputs)
-        self.assertIs(inputs["publish"]["default"], True,
-                      "an ordinary dispatch still publishes; a candidate is opt-in")
+        self.assertIs(inputs["publish"]["default"], False,
+                      "an ordinary dispatch must build only a candidate")
         self.assertIs(inputs["notarize"]["default"], False)
         guard = self.text.index('if [[ "${{ inputs.publish }}" != "true" ]]')
         notes = self.text.index("cat > notes.md <<EOF")

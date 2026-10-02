@@ -38,6 +38,9 @@ turn this record into a release claim until the gates below have evidence.
   `HWI-DEPENDENCY.md`, plus the lack of automatic updates in the user guidance.
 - Update maintainer, safety, and privacy wording; package the safety and privacy
   notices with the next Mac app.
+- Add an agent-neutral `RELEASE-PROCESS.md` and link it from `AGENTS.md` and the
+  local Apple instructions. Make manual dispatch nonpublishing by default and
+  refuse any attempt to publish an unsigned build.
 
 ## Evidence to complete before publication
 

@@ -17,7 +17,7 @@ on:
       publish:
         description: "Publish the GitHub release. Off builds a candidate: the artifacts stay on the run, with no tag and no release."
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -30,6 +30,11 @@ jobs:
       version: ${{ steps.read.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Refuse an unsigned public release
+        if: ${{ inputs.publish && !inputs.notarize }}
+        run: |
+          echo 'Publishing requires a signed and notarized build.' >&2
+          exit 1
       - id: read
         run: |
           echo "version=$(python3 -c 'import version; print(version.APP_VERSION)')" >> "$GITHUB_OUTPUT"
@@ -462,6 +467,10 @@ jobs:
             echo "==> Candidate build: v${VERSION} was built and NOT published."
             cat notes.md
             exit 0
+          fi
+          if [[ "${{ inputs.notarize }}" != "true" ]]; then
+            echo "Refusing to publish an unsigned or unnotarized build." >&2
+            exit 1
           fi
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which

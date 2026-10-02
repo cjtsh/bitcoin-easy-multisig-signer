@@ -122,12 +122,17 @@ libusb_dylib="vendor/libusb-1.0.0.dylib"
 #   LIBUSB_SHA256=<64-hex> bash scripts/build-macos.sh <version>
 # LIBUSB_SHA256 is mandatory: no artifact is built from an unverified dylib.
 libusb_sha256="$(shasum -a 256 "$libusb_dylib" | awk '{print $1}')"
+reviewed_libusb_sha256="8f6ad6c17c16f1e7769ad2f780ed2ddf98234ae6580cf5d87d9648cee1769201"
 if [[ -n "${LIBUSB_SHA256:-}" ]]; then
   [[ "${LIBUSB_SHA256}" =~ ^[0-9a-fA-F]{64}$ ]] || {
     echo "LIBUSB_SHA256 must be a 64-character hex SHA-256 digest." >&2
     exit 1
   }
   libusb_sha256_expected="$(printf '%s' "$LIBUSB_SHA256" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$libusb_sha256_expected" != "$reviewed_libusb_sha256" ]]; then
+    echo "LIBUSB_SHA256 does not match the reviewed libusb input for this source revision." >&2
+    exit 1
+  fi
   if [[ "$libusb_sha256_expected" != "$libusb_sha256" ]]; then
     echo "libusb integrity check FAILED: $libusb_dylib" >&2
     echo "  expected (LIBUSB_SHA256):   $libusb_sha256_expected" >&2
