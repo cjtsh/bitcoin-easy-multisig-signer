@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="850" viewBox="0 0 1360 850" role="img" aria-labelledby="title desc">
+<title id="title">Manual illustration: preparing a payment</title>
+<desc id="desc">Sanitized illustrative interface view based on Bitcoin Easy Signer version 0.6.2. No wallet identifiers or live payment data are shown.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}</style>
+<rect width="1360" height="850" fill="#f5f7fa"/>
+<rect x="3" y="3" width="1354" height="844" rx="18" fill="none" stroke="#f47b20" stroke-width="6"/>
+<rect x="12" y="12" width="1336" height="260" rx="14" fill="#101a26" stroke="#101a26" stroke-width="1"/>
+<text x="45" y="52" fill="#b9c8d7" font-size="14" font-weight="750" letter-spacing="1.4">BITCOIN EASY SIGNER · V0.6.2 · EXPERIMENTAL</text>
+<rect x="1170" y="28" width="145" height="38" rx="19" fill="#304356" stroke="#304356" stroke-width="1"/><text x="1185" y="53" fill="#fff" font-size="14" font-weight="700" >Dark Theme</text>
+<text x="46" y="110" fill="#f4f7fb" font-size="42" font-weight="760" >Bitcoin Easy Signer</text>
+<text x="48" y="147" fill="#c3cfda" font-size="18" font-weight="400" >Open an existing multisig wallet, review a payment, and approve it on the required</text>
+<text x="48" y="174" fill="#c3cfda" font-size="18" font-weight="400" >hardware signers. The app never holds a key.</text>
+<text x="48" y="216" fill="#f4f7fb" font-size="19" font-weight="700" >For a spouse, trustee, lawyer, accountant, or family member.</text>
+<rect x="44" y="304" width="1272" height="448" rx="14" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="77" y="352" fill="#18212b" font-size="27" font-weight="750" >4. Prepare a payment</text>
+<text x="78" y="389" fill="#586777" font-size="16" font-weight="400" >Preparing a payment does not sign or send it.</text>
+<text x="78" y="446" fill="#18212b" font-size="15" font-weight="700" >Recipient address</text>
+<rect x="78" y="462" width="1203" height="52" rx="8" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="98" y="495" fill="#586777" font-size="15" font-weight="400" >Paste the full address supplied by the recipient</text>
+<text x="78" y="558" fill="#18212b" font-size="15" font-weight="700" >Amount to receive (BTC)</text>
+<rect x="78" y="574" width="570" height="52" rx="8" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="98" y="607" fill="#586777" font-size="15" font-weight="400" >Enter an amount</text>
+<text x="690" y="558" fill="#18212b" font-size="15" font-weight="700" >Network fee</text>
+<rect x="690" y="574" width="590" height="52" rx="8" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="710" y="607" fill="#586777" font-size="15" font-weight="400" >Choose a fee speed and review its cost</text>
+<text x="80" y="669" fill="#586777" font-size="15" font-weight="400" >Never choose “Send all” unless that is deliberate and intended.</text>
+<rect x="78" y="691" width="223" height="38" rx="19" fill="#147c70" stroke="#147c70" stroke-width="1"/><text x="93" y="716" fill="#fff" font-size="14" font-weight="700" >Review payment</text>
+</svg>

@@ -1,25 +1,26 @@
-# Experimental software: risk, no warranty, and liability disclaimer
+# Bitcoin Easy Signer: no warranty and user responsibility
 
-**Read this before using Bitcoin Easy Signer.** This is
-experimental software under development, not an audited or production-ready
-Bitcoin recovery tool. It may contain bugs, security flaws, incompatible
-hardware behavior, misleading information, or missing functionality.
-Bitcoin transactions can be irreversible, and a mistake can result in the
-permanent loss of some or all funds.
+**Please read before using Bitcoin Easy Signer.** It is free, open-source
+software offered to the Bitcoin community. The source is public for anyone to
+inspect, test, and audit. The software is provided **"AS IS" and "AS AVAILABLE,"
+without warranties or guarantees of any kind**, to the maximum extent permitted
+by applicable law. You decide whether to use it and are responsible for checking
+your wallet, devices, backups, network, destination address, amount, fee, and
+change before signing or broadcasting. Bitcoin transactions can be irreversible,
+and a mistake can result in permanent loss of funds.
 
-The current release, 0.6.2, is a maintenance release that retires the network of
-a finished review together with the review; the transaction and signing engine is
-unchanged from 0.5.1, which was the first published build with Bitcoin
-mainnet broadcast capability. It runs one engine across Testnet4, Mutinynet and
-mainnet, and asks hardware devices to sign through Bitcoin Core HWI (HWI).
-Mainnet submission requires explicit confirmation on the final review screen
-and a backend opt-in; nothing is broadcast automatically. One mainnet
-transaction has been prepared, signed on two hardware devices, broadcast and
-confirmed. That single transaction is not a guarantee that a later one will be
-safe, and it is not a claim of approval, audit, or fitness for use. A signed
-but unbroadcast transaction can still be submitted by anyone who obtains its
-bytes. Do not rely on a version number or GitHub "Latest" label as proof of
-production safety.
+Version 0.6.2 is a maintenance release that retires the network of a finished
+review together with the review; its transaction and signing engine is unchanged
+from 0.5.1, the first published build with Bitcoin mainnet broadcast capability.
+The app runs one engine across Testnet4, Mutinynet, and mainnet, and asks hardware
+devices to sign through Bitcoin Core HWI (HWI). Mainnet submission requires an
+explicit confirmation on the final review screen and a backend opt-in; nothing
+is broadcast automatically. One mainnet transaction has been prepared, signed
+on two hardware devices, broadcast, and confirmed. That is one recorded
+transaction; it does not establish how a later payment will behave. A signed but
+unbroadcast transaction can still be submitted by anyone who obtains its bytes.
+A version number or GitHub "Latest" label is not a promise about the result of a
+future transaction.
 
 ## No promises or warranties
 

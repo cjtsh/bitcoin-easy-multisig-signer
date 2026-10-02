@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1360" height="850" viewBox="0 0 1360 850" role="img" aria-labelledby="title desc">
-<title id="title">Bitcoin Easy Signer on Bitcoin mainnet, light theme</title>
+<title id="title">Manual illustration: opening the existing wallet</title>
 <desc id="desc">Sanitized illustrative interface view based on Bitcoin Easy Signer version 0.6.2. No wallet identifiers or live payment data are shown.</desc>
 <style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}</style>
 <rect width="1360" height="850" fill="#f5f7fa"/>
@@ -25,5 +25,5 @@
 <rect x="78" y="687" width="260" height="38" rx="19" fill="#147c70" stroke="#147c70" stroke-width="1"/><text x="93" y="712" fill="#fff" font-size="14" font-weight="700" >Open wallet &amp; check balance</text>
 <text x="78" y="750" fill="#586777" font-size="14" font-weight="400" >Your network is shown in the badge and window frame.</text>
 <rect x="48" y="229" width="266" height="34" rx="18" fill="#fff0e4" stroke="#ed9a55" stroke-width="2"/>
-<text x="64" y="252" fill="#85400f" font-size="13" font-weight="750" >● BITCOIN LIVE · REAL BTC</text><rect x="326" y="229" width="218" height="34" rx="17" fill="none" stroke="#9ba8b4" stroke-width="1.5"/><text x="344" y="251" fill="#f4f7fb" font-size="13" font-weight="700">Enter Developer Mode</text>
+<text x="64" y="252" fill="#85400f" font-size="13" font-weight="750" >● BITCOIN LIVE · REAL BTC</text>
 </svg>
