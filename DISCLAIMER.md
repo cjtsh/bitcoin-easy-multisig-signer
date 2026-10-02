@@ -1,8 +1,17 @@
 # Bitcoin Easy Signer: no warranty and user responsibility
 
+Bitcoin Easy Signer is maintained and distributed free of charge by Bitseeker
+LLC. This notice applies to the software, its website, documentation, and
+related materials. It also applies, to the fullest extent allowed by law, to
+Bitseeker LLC's members, managers, officers, employees, maintainers, volunteers,
+authors, and contributors (together, the “Project Parties”). It does not remove
+any rights or liability that applicable law does not allow to be excluded.
+
 **Please read before using Bitcoin Easy Signer.** It is free, open-source
 software offered to the Bitcoin community. The source is public for anyone to
-inspect, test, and audit. The software is provided **"AS IS" and "AS AVAILABLE,"
+inspect, test, audit, and validate. Public source availability is not a claim
+that a particular release has received a professional or independent security
+audit. The software is provided **"AS IS" and "AS AVAILABLE,"
 without warranties or guarantees of any kind**, to the maximum extent permitted
 by applicable law. You decide whether to use it and are responsible for checking
 your wallet, devices, backups, network, destination address, amount, fee, and
@@ -26,22 +35,22 @@ future transaction.
 
 The software is provided **"AS IS" and "AS AVAILABLE," without warranties
 or guarantees of any kind**, express or implied, to the maximum extent
-permitted by applicable law. In particular, the authors and contributors
-do not promise that it is accurate, secure, compatible with any wallet or
-hardware device, fit for estate recovery or any other purpose, continuously
-available, maintained, or free from defects. No support, updates, or
-successful transaction outcome is promised.
+permitted by applicable law. In particular, the Project Parties do not promise
+that it is accurate, secure, compatible with any wallet or hardware device, fit
+for estate recovery or any other purpose, continuously available, maintained,
+or free from defects. No support, updates, or successful transaction outcome is
+promised.
 
 ## Use at your own risk; limitation of liability
 
 You decide whether to use the software and are responsible for your wallet,
 devices, backups, destination addresses, transactions, and independent
-verification. **To the maximum extent permitted by applicable law, the
-authors and contributors are not liable for lost or misdirected Bitcoin or
-other funds, lost data, lost profits, or any other damages arising from the
-software or its use or inability to be used**, even if they have been
-advised that such a loss is possible. Nothing here excludes liability or
-rights that applicable law does not allow to be excluded.
+verification. **To the maximum extent permitted by applicable law, the Project
+Parties are not liable for lost or misdirected Bitcoin or other funds, lost
+data, lost profits, or any other damages arising from the software or its use
+or inability to be used**, even if they have been advised that such a loss is
+possible. Nothing here excludes liability or rights that applicable law does
+not allow to be excluded.
 
 ## Verify every transaction yourself
 

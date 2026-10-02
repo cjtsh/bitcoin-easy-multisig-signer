@@ -4,7 +4,7 @@ set -e
 cd -- "$(dirname -- "$0")"
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "Python 3 is required for this experimental preview."
+  echo "Python 3 is required to run Bitcoin Easy Signer from source."
   echo "Install Python 3 from python.org, then double-click this launcher again."
   read -r "?Press Return to close..."
   exit 1

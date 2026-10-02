@@ -1,12 +1,14 @@
 # Third-party notices
 
-Bitcoin Easy Signer is distributed under the [MIT License](LICENSE). It bundles
-and depends on the components below. Licences are reproduced or referenced here
-because the Apple Silicon DMG redistributes them; the source archive relies on
-the dependency locks in this repository.
+Bitcoin Easy Signer is maintained and distributed by Bitseeker LLC under the
+[MIT License](LICENSE). The table below identifies selected components included
+in the Apple Silicon DMG. It is a summary, not a substitute for each component's
+full license and copyright notices. Review the upstream project materials and
+the exact build's `BUILD-SBOM.json` when redistributing the application.
 
-This project writes no cryptography and holds no keys. The components below do
-the descriptor parsing, transaction construction and device communication.
+The app does not accept or store seed words or private keys. It relies on
+third-party libraries for cryptographic primitives, transaction handling, and
+hardware-device communication; see the component licenses and source projects.
 
 ## Bundled in the macOS DMG
 
@@ -29,11 +31,13 @@ the build. Its complete corresponding source is available from the upstream
 repository linked above, and the exact version bundled is recorded in
 `BUILD-SBOM.json` alongside its SHA-256.
 
-The LGPL requires that a recipient be able to replace the library. Because the
-`libusb` dynamic library ships as a separate file inside the application bundle
-rather than being statically linked into the executable, replacing that file
-with a compatible build is sufficient. No modification of libusb is made or
-required by this project.
+`libusb-1.0.0.dylib` is bundled as a separate, unmodified dynamic library. The
+fact that a library is dynamically linked does not by itself establish that a
+combined application's packaging satisfies every condition of LGPL-2.1.
+Redistributors should review the complete license and corresponding-source
+requirements for their distribution. The build records the bundled library's
+version and digest in `BUILD-SBOM.json`; its source is available from the
+upstream project linked above.
 
 ### PyInstaller
 

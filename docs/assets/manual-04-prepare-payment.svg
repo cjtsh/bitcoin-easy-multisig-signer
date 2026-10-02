@@ -5,7 +5,7 @@
 <rect width="1360" height="850" fill="#f5f7fa"/>
 <rect x="3" y="3" width="1354" height="844" rx="18" fill="none" stroke="#f47b20" stroke-width="6"/>
 <rect x="12" y="12" width="1336" height="260" rx="14" fill="#101a26" stroke="#101a26" stroke-width="1"/>
-<text x="45" y="52" fill="#b9c8d7" font-size="14" font-weight="750" letter-spacing="1.4">BITCOIN EASY SIGNER · V0.6.2 · EXPERIMENTAL</text>
+<text x="45" y="52" fill="#b9c8d7" font-size="14" font-weight="750" letter-spacing="1.4">BITCOIN EASY SIGNER · V0.6.2 · COMMUNITY SOFTWARE</text>
 <rect x="1170" y="28" width="145" height="38" rx="19" fill="#304356" stroke="#304356" stroke-width="1"/><text x="1185" y="53" fill="#fff" font-size="14" font-weight="700" >Dark Theme</text>
 <text x="46" y="110" fill="#f4f7fb" font-size="42" font-weight="760" >Bitcoin Easy Signer</text>
 <text x="48" y="147" fill="#c3cfda" font-size="18" font-weight="400" >Open an existing multisig wallet, review a payment, and approve it on the required</text>

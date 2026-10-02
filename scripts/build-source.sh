@@ -17,7 +17,7 @@ mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci" "$stage/$root/releases"
-cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md USER-MANUAL.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
+cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md PRIVACY.md SECURITY.md CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
   RELEASE-HISTORY.md PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
@@ -82,6 +82,7 @@ cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
 mkdir -p "$stage/$root/docs/assets"
 cp docs/assets/manual-*.svg docs/assets/app-preview-developer-mode.svg \
   "$stage/$root/docs/assets/"
+cp docs/privacy.html "$stage/$root/docs/privacy.html"
 # Glob, not a list: build-macos.sh calls notary-args.sh, and an archive missing a
 # script it invokes would build nothing while looking complete.
 cp scripts/*.sh scripts/*.py scripts/*.plist "$stage/$root/scripts/"

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Privacy notice for the Bitcoin Easy Signer website and desktop app, maintained by Bitseeker LLC.">
+  <title>Privacy notice — Bitcoin Easy Signer</title>
+  <style>
+    :root { color-scheme: light; --paper:#f6f4ef; --ink:#202323; --muted:#59615d; --line:#dedbd2; --accent:#a74c00; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(800px,calc(100% - 40px)); margin:0 auto; padding:48px 0 80px; }
+    nav { padding:20px 0; border-bottom:1px solid var(--line); }
+    a { color:var(--accent); }
+    h1,h2 { font-family:Georgia,"Times New Roman",serif; line-height:1.2; }
+    h1 { font-size:clamp(38px,7vw,56px); }
+    h2 { margin-top:34px; font-size:26px; }
+    .notice { padding:16px 20px; background:#fffefa; border-left:4px solid var(--accent); }
+    footer { margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+  </style>
+</head>
+<body>
+  <nav><a href="index.html">← Bitcoin Easy Signer</a></nav>
+  <main>
+    <h1>Privacy notice</h1>
+    <p><strong>Publisher: Bitseeker LLC.</strong> This notice describes the project website and desktop app. It does not control the privacy practices of independent services the app contacts.</p>
+    <p class="notice">The app runs locally without a Bitseeker LLC account. It does not send seed words or private keys to the project. Public wallet addresses and transaction identifiers are sent to the explorer services selected in the app.</p>
+    <h2>Website and downloads</h2>
+    <p>The project website is hosted by GitHub Pages, and source code and release downloads are hosted by GitHub. Bitseeker LLC does not operate a project user account system, collect wallet data through the website, or use project-run analytics on the site. GitHub may process connection and download information under its own privacy terms. Do not submit wallet files, addresses, transaction data, device details, or secrets in GitHub issues or discussions.</p>
+    <h2>Desktop app and network requests</h2>
+    <p>The app reads BSMS wallet files locally and derives public addresses locally. It contacts an Esplora server for wallet address and transaction information. A server may associate those queries with your IP address.</p>
+    <ul>
+      <li>Default mainnet lookups and broadcasts use mempool.space; selected mainnet outpoints are also checked through blockstream.info.</li>
+      <li>Fee estimates and the approximate BTC/USD reference use mempool.space.</li>
+      <li>Testnet4 uses the mempool.space Testnet4 service; Mutinynet uses mutinynet.com.</li>
+      <li>Advanced settings can select another Esplora server. Requests then go to the configured service; the app does not silently switch servers.</li>
+    </ul>
+    <p>When you broadcast, the selected broadcaster receives the signed transaction. If accepted by the Bitcoin network, it becomes public. Hardware communication is local over supported interfaces; hardware vendors' software and services are outside this project's control.</p>
+    <h2>Files and diagnostics</h2>
+    <p>An optional diagnostic report is created only when you request it, saved in Downloads, and not automatically sent to Bitseeker LLC. It contains the app version, selected network, timestamps, fixed event codes, and a validated device class. Review it before sharing. A PSBT is also saved locally only when you explicitly request one. Treat wallet files, addresses, PSBTs, and signed transactions as sensitive information.</p>
+    <h2>Third-party services and updates</h2>
+    <p>GitHub, public explorers, and hardware vendors have their own terms and privacy practices. Review those policies before use. This notice describes the current source; older downloaded app versions may differ. Consult the documentation for the version you use.</p>
+    <footer>Bitcoin Easy Signer · Maintained by Bitseeker LLC · <a href="index.html">Project website</a> · <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/PRIVACY.md">Source notice</a> · <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Safety notice</a></footer>
+  </main>
+</body>
+</html>

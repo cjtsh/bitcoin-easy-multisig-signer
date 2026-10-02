@@ -1,12 +1,12 @@
 # Bitcoin Easy Signer — a guide for the person helping
 
-**For a spouse, family member, trustee, lawyer or accountant who has been asked to help with an existing Bitcoin multisig wallet.** This guide describes version 0.6.2. It is a plain-language orientation, not a promise that the software or a particular wallet is safe to use.
+**For a spouse, family member, trustee, lawyer or accountant who has been asked to help with an existing Bitcoin multisig wallet.** This guide describes version 0.6.2. It is a plain-language guide, not a warranty or assurance about the software, a wallet, or a transaction.
 
-> **Please read first:** Bitcoin Easy Signer is free, open-source software offered to the Bitcoin community. Its source is public for anyone to inspect, test, audit, and validate. It is provided “as is,” with no warranty or guarantee of any kind, to the fullest extent allowed by law. You are responsible for deciding whether to use it and for checking the wallet, network, destination, amount, fee, and change before signing or sending. Bitcoin payments may be irreversible, and mistakes can result in permanent loss. Read the [full safety notice](DISCLAIMER.md) before use.
+> **Please read first:** Bitcoin Easy Signer is free, open-source software maintained and distributed by Bitseeker LLC. Anyone may inspect, test, audit, and validate the public source; this does not mean a release has been professionally or independently audited. The software is provided “as is,” without warranty or guarantee of any kind to the fullest extent allowed by law. The Project Parties—Bitseeker LLC and its members, managers, officers, employees, maintainers, volunteers, authors, and contributors—make no promise that it will work for your wallet or prevent loss. You decide whether to use it and must independently check the wallet, network, destination, amount, fee, and change. Bitcoin payments may be irreversible. Read the [full safety notice](DISCLAIMER.md) before use.
 
 ## What this app does
 
-I built Bitcoin Easy Signer to help someone I trust make a payment from an **existing** multisig wallet. A wallet owner gives the helper one BSMS wallet-definition file and access to the hardware signers required by that wallet. The app checks the wallet, helps prepare a payment, asks the hardware signers to approve it, and requires a final review before a payment is sent.
+Bitcoin Easy Signer was created to help a trusted person make a payment from an **existing** multisig wallet. A wallet owner gives the helper one BSMS wallet-definition file and access to the hardware signers required by that wallet. The app checks the wallet, helps prepare a payment, asks the hardware signers to approve it, and requires a final review before a payment is sent.
 
 **This app is not a wallet and never holds a wallet key.** It does not create a wallet, recover seed words, or replace the wallet software used to set up the wallet.
 
@@ -119,7 +119,7 @@ Developer Mode is a test bench for people who already have a practice wallet fil
 - A practice-network payment does not demonstrate that a future mainnet payment is correct or that a particular signer firmware displays every output.
 - A single confirmed mainnet payment is only one data point; it does not establish how a later payment will behave.
 
-Bitcoin Easy Signer is open-source software and a gift to the Bitcoin community, not a commercial product. **Use it at your own risk. It comes with no warranty and no guarantee. Verify it yourself and read the source.** This guide is general information, not legal, financial, or estate-planning advice.
+Bitcoin Easy Signer is free, open-source community software maintained by Bitseeker LLC. **It is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. Use it at your own risk and independently verify every payment.** This guide is general information, not legal, financial, or estate-planning advice. No independent end-to-end security review of version 0.6.2 is recorded.
 
 ## Small glossary
 
