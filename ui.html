@@ -114,8 +114,21 @@
     .network { display:inline-flex; border:1px solid var(--header-rule); border-radius:99px; padding:5px 12px;
       margin-top:20px; font-size:12px; letter-spacing:.045em; font-weight:750; color:var(--header-ink); }
     .network.live { border:3px solid var(--pending-line); background:var(--pending-bg); color:var(--pending); }
-    /* Three networks, all visible, with the active one highlighted. A closed
-       dropdown hid both the options and the current choice. */
+    /* The developer-mode gate. A plain overlay rather than a native <dialog>, so
+       it hides and shows with the same [hidden] rule as every other panel in
+       this file and can be driven in a DOM test without a browser dialog. */
+    .modal { position:fixed; inset:0; z-index:70; display:flex; align-items:center;
+      justify-content:center; padding:22px; background:var(--scrim); }
+    .modal-panel { width:min(560px,92vw); max-height:86vh; overflow:auto;
+      border-radius:18px; padding:24px 26px; background:var(--paper); color:var(--ink);
+      box-shadow:var(--shadow-lg); }
+    .modal-panel h2 { margin:0 0 12px; }
+    .modal-panel p { margin:0 0 12px; }
+    .dev-actions { display:flex; gap:11px; justify-content:flex-end; flex-wrap:wrap; margin-top:20px; }
+    /* Three networks, all visible once developer mode is open, with the active
+       one highlighted. A closed dropdown hid both the options and the current
+       choice; a plain three-way control on the opening screen asked every
+       trustee to weigh a choice they cannot act on. */
     .field-label { display:block; font-weight:680; margin:0 0 7px; font-size:14px; }
     .chain-choice { display:flex; flex-direction:column; gap:8px; }
     .chain-choice label { display:flex; align-items:baseline; gap:9px; margin:0;
@@ -136,6 +149,25 @@
       font:700 13px system-ui; letter-spacing:.01em; white-space:nowrap;
       background:var(--header-rule); color:var(--header); border:1px solid transparent; }
     .theme-toggle:hover { background:var(--header-ink); }
+    /* Developer mode: a control for a developer, never a step for an operator.
+       It sits beside the theme button at the top, which is the same kind of
+       thing - an appearance or advanced setting a person goes looking for
+       rather than one they are walked through. Reaching a practice network
+       needs its own wallet file, its own devices and its own test coins, and a
+       practice send does not prove what a hedge against real money would. The
+       three networks remain, so the doorway moved and nothing was removed. */
+    .dev-toggle { position:absolute; top:30px; right:calc(max(22px,calc((100vw - 1060px)/2)) + 124px);
+      min-height:0; width:auto; padding:9px 15px; border-radius:99px; cursor:pointer;
+      font:700 13px system-ui; letter-spacing:.01em; white-space:nowrap;
+      background:var(--header-rule); color:var(--header); border:1px solid transparent; }
+    .dev-toggle:hover { background:var(--header-ink); }
+    .dev-toggle:disabled { background:transparent; color:var(--header-ink);
+      border-color:var(--header-rule); cursor:not-allowed; }
+    /* Inside the gate the picker is the same radio cards it always was, so a
+       developer moves between practice networks and back to Bitcoin with the
+       control the release notes already describe. */
+    #chain-panel { margin-top:13px; }
+    .dev-note { margin:11px 0 0; font-size:13px; font-weight:700; color:var(--pending); }
     .live-banner { background:var(--pending-bg); border:3px solid var(--pending-line); border-radius:12px;
       color:var(--pending); font-weight:800; padding:15px 18px; margin:0 0 19px; font-size:17px; }
     .pending-banner { background:var(--pending-bg); border:2px solid var(--pending-line); border-radius:12px;
@@ -284,14 +316,45 @@
          in words, because a sun or moon makes people guess which way it goes. -->
     <button id="theme-toggle" class="theme-toggle" type="button"
             aria-label="Switch to dark theme" title="Switch theme (T)">Dark Theme</button>
+    <!-- Developer mode sits beside the theme button because it is the same kind
+         of control: a setting a developer goes looking for, not a step an
+         executor is walked through. It is on the opening screen, so it is
+         findable, and behind a confirmation, so it cannot be pressed by
+         accident. -->
+    <button id="dev-mode-toggle" class="dev-toggle" type="button"
+            aria-haspopup="dialog" title="Test with practice coins on Mutinynet or Testnet4">Enter Developer Mode</button>
     <small>Bitcoin Easy Signer · v__APP_VERSION__ · experimental</small>
     <h1>Bitcoin Easy Signer</h1>
     <p>Open an existing multisig wallet, review a payment, and approve it on the required hardware signers.</p>
     <p class="support-scope">Supports hardware multisig wallets with up to three physical keys.</p>
-    <div id="network-badge" class="network">● MUTINYNET · NO REAL BITCOIN</div>
+    <div id="network-badge" class="network" hidden>● MAINNET · REAL BITCOIN</div>
+    <p id="dev-note" class="dev-note" role="status" hidden></p>
     <div><button id="refresh-top" class="secondary" hidden>↻ Refresh balance</button></div>
   </header>
   <main>
+    <!-- The gate. Practice networks are fully supported and documented for
+         developers; this is the one deliberate step that reaches them, so a
+         person moving real Bitcoin is never one stray click away from a chain
+         their wallet file cannot pay on. The words are the owner's draft,
+         approved as written: they name what the practice coins are, say plainly
+         that this app cannot fund the wallet or undo a wrong-network payment,
+         and promise nothing about the app being safe or verified. -->
+    <div id="dev-mode-modal" class="modal" role="dialog" aria-modal="true"
+         aria-labelledby="dev-mode-title" hidden>
+      <div class="modal-panel">
+        <h2 id="dev-mode-title">Enter Developer Mode</h2>
+        <p>You are leaving the live Bitcoin network.</p>
+        <p>Mutinynet and Testnet4 are practice networks. They use test coins that have
+          no value, and they allow you to try this app without spending real Bitcoin.</p>
+        <p>Reaching a practice network needs its own wallet and its own test coins, which
+          this app does not provide. Your real Bitcoin is left untouched while you are
+          here. A payment made to the wrong network cannot be undone by this app.</p>
+        <div class="dev-actions">
+          <button id="dev-mode-cancel" class="secondary" type="button">Cancel</button>
+          <button id="dev-mode-enter" class="action" type="button">Enter Developer Mode</button>
+        </div>
+      </div>
+    </div>
     <div id="live-banner" class="live-banner" role="alert" hidden>
       ⚠ LIVE BITCOIN NETWORK · REAL FUNDS. Check the wallet file, destination and fee before proceeding.
     </div>
@@ -324,26 +387,31 @@
       <p class="muted">Choose your wallet file—not a recovery phrase or private key.</p>
       <div class="grid">
         <div>
-          <!-- A visible choice, not a dropdown. The owner could not tell from a
-               closed select that there were three networks or which one was
-               active, and the control was far narrower than the file box beside
-               it. Three labelled cards show every option and highlight the one in
-               force, which is the same thing the frame colour is saying. -->
-          <span class="field-label" id="chain-label">Bitcoin network</span>
-          <div id="chain" class="chain-choice" role="radiogroup" aria-labelledby="chain-label">
-            <label><input type="radio" id="chain-mutinynet" name="chain" value="mutinynet" checked>
-              <b>Mutinynet</b><small>fast practice network</small></label>
-            <label><input type="radio" id="chain-testnet4" name="chain" value="testnet4">
-              <b>Testnet4</b><small>existing test wallets</small></label>
-            <label><input type="radio" id="chain-main" name="chain" value="main">
-              <b>Bitcoin LIVE</b><small>real BTC, cannot be undone</small></label>
+          <!-- Hidden until developer mode is open. The badge above already says
+               which network is in force; these cards let a developer change it.
+               A visible three-way control here asked every executor and trustee
+               to weigh a choice they cannot act on, so the capability moved
+               behind the gate at the top of the screen. The cards keep their
+               shape: every option is still visible and the active one is still
+               highlighted, which is the same thing the frame colour is saying. -->
+          <p id="dev-mode-note" class="small muted" hidden></p>
+          <div id="chain-panel" hidden>
+            <span class="field-label" id="chain-label">Bitcoin network</span>
+            <div id="chain" class="chain-choice" role="radiogroup" aria-labelledby="chain-label">
+              <label><input type="radio" id="chain-mutinynet" name="chain" value="mutinynet">
+                <b>Mutinynet</b><small>fast practice network</small></label>
+              <label><input type="radio" id="chain-testnet4" name="chain" value="testnet4">
+                <b>Testnet4</b><small>existing test wallets</small></label>
+              <label><input type="radio" id="chain-main" name="chain" value="main">
+                <b>Bitcoin LIVE</b><small>real BTC, cannot be undone</small></label>
+            </div>
+            <p class="small muted">Mutinynet and Testnet4 are separate test networks. Each needs its own wallet and its own coins to work.</p>
           </div>
         </div>
         <div id="wallet-input">
           <label for="wallet-file">BSMS wallet file</label>
           <input id="wallet-file" type="file"></div>
       </div>
-      <p class="small muted">Mutinynet and Testnet4 are separate test networks. Each needs its own wallet and its own coins to work.</p>
       <label id="explorer-consent-row" class="check"><input id="explorer-consent" type="checkbox">
         <span id="explorer-consent-text">I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.</span></label>
       <button id="open" class="action">Open wallet &amp; check balance</button>
@@ -745,6 +813,15 @@
     let rate = null, lastScan = null, reviewAmountSats = null, reviewFeeSats = null;
     let priceRequestId = 0, feeRequestId = 0, walletActionId = 0, feeQuote = null;
     let feeRateCustomized = false, sendActionId = 0, preparing = false;
+    // The network this page is on, held in memory exactly as the backend holds
+    // its own chain. Nothing here is written to disk, so the next launch always
+    // opens on Bitcoin: a practice network cannot quietly outlive the session
+    // that chose it. The app opens on Bitcoin deliberately. The person this is
+    // built for - an executor or trustee moving real Bitcoin - should not have
+    // to notice which network they are on, let alone choose one, so the choice
+    // and the three cards it lives in stay behind the developer-mode gate.
+    let currentChain = "main";
+    let developerMode = false;
     // Which speed button the user actually chose. Rate values alone cannot
     // distinguish them: slow/medium/fast are often the same whole sat/vB.
     let selectedTier = "custom";
@@ -769,42 +846,74 @@
       if (sats >= LARGE_AMOUNT_SATS_FLOOR) return true;
       return rate ? sats / 100000000 * rate.usd_per_btc >= 10000 : false;
     }
-    // The three networks, in the order the cards appear. Everything that needs to
-    // read or set the selection goes through these two functions, so the control
-    // itself could change shape without touching the rest of the app.
+    // The three networks, in the order the cards appear. Everything that needs
+    // to read or set the selection goes through these functions, so the control
+    // itself can change shape without touching the rest of the app. The
+    // selection is the in-memory currentChain, not "whichever radio is checked":
+    // the cards are hidden until developer mode opens, and screens are built
+    // before they are ever revealed.
     const CHAIN_IDS = ["mutinynet", "testnet4", "main"];
-    const selectedChain = () => {
-      for (const id of CHAIN_IDS) {
-        const radio = $("chain-" + id);
-        if (radio && radio.checked) return id;
-      }
-      return "mutinynet";
-    };
+    const CHAIN_NAMES = {mutinynet: "Mutinynet", testnet4: "Testnet4", main: "mainnet"};
+    const selectedChain = () => currentChain;
     function setChain(value) {
+      currentChain = CHAIN_IDS.indexOf(value) >= 0 ? value : "main";
+      syncChainChoice();
+      renderChainChoice();
+      updateNetworkUI();
+    }
+    function syncChainChoice() {
       for (const id of CHAIN_IDS) {
         const radio = $("chain-" + id);
-        if (radio) radio.checked = (id === value);
+        if (radio) radio.checked = (id === currentChain);
       }
-      renderChainChoice();
     }
     function renderChainChoice() {
-      const current = selectedChain();
       for (const id of CHAIN_IDS) {
         const radio = $("chain-" + id);
         if (radio && radio.closest) {
           const card = radio.closest("label");
-          if (card && card.classList) card.classList.toggle("selected", id === current);
+          if (card && card.classList) card.classList.toggle("selected", id === currentChain);
         }
       }
     }
     function updateNetworkUI() {
       const main = selectedChain() === "main";
-      const name = main ? "mainnet" : (selectedChain() === "mutinynet" ? "Mutinynet" : "Testnet4");
+      const name = CHAIN_NAMES[selectedChain()];
       setText("network-badge", main ? "● MAINNET · REAL BITCOIN" :
         "● " + name.toUpperCase() + " · NO REAL BITCOIN");
       $("network-badge").classList.toggle("live", main);
+      // The badge is the app saying out loud which network it is on. It stays
+      // visible on every practice network in every mode, so the frame colour and
+      // the words can never contradict each other. It is hidden only on the
+      // opening Bitcoin screen, where the orange frame and the live banner
+      // already carry that same warning without a second label.
+      $("network-badge").hidden = main && !developerMode;
       document.body.classList.toggle("live-mode", main);
       $("live-banner").hidden = !main;
+      $("chain-panel").hidden = !developerMode;
+      const note = $("dev-mode-note");
+      note.hidden = !developerMode;
+      setText("dev-mode-note",
+        "Developer mode: you are on " + name + ". Mutinynet and Testnet4 use practice " +
+        "coins that have no value. This app cannot give that wallet test coins.");
+      const toggle = $("dev-mode-toggle");
+      // The gate button names what pressing it gives you, the same way the theme
+      // button names the theme it switches to: "Enter Developer Mode" crosses to
+      // the practice networks, and once across it offers the way home. It is
+      // refused only while a payment is prepared, because that payment is bound
+      // to the network it was drawn on and moving networks under it is the one
+      // thing the gate must never quietly do. Refusing has to explain itself, so
+      // the control carries the reason.
+      toggle.textContent = developerMode ? "Return to Bitcoin" : "Enter Developer Mode";
+      toggle.disabled = Boolean(currentPsbt);
+      toggle.title = currentPsbt ?
+        "Finish or clear the prepared payment before changing network" :
+        (developerMode ? "Leave developer mode and return to live Bitcoin" :
+          "Test with practice coins on Mutinynet or Testnet4");
+      const devNote = $("dev-note");
+      devNote.hidden = !developerMode;
+      setText("dev-note", developerMode ?
+        "Developer mode · practice coins only · this session only, the app reopens on Bitcoin" : "");
       setText("explorer-consent-text",
         "I understand a public explorer will see my wallet's public addresses. A mainnet payment also checks its selected public transaction IDs with a second explorer.");
       setText("balance-title", "2. " + name + " balance");
@@ -821,6 +930,74 @@
       renderPrice();
       renderFeeGuidance();
     }
+    function clearNetworkState() {
+      // Everything the network handler clears. A wallet, and every amount, is
+      // bound to the chain it was read or drawn on, so a chain change retires
+      // all of it. Kept in one place so entering and leaving developer mode do
+      // exactly what changing the radio does, and cannot drift apart.
+      walletActionId++;
+      walletCanPrepare = false; walletCanSendAll = false; lastScan = null;
+      feeEstimate = null; feeQuote = null;
+      $("explorer-consent").checked = false;
+      currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
+      $("destination").value = ""; $("amount").value = "";
+      $("send-all").checked = false;
+      feeRateCustomized = false;
+      $("fee-rate").value = 2; selectedTier = "custom"; $("download").disabled = true;
+      invalidateReview();
+      updateSendMode();
+      showPendingPayment(false);
+      clearReceipt();
+      $("wallet-card").hidden = true; $("balance-card").hidden = true;
+      $("signers-card").hidden = true; $("send-card").hidden = true;
+      $("refresh-top").hidden = true;
+      msg("message", "Choose a BSMS definition for the selected network to continue.");
+      // Redraw last, because the payment just retired is what decides whether the
+      // gate is refused. Doing it here keeps every caller of clearNetworkState
+      // from having to remember it, including the network-card handler.
+      updateNetworkUI();
+    }
+    // Both directions of the gate refuse while a payment is prepared. A prepared
+    // payment is bound to the chain it was drawn on, and the gate moves the
+    // chain, so crossing in either direction would leave a reviewed payment
+    // attached to a network it was not prepared for. The check lives in these
+    // two functions rather than in the button, because these are what actually
+    // move the network and the button is only one caller.
+    function enterDeveloperMode() {
+      if (currentPsbt) { updateNetworkUI(); return; }
+      developerMode = true;
+      // Confirming the gate moves the app to Mutinynet, the default practice
+      // network, chosen because one practice network has to be the default and
+      // Mutinynet is the fast one. Leaving the app on Bitcoin while showing a
+      // green frame and offering practice-network cards is the one state the
+      // frame colour must never describe.
+      clearNetworkState();
+      setChain("mutinynet");
+      loadServerSettings();
+      loadFees();
+    }
+    function leaveDeveloperMode() {
+      if (currentPsbt) { updateNetworkUI(); return; }
+      developerMode = false;
+      clearNetworkState();
+      setChain("main");
+      loadServerSettings();
+      loadFees();
+    }
+    function openDeveloperModeDialog() {
+      const modal = $("dev-mode-modal");
+      // The button is disabled while a payment is prepared, but a disabled
+      // control is a display, not a rule: this is the actual refusal, so a stale
+      // or scripted click cannot move the network out from under a reviewed
+      // payment. It redraws first so the operator sees why nothing happened.
+      if (currentPsbt) { updateNetworkUI(); return; }
+      modal.hidden = false;
+      if (modal.querySelector) {
+        const first = modal.querySelector("#dev-mode-enter");
+        if (first && first.focus) first.focus();
+      }
+    }
+    function closeDeveloperModeDialog() { $("dev-mode-modal").hidden = true; }
     function setText(id, value) { $(id).textContent = String(value); }
     function msg(id, text, error=false) {
       const el = $(id); el.textContent = text; el.className = text ? (error ? "error" : "success") : "";
@@ -1456,29 +1633,24 @@
       setText("send-choice-message", "No transaction prepared. Your wallet has not been changed.");
     });
     $("chain").addEventListener("change", () => {
-      // The highlight follows the choice immediately, before any network work, so
-      // the screen never shows the old network as selected while it reloads.
-      renderChainChoice();
-      walletActionId++;
-      walletCanPrepare = false; walletCanSendAll = false; lastScan = null;
-      feeEstimate = null; feeQuote = null;
-      $("explorer-consent").checked = false;
-      currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
-      $("destination").value = ""; $("amount").value = "";
-      $("send-all").checked = false;
-      feeRateCustomized = false;
-      $("fee-rate").value = 2; selectedTier = "custom"; $("download").disabled = true;
-      invalidateReview();
-      updateSendMode();
-      showPendingPayment(false);
-      clearReceipt();
-      $("wallet-card").hidden = true; $("balance-card").hidden = true;
-      $("signers-card").hidden = true; $("send-card").hidden = true;
-      $("refresh-top").hidden = true;
-      msg("message", "Choose a BSMS definition for the selected network to continue.");
-      updateNetworkUI();
+      let picked = currentChain;
+      for (const id of CHAIN_IDS) {
+        const radio = $("chain-" + id);
+        if (radio && radio.checked) { picked = id; break; }
+      }
+      setChain(picked);
+      clearNetworkState();
       loadServerSettings();
       loadFees();
+    });
+    $("dev-mode-toggle").addEventListener("click", () => {
+      if (developerMode) leaveDeveloperMode();
+      else openDeveloperModeDialog();
+    });
+    $("dev-mode-cancel").addEventListener("click", closeDeveloperModeDialog);
+    $("dev-mode-enter").addEventListener("click", () => {
+      closeDeveloperModeDialog();
+      enterDeveloperMode();
     });
     $("amount").addEventListener("input", () => {
       invalidateReview(); updateSendEquivalent(); renderFeeGuidance(); scheduleFeeEstimate();
@@ -1528,6 +1700,11 @@
             chain !== selectedChain()) return;
         currentPsbt = result.psbt_base64;
         preparationId = result.preparation_id;
+        // A prepared payment is bound to this chain. Refresh the gate now, so the
+        // control that changes network goes visibly unavailable at the same
+        // moment the payment appears, rather than only when some later redraw
+        // happens to notice.
+        updateNetworkUI();
         setText("review-destination", result.recipient);
         setText("review-mode", result.send_all ?
           "All confirmed Bitcoin found by this scan: the network fee is deducted before the recipient amount is set. No change output. Other wallet addresses beyond the scan gap may still hold funds." :
@@ -1908,7 +2085,11 @@
     detailsDialog.addEventListener("click", (event) => {
       if (event.target === detailsDialog) detailsDialog.close();
     });
-    updateNetworkUI();
+    // Opening state is Bitcoin, and the network cards stay out of the way until
+    // developer mode is opened. setChain is what brings the radio cards, the
+    // badge, the frame and every network label into agreement, so the opening
+    // state is set through it rather than by setting a variable and hoping.
+    setChain("main");
     loadPrice();
     loadFees();
     async function restoreWallet() {
@@ -1916,6 +2097,12 @@
       try {
         const saved = await post("/api/status", {});
         if (started !== walletActionId || !saved.wallet) return;
+        // A wallet restored from the running app can only be on a practice
+        // network if somebody put it there through the gate. Refresh the page in
+        // that state and the app must not pretend it never happened: leaving the
+        // cards hidden while the app sits on Mutinynet would hide the one control
+        // that gets it home.
+        developerMode = Boolean(saved.chain) && saved.chain !== "main";
         setChain(saved.chain);
         if (saved.explorer_consent) {
           $("explorer-consent").checked = true;

@@ -52,6 +52,7 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
 | **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400`, tagged `v0.5.0-rc1` locally, never pushed or published. **This is the build that made the project's first live mainnet payment** | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
 | **0.5.1** | First published mainnet-broadcast release: publishes the 0.5.0 engine unchanged, corrects the change-address guidance the live run showed to be wrong, and restates the risk language | [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md) |
+| **0.6.0 candidate — not published** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate. The transaction and signing engine is unchanged from 0.5.1, and no 0.6.0 build has been signed, notarized or published | [`releases/PATCH-0.6.0.md`](releases/PATCH-0.6.0.md), [`releases/SCOPE-0.6.0.md`](releases/SCOPE-0.6.0.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -809,6 +810,62 @@ repository. It is public, and this is the owner's live wallet.
 
 The full record, including the artifact hashes, is in
 [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md).
+
+## 0.6.0 candidate — the practice networks move behind a gate
+
+**Not published.** The published release remains 0.5.1.
+
+0.6.0 changes where the network is chosen, and nothing about how a payment is
+built, signed or sent. The app opens on **Bitcoin mainnet**. Mutinynet and
+Testnet4 sit behind a button on the opening screen labelled **Enter Developer
+Mode**, which says plainly that the operator is leaving live Bitcoin and, on
+confirmation, switches the session to Mutinynet. Mutinynet is the default
+practice network because a default must be chosen and its blocks come quickly;
+Testnet4 remains selectable for a wallet that already holds Testnet4 coins.
+
+The reason is the operator, not the code. The person this app is written for — a
+spouse, executor or accountant — cannot judge a three-network radio control, and
+a practice network needs a second wallet file, two or three devices and coins
+from somewhere the app does not provide. A control that person cannot use is not
+a safety feature; it is a way to pick the wrong network. The capability is kept
+and now documented, reached deliberately instead of sitting in the middle of the
+opening screen.
+
+The engine is unchanged from 0.5.1, so nothing here may be described as new
+transaction capability. What did change, and why each mattered:
+
+- The selected network remains **in-memory for the session only**, exactly as it
+  was. The gate must not be paid for with persistence: a practice network that
+  survived a restart would be a new way to send from the wrong chain, and the
+  gate would have made things worse rather than better.
+- Changing network clears the loaded wallet, the scan and any prepared payment,
+  and reloads the server settings and fee quote — the same clearing the network
+  cards already did.
+- The gate refuses to change network while a payment is prepared, and says so. The
+  refusal is enforced where the network actually moves, in **both** directions,
+  not only on the button: an earlier version guarded the way in and let the way
+  out move the chain out from under a prepared payment. `tests/ui_developer_mode.cjs`
+  catches that by re-enabling the button by hand and pressing it. An even earlier
+  draft disabled the gate on every practice network, which would have stranded the
+  operator in developer mode with no way back; the same test covers the exit.
+- The orange/green frame and the network badge are never hidden and cannot
+  disagree. The frame is the whole signal and the badge names the network, so a
+  practice network can never wear the mainnet frame or vice versa.
+- One dead field left `gui.py`: `broadcasting_available` was hardcoded `True` and
+  read by nothing.
+
+Documents that still said the app opened on a practice network were corrected in
+the same change — `AGENTS.md`, `PHASE-HANDOFF.md`, `README.md` and the public
+site `docs/index.html` — and developer mode is documented for developers as a
+test bench while stating that practice networks are not the app's purpose.
+
+### Evidence
+
+The full record, including what was verified, what the owner decided, and the
+items deliberately left out of scope, is in
+[`releases/PATCH-0.6.0.md`](releases/PATCH-0.6.0.md). The scope the owner signed
+off, with the reasoning and the out-of-scope list, is
+[`releases/SCOPE-0.6.0.md`](releases/SCOPE-0.6.0.md).
 
 ## 0.5.0 candidate — live mainnet broadcast
 

@@ -158,8 +158,18 @@ class PaletteShapeTests(unittest.TestCase):
                       "live-mode must follow the mainnet condition alone")
         # The two practice networks share a frame colour, so the badge has to keep
         # naming them apart: green means "practice", the label says which practice.
-        self.assertIn('selectedChain() === "mutinynet" ? "Mutinynet" : "Testnet4"', html,
-                      "the badge must still distinguish the two practice networks")
+        # The badge now reads its wording from a record of the three networks, so
+        # the assertion is that the record still tells the two practice networks
+        # apart and that the badge is built from it.
+        names = re.search(r"const CHAIN_NAMES = \{(.*?)\};", html, re.S)
+        self.assertIsNotNone(names, "the network names must live in one place")
+        labels = dict(re.findall(r'(\w+)\s*:\s*"([^"]+)"', names.group(1)))
+        self.assertEqual(set(labels), {"mutinynet", "testnet4", "main"},
+                         "every network must be named, and only the real ones")
+        self.assertNotEqual(labels["mutinynet"], labels["testnet4"],
+                            "the badge must still distinguish the two practice networks")
+        self.assertIn('"● " + name.toUpperCase() + " · NO REAL BITCOIN"', html,
+                      "the practice badge must be built from the network's name")
 
     def test_the_palette_stays_small_enough_to_hold_in_your_head(self):
         """Five hues, assigned to roles. The ceiling is deliberate.

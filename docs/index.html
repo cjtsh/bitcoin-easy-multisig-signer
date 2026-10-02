@@ -251,9 +251,11 @@
     </section>
 
     <section class="wrap" aria-labelledby="practice-title">
-      <p class="section-kicker">Practice before you spend</p>
-      <h2 id="practice-title">It’s okay if moving Bitcoin feels unnerving.</h2>
-      <p class="section-intro">A trustee, lawyer, accountant, or family member can get familiar with the app using a separate practice wallet on Testnet4 or Mutinynet. Practice coins have no real-Bitcoin value and cannot be moved to mainnet. Practise first — the mistakes are free.</p>
+      <p class="section-kicker">A test bench, not the front door</p>
+      <h2 id="practice-title">Practice networks live behind developer mode.</h2>
+      <p class="section-intro">The app opens on Bitcoin. The person it is written for—a spouse, an executor, an accountant—never needs Mutinynet or Testnet4, and picking the wrong network is a real way to lose money. So the two practice networks sit behind one button on the opening screen: <strong>Enter Developer Mode</strong>. It tells you plainly that you are leaving live Bitcoin and, once you confirm, switches to <strong>Mutinynet</strong>—the default practice network, chosen because a default has to exist and its blocks come quickly. <strong>Testnet4</strong> stays available for a wallet that already holds Testnet4 coins.</p>
+      <p class="section-intro">If you are a developer, this is a good bench. Point the app at a practice wallet file and walk the whole path—import, scan, build, sign on real hardware, review, broadcast—against coins that cost nothing. It is easy to use this way, and a practice run is the right way to learn the interface before a real wallet is involved. You will need your own practice wallet file and your own practice coins; the app provides neither. To be clear about priorities: practice networks are not what this app is for. It exists to move real Bitcoin out of an existing wallet.</p>
+      <p class="section-intro">The choice lasts for the session only. The app writes it to no settings file, so reopening always returns to live Bitcoin, and the frame around the window and the network badge always name the network actually in force—orange for real Bitcoin, green for practice coins. Developer mode is part of the 0.6.0 build, which is not published yet: in the 0.5.1 build you download today the three network cards are still on the opening screen.</p>
     </section>
 
     <section class="scope" id="scope">
@@ -266,7 +268,7 @@
         <div class="scope-list">
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Up to three physical keys.</strong> The wallet file defines the threshold. Supported hardware depends on the app’s bundled HWI library; not every device is supported.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Hardware signing.</strong> Signing happens on the hardware wallets; the app never asks for seed words or private keys.</p></div>
-          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Practice networks.</strong> Testnet4 and Mutinynet are available for practice. Their coins are not real Bitcoin and do not transfer to mainnet.</p></div>
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Practice networks.</strong> Testnet4 and Mutinynet are available for practice, reached through developer mode. Their coins are not real Bitcoin and do not transfer to mainnet.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">!</span><p><strong>Real Bitcoin can now be sent.</strong> Mainnet broadcast is available, behind a per-transaction confirmation on the final screen. No warranty is offered or implied. Verify every payment yourself, and never risk more than you can afford to lose.</p></div>
         </div>
       </div>

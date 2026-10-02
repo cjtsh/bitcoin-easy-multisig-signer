@@ -14,6 +14,7 @@ links each version to the record below, and its prose sections quote them.
 | --- | --- |
 | `PATCH-<version>.md` | The evidence record for one release: what changed, what was proven, what was corrected afterwards |
 | `PLAN-<version>.md` | The plan a release was built against |
+| `SCOPE-<version>.md` | The scope a release was built against, as the owner signed it off |
 | `AUDIT-<who-or-when>.md` | An independent audit of the code as it stood at that commit |
 | `SECURITY-REVIEW-<version>.md` | A security review and its remediation |
 | `MUTINYNET-<version>.md` | A signet-network walkthrough record |
@@ -38,6 +39,7 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) | 0.4.15 | Fix signed HWI/libusb loading; OneKey Classic 1S support; a cleared, unbroadcast mainnet dry run |
 | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) | 0.5.0 | Mainnet broadcast behind explicit final-screen and backend opt-ins; made the first live mainnet payment |
 | [`PATCH-0.5.1.md`](PATCH-0.5.1.md) | 0.5.1 | First published mainnet-broadcast release; publishes the 0.5.0 engine unchanged and corrects the change-address guidance |
+| [`PATCH-0.6.0.md`](PATCH-0.6.0.md) · [`SCOPE-0.6.0.md`](SCOPE-0.6.0.md) | 0.6.0 | **Candidate, not published.** Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate; the engine is unchanged from 0.5.1 |
 
 ## These are historical records
 

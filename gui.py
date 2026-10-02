@@ -1006,7 +1006,6 @@ class LocalApp:
                     "chain": chain, "explorer_url": active["explorer"],
                     "broadcaster_url": active["broadcaster"],
                     "default_url": CHAIN_CONFIGS[chain].explorer_url,
-                    "broadcasting_available": True,
                     "settings_error": error,
                 })
 

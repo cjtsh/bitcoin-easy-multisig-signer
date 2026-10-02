@@ -571,7 +571,6 @@ class LocalGuiTests(unittest.TestCase):
                 "explorer_url": main_url, "broadcaster_url": broadcast_url,
             })
         self.assertEqual(settings["explorer_url"], main_url)
-        self.assertTrue(settings["broadcasting_available"])
         self.assertEqual(verify.call_count, 2)
         self.assertEqual(self.post("/api/settings", {
             "chain": "testnet4", "action": "read",
