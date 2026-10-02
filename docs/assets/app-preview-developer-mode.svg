@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="850" viewBox="0 0 1360 850" role="img" aria-labelledby="title desc">
+<title id="title">Bitcoin Easy Signer developer mode practice networks</title>
+<desc id="desc">Sanitized illustrative interface view based on Bitcoin Easy Signer version 0.6.2. No wallet identifiers or live payment data are shown.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}</style>
+<rect width="1360" height="850" fill="#f5f7fa"/>
+<rect x="3" y="3" width="1354" height="844" rx="18" fill="none" stroke="#3e9b63" stroke-width="6"/>
+<rect x="12" y="12" width="1336" height="260" rx="14" fill="#101a26" stroke="#101a26" stroke-width="1"/>
+<text x="45" y="52" fill="#b9c8d7" font-size="14" font-weight="750" letter-spacing="1.4">BITCOIN EASY SIGNER · V0.6.2 · EXPERIMENTAL</text>
+<rect x="1170" y="28" width="145" height="38" rx="19" fill="#304356" stroke="#304356" stroke-width="1"/><text x="1185" y="53" fill="#fff" font-size="14" font-weight="700" >Dark Theme</text>
+<text x="46" y="110" fill="#f4f7fb" font-size="42" font-weight="760" >Bitcoin Easy Signer</text>
+<text x="48" y="147" fill="#c3cfda" font-size="18" font-weight="400" >Open an existing multisig wallet, review a payment, and approve it on the required</text>
+<text x="48" y="174" fill="#c3cfda" font-size="18" font-weight="400" >hardware signers. The app never holds a key.</text>
+<text x="48" y="216" fill="#f4f7fb" font-size="19" font-weight="700" >For a spouse, trustee, lawyer, accountant, or family member.</text>
+<rect x="47" y="229" width="340" height="31" rx="16" fill="#263e31" stroke="#78bd83" stroke-width="2"/>
+<text x="63" y="250" fill="#d5f2d9" font-size="13" font-weight="750" >DEVELOPER ACCESS · PRACTICE ONLY</text><rect x="866" y="225" width="206" height="34" rx="17" fill="#263e31" stroke="#78bd83" stroke-width="1.5"/><text x="883" y="247" fill="#d5f2d9" font-size="13" font-weight="700">● MUTINYNET · PRACTICE</text><rect x="1082" y="225" width="234" height="34" rx="17" fill="none" stroke="#9ba8b4" stroke-width="1.5"/><text x="1100" y="247" fill="#f4f7fb" font-size="13" font-weight="700">Return to Bitcoin</text>
+<rect x="45" y="310" width="1270" height="470" rx="16" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="76" y="358" fill="#18212b" font-size="29" font-weight="750" >Choose a practice network</text>
+<text x="77" y="393" fill="#586777" font-size="17" font-weight="400" >Practice networks are for developers and test wallets only.</text>
+<rect x="76" y="424" width="570" height="95" rx="12" fill="#e6f4ee" stroke="#147c70" stroke-width="2"/><circle cx="608" cy="470" r="10" fill="#147c70"/>
+<text x="100" y="462" fill="#18212b" font-size="20" font-weight="700" >Mutinynet</text>
+<text x="100" y="490" fill="#586777" font-size="15" font-weight="400" >Practice network · coins have no value</text>
+<rect x="666" y="424" width="570" height="95" rx="12" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="690" y="462" fill="#18212b" font-size="20" font-weight="700" >Testnet4</text>
+<text x="690" y="490" fill="#586777" font-size="15" font-weight="400" >Practice network · for existing test wallets</text>
+<text x="80" y="565" fill="#586777" font-size="16" font-weight="400" >This app does not provide a practice wallet or practice coins.</text>
+<text x="80" y="595" fill="#586777" font-size="16" font-weight="400" >A payment sent on the wrong network cannot be undone here.</text>
+
+<g transform="rotate(-18 680 570)" opacity=".13">
+<text x="265" y="628" fill="#d04a3a" font-size="80" font-weight="800" letter-spacing="5">DEVELOPER ACCESS</text></g>
+
+</svg>

@@ -162,6 +162,7 @@
       <a href="#how-it-works">How it works</a>
       <a href="#scope">What it supports</a>
       <a href="#see-the-app">See the app</a>
+      <a href="user-manual.html">User manual</a>
       <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">Project &amp; source ↗</a>
     </nav>
   </header>
@@ -174,7 +175,7 @@
         <p class="hero-copy">Bitcoin Easy Signer is built for families and the trusted helpers they may rely on: a spouse, trustee, lawyer, or accountant. It aims to make spending from an existing multisig wallet clear enough to follow, even if you didn’t set it up.</p>
         <div class="actions">
           <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.6.2/Bitcoin-Easy-Signer-v0.6.2-macOS.dmg">Download for Mac ↗</a>
-          <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">View the project</a>
+          <a class="button secondary" href="user-manual.html">Read the user manual</a>
         </div>
         <p class="microcopy">For Apple Silicon Macs · Free to use · Open source</p>
       </div>
@@ -196,7 +197,7 @@
     <aside class="notice" aria-label="Important safety notice">
       <div class="wrap notice-inner">
         <span class="notice-mark" aria-hidden="true">!</span>
-        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is community software, not a commercial product, and it comes with no warranty and no guarantee. It is not a substitute for independent review. It can broadcast real Bitcoin — a mistake there is permanent. Verify every payment yourself, and read the source before you trust it with funds.</p>
+        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is free, open-source software offered to the Bitcoin community. Anyone can inspect, test, audit, and validate the public source. It comes with no warranty or guarantee. It can broadcast real Bitcoin, and a mistaken payment may be permanent. Check every payment yourself and read the safety notice before use.</p>
       </div>
     </aside>
 
@@ -220,19 +221,19 @@
             <p class="section-kicker">A first look</p>
             <h2 id="gallery-title">See the app.</h2>
           </div>
-          <p class="section-intro">Practice networks wear a green frame. Bitcoin’s live network is marked in orange, because it spends real Bitcoin. The light and dark themes keep those network signals clear.</p>
+          <p class="section-intro">The app opens on live Bitcoin. Mainnet is marked in orange; practice networks appear only after a deliberate step into Developer Mode.</p>
         </div>
         <div class="carousel" data-carousel aria-label="Bitcoin Easy Signer screen previews">
           <div class="carousel-viewport">
             <div class="carousel-track" data-carousel-track>
               <div class="carousel-slide" data-carousel-slide aria-hidden="false">
-                <figure><img src="assets/app-preview-mutinynet-light.svg?v=carousel-2" alt="Illustrative preview of the app's wallet-opening screen in the light theme on Mutinynet, with a green practice-network frame."><figcaption><strong>Mutinynet · Light theme</strong><span>Fast practice network · No real Bitcoin</span></figcaption></figure>
+                <figure><img src="assets/app-preview-mainnet-light.svg?v=carousel-3" alt="Illustrative view of the Bitcoin Easy Signer opening screen on live Bitcoin in light theme, with the orange mainnet frame and real-Bitcoin warning."><figcaption><strong>Bitcoin mainnet · Light theme</strong><span>The normal opening screen · Real Bitcoin</span></figcaption></figure>
               </div>
               <div class="carousel-slide" data-carousel-slide aria-hidden="true">
-                <figure><img src="assets/app-preview-mutinynet-dark.svg?v=carousel-2" alt="Illustrative preview of the app's wallet-opening screen in the dark theme on Mutinynet."><figcaption><strong>Mutinynet · Dark theme</strong><span>The same practice workflow in dark mode</span></figcaption></figure>
+                <figure><img src="assets/app-preview-mainnet-dark.svg?v=carousel-3" alt="Illustrative view of the same live Bitcoin opening screen in dark theme, still marked by the orange mainnet frame."><figcaption><strong>Bitcoin mainnet · Dark theme</strong><span>The same live network signals in dark mode</span></figcaption></figure>
               </div>
               <div class="carousel-slide" data-carousel-slide aria-hidden="true">
-                <figure><img src="assets/app-preview-mainnet-light.svg?v=carousel-2" alt="Illustrative preview of Bitcoin Easy Signer's light theme with Bitcoin LIVE selected, an orange frame, and a warning that real Bitcoin cannot be undone."><figcaption><strong>Bitcoin · Light theme</strong><span>Orange frame · Real Bitcoin</span></figcaption></figure>
+                <figure><img src="assets/app-preview-developer-mode.svg?v=carousel-3" alt="Illustrative developer-only practice network panel marked Developer access, showing Mutinynet and Testnet4 but no mainnet choice."><figcaption><strong>Developer access · Practice only</strong><span>Mutinynet and Testnet4 · Not part of recovery</span></figcaption></figure>
               </div>
             </div>
           </div>
@@ -245,7 +246,7 @@
             </div>
             <button class="carousel-arrow" type="button" data-carousel-next aria-label="Next screen">›</button>
           </div>
-          <p class="gallery-note" data-carousel-status aria-live="polite">Screen 1 of 3. These are illustrative previews of the current wallet-opening screen. The first full walkthrough has now been completed on real Bitcoin; real screenshots will be added once they can be prepared without exposing wallet details.</p>
+          <p class="gallery-note" data-carousel-status aria-live="polite">Screen 1 of 3. Sanitized interface illustrations based on version 0.6.2. No real wallet or payment data is shown.</p>
         </div>
       </div>
     </section>
@@ -253,9 +254,15 @@
     <section class="wrap" aria-labelledby="practice-title">
       <p class="section-kicker">A test bench, not the front door</p>
       <h2 id="practice-title">Practice networks live behind developer mode.</h2>
-      <p class="section-intro">The app opens on Bitcoin. The person it is written for—a spouse, an executor, an accountant—never needs Mutinynet or Testnet4, and picking the wrong network is a real way to lose money. So the two practice networks sit behind one button on the opening screen: <strong>Enter Developer Mode</strong>. It tells you plainly that you are leaving live Bitcoin and, once you confirm, switches to <strong>Mutinynet</strong>—the default practice network, chosen because a default has to exist and its blocks come quickly. <strong>Testnet4</strong> stays available for a wallet that already holds Testnet4 coins.</p>
-      <p class="section-intro">If you are a developer, this is a good bench. Point the app at a practice wallet file and walk the whole path—import, scan, build, sign on real hardware, review, broadcast—against coins that cost nothing. It is easy to use this way, and a practice run is the right way to learn the interface before a real wallet is involved. You will need your own practice wallet file and your own practice coins; the app provides neither. To be clear about priorities: practice networks are not what this app is for. It exists to move real Bitcoin out of an existing wallet.</p>
-      <p class="section-intro">The choice lasts for the session only. The app writes it to no settings file, so reopening always returns to live Bitcoin, and the frame around the window and the network badge always name the network actually in force—orange for real Bitcoin, green for practice coins. Developer mode arrived in the 0.6.1 build, which is still part of the current 0.6.2 download; in the older 0.5.1 build the three network cards still sat on the opening screen. Inside developer mode the choice is Mutinynet or Testnet4—live Bitcoin is what the "Return to Bitcoin" button goes back to, not a card in that panel.</p>
+      <p class="section-intro">The app opens on Bitcoin mainnet, the live network. A spouse, trustee, lawyer, or accountant using the app for recovery does not need practice networks. The opening screen keeps those choices out of the way; the orange frame, network badge, and warning name live Bitcoin clearly.</p>
+      <p class="section-intro">The optional <strong>Enter Developer Mode</strong> button is for people who already have a practice wallet and practice coins. It asks for confirmation, then offers Mutinynet or Testnet4. The app provides neither practice wallets nor coins. This is a test bench, not the purpose of the app. Its selection lasts only for the session, and the app reopens on Bitcoin mainnet. A practice transaction does not prove how a given device will handle change on a later live payment. If you do not know why you would use Developer Mode, do not use it.</p>
+    </section>
+
+    <section class="wrap closing" aria-labelledby="manual-title">
+      <p class="section-kicker">For the person helping</p>
+      <h2 id="manual-title">A step-by-step guide for recovery.</h2>
+      <p>The manual explains what to prepare, what each screen means, how hardware approvals work, and when to stop. It is written for a spouse, trustee, lawyer, accountant, or family member.</p>
+      <div class="actions" style="justify-content:center"><a class="button" href="user-manual.html">Open the user manual</a><a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/USER-MANUAL.md">View the Markdown guide ↗</a></div>
     </section>
 
     <section class="scope" id="scope">
@@ -290,6 +297,7 @@
       <span>Bitcoin Easy Signer · Open source · Use at your own risk</span>
       <div class="footer-links">
         <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">Source code</a>
+        <a href="user-manual.html">User manual</a>
         <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/RELEASE-HISTORY.md">Release history</a>
         <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Safety notice</a>
       </div>
@@ -304,13 +312,13 @@
       const dots = Array.from(carousel.querySelectorAll("[data-carousel-dot]"));
       const status = carousel.querySelector("[data-carousel-status]");
       let current = 0;
-      const names = ["Mutinynet light theme", "Mutinynet dark theme", "Bitcoin live mode"];
+      const names = ["Bitcoin mainnet · light theme", "Bitcoin mainnet · dark theme", "Developer access · practice only"];
       function show(index) {
         current = (index + slides.length) % slides.length;
         track.style.transform = `translateX(-${current * 100}%)`;
         slides.forEach((slide, i) => slide.setAttribute("aria-hidden", String(i !== current)));
         dots.forEach((dot, i) => dot.setAttribute("aria-current", String(i === current)));
-        status.textContent = `Screen ${current + 1} of ${slides.length}: ${names[current]}. These are illustrative previews of the current wallet-opening screen. The first full walkthrough has now been completed on real Bitcoin; real screenshots will be added once they can be prepared without exposing wallet details.`;
+        status.textContent = `Screen ${current + 1} of ${slides.length}: ${names[current]}. Sanitized interface illustrations based on version 0.6.2; no real wallet or payment data is shown.`;
       }
       carousel.querySelector("[data-carousel-prev]").addEventListener("click", () => show(current - 1));
       carousel.querySelector("[data-carousel-next]").addEventListener("click", () => show(current + 1));
