@@ -283,5 +283,9 @@ jobs:
             "$appimage" \
             "$(ls Bitcoin-Easy-Signer-*-linux-x86_64.tar.gz)" \
             BUILD-SBOM-linux-x86_64.json SHA256SUMS-linux-x86_64.txt
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+          # The API answers 404 to a PATCH on the tag-addressed release
+          # endpoint -- reading the page by tag works, writing it does not.
+          # The numeric release id is the endpoint it accepts, so resolve it.
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .id)"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
             -F body=@notes.md >/dev/null

@@ -220,7 +220,11 @@ class LinuxWorkflowTests(unittest.TestCase):
         self.assertIn("Attach only to the plain version tag", self.text)
         self.assertIn('gh release upload "$RELEASE_TAG"', self.text)
         self.assertIn("a published asset is never replaced", self.text)
-        self.assertIn('gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG"', self.text)
+        # A PATCH on the tag-addressed endpoint answers 404; the numeric release
+        # id is the endpoint GitHub accepts.
+        self.assertIn('releases/tags/$RELEASE_TAG" --jq .id', self.text)
+        self.assertIn('gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id"', self.text)
+        self.assertNotIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/', self.text)
 
     def test_no_publication_escape_hatches(self):
         for verb in ("--clobber", "--draft", "--prerelease", "gh release delete",
