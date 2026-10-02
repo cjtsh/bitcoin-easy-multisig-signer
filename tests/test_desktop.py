@@ -354,13 +354,20 @@ class StartupFailureTests(unittest.TestCase):
         path_patch = patch("desktop.settings_path", return_value=self.settings)
         path_patch.start()
         self.addCleanup(path_patch.stop)
+        # A real message box would block a machine with nobody sitting at it, so
+        # no test may ever reach the real one — the platform is pinned per test.
+        dialog_patch = patch("desktop.windows_error_dialog")
+        self.dialog = dialog_patch.start()
+        self.addCleanup(dialog_patch.stop)
         self.log = Path(self.temp.name) / "desktop-startup-error.log"
 
     def test_a_failed_start_writes_the_traceback_beside_the_settings(self):
-        report_startup_failure(ValueError("the WebView2 runtime is missing"))
+        with patch.object(desktop.sys, "platform", "linux"):
+            report_startup_failure(ValueError("the WebView2 runtime is missing"))
         text = self.log.read_text(encoding="utf-8")
         self.assertIn("ValueError", text)
         self.assertIn("the WebView2 runtime is missing", text)
+        self.dialog.assert_not_called()
 
     def test_windows_also_shows_a_dialog_naming_the_report(self):
         with patch.object(desktop, "windows_error_dialog") as dialog, patch.object(
