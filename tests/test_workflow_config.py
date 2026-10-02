@@ -193,7 +193,11 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIn('gh release upload "$tag" --repo "$GITHUB_REPOSITORY"', publish)
         # The notes are extended from what the page already says, never rewritten.
         self.assertIn("cat existing-notes.md windows-section.md > notes.md", publish)
-        self.assertIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$tag"', publish)
+        # A PATCH on the tag-addressed endpoint answers 404; the numeric release
+        # id is the endpoint GitHub accepts.
+        self.assertIn('releases/tags/$tag" --jq .id', publish)
+        self.assertIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id"', publish)
+        self.assertNotIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/', publish)
         self.assertIn("-F body=@notes.md", publish)
         start = publish.index("Add this build's four files beside the audited macOS ones.")
         end = publish.index("\nelse\n", start)

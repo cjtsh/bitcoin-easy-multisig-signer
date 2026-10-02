@@ -644,7 +644,11 @@ jobs:
             # attaching a second time.
             gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
               "dist/${zip_name}" "dist/${source_name}" "dist/${sbom_name}" "dist/${sums_name}"
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+            # The API answers 404 to a PATCH on the tag-addressed release
+            # endpoint -- reading the page by tag works, writing it does not.
+            # The numeric release id is the endpoint it accepts, so resolve it.
+            release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq .id)"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
               -F body=@notes.md
           else
             if [[ "$tag_status" == 0 ]]; then
