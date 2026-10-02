@@ -144,14 +144,22 @@ class HwiEntryTests(unittest.TestCase):
         usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
         usb1.USBDeviceHandle = Handle
         usb1.loadLibrary = Mock(return_value=True)
+        # The helper ships a differently-named library on each platform: macOS
+        # keeps the versioned dylib plus a symlink-style alias, Windows ships
+        # libusb-1.0.dll. Whichever set is present, the LAST name is the one that
+        # gets loaded, and the test has to follow the platform it runs on.
+        if sys.platform == "win32":
+            bundled = ("libusb-1.0.dll",)
+        else:
+            bundled = ("libusb-1.0.0.dylib", "libusb-1.0.dylib")
         with tempfile.TemporaryDirectory() as folder:
-            for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
+            for name in bundled:
                 (Path(folder) / name).write_bytes(b"synthetic library")
             with patch.object(sys, "frozen", True, create=True), patch.object(
                 sys, "_MEIPASS", folder, create=True
             ), patch("ctypes.CDLL", return_value="bundled-handle") as loader:
                 load_hwi_entry(usb1)
-            loader.assert_called_once_with(str(Path(folder) / "libusb-1.0.dylib"))
+            loader.assert_called_once_with(str(Path(folder) / bundled[-1]))
             usb1.loadLibrary.assert_called_once_with("bundled-handle")
 
 

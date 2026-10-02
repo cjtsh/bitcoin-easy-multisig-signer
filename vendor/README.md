@@ -53,3 +53,30 @@ Its SHA-256 is
 matching the Homebrew 1.0.30 formula's source checksum. `libusb-COPYING` is the
 unmodified LGPL-2.1-or-later license from that source archive and is bundled
 with the app. The dylib is a separate dynamically loaded library.
+
+## Pinned libusb for the Windows helper
+
+Windows ships `libusb-1.0.dll`, compiled from the same pinned
+`libusb-1.0.30.tar.bz2` source rather than downloaded as someone else's binary.
+That compile can only happen on Windows, so the manual
+`.github/workflows/windows-inputs.yml` workflow produces it once, the resulting
+bytes are reviewed against the pinned source, and the reviewed file is committed.
+PyInstaller bundles two copies: one beside the HWI helper, which
+`scripts/hwi_entry.py` loads and verifies, and one inside the `usb1` package,
+because libusb1 searches its own package directory at import time before the
+helper can choose a library.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `vendor/libusb-1.0.dll` | not pinned yet |
+
+Until a digest is recorded here, in `$reviewedLibusbSha256` in
+`scripts/build-windows.ps1`, in the `win32` entry of `REVIEWED` in
+`tests/test_libusb_vendor.py`, and in the `LIBUSB_WINDOWS_SHA256` repository
+variable, the Windows build and the vendor test both fail closed rather than
+accept whatever file happens to be in `vendor/`.
+
+Build settings used, so the DLL can be rebuilt and compared: Visual Studio 2022
+x64, with `LIBUSB_BUILD_EXAMPLES=OFF`, `LIBUSB_BUILD_TESTS=OFF`,
+`LIBUSB_BUILD_TESTING=OFF`, `LIBUSB_BUILD_BENCHMARKS=OFF` and
+`LIBUSB_ENABLE_UDEV=OFF`. `libusb-COPYING` above is the license for both builds.

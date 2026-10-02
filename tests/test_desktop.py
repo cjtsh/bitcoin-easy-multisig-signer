@@ -1,4 +1,4 @@
-"""Desktop wrapper tests run without macOS, WebKit or real wallet files."""
+"""Desktop wrapper tests run without a window toolkit, a real signer or real wallet files."""
 
 import base64
 import os
@@ -13,9 +13,9 @@ import safe_http
 from support import real_ca_bundle
 from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources,
                      check_device_bridge, check_psbt_save, configure_packaged_tls,
-                     main, run_desktop)
+                     main, run_desktop, webview_renderer)
 from probe import ProbeError
-from gui import LocalApp, PreparedPayment, ui_path
+from gui import LocalApp, PreparedPayment, assert_private_file, ui_path
 from dataclasses import replace
 
 
@@ -59,7 +59,9 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(saved.parent, home / "Downloads")
             self.assertEqual(saved.name, "testnet4-unsigned.psbt")
             self.assertEqual(saved.read_bytes(), self.raw)
-            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+            # Windows protects the file with a per-user access list rather than
+            # POSIX mode bits, so the assertion is the platform-aware one.
+            assert_private_file(saved)
             # A second save must never replace the earlier transaction.
             second = bridge.save_psbt(self.encoded, "testnet4")
             self.assertEqual(Path(second["path"]).name, "testnet4-unsigned-2.psbt")
@@ -125,7 +127,7 @@ class DesktopTests(unittest.TestCase):
                 self.page = page
         fake = FakeWebview()
         run_desktop(fake)
-        self.assertEqual(fake.asserted_gui, "cocoa")
+        self.assertEqual(fake.asserted_gui, webview_renderer())
         self.assertTrue(fake.url.startswith("http://127.0.0.1:"))
         self.assertIs(fake.bridge.window, fake.window)
         self.assertIn('id="quit" class="secondary" hidden', fake.page)
@@ -147,18 +149,22 @@ class DesktopTests(unittest.TestCase):
         build script, or it silently reverts to the default.
         """
         root = Path(__file__).resolve().parents[1]
-        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
-        self.assertIn('--icon "assets/AppIcon.icns"', build)
-        icns = root / "assets" / "AppIcon.icns"
-        self.assertTrue(icns.is_file(), "the icon the build references is missing")
-        data = icns.read_bytes()
-        self.assertEqual(data[:4], b"icns", "not a valid .icns container")
+        build = (root / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
+        self.assertIn("'--icon', 'assets\\AppIcon.ico'", build)
+        ico = root / "assets" / "AppIcon.ico"
+        self.assertTrue(ico.is_file(), "the icon the build references is missing")
+        data = ico.read_bytes()
+        self.assertEqual(data[:4], b"\x00\x00\x01\x00", "not a valid .ico container")
         self.assertGreater(len(data), 20_000, "the icon looks suspiciously empty")
-        # The master artwork travels with the compiled icon so it can be rebuilt.
+        # The master artwork travels with the compiled icon so it can be rebuilt,
+        # and the derivation script is checked in beside it.
         self.assertTrue((root / "assets" / "icon.svg").is_file())
-        # And the source archive must carry both, or a rebuild from it loses them.
+        self.assertTrue((root / "assets" / "AppIcon.icns").is_file())
+        self.assertTrue((root / "scripts" / "make-windows-icon.py").is_file())
+        # And the source archive must carry the icon and its master, or a rebuild
+        # from the archive loses them.
         source = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
-        self.assertIn("assets/AppIcon.icns", source)
+        self.assertIn("assets/AppIcon.ico", source)
         self.assertIn("assets/icon.svg", source)
 
     def test_bundled_ui_is_resolved_inside_app(self):
@@ -218,24 +224,27 @@ class DesktopTests(unittest.TestCase):
         device fault rather than a missing dependency."""
         root = Path(__file__).resolve().parents[1]
         self.assertIn("requests", (root / "requirements-desktop.txt").read_text(encoding="utf-8"))
-        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
+        build = (root / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
         self.assertIn("--collect-all requests", build)
 
-    def test_hardened_hwi_gets_scoped_usb_library_validation_exception(self):
+    def test_the_build_proves_the_bundled_usb_library_loads(self):
+        """The check that catches a broken bundled libusb must survive the port.
+
+        On macOS the USB library needed a scoped codesign exception, so the build
+        finished by running HWI's own library check. Windows has no such exception,
+        but it has its own trap: usb1 loads a library at import time, so the DLL has
+        to be present inside the usb1 package as well as beside the helper.
+        """
         root = Path(__file__).resolve().parents[1]
-        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
-        entitlement = root / "scripts" / "hwi-entitlements.plist"
-        self.assertTrue(entitlement.is_file())
-        self.assertIn("com.apple.security.cs.disable-library-validation",
-                      entitlement.read_text(encoding="utf-8"))
-        self.assertIn("--entitlements scripts/hwi-entitlements.plist", build)
+        build = (root / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
         self.assertIn("--dsh-check-libusb", build)
-        # The exception is applied while signing HWI only; the app's final
-        # signature keeps the existing hardened-runtime flags.
-        self.assertIn('[[ "$target" == "$hwi_bin"', build)
-        self.assertIn('codesign "${sign_flags[@]}" --sign "$sign_identity" "$app"', build)
+        self.assertIn("vendor\\libusb-1.0.dll", build)
+        self.assertIn("build\\libusb-alias\\libusb-1.0.dll", build)
+        # The alias copy is what usb1's import-time search finds, so it must land
+        # inside the package rather than only in the archive root.
+        self.assertIn("build\\libusb-alias\\libusb-1.0.dll;usb1", build)
         source = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
-        self.assertIn("scripts/*.plist", source)
+        self.assertIn("scripts/*.ps1", source)
 
     def test_bundle_check_requires_the_licence_and_notices(self):
         """The bundle redistributes libusb under LGPL-2.1-or-later.

@@ -192,7 +192,12 @@ def parse_bsms(text: str) -> WalletRecord:
 
 def _hwi_path(executable: str) -> str:
     if getattr(sys, "frozen", False):
-        bundled = Path(sys.executable).with_name("hwi")
+        # The packaged build ships the tool under the name its platform runs:
+        # `hwi` on macOS, `hwi.exe` on Windows. The non-frozen branch below needs
+        # no such split, because shutil.which() already resolves .EXE through
+        # PATHEXT on Windows.
+        name = "hwi.exe" if sys.platform == "win32" else "hwi"
+        bundled = Path(sys.executable).with_name(name)
         if bundled.is_file():
             return str(bundled)
         # A packaged build must never fall through to a PATH search: a

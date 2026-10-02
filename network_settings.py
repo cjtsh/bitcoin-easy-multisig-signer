@@ -23,8 +23,18 @@ class SettingsError(Exception):
 
 
 def settings_path() -> Path:
+    """The operator's own per-user configuration file, on each platform.
+
+    Every location is inside the user's profile: macOS and Windows both protect
+    those directories with a per-user access list, and the POSIX fallback is
+    created 0700. Server preferences are not wallet data, but they are still the
+    operator's own.
+    """
     if sys.platform == "darwin":
         return Path.home() / "Library/Application Support/Easy Bitcoin Multisig/settings.json"
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
+        return Path(base) / "Easy Bitcoin Multisig" / "settings.json"
     return Path.home() / ".config/easy-bitcoin-multisig/settings.json"
 
 

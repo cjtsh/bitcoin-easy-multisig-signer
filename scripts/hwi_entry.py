@@ -1,19 +1,29 @@
-"""Standalone HWI CLI entry point bundled beside the macOS app."""
+"""Standalone HWI CLI entry point bundled beside the app."""
 
 import ctypes
 import sys
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
-    bundled_libusb = Path(sys._MEIPASS) / "libusb-1.0.0.dylib"
-    bundled_alias = Path(sys._MEIPASS) / "libusb-1.0.dylib"
-    if not bundled_libusb.is_file() or not bundled_alias.is_file():
-        raise RuntimeError("The bundled USB library is missing; the signer helper cannot start.")
+    # The packaged helper must load the USB library that shipped with it and
+    # nothing else. macOS vendors libusb under its version-suffixed name and
+    # needs the plain soname present as well, because that is the name usb1 asks
+    # the loader for; Windows has a single canonical name for the same 1.0.30
+    # source. The last name in each tuple is the one actually loaded.
+    if sys.platform == "win32":
+        usb_names = ("libusb-1.0.dll",)
+    else:
+        usb_names = ("libusb-1.0.0.dylib", "libusb-1.0.dylib")
+    for usb_name in usb_names:
+        if not (Path(sys._MEIPASS) / usb_name).is_file():
+            raise RuntimeError(
+                "The bundled USB library is missing; the signer helper cannot start."
+            )
     # usb1 exposes an explicit loader. Bind its first load to the verified
-    # bundle path; preloading a differently named dylib does not stop usb1 from
-    # finding a second Homebrew copy later.
+    # bundle path; preloading a differently named library does not stop usb1 from
+    # finding a second copy from the system loader later.
     import usb1
-    _libusb_handle = ctypes.CDLL(str(bundled_alias))
+    _libusb_handle = ctypes.CDLL(str(Path(sys._MEIPASS) / usb_names[-1]))
     if not usb1.loadLibrary(_libusb_handle):
         raise RuntimeError("The USB stack loaded a library outside this app.")
 
@@ -82,7 +92,7 @@ def _check_libusb() -> int:
         list(context.getDeviceList(skip_on_error=True))
     if getattr(sys, "frozen", False):
         loaded = Path(usb1.libusb1.libusb._name).resolve()
-        expected = (Path(sys._MEIPASS) / "libusb-1.0.dylib").resolve()
+        expected = (Path(sys._MEIPASS) / usb_names[-1]).resolve()
         if loaded != expected:
             raise RuntimeError("The USB stack loaded a library outside this app.")
         print(f"Bundled libusb: {loaded}")

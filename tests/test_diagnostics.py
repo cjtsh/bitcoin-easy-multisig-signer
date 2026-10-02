@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from gui import (DIAGNOSTIC_ROUTE_STAGES, DIAGNOSTIC_STAGES, LocalApp,
-                 save_diagnostic_report)
+                 assert_private_file, save_diagnostic_report)
 
 
 class DiagnosticTests(unittest.TestCase):
@@ -17,7 +17,9 @@ class DiagnosticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             result = save_diagnostic_report(state, Path(temporary))
             saved = Path(result["path"])
-            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+            # Windows protects the file with a per-user access list rather than
+            # POSIX mode bits, so the assertion is the platform-aware one.
+            assert_private_file(saved)
             report = json.loads(saved.read_text())
         self.assertEqual(report["events"][0]["stage"], "wallet_import")
         self.assertEqual(report["events"][0]["outcome"], "passed")

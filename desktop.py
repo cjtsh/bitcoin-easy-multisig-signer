@@ -1,4 +1,9 @@
-"""Thin macOS window around the existing localhost GUI; no wallet engine fork."""
+"""Thin native window around the existing localhost GUI; no wallet engine fork.
+
+The window is the only platform-specific part. It is WebKit on macOS and
+WebView2 on Windows; the wallet engine, the interface and the HTTP API are the
+same files on both.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import safe_http
-from gui import LocalApp, launch_url, save_prepared_psbt, ui_path
+from gui import LocalApp, assert_private_file, launch_url, save_prepared_psbt, ui_path
 from probe import ProbeError, _hwi_path, invoke_hwi
 from wallet_service import WalletError
 
@@ -97,7 +102,7 @@ def check_bundle_resources() -> None:
         # that "some CA is loaded" is not enough: on a build machine with ambient
         # OpenSSL CA files that passes even when the bundle is ignored, which is
         # precisely how an earlier build shipped while being unable to verify any
-        # certificate on the user's Mac.
+        # certificate on the user's computer.
         if Path(safe_http.trust_bundle() or "\0") != bundle:
             raise RuntimeError(
                 "The bundled HTTPS trust store is not the one configured for use; "
@@ -169,8 +174,7 @@ def check_psbt_save() -> None:
             raise RuntimeError("Two saves produced different files.")
         if not saved.read_bytes().startswith(b"psbt\xff"):
             raise RuntimeError("The saved file is not a PSBT.")
-        if saved.stat().st_mode & 0o777 != 0o600:
-            raise RuntimeError("The saved file permissions are not 0600.")
+        assert_private_file(saved)
     print("Bundled unsigned-PSBT save check passed.")
 
 
@@ -231,6 +235,18 @@ def check_device_bridge() -> None:
     print("The device bridge works; plugging in a signer is what remains untested.")
 
 
+def webview_renderer() -> str:
+    """pywebview's renderer, pinned rather than auto-selected.
+
+    macOS has one option. On Windows pywebview falls back to the legacy MSHTML
+    engine when WebView2 is missing, and this interface uses modern CSS that
+    engine cannot lay out — the window would open and quietly render wrong.
+    Pinning EdgeChromium turns a missing runtime into a clear startup error
+    instead, which is the failure this app can act on.
+    """
+    return "edgechromium" if sys.platform == "win32" else "cocoa"
+
+
 def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
     state = LocalApp(desktop=True)
@@ -245,7 +261,7 @@ def run_desktop(webview_module) -> None:
             "Bitcoin Easy Signer", launch_url(port, state.token), js_api=bridge,
             width=1100, height=820, min_size=(780, 600),
         )
-        webview_module.start(gui="cocoa")
+        webview_module.start(gui=webview_renderer())
     finally:
         server.shutdown()
         server.server_close()
@@ -267,8 +283,11 @@ def main() -> None:
     if "--check-devices" in sys.argv[1:]:
         check_device_bridge()
         return
-    if sys.platform != "darwin":
-        raise SystemExit("The desktop window bundle is for macOS; Linux can use gui.py.")
+    if sys.platform not in ("darwin", "win32"):
+        raise SystemExit(
+            "The desktop window bundle is built for macOS and Windows; "
+            "other systems can use gui.py in a browser."
+        )
     import webview
     run_desktop(webview)
 

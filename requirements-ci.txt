@@ -1,1 +1,8 @@
+# Test-only dependencies. Nothing here may reach the app: the packaged bundle is
+# built from requirements-desktop-windows.lock, and a test helper that leaks into
+# the shipping set is a defect rather than a convenience.
 pyyaml==6.0.3
+# The desktop and desktop-wrapper suites stand a real CA bundle in for the one the
+# app ships. Windows has no default OpenSSL verify path, so without certifi those
+# tests report a skip, and both build workflows refuse a suite that skips at all.
+certifi==2026.7.22
