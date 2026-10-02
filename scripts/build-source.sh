@@ -17,8 +17,13 @@ mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci" "$stage/$root/releases"
-cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md PRIVACY.md SECURITY.md CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
-  RELEASE-HISTORY.md PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md \
+root_docs=(
+  README.md CURRENT-STATUS.md DISCLAIMER.md PRIVACY.md SECURITY.md
+  CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md
+  PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md RELEASE-HISTORY.md
+  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md
+)
+cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
   requirements-ci.txt requirements-ci.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
@@ -49,7 +54,7 @@ fi
 # Every document under releases/ must ship for the same reason: RELEASE-HISTORY.md
 # and the audit records link to them by name.
 missing_docs=()
-for file in ./*.md ./LICENSE ./THIRD-PARTY-NOTICES.md; do
+for file in "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md; do
   [[ -f "$stage/$root/$(basename "$file")" ]] || missing_docs+=("$(basename "$file")")
 done
 for file in ./releases/*.md; do
