@@ -24,6 +24,11 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
   carry only the source archive and the DMG, `SHA256SUMS` begins at 0.1.11, and
   `BUILD-SBOM.json` begins at 0.2.0 — so read the release page rather than
   assuming.
+- **The source archive is a snapshot at the tagged commit.** Its history entry
+  may still say "candidate" or "not published" because publication happens
+  after that commit is built. The GitHub release page and its checksums record
+  the publication; the later main-branch history entry records the final run
+  and artifact digests. Do not treat the in-tag status line as live status.
 
 | Version | One-line summary | Evidence |
 | --- | --- | --- |

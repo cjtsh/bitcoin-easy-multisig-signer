@@ -19,7 +19,8 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci" "$stage/$root/releases"
 cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md PRIVACY.md SECURITY.md CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
   RELEASE-HISTORY.md PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md \
-  requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
+  requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
+  requirements-ci.txt requirements-ci.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   signing.py wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
 
@@ -77,6 +78,10 @@ cp tests/test_*.py tests/support.py tests/fake_explorer.py \
   tests/ui_*.cjs "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
+mkdir -p "$stage/$root/vendor"
+cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
+  vendor/embit-0.8.2+besa.1.tar.gz \
+  vendor/embit-0.8.2+besa.1-py3-none-any.whl "$stage/$root/vendor/"
 # USER-MANUAL.md links to these sanitized interface illustrations. Keep them in
 # the source archive so the guide remains complete outside the Git checkout.
 mkdir -p "$stage/$root/docs/assets"

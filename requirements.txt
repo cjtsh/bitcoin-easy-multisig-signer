@@ -1,1 +1,1 @@
-embit==0.8.0
+embit @ file:vendor/embit-0.8.2+besa.1-py3-none-any.whl

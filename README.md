@@ -38,6 +38,10 @@ Developer mode is part of the **0.6.2** build, which is the current download. Th
 
 ## Mac installation and one-session test
 
+The app does not check for updates automatically. Check the GitHub releases
+page manually before a new recovery session and install the current signed
+release.
+
 The published 0.6.2 DMG is for Apple Silicon and is signed with Bitseeker LLC's Developer ID, notarized by Apple, and stapled. The 0.6.2 app bundle includes its MIT license and third-party summary. The 0.6.3 source updates the packaging recipe to include the safety and privacy notices; that source has not yet produced a DMG. Verify any download against that release's `SHA256SUMS` before opening it. macOS may still show its ordinary first-open confirmation for downloaded software; do not disable Gatekeeper globally.
 
 Physical-use evidence is owner-reported: two Mutinynet sends on 0.3.2, a confirmed Ledger + Jade Mutinynet payment on 0.4.1, and the first live mainnet payment, signed by an OneKey Classic 1S (through HWI's Trezor backend) and a Ledger Nano S and confirmed on chain, on the 0.5.0 candidate whose transaction engine is unchanged in 0.5.1. The 0.4.13 appearance changes have not been separately exercised in a physical transaction walkthrough. On each hardware device, check the destination, amount and fee. Signers commonly hide the change output, so check the change address in your own wallet software instead. Save the diagnostic report only if something fails or a reviewer needs evidence; the button is at the bottom of the window. Keep wallet files, xpubs, addresses, PSBTs, and raw signed transactions out of public issue reports and the repository.

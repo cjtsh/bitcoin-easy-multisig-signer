@@ -15,7 +15,7 @@ hardware-device communication; see the component licenses and source projects.
 | Component | Version | Licence | Upstream |
 | --- | --- | --- | --- |
 | [libusb](https://libusb.info/) | 1.0.30 | **LGPL-2.1-or-later** | <https://github.com/libusb/libusb> |
-| [embit](https://github.com/diybitcoinhardware/embit) | 0.8.0 | MIT | <https://github.com/diybitcoinhardware/embit> |
+| [embit](https://github.com/diybitcoinhardware/embit) | 0.8.2+besa.1 (pinned post-tag source with two local edits; see `vendor/README.md` in the source archive) | MIT | <https://github.com/diybitcoinhardware/embit> |
 | [Bitcoin Core HWI](https://github.com/bitcoin-core/HWI) | 3.2.0 | MIT | <https://github.com/bitcoin-core/HWI> |
 | [pywebview](https://pywebview.flowrl.com/) | 6.2.1 | BSD-3-Clause | <https://github.com/r0x0r/pywebview> |
 | [PyInstaller](https://pyinstaller.org/) | 6.22.2 | GPL-2.0-or-later **with the PyInstaller exception** | <https://github.com/pyinstaller/pyinstaller> |
@@ -25,13 +25,14 @@ hardware-device communication; see the component licenses and source projects.
 
 ### libusb (LGPL-2.1-or-later)
 
-`libusb-1.0.0.dylib` is bundled **unmodified**, exactly as installed from the
-Homebrew formula and verified against the reviewed `LIBUSB_SHA256` digest during
-the build. Its complete corresponding source is available from the upstream
-repository linked above, and the exact version bundled is recorded in
-`BUILD-SBOM.json` alongside its SHA-256.
+The build verifies the Homebrew `libusb-1.0.0.dylib` input against the reviewed
+`LIBUSB_SHA256` digest. PyInstaller copies it under two names for HWI's USB
+loader and re-signs the copied Mach-O. `BUILD-SBOM.json` records the input
+digest and both shipped, post-signing digests separately. The library code is
+not changed by this project; its complete corresponding source is available
+from the upstream repository linked above.
 
-`libusb-1.0.0.dylib` is bundled as a separate, unmodified dynamic library. The
+The dylib is bundled as a separate dynamic library. The
 fact that a library is dynamically linked does not by itself establish that a
 combined application's packaging satisfies every condition of LGPL-2.1.
 Redistributors should review the complete license and corresponding-source

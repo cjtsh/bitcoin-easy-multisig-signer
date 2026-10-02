@@ -4,6 +4,6 @@
 #
 #    pip-compile --generate-hashes --no-index --output-file=requirements.lock requirements.txt
 #
-embit==0.8.0 \
-    --hash=sha256:8bf4b10073c67400370ce523fb16f035fe759f6fdd987c579bdcc268d75ed770
+file:vendor/embit-0.8.2+besa.1-py3-none-any.whl \
+    --hash=sha256:77aec9344be124c0718503eb1f7f3c44dfbb01a929e5b974f7edfe2ad206dce0
     # via -r requirements.txt
