@@ -1,10 +1,12 @@
 # v0.6.2 — retiring a review also retires its network
 
-**Status: candidate. Not published yet.** Nothing is published as 0.6.2; the
-published release remains
-[v0.6.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.1).
-This record covers what the fix is, what it does not change, and how it was
-verified.
+**Published 2026-10-02** as tag
+[v0.6.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.2)
+from commit `7b4db85`, built by workflow run
+[36959242210](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36959242210)
+with a publishing dispatch, after the candidate below had been built and
+verified. This record covers what the fix is, what it does not change, and how
+it was verified.
 
 ## Why this release exists
 
@@ -88,7 +90,43 @@ workflow YAML parse, and the source-archive build.
 - The plain-language operator guide and the nontechnical walkthrough remain
   deferred to the owner.
 
-## Candidate build evidence
+## Published build — 2026-10-02
+
+Published as tag
+[v0.6.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.2)
+from commit `7b4db85` (workflow run
+[36959242210](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36959242210),
+`notarize=true publish=true`), release published 2026-10-02T03:18:57Z with four
+assets:
+
+- `Bitcoin-Easy-Signer-v0.6.2-macOS.dmg` — 34,875,852 bytes, SHA-256
+  `5f648aa1728127970c1182760026c742d1c66be400fa171f7a1f19470ef1ab53`
+- `bitcoin-easy-multisig-signer-v0.6.2.tar.gz` — 709,626 bytes, SHA-256
+  `a901a66bf7f4ab0144c09ad510720e4443e16f93ff0bb71d7c51c9d29eb5f0d5`
+- `BUILD-SBOM.json` — 7,023 bytes, SHA-256
+  `4e49843bb6adf2df4bb22c057d49680dd7dc9b92985b7a5b15944d8654a37168`
+- `SHA256SUMS`
+
+Both artifact hashes recomputed from the downloaded release assets match the
+published `SHA256SUMS`. The published DMG is **not byte-identical** to the
+candidate below (34,874,193 bytes), because it is a fresh build of the same
+commit; the published hashes above are the ones that apply to the download.
+
+Verified on the downloaded published DMG: `hdiutil verify` VALID; the bundle
+reports `CFBundleShortVersionString 0.6.2`; `codesign -dvvv` reports
+`Authority=Developer ID Application: Bitseeker LLC (B8G5L7M8TB)`,
+`TeamIdentifier=B8G5L7M8TB` and
+`CDHash=a6452a56e2fa875a4bc48ab25e77813441ad6c4b`; `codesign --verify --strict
+--deep` OK; `spctl -a -t exec -vv` accepts it from a Notarized Developer ID;
+`xcrun stapler validate` works on the app inside the image and on the DMG itself.
+Apple's record lists the DMG `fa13c97f-3786-4d36-81bc-6baefefa6c43` and the app
+zip `07fda595-4cc7-475d-8e1c-1a97848601db`, both **Accepted**.
+
+The published build has not been installed or opened. The checks show that the
+published files are the ones the workflow built, signed by Bitseeker LLC and
+notarized by Apple.
+
+## Candidate build evidence — the superseded candidate (run 36958728418, commit `8712dca`)
 
 A non-publishing dispatch (`notarize=true publish=false`): workflow run
 [36958728418](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36958728418)

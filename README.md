@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer
 
-**Published version: 0.6.1** — [Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.1). Version 0.6.1 is an interface release: the app opens on Bitcoin mainnet and the practice networks sit behind developer mode, with the transaction and signing engine unchanged from 0.5.1. Version 0.5.1 was the first published build that can broadcast to Bitcoin mainnet, behind one explicit per-transaction confirmation on the final screen and a backend opt-in that fails closed when omitted. A mainnet transaction has been prepared, signed on two hardware devices, broadcast and confirmed. One confirmed transaction is not proof that a later one is safe: this is community software, open source, with no warranty or guarantee — read [the risk notice](DISCLAIMER.md). The version-by-version record of changes, corrections and evidence is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md).
+**Published version: 0.6.2** — [Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.2). Version 0.6.2 is a maintenance release: it retires the network of a finished review together with the review, so the mainnet opt-in a broadcast sends can never be inherited from an earlier payment. No user-visible behaviour changed and the transaction and signing engine is unchanged from 0.5.1. Version 0.6.1 is the interface release that opens on Bitcoin mainnet and puts the practice networks behind developer mode. Version 0.5.1 was the first published build that can broadcast to Bitcoin mainnet, behind one explicit per-transaction confirmation on the final screen and a backend opt-in that fails closed when omitted. Version 0.5.1 was the first published build that can broadcast to Bitcoin mainnet, behind one explicit per-transaction confirmation on the final screen and a backend opt-in that fails closed when omitted. A mainnet transaction has been prepared, signed on two hardware devices, broadcast and confirmed. One confirmed transaction is not proof that a later one is safe: this is community software, open source, with no warranty or guarantee — read [the risk notice](DISCLAIMER.md). The version-by-version record of changes, corrections and evidence is in [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md).
 
 Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical person send Bitcoin from an **existing** native-SegWit multisig wallet with two or three keys. The wallet definition determines its signing threshold. The app does not create a wallet, generate keys, or ask for seeds or PINs. The intended screen is simple: open the wallet definition, see the balance, enter a destination, review the payment, approve it on the required hardware devices, and confirm the final transaction.
 
@@ -32,7 +32,7 @@ What it will not do: the app cannot fund a practice wallet, and it cannot give y
 
 The selected network is kept **in memory for the current session only**. The app does not write it to any settings file, so reopening the app always returns to live Bitcoin — a practice network can never be left switched on by accident. While a payment is prepared, the gate refuses to change network and says why. The orange or green frame around the window and the network badge are always visible and always name the network actually in force: orange means real Bitcoin, green means practice coins. Those two signals cannot be hidden or disagree.
 
-Developer mode is part of the **0.6.1** build, which is the current download. The older published 0.5.1 build keeps the network cards on the opening screen.
+Developer mode is part of the **0.6.2** build, which is the current download. The older published 0.5.1 build keeps the network cards on the opening screen.
 
 ## Mac installation and one-session test
 
@@ -44,7 +44,7 @@ If neither declared nor guarded standard change is available, the app offers a n
 
 ## Supported scope and limitations
 
-| Item | Published support (0.6.1) |
+| Item | Published support (0.6.2) |
 | --- | --- |
 | Wallet | Existing BSMS 1.0, P2WSH multisig with two or three keys and xpub origins; threshold comes from the file |
 | Networks | Testnet4, Mutinynet and mainnet through one engine. Mainnet broadcast requires one explicit per-transaction confirmation on the final screen plus a backend opt-in that fails closed when omitted. Before 0.5.0 every build refused a mainnet broadcast in code. From 0.6.1 the app opens on mainnet and reaches the practice networks only through developer mode, whose panel offers Mutinynet and Testnet4 and keeps live Bitcoin behind "Return to Bitcoin" |

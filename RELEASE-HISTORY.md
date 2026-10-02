@@ -52,7 +52,7 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
 | **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400`, tagged `v0.5.0-rc1` locally, never pushed or published. **This is the build that made the project's first live mainnet payment** | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
 | **0.5.1** | First published mainnet-broadcast release: publishes the 0.5.0 engine unchanged, corrects the change-address guidance the live run showed to be wrong, and restates the risk language | [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md) |
-| **0.6.2 candidate — not published** | Internal state fix: retiring a review also retires the network it was bound to, so the mainnet opt-in posted with a broadcast can never be inherited from an earlier payment. No user-visible change; the engine is unchanged from 0.5.1 | [`releases/PATCH-0.6.2.md`](releases/PATCH-0.6.2.md) |
+| **0.6.2** | Internal state fix: retiring a review also retires the network it was bound to, so the mainnet opt-in posted with a broadcast can never be inherited from an earlier payment. No user-visible change; the engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.2` from commit `7b4db85` (run 36959242210) | [`releases/PATCH-0.6.2.md`](releases/PATCH-0.6.2.md) |
 | **0.6.1** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only, since live Bitcoin is the network the gate returns to rather than a card in it. The transaction and signing engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.1` from commit `2977930` (run 36957927251). A first candidate carried the same idea at 0.6.0 from `f147141` in run 36954844052 and is superseded before publication, so no 0.6.0 tag or release exists | [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md), [`releases/SCOPE-0.6.1.md`](releases/SCOPE-0.6.1.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
@@ -812,10 +812,14 @@ repository. It is public, and this is the owner's live wallet.
 The full record, including the artifact hashes, is in
 [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md).
 
-## 0.6.2 candidate — retiring a review also retires its network
+## 0.6.2 — retiring a review also retires its network
 
-**Not published.** The owner chose this fix as the next release (m01412), after
-0.6.1 was published.
+**Published 2026-10-02** as tag `v0.6.2` from commit `7b4db85`, built by workflow
+run 36959242210: source archive
+`a901a66bf7f4ab0144c09ad510720e4443e16f93ff0bb71d7c51c9d29eb5f0d5`, DMG
+`5f648aa1728127970c1182760026c742d1c66be400fa171f7a1f19470ef1ab53`. The owner
+chose this fix as the next release (m01412), after 0.6.1 was published, and asked
+for it to be published once the candidate was verified.
 
 `ui.html`'s `invalidateReview()` cleared `finalTxid` but left `finalChain`, and
 the two other places that retire a review had the same gap: the clear-signed
@@ -948,6 +952,7 @@ published, read back from the `SHA256SUMS` attached to each GitHub release.
 | `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
 | `v0.5.1` | `e833162` | `b1b3f7e4018fdd1d94758867ccaa05fd083c35f7624bc1ad2ba8abb1ee1c8ba9` | `73691cc4fd71591cd53acc22f08273a97b20cf09593e6c8009bd5b39706387d0` |
 | `v0.6.1` | `2977930` | `144df834ecae0f983c5c23bf1a86f85509ce0cf00f7dffc6c5d937451e44f5ca` | `22f0280fb010fc7595c48a79ae15894a5b24501b351764d99d2f0ccae47cb7d8` |
+| `v0.6.2` | `7b4db85` | `a901a66bf7f4ab0144c09ad510720e4443e16f93ff0bb71d7c51c9d29eb5f0d5` | `5f648aa1728127970c1182760026c742d1c66be400fa171f7a1f19470ef1ab53` |
 
 `v0.4.14` resolves to `d530a221de87`, the commit the published assets were built from.
 

@@ -39,7 +39,7 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) | 0.4.15 | Fix signed HWI/libusb loading; OneKey Classic 1S support; a cleared, unbroadcast mainnet dry run |
 | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) | 0.5.0 | Mainnet broadcast behind explicit final-screen and backend opt-ins; made the first live mainnet payment |
 | [`PATCH-0.5.1.md`](PATCH-0.5.1.md) | 0.5.1 | First published mainnet-broadcast release; publishes the 0.5.0 engine unchanged and corrects the change-address guidance |
-| [`PATCH-0.6.2.md`](PATCH-0.6.2.md) | 0.6.2 | **Candidate — not published.** Retires the network along with the rest of a finished review, so a later payment cannot inherit the mainnet opt-in from an earlier one. Internal state fix: no user-visible behaviour change and the engine is unchanged from 0.5.1 |
+| [`PATCH-0.6.2.md`](PATCH-0.6.2.md) | 0.6.2 | **Published 2026-10-02 as `v0.6.2`.** Internal state fix: retiring a review also retires the network it was bound to, so a later payment cannot inherit the mainnet opt-in from an earlier one. No user-visible behaviour change and the engine is unchanged from 0.5.1 |
 | [`PATCH-0.6.1.md`](PATCH-0.6.1.md) · [`SCOPE-0.6.1.md`](SCOPE-0.6.1.md) | 0.6.1 | **Published 2026-10-02 as `v0.6.1`.** Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only; the engine is unchanged from 0.5.1. The 0.6.0 candidate that first carried the gate is superseded, so no 0.6.0 tag or release exists |
 
 ## These are historical records
