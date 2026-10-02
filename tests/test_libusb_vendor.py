@@ -11,7 +11,6 @@ unpinned native library is exactly the thing this test exists to prevent.
 """
 
 import hashlib
-import sys
 import tarfile
 import unittest
 from pathlib import Path
@@ -43,19 +42,23 @@ PINNING_INSTRUCTIONS = (
 
 
 class LibusbVendorTests(unittest.TestCase):
-    def test_the_shipped_native_library_is_the_reviewed_one(self):
-        if sys.platform not in REVIEWED:
-            self.skipTest(f"this platform ships no vendored libusb ({sys.platform})")
-        name, digest = REVIEWED[sys.platform]
-        path = VENDOR / name
-        if digest is None:
-            self.fail(f"vendor/{name} has not been pinned yet. "
-                      + PINNING_INSTRUCTIONS.format(name=name))
-        if not path.is_file():
-            self.fail(f"vendor/{name} is missing. "
-                      + PINNING_INSTRUCTIONS.format(name=name))
-        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest,
-                         f"vendor/{name} is not the reviewed library")
+    def test_the_shipped_native_libraries_are_the_reviewed_ones(self):
+        """Every committed native library, checked on every host platform.
+
+        The files are committed, so anyone can verify the bytes the project
+        ships; the check is deliberately not platform-gated, because the build
+        workflow refuses a run whose suite reports a skip anywhere.
+        """
+        for name, digest in sorted(REVIEWED.values()):
+            path = VENDOR / name
+            if digest is None:
+                self.fail(f"vendor/{name} has not been pinned yet. "
+                          + PINNING_INSTRUCTIONS.format(name=name))
+            if not path.is_file():
+                self.fail(f"vendor/{name} is missing. "
+                          + PINNING_INSTRUCTIONS.format(name=name))
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest,
+                             f"vendor/{name} is not the reviewed library")
 
     def test_the_pinned_source_still_matches_its_digest(self):
         source = VENDOR / LIBUSB_SOURCE

@@ -1,0 +1,22 @@
+# Keep every text file at LF on every platform.
+#
+# This tree ships artifacts whose bytes are compared against recorded digests, and
+# some of the files that describe or verify them are hashed as well --
+# requirements-desktop-windows.lock is digested into the build SBOM. A Windows
+# checkout with core.autocrlf must not silently rewrite line endings in any of
+# them, and pip-compile on Windows produced that lock with CRLF, so the rule also
+# normalises the file back to the LF form the rest of the repository uses.
+* text=auto eol=lf
+
+# Not text, whatever a heuristic decides: vendor/libusb-COPYING is compared byte
+# for byte against the copy inside the pinned libusb source archive.
+vendor/libusb-COPYING -text
+*.dll binary
+*.dylib binary
+*.whl binary
+*.tar.gz binary
+*.tar.bz2 binary
+*.icns binary
+*.ico binary
+*.pdf binary
+*.png binary
