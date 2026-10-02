@@ -27,6 +27,9 @@ GitHub release workflow.
   build or enter a public source archive.
 - RELEASE-PROCESS.md documents the candidate → owner acceptance when app
   behavior changes → workflow publication sequence for all future builds.
+- Local builds remain available for quick development iterations. Every public
+  release must use the GitHub workflow; manual publication is prohibited. If
+  that workflow is unavailable, publication waits.
 - Documentation records that the local embit sequence correction is not yet
   upstream and must be reviewed on every embit upgrade; the app does not import
   Liquid/PSET code and round-trips recipient addresses against the selected

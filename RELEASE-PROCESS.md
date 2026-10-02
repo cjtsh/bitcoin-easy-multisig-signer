@@ -80,12 +80,10 @@ in releases/PATCH-VERSION.md, then update current-status files in a
 documentation-only commit. The source archive and tag are immutable snapshots;
 the post-publication records on main must explain any documented differences.
 
-Manual publication bypasses machine-enforced release gates. Do not use it as a
-normal route. Any emergency decision to publish manually must be written and
-dated by the owner before a tag or release is created, must name the skipped
-gates and accepted residual risk, and must be preserved in the release record.
-The v0.6.3 release used a manual route; v0.6.4 is intended to prove the
-workflow's automated publication path.
+Manual publication bypasses machine-enforced release gates and is prohibited.
+If the workflow is unavailable, wait to publish; do not create a tag, GitHub
+release, or substitute upload by hand. The v0.6.3 release used a manual route;
+v0.6.4 demonstrates the required automated publication path.
 
 ## 4. Keep the record current
 
