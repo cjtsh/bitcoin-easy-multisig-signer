@@ -145,14 +145,62 @@ class WorkflowConfigTests(unittest.TestCase):
         # candidate a human chose to test, so only a dispatch can be promoted.
         self.assertIn('.event == "workflow_dispatch"', promotion)
 
-    def test_the_release_tag_carries_the_platform_suffix(self) -> None:
-        # v0.6.4 is an audited macOS release. Reusing that tag, or tagging the
-        # Windows build v0.6.4, would make two different artifacts answer to one
-        # version. The Windows release is v<version>-windows-x64 and nothing else.
+    def test_one_release_carries_every_platform_when_a_release_tag_is_given(self) -> None:
+        # One version, one release page: dispatched with `release_tag`, this build
+        # attaches its files to the release the audited macOS pipeline already created
+        # for that version. An empty release_tag keeps the earlier behaviour, where the
+        # Windows build answers to v<version>-windows-x64 and nothing else -- which is
+        # how v0.6.4 first shipped, before there was a consolidated page.
+        inputs = self.triggers["workflow_dispatch"]["inputs"]
+        self.assertEqual(inputs["release_tag"]["type"], "string")
+        self.assertEqual(inputs["release_tag"]["default"], "")
         publish = self.step_body("Publish the release")
         self.assertIn('tag="v${VERSION}-windows-x64"', publish)
         self.assertIn('release_title="$tag"', publish)
         self.assertNotIn('tag="v${VERSION}"', publish)
+        self.assertIn('tag="${{ inputs.release_tag }}"', publish)
+        self.assertIn("attaching=true", publish)
+        # Only the plain version tag may be attached to: putting a v0.6.5 build on
+        # v0.5.0's page would be a lie about which version those bytes are.
+        self.assertIn('if [[ "${{ inputs.release_tag }}" != "v${VERSION}" ]]', publish)
+
+    def test_attaching_is_only_allowed_onto_an_existing_release(self) -> None:
+        publish = self.step_body("Publish the release")
+        self.assertIn("does not exist yet", publish)
+        self.assertIn("Publish the macOS release for ${VERSION} first", publish)
+        # The standalone path still refuses to touch a version that already shipped.
+        self.assertIn("Bump version.py rather than republishing a released version", publish)
+        self.assertIn('git ls-remote --exit-code --tags origin "refs/tags/$tag"', publish)
+
+    def test_the_attached_files_say_which_platform_they_are(self) -> None:
+        # Renaming is how one page tells two platforms' files apart. The bytes were
+        # verified against the candidate's SHA256SUMS in the step before the publish
+        # step, and the checksum list is rebuilt over the renamed files afterwards.
+        publish = self.step_body("Publish the release")
+        for name in ("BUILD-SBOM-windows-x64.json",
+                     "SHA256SUMS-windows-x64.txt",
+                     "bitcoin-easy-multisig-signer-v${VERSION}-windows-x64-source.tar.gz"):
+            self.assertIn(name, publish)
+        self.assertIn('sha256sum "${zip_name}" "${source_out}" "${sbom_name}" > "${sums_name}"',
+                      publish)
+        self.assertLess(self.text.index("Verify downloaded release bytes"),
+                        self.text.index('mv "dist/BUILD-SBOM.json"'))
+
+    def test_the_attach_path_adds_but_never_replaces(self) -> None:
+        publish = self.step_body("Publish the release")
+        self.assertIn("a published asset is never replaced", publish)
+        self.assertIn('if grep -Fxq "$asset" <<<"$existing"', publish)
+        self.assertIn('gh release upload "$tag" --repo "$GITHUB_REPOSITORY"', publish)
+        # The notes are extended from what the page already says, never rewritten.
+        self.assertIn("cat existing-notes.md windows-section.md > notes.md", publish)
+        self.assertIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$tag"', publish)
+        self.assertIn("-F body=@notes.md", publish)
+        start = publish.index("Add this build's four files beside the audited macOS ones.")
+        end = publish.index("\nelse\n", start)
+        attach = publish[start:end]
+        self.assertNotIn("--title", attach)
+        self.assertNotIn("--notes-file", attach)
+        self.assertNotIn("--clobber", publish)
 
     # ---- the jobs ---------------------------------------------------------
 
@@ -293,6 +341,7 @@ class WorkflowConfigTests(unittest.TestCase):
         for marker in ("gh api", "gh run download", "head_sha", "conclusion", "head_branch",
                        ".path == \".github/workflows/build-windows.yml\"",
                        "CANDIDATE-MANIFEST.txt", "allow_unsigned=true", "publish=false",
+                       "release_tag=$RELEASE_TAG",
                        "sha256sum -c SHA256SUMS", "windows-bundle"):
             self.assertIn(marker, promotion)
         self.assertIn("run_id=$CANDIDATE_RUN_ID", promotion)
@@ -312,6 +361,11 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertLess(publish.index("git ls-remote"), publish.index("gh release create"))
 
     def test_no_publication_escape_hatches(self) -> None:
+        # The attach path adds files to a release that already exists, so it must be
+        # able to describe them: it appends a section to the notes with a body-only
+        # PATCH, which is why `gh release edit` -- which can also rewrite a title --
+        # stays banned. Nothing may replace an asset, retitle a release, mark a latest
+        # release, or delete anything.
         for verb in ("--clobber", "--draft", "--prerelease", "gh release delete",
                      "gh release edit", "--latest"):
             self.assertNotIn(verb, self.text)
@@ -407,7 +461,10 @@ class ReleaseNotesTests(unittest.TestCase):
         )
         script = (script
                   .replace("${{ inputs.publish }}", "false")
-                  .replace("${{ inputs.allow_unsigned }}", "false")) + "\n"
+                  .replace("${{ inputs.allow_unsigned }}", "false")
+                  # An empty release_tag is the standalone Windows-only release, whose
+                  # notes are what this class reads.
+                  .replace("${{ inputs.release_tag }}", "")) + "\n"
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             (work / "notes.md").write_text("", encoding="utf-8")

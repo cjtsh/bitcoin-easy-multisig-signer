@@ -16,8 +16,11 @@ name: Build Windows bundle and release
 # The other difference is where this file lives. The audited macOS release was cut
 # from main, and that release has to keep meaning exactly what it meant. So the
 # Windows port lives on its own branch, `windows-port`, and everything below is run
-# there. Main is never modified, and this pipeline publishes under its own tag
-# rather than rewriting an audited one.
+# there. Main is never modified. Dispatched with `release_tag`, this pipeline adds
+# its own files to the release page the audited macOS pipeline created for that
+# version, so one version has one page carrying every platform, and it does so
+# without replacing an asset or a title. Without `release_tag` it publishes under
+# its own platform-suffixed tag instead, which is what v0.6.4 first did.
 
 on:
   # A workflow that exists only on a non-default branch is not offered in the
@@ -40,6 +43,11 @@ on:
         default: false
       candidate_run_id:
         description: Run id of the tested publish=false candidate to promote
+        type: string
+        required: false
+        default: ""
+      release_tag:
+        description: "Attach this build to the release page of an already-published version instead of cutting a Windows-only release. Must be the plain version tag, for example v0.6.5. Empty keeps the Windows-only tag."
         type: string
         required: false
         default: ""
@@ -330,6 +338,7 @@ jobs:
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           # Verify the claimed candidate really is a completed publish=false run of
@@ -363,6 +372,7 @@ jobs:
           grep -Fx "run_id=$CANDIDATE_RUN_ID" "$manifest"
           grep -Fx "allow_unsigned=true" "$manifest"
           grep -Fx "publish=false" "$manifest"
+          grep -Fx "release_tag=$RELEASE_TAG" "$manifest"
           cp "$RUNNER_TEMP"/candidate-source/*.tar.gz dist/
           cp "$RUNNER_TEMP"/candidate-windows/*.zip "$RUNNER_TEMP"/candidate-windows/BUILD-SBOM.json dist/
           cp "$RUNNER_TEMP/candidate-sums/SHA256SUMS" dist/
@@ -424,17 +434,33 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          # The audited macOS release owns the plain `vX.Y.Z` tag, and a published
-          # release is never rewritten. This pipeline tags its own work with the
-          # platform suffix, so both releases sit side by side on one Releases page
-          # without either one claiming the other's version.
+          # One version, one release page. Dispatched with `release_tag` naming the
+          # version's own tag — the one the audited macOS pipeline creates — this build
+          # attaches its files to that page, so a visitor finds every platform of a
+          # version in one place. Without it the pipeline keeps its own tag with the
+          # platform suffix, which is how v0.6.4 first shipped. Either way a published
+          # tag is never reused: attaching needs the tag to exist, and cutting its own
+          # needs the tag not to.
           tag="v${VERSION}-windows-x64"
           release_title="$tag"
           zip_name="Bitcoin-Easy-Signer-v${VERSION}-windows-x64.zip"
+          sbom_name="BUILD-SBOM.json"
+          sums_name="SHA256SUMS"
+          attaching=false
+          if [[ -n "${{ inputs.release_tag }}" ]]; then
+            if [[ "${{ inputs.release_tag }}" != "v${VERSION}" ]]; then
+              echo "==> release_tag is ${{ inputs.release_tag }}, but this build is version ${VERSION}." >&2
+              echo "    Attach only to the plain version tag (v${VERSION})." >&2
+              exit 1
+            fi
+            tag="${{ inputs.release_tag }}"
+            release_title="$tag"
+            attaching=true
+          fi
           # There is no signed Windows build yet, so every artifact this pipeline
           # can produce is unsigned. Say so plainly, and say what the reader has
           # to do about it.
-          build_kind="**Unsigned.** This build carries no code signature, so Windows SmartScreen will warn on first run: choose *More info* → *Run anyway*. Built for testing, not for handing to anyone."
+          build_kind="**Unsigned.** This build carries no code signature, so Windows SmartScreen will warn on first run: choose *More info* → *Run anyway*. The Windows port is a separate codebase from the audited macOS build and has not been through that audit."
           cat > notes.md <<EOF
           ## v${VERSION}
 
@@ -511,6 +537,7 @@ jobs:
           commit=${GITHUB_SHA}
           run_id=${GITHUB_RUN_ID}
           allow_unsigned=${{ inputs.allow_unsigned }}
+          release_tag=${{ inputs.release_tag }}
           publish=${{ inputs.publish }}
           EOF
             {
@@ -532,24 +559,103 @@ jobs:
             echo "Refusing to publish an unsigned build without allow_unsigned=true." >&2
             exit 1
           fi
+          # The page this build joins already carries the macOS files, so its own
+          # files have to say which platform they belong to. Their bytes were verified
+          # against the candidate's SHA256SUMS in the step before this one, and renaming
+          # a file changes no byte, so listing the renamed files again is sound.
+          source_name=""
+          for candidate in dist/*.tar.gz; do
+            [[ -e "$candidate" ]] || continue
+            if [[ -n "$source_name" ]]; then
+              echo "==> More than one source archive in dist/; refusing publication." >&2
+              exit 1
+            fi
+            source_name="$(basename "$candidate")"
+          done
+          if [[ -z "$source_name" ]]; then
+            echo "==> No source archive in dist/; refusing publication." >&2
+            exit 1
+          fi
+          if [[ "$attaching" == "true" ]]; then
+            sbom_name="BUILD-SBOM-windows-x64.json"
+            sums_name="SHA256SUMS-windows-x64.txt"
+            source_out="bitcoin-easy-multisig-signer-v${VERSION}-windows-x64-source.tar.gz"
+            mv "dist/BUILD-SBOM.json" "dist/${sbom_name}"
+            mv "dist/${source_name}" "dist/${source_out}"
+            rm -f dist/SHA256SUMS
+            ( cd dist && sha256sum "${zip_name}" "${source_out}" "${sbom_name}" > "${sums_name}" )
+            source_name="$source_out"
+          fi
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which
           # is exactly what happened to v0.1.11 five times. If this version is already
           # published, bump version.py and push again.
           tag_status=0
           git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || tag_status=$?
-          if [[ "$tag_status" == 0 ]]; then
-            echo "==> The tag $tag already exists." >&2
-            echo "    Bump version.py rather than republishing a released version." >&2
-            exit 1
-          fi
-          if [[ "$tag_status" != 2 ]]; then
+          if [[ "$tag_status" != 0 && "$tag_status" != 2 ]]; then
             echo "Could not verify remote tag state; refusing publication." >&2
             exit 1
           fi
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "$release_title" \
-            --notes-file notes.md dist/*
+          if [[ "$attaching" == "true" ]]; then
+            # Attaching is only legal onto a release the audited macOS pipeline already
+            # published: this pipeline never creates the version tag by itself.
+            if [[ "$tag_status" != 0 ]]; then
+              echo "==> The release for $tag does not exist yet." >&2
+              echo "    Publish the macOS release for ${VERSION} first; this build joins ${tag}." >&2
+              exit 1
+            fi
+            # Add this build's four files beside the audited macOS ones. An asset name
+            # is never replaced and the title is never touched, so what was audited
+            # stays exactly as published; only the notes gain a section at the end.
+            existing="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[].name')"
+            for asset in "$zip_name" "$source_name" "$sbom_name" "$sums_name"; do
+              if grep -Fxq "$asset" <<<"$existing"; then
+                echo "==> $tag already carries $asset; a published asset is never replaced." >&2
+                exit 1
+              fi
+            done
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq .body > existing-notes.md
+            cat > windows-section.md <<EOF
+
+          ---
+
+          ## Windows x64
+
+          ${build_kind}
+
+          Built from \`${GITHUB_REF_NAME}\` at commit \`${GITHUB_SHA}\`.
+
+          Downloads: \`${zip_name}\` (64-bit Windows; unpack it and run
+          \`Bitcoin Easy Signer.exe\`) and \`${source_name}\` (the Windows source
+          tree). Verify those against \`${sums_name}\`; \`${sbom_name}\` inventories
+          the packaged Python environment and native libusb.
+
+          This build needs the Microsoft Edge WebView2 runtime, which is present on
+          current Windows 10 and Windows 11 installations and is a free download from
+          Microsoft otherwise.
+
+          The Windows port shares the feature list above: it adds the startup reporter
+          and the WebView2 preflight. The audit behind this version covers the macOS
+          build; the Windows port is a separate codebase and has not been audited.
+          EOF
+            cat existing-notes.md windows-section.md > notes.md
+            # Upload first, then describe: if the notes patch is what fails, the page
+            # still carries every file, and a retry fails on the asset names instead of
+            # attaching a second time.
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+              "dist/${zip_name}" "dist/${source_name}" "dist/${sbom_name}" "dist/${sums_name}"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+              -F body=@notes.md
+          else
+            if [[ "$tag_status" == 0 ]]; then
+              echo "==> The tag $tag already exists." >&2
+              echo "    Bump version.py rather than republishing a released version." >&2
+              exit 1
+            fi
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "$release_title" \
+              --notes-file notes.md dist/*
+          fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         name: Retain candidate provenance for automated promotion
         if: ${{ !inputs.publish }}

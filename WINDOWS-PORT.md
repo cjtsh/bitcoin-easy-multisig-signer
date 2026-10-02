@@ -29,12 +29,15 @@ Three things follow from that and are easy to get wrong:
   still covers exactly what it covered, which is `main` at `35cdedb`.
 * The branch is not covered by the audit. A Windows release is a new artifact under
   the project's own release discipline (candidate, test, promote), not a rebuild of
-  an audited one, and it is tagged `v<version>-windows-x64` so it never answers to
-  an audited version.
-* The website (`bitcoineasysigner.com`) is served from the frozen repository's
-  `docs/` directory on `main`, so it cannot link a Windows download until that
-  freeze is lifted. The Windows zip appears on the same GitHub Releases page as the
-  macOS DMG; the site links to it later or not at all.
+  an audited one. It joins the version's page as platform-named files rather than
+  answering to the version itself: the audited artifacts keep their names, and an
+  asset that is already on the page is never replaced.
+* The website (`bitcoineasysigner.com`) happens to live in `docs/` on `main`, in the
+  same repository as the audited source. Editing a link there touches no app source
+  and cannot change the published v0.6.4 artifacts, but it does change what a future
+  audited build's source tarball would contain, so keep such edits to `docs/` alone.
+  The Windows button points at the version's release page, which carries both
+  platforms, so one link serves every build of that version.
 
 `docs/` was deleted on this branch rather than kept, because a second copy of the
 site would either collide with the first or drift from it.
@@ -117,6 +120,15 @@ All of it happens on the `windows-port` branch of
 `github.com/cjtsh/bitcoin-easy-multisig-signer`, through
 `.github/workflows/build-windows.yml`:
 
+One version has one release page. The audited macOS pipeline creates the release
+for `v<version>` on `main`; the Windows build for that same version joins the page
+it created rather than opening a second release of its own. Input `release_tag`
+does that: dispatched with `release_tag=v<version>`, this pipeline attaches its
+four platform-named files to the existing page and appends a "Windows x64" section
+to the notes. It never replaces an asset that is already there, never edits the
+title, and never picks the page itself — a `release_tag` that is not exactly
+`v<version>`, or a page that does not exist yet, is refused.
+
 0. **Push the branch.** A workflow that exists only on a non-default branch is not
    offered in the "Run workflow" list until it has run once, so the trigger includes
    a push on `windows-port`. That push builds a `publish=false` candidate and stops.
@@ -132,15 +144,27 @@ All of it happens on the `windows-port` branch of
 2. **Test.** Install the candidate on a real Windows machine. Owner hardware
    acceptance is required when app behaviour changes.
 3. **Promote.** Dispatch again *from the same commit* with `publish=true`,
-   `allow_unsigned=true`, and `candidate_run_id` set to the candidate run's id.
-   The workflow re-downloads that run's artifacts, proves the run id, commit,
-   branch and workflow path, verifies `SHA256SUMS`, and only then creates the
-   release. Only a `workflow_dispatch` run counts as a candidate, so a
-   push-triggered build can never become a release.
+   `allow_unsigned=true`, `candidate_run_id` set to the candidate run's id, and
+   `release_tag` set to the version's plain tag:
 
-The release is tagged `v<version>-windows-x64`, for example `v0.6.4-windows-x64`.
-The plain `v<version>` tag belongs to the audited macOS release and is never reused
-or moved: a published release is never rebuilt.
+   ```
+   gh workflow run build-windows.yml --ref windows-port \
+     -f publish=true -f allow_unsigned=true \
+     -f candidate_run_id=<candidate run id> -f release_tag=v<version>
+   ```
+
+   The workflow re-downloads that run's artifacts, proves the run id, commit,
+   branch, workflow path and `release_tag`, verifies `SHA256SUMS`, and only then
+   touches the release. Only a `workflow_dispatch` run counts as a candidate, so a
+   push-triggered build can never become a release. Publish the macOS build for the
+   version first: attaching needs its page to exist, and the run says so if it does
+   not.
+
+`release_tag` is the path for every version that also ships on macOS. Left empty,
+the workflow cuts its own `v<version>-windows-x64` release instead — the standalone
+path v0.6.4 first shipped with, kept for a version whose macOS page will never
+exist. The plain `v<version>` tag is never created, moved or reused here: it belongs
+to the audited macOS release, and a published asset is never replaced.
 
 The build is not code-signed. Windows SmartScreen will warn on first launch, and
 `allow_unsigned=true` exists so that an unsigned release is a deliberate decision
