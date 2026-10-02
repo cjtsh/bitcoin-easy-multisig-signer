@@ -264,21 +264,26 @@ jobs:
           "$hwi" --help > hwi-help.log
           printf '%s\n' 'enumerate' | "$hwi" --chain test --stdin > hwi-stdin.json
           python -m json.tool < hwi-stdin.json > /dev/null
-          # The app's own headless self-checks, each redirected to a file first:
-          # a --windowed executable has no console of its own, so relying on the
-          # runner's pipe would be relying on something the app does not control.
+          # The app's own headless self-checks. A --windowed executable has no
+          # console on Windows: sys.stdout is None, so its prints vanish and the
+          # runner's pipe would look exactly like a check that never ran. The app
+          # mirrors every result into DSH_DESKTOP_CHECK_LOG, which is the evidence
+          # read below; the pipe is kept so a failure can be shown in full.
           for flag in --check-bundle --check-save --check-network --check-devices; do
             name="${flag#--}"
-            if ! "$exe" "$flag" > "$name.log" 2>&1; then
+            export DSH_DESKTOP_CHECK_LOG="$name.log"
+            if ! "$exe" "$flag" > "$name.stdout.log" 2>&1; then
               echo "==> $flag failed:" >&2
-              cat "$name.log" >&2
+              { cat "$name.stdout.log" 2>/dev/null; cat "$name.log" 2>/dev/null; } >&2
               exit 1
             fi
             if [[ ! -s "$name.log" ]]; then
-              echo "==> $flag printed nothing; a silent pass is not a pass." >&2
+              echo "==> $flag reported nothing; a silent pass is not a pass." >&2
               exit 1
             fi
+            cat "$name.log"
           done
+          unset DSH_DESKTOP_CHECK_LOG
           # A host with a CA file configured must not be what makes HTTPS work.
           # On Windows the OS certificate store is the ambient source of trust, so
           # the load-bearing check is --check-bundle above: it asserts that the

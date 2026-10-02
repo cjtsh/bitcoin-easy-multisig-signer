@@ -151,3 +151,11 @@ every shell block must parse, every action must be pinned to a commit, the relea
 job is the only job that may write, checksums are verified before anything is
 published, and the release notes are generated from the workflow itself and
 checked for the wording that keeps the network story straight.
+
+The four headless self-checks (`--check-bundle`, `--check-save`, `--check-network`,
+`--check-devices`) run against the built executable in the workflow. A `--windowed`
+build has no console on Windows — `sys.stdout` is `None` and `print` writes nothing
+— so the app mirrors each result into the file named by `DSH_DESKTOP_CHECK_LOG` and
+the workflow reads that file. A check that exits 0 while producing no report fails
+the build, which is the point: a silent pass would otherwise be indistinguishable
+from a check that never ran.

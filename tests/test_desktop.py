@@ -13,7 +13,7 @@ import safe_http
 from support import real_ca_bundle
 from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources,
                      check_device_bridge, check_psbt_save, configure_packaged_tls,
-                     main, run_desktop, webview_renderer)
+                     main, report, run_desktop, webview_renderer)
 from probe import ProbeError
 from gui import LocalApp, PreparedPayment, assert_private_file, ui_path
 from dataclasses import replace
@@ -306,6 +306,40 @@ class DesktopTests(unittest.TestCase):
         ), patch("desktop.check_testnet4_network") as check:
             main()
         check.assert_called_once_with()
+
+
+class SelfCheckReportTests(unittest.TestCase):
+    """A frozen --windowed build has no stdout, so the checks must report to a file."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.log = Path(self.temp.name) / "check.log"
+
+    def test_every_check_result_reaches_the_report_file(self):
+        with patch.dict(os.environ, {"DSH_DESKTOP_CHECK_LOG": str(self.log)}):
+            report("first line")
+            report("second line")
+        self.assertEqual(self.log.read_text(encoding="utf-8").splitlines(),
+                         ["first line", "second line"])
+
+    def test_a_check_without_the_variable_still_prints_and_writes_nothing(self):
+        with patch.dict(os.environ, {}, clear=True):
+            report("no file asked for")
+        self.assertFalse(self.log.exists())
+
+    def test_the_bundle_check_reports_what_it_verified(self):
+        """--check-bundle must leave evidence; it is the CA-store assertion."""
+        page = Path(self.temp.name) / "ui.html"
+        page.write_text("<html>__APP_VERSION__ location.hash __DESKTOP_MODE__</html>")
+        for notice in ("LICENSE", "DISCLAIMER.md", "PRIVACY.md",
+                       "THIRD-PARTY-NOTICES.md", "libusb-COPYING"):
+            (Path(self.temp.name) / notice).write_text(f"synthetic {notice}\n")
+        with patch.dict(os.environ, {"DSH_DESKTOP_CHECK_LOG": str(self.log)}), patch(
+            "desktop.ui_path", return_value=page
+        ):
+            check_bundle_resources()
+        self.assertIn("check out", self.log.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

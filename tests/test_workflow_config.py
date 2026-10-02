@@ -254,6 +254,11 @@ class WorkflowConfigTests(unittest.TestCase):
         verify = self.step_body("Verify the built bundle")
         for flag in ("--check-bundle", "--check-save", "--check-network", "--check-devices"):
             self.assertIn(flag, verify)
+        # A --windowed build on Windows has no stdout, so the evidence has to be a
+        # file the app writes. Requiring a non-empty stdout log instead would fail
+        # every run on a bundle that is perfectly healthy.
+        self.assertIn("DSH_DESKTOP_CHECK_LOG", verify)
+        self.assertIn('[[ ! -s "$name.log" ]]', verify)
         self.assertIn("SSL_CERT_DIR=/nonexistent/certs", verify)
         self.assertIn("hwi.exe", verify)
         layout = self.step_body("Check the bundle's layout, icon and archive")

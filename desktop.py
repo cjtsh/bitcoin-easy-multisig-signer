@@ -23,6 +23,22 @@ from probe import ProbeError, _hwi_path, invoke_hwi
 from wallet_service import WalletError
 
 
+def report(message: str) -> None:
+    """Record what a headless self-check verified.
+
+    A --windowed build has no console on Windows: ``sys.stdout`` is None, so
+    ``print`` writes nothing and the build log cannot tell a check that passed
+    from one that never ran. ``DSH_DESKTOP_CHECK_LOG`` names a file the build
+    workflow reads for that evidence; where a console exists the same line still
+    reaches the terminal.
+    """
+    print(message)
+    destination = os.environ.get("DSH_DESKTOP_CHECK_LOG")
+    if destination:
+        with open(destination, "a", encoding="utf-8") as handle:
+            handle.write(f"{message}\n")
+
+
 class DesktopBridge:
     """Saves the prepared PSBT to the user's Downloads folder.
 
@@ -113,6 +129,9 @@ def check_bundle_resources() -> None:
                 "No trusted CA certificates are loaded, so every HTTPS request "
                 "would fail. The bundled trust store is not in effect."
             )
+        report("Bundled ui.html, the licence notices and the packaged HTTPS trust store all check out.")
+    else:
+        report("Bundled ui.html and the licence notices check out; the trust store is checked in the frozen app.")
 
 
 def configure_packaged_tls() -> None:
@@ -137,9 +156,9 @@ def check_testnet4_network() -> None:
     genesis = explorer_get("/block-height/0", text=True, chain="testnet4").strip().lower()
     if genesis != NETWORKS["testnet4"].genesis_hash:
         raise RuntimeError("Testnet4 explorer returned the wrong network's genesis block.")
-    print("Bundled Testnet4 explorer HTTPS check passed.")
+    report("Bundled Testnet4 explorer HTTPS check passed.")
     verify_esplora("mutinynet", NETWORKS["mutinynet"].explorer_url)
-    print("Bundled Mutinynet genesis and fork-checkpoint HTTPS checks passed.")
+    report("Bundled Mutinynet genesis and fork-checkpoint HTTPS checks passed.")
 
 
 def check_psbt_save() -> None:
@@ -175,7 +194,7 @@ def check_psbt_save() -> None:
         if not saved.read_bytes().startswith(b"psbt\xff"):
             raise RuntimeError("The saved file is not a PSBT.")
         assert_private_file(saved)
-    print("Bundled unsigned-PSBT save check passed.")
+    report("Bundled unsigned-PSBT save check passed.")
 
 
 def bundled_capabilities() -> dict:
@@ -231,8 +250,8 @@ def check_device_bridge() -> None:
     for device in devices:
         if not isinstance(device, dict):
             raise RuntimeError("The bundled hardware-wallet tool returned a malformed device.")
-    print(f"Bundled HWI responded: {len(devices)} device(s) attached right now.")
-    print("The device bridge works; plugging in a signer is what remains untested.")
+    report(f"Bundled HWI responded: {len(devices)} device(s) attached right now.")
+    report("The device bridge works; plugging in a signer is what remains untested.")
 
 
 def webview_renderer() -> str:
