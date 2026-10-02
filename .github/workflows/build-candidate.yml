@@ -358,7 +358,7 @@ jobs:
             '.event == "workflow_dispatch"
              and .status == "completed" and .conclusion == "success"
              and .head_branch == "main" and .head_sha == $commit
-             and (.path | startswith(".github/workflows/build-candidate.yml@"))' \
+             and .path == ".github/workflows/build-candidate.yml"' \
             <<<"$run_json" >/dev/null || {
               echo "Candidate run must be successful, from this workflow, and from the exact release commit on main." >&2
               exit 1
