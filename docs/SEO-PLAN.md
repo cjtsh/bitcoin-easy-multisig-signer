@@ -8,19 +8,19 @@
 - Sitemap: https://bitcoineasysigner.com/sitemap.xml
 - Crawler rules: https://bitcoineasysigner.com/robots.txt
 
-The canonical host is the apex HTTPS domain. The pages declare canonical URLs, unique titles and descriptions, Open Graph metadata, and large X cards. The 1200 × 630 PNG share graphic is at `assets/social-card.png`. LinkedIn, WhatsApp, and Telegram generally read Open Graph previews; X reads the Twitter card fields. Share links are also provided on the homepage.
+The canonical host is the apex HTTPS domain. The pages declare canonical URLs, unique titles and descriptions, Open Graph metadata, and large X cards. The 1200 × 630 PNG share graphic is at `assets/social-card-v2.png`. LinkedIn, WhatsApp, and Telegram generally read Open Graph previews; X reads the Twitter card fields. Share links are also provided on the homepage.
 
 ## Search intent and natural language
 
 Focus the homepage on the product and audience rather than repeating a keyword list:
 
-- Bitcoin multisig software for families and trusted helpers
+- Bitcoin multisig software for families, trustees, and estate professionals
 - Bitcoin multisig user manual for spouses, trustees, and estate professionals
-- open-source Bitcoin multisig signing app for macOS
-- hardware wallet multisig transaction review
+- free, open-source Bitcoin multisig software for macOS
+- Bitcoin multisig hardware wallet transaction review
 - helping a family member use an existing Bitcoin multisig wallet
 
-The home page and manual use these phrases in titles, headings, descriptions, and visible explanatory text. Google does not use the `meta keywords` tag for web ranking, so no keyword-stuffing tag is included. Keep claims aligned with the documented wallet, device, network, and safety scope.
+The homepage now names the product category in its title, main heading, description, and share card. The manual targets the related how-to intent in its own title and description. Google does not use the `meta keywords` tag for web ranking, so no keyword-stuffing tag is included. Keep claims aligned with the documented wallet, device, network, and safety scope.
 
 ## Google Search Console handoff
 
