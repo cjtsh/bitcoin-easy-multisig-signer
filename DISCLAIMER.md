@@ -7,15 +7,17 @@ hardware behavior, misleading information, or missing functionality.
 Bitcoin transactions can be irreversible, and a mistake can result in the
 permanent loss of some or all funds.
 
-The local 0.5.0 candidate is the first build with full Bitcoin mainnet
+The current release, 0.5.1, is the first published build with Bitcoin mainnet
 broadcast capability. It runs one engine across Testnet4, Mutinynet and
 mainnet, and asks hardware devices to sign through Bitcoin Core HWI (HWI).
 Mainnet submission requires explicit confirmation on the final review screen
-and a backend opt-in; nothing is broadcast automatically. The candidate has
-not yet had an owner-confirmed mainnet transaction. A signed but unbroadcast
-transaction can still be submitted by anyone who obtains its bytes. Do not
-rely on a version number or GitHub "Latest" label as proof of production
-safety.
+and a backend opt-in; nothing is broadcast automatically. One mainnet
+transaction has been prepared, signed on two hardware devices, broadcast and
+confirmed. That single transaction is not a guarantee that a later one will be
+safe, and it is not a claim of approval, audit, or fitness for use. A signed
+but unbroadcast transaction can still be submitted by anyone who obtains its
+bytes. Do not rely on a version number or GitHub "Latest" label as proof of
+production safety.
 
 ## No promises or warranties
 
@@ -41,10 +43,11 @@ rights that applicable law does not allow to be excluded.
 ## Verify every transaction yourself
 
 Before approving *any* transaction, independently verify the full
-destination address, amount, network, fee, and change output, including
-what each hardware signer actually displays. Stop if information is
-missing, inconsistent, or unclear; do not blindly accept prompts on a
-device. A test transaction and an approximate dollar value are useful
+destination address, amount, network, fee, and change output. Many
+hardware signers do not display change addresses at all, so verify the
+change address in your own wallet software rather than relying on a
+device screen. Stop if information is missing, inconsistent, or unclear;
+do not blindly accept prompts on a device. A test transaction and an approximate dollar value are useful
 checks but **do not guarantee** that a later transfer is safe. Confirm a
 test payment reached the intended recipient before considering another
 transfer. Never enter seed words or private keys into this software, a

@@ -169,11 +169,11 @@
   <main id="top">
     <section class="wrap hero" aria-labelledby="hero-title">
       <div>
-        <p class="eyebrow">Free, open-source Bitcoin multisig · Version 0.4.14</p>
+        <p class="eyebrow">Free, open-source Bitcoin multisig · Version 0.5.1</p>
         <h1 id="hero-title">Multisig for the people you trust.</h1>
         <p class="hero-copy">Bitcoin Easy Signer is built for families and the trusted helpers they may rely on: a spouse, trustee, lawyer, or accountant. It aims to make spending from an existing multisig wallet clear enough to follow, even if you didn’t set it up.</p>
         <div class="actions">
-          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.4.14/Bitcoin-Easy-Signer-v0.4.14-macOS.dmg">Download for Mac ↗</a>
+          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.5.1/Bitcoin-Easy-Signer-v0.5.1-macOS.dmg">Download for Mac ↗</a>
           <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">View the project</a>
         </div>
         <p class="microcopy">For Apple Silicon Macs · Free to use · Open source</p>
@@ -196,7 +196,7 @@
     <aside class="notice" aria-label="Important safety notice">
       <div class="wrap notice-inner">
         <span class="notice-mark" aria-hidden="true">!</span>
-        <p><strong>Experimental software.</strong> This is not a production-ready recovery tool or a substitute for independent review. Practice-network broadcasts only; mainnet broadcast is disabled. Verify every payment on your hardware devices.</p>
+        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is community software, not a commercial product, and it comes with no warranty and no guarantee. It is not a substitute for independent review. It can broadcast real Bitcoin — a mistake there is permanent. Verify every payment yourself, and read the source before you trust it with funds.</p>
       </div>
     </aside>
 
@@ -220,7 +220,7 @@
             <p class="section-kicker">A first look</p>
             <h2 id="gallery-title">See the app.</h2>
           </div>
-          <p class="section-intro">Practice networks wear a green frame. Bitcoin’s live mode is marked in orange and is limited to a dry run. The light and dark themes keep those network signals clear.</p>
+          <p class="section-intro">Practice networks wear a green frame. Bitcoin’s live network is marked in orange, because it spends real Bitcoin. The light and dark themes keep those network signals clear.</p>
         </div>
         <div class="carousel" data-carousel aria-label="Bitcoin Easy Signer screen previews">
           <div class="carousel-viewport">
@@ -232,7 +232,7 @@
                 <figure><img src="assets/app-preview-mutinynet-dark.svg?v=carousel-1" alt="Illustrative preview of the app's wallet-opening screen in the dark theme on Mutinynet."><figcaption><strong>Mutinynet · Dark theme</strong><span>The same practice workflow in dark mode</span></figcaption></figure>
               </div>
               <div class="carousel-slide" data-carousel-slide aria-hidden="true">
-                <figure><img src="assets/app-preview-mainnet-light.svg?v=carousel-1" alt="Illustrative preview of Bitcoin Easy Signer's light theme with Bitcoin LIVE selected, an orange frame, and a dry-run-only label."><figcaption><strong>Bitcoin · Light theme</strong><span>Orange frame · Mainnet dry run only</span></figcaption></figure>
+                <figure><img src="assets/app-preview-mainnet-light.svg?v=carousel-1" alt="Illustrative preview of Bitcoin Easy Signer's light theme with Bitcoin LIVE selected, an orange frame, and a warning that real Bitcoin cannot be undone."><figcaption><strong>Bitcoin · Light theme</strong><span>Orange frame · Real Bitcoin</span></figcaption></figure>
               </div>
             </div>
           </div>
@@ -245,7 +245,7 @@
             </div>
             <button class="carousel-arrow" type="button" data-carousel-next aria-label="Next screen">›</button>
           </div>
-          <p class="gallery-note" data-carousel-status aria-live="polite">Screen 1 of 3. These are illustrative previews of the current wallet-opening screen. Real wallet-review and hardware-signing screenshots will be added after a device walkthrough.</p>
+          <p class="gallery-note" data-carousel-status aria-live="polite">Screen 1 of 3. These are illustrative previews of the current wallet-opening screen. The first full walkthrough has now been completed on real Bitcoin; real screenshots will be added once they can be prepared without exposing wallet details.</p>
         </div>
       </div>
     </section>
@@ -253,7 +253,7 @@
     <section class="wrap" aria-labelledby="practice-title">
       <p class="section-kicker">Practice before you spend</p>
       <h2 id="practice-title">It’s okay if moving Bitcoin feels unnerving.</h2>
-      <p class="section-intro">A trustee, lawyer, accountant, or family member can get familiar with the app using a separate practice wallet on Testnet4 or Mutinynet. Practice coins have no real-Bitcoin value and cannot be moved to mainnet. Mainnet broadcast is disabled.</p>
+      <p class="section-intro">A trustee, lawyer, accountant, or family member can get familiar with the app using a separate practice wallet on Testnet4 or Mutinynet. Practice coins have no real-Bitcoin value and cannot be moved to mainnet. Practise first — the mistakes are free.</p>
     </section>
 
     <section class="scope" id="scope">
@@ -267,7 +267,7 @@
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Up to three physical keys.</strong> The wallet file defines the threshold. Supported hardware depends on the app’s bundled HWI library; not every device is supported.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Hardware signing.</strong> Signing happens on the hardware wallets; the app never asks for seed words or private keys.</p></div>
           <div class="scope-item"><span class="scope-mark" aria-hidden="true">✓</span><p><strong>Practice networks.</strong> Testnet4 and Mutinynet are available for practice. Their coins are not real Bitcoin and do not transfer to mainnet.</p></div>
-          <div class="scope-item"><span class="scope-mark" aria-hidden="true">!</span><p><strong>Mainnet broadcasts are disabled.</strong> The app is experimental. Do not rely on it to protect or recover real funds.</p></div>
+          <div class="scope-item"><span class="scope-mark" aria-hidden="true">!</span><p><strong>Real Bitcoin can now be sent.</strong> Mainnet broadcast is available, behind a per-transaction confirmation on the final screen. No warranty is offered or implied. Verify every payment yourself, and never risk more than you can afford to lose.</p></div>
         </div>
       </div>
     </section>
@@ -275,9 +275,9 @@
     <section class="wrap closing">
       <p class="section-kicker">A contribution to the Bitcoin community</p>
       <h2>Free to use. Built to make multisig easier to hand on.</h2>
-      <p>Bitcoin Easy Signer is a work in progress. Read what it supports, review its safety limits, and try it only with practice-network Bitcoin.</p>
+      <p>Bitcoin Easy Signer is a gift to the Bitcoin community and a work in progress. Fork it, review it, build on it, or use it as it is. Read what it supports and review its safety limits before you rely on it. It comes with no promises.</p>
       <div class="actions" style="justify-content:center">
-        <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.4.14">See release &amp; downloads ↗</a>
+        <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.5.1">See release &amp; downloads ↗</a>
         <a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Read the safety notice</a>
       </div>
     </section>
@@ -285,7 +285,7 @@
 
   <footer>
     <div class="wrap footer-inner">
-      <span>Bitcoin Easy Signer · Experimental open-source software</span>
+      <span>Bitcoin Easy Signer · Open source · Use at your own risk</span>
       <div class="footer-links">
         <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer">Source code</a>
         <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/RELEASE-HISTORY.md">Release history</a>
@@ -308,7 +308,7 @@
         track.style.transform = `translateX(-${current * 100}%)`;
         slides.forEach((slide, i) => slide.setAttribute("aria-hidden", String(i !== current)));
         dots.forEach((dot, i) => dot.setAttribute("aria-current", String(i === current)));
-        status.textContent = `Screen ${current + 1} of ${slides.length}: ${names[current]}. These are illustrative previews of the current wallet-opening screen. Real wallet-review and hardware-signing screenshots will be added after a device walkthrough.`;
+        status.textContent = `Screen ${current + 1} of ${slides.length}: ${names[current]}. These are illustrative previews of the current wallet-opening screen. The first full walkthrough has now been completed on real Bitcoin; real screenshots will be added once they can be prepared without exposing wallet details.`;
       }
       carousel.querySelector("[data-carousel-prev]").addEventListener("click", () => show(current - 1));
       carousel.querySelector("[data-carousel-next]").addEventListener("click", () => show(current + 1));

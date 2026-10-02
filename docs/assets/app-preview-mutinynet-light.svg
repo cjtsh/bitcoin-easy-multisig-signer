@@ -6,7 +6,7 @@
 <rect x="3" y="3" width="1394" height="894" rx="19" fill="none" stroke="#4ade80" stroke-width="7"/>
 <path d="M12 16a4 4 0 0 1 4-4h1368a4 4 0 0 1 4 4v272H12z" fill="#0f172a"/>
 <path d="M12 286h1376" stroke="#14b8a6" stroke-width="4"/>
-<text x="43" y="47" class="brand" fill="#9fb0c7">BITCOIN EASY SIGNER · V0.4.14 · EXPERIMENTAL</text>
+<text x="43" y="47" class="brand" fill="#9fb0c7">BITCOIN EASY SIGNER · V0.5.1 · USE AT YOUR OWN RISK</text>
 <rect x="1204" y="28" width="151" height="42" rx="21" fill="#14b8a6"/>
 <text x="1225" y="55" class="label" fill="#0f172a">Dark Theme</text>
 <text x="43" y="107" class="hero" fill="#f1f5f9">Bitcoin Easy Signer</text>
@@ -31,7 +31,7 @@
 <text x="123" y="595" class="small" fill="#64748b">existing test wallets</text><rect x="72" y="616" width="590" height="58" rx="12" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
 <circle cx="99" cy="645" r="9" fill="none" stroke="#cbd5e1" stroke-width="2"/>
 <text x="123" y="643" class="label" fill="#92400e">Bitcoin LIVE</text>
-<text x="123" y="663" class="small" fill="#64748b">real BTC, dry run only</text>
+<text x="123" y="663" class="small" fill="#64748b">real BTC, cannot be undone</text>
 <rect x="727" y="480" width="580" height="83" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
 <rect x="747" y="495" width="165" height="52" rx="9" fill="#eef2f7" stroke="#cbd5e1"/>
 <text x="766" y="528" class="label" fill="#0f766e">Choose File</text>

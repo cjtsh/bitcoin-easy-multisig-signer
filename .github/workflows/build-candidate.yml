@@ -404,8 +404,9 @@ jobs:
             signer-returned metadata is discarded before finalization.
           - Gives each device discovery and authorization check up to three minutes and deliberate on-device signing
             up to ten minutes, including Ledger's multiple review screens.
-          - Offers Testnet4 and Mutinynet practice networks through one engine. A
-            custom-Signet checkpoint distinguishes Mutinynet from ordinary Signet.
+          - Offers Bitcoin mainnet plus the Testnet4 and Mutinynet practice networks
+            through one engine. A custom-Signet checkpoint distinguishes Mutinynet from
+            ordinary Signet.
             A new Mutinynet wallet and practice coins are required; Testnet4 coins
             do not transfer across networks.
           - Mutinynet is the opening network. Send All is never preselected;
@@ -414,8 +415,9 @@ jobs:
           - Clears old signer/final details whenever a new payment is prepared.
             Rechecks selected confirmed outputs before preparation and broadcast;
             a lost broadcast response is treated as outcome unknown, never retried.
-          - Broadcasts on practice networks after a separate confirmation. Mainnet broadcast
-            remains disabled. It never asks for a PIN or seed.
+          - Broadcasts on the selected network after a separate confirmation. Mainnet
+            submission needs one explicit confirmation on the final screen and a backend
+            opt-in that fails closed when omitted. It never asks for a PIN or seed.
           - Saves an optional unsigned PSBT and an opt-in privacy-limited diagnostic
             report. Dependencies are hash-locked; native libusb digest is required.
 
@@ -424,10 +426,12 @@ jobs:
           Verify either file against \`SHA256SUMS\`.
           \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
 
-          Practice networks only: **this build cannot broadcast on mainnet**, and
-          mainnet broadcast is refused in code rather than merely hidden. Verify every
-          address, amount and fee on your signing devices before approving, and treat
-          an unconfirmed payment as unfinished.
+          **Use at your own risk.** This is community software, not a commercial
+          product, and it comes with no warranty and no guarantee. Real Bitcoin can be
+          sent from this build: verify the destination, amount and fee on your signing
+          devices before approving, and treat an unconfirmed payment as unfinished.
+          Hardware signers commonly hide the change output, so check the change address
+          in the wallet software that holds the wallet file, not on a device screen.
           EOF
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which

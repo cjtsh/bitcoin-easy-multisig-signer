@@ -77,7 +77,9 @@ Enumeration proves only that the host can identify the device. The owner reports
 app-driven wallet xpub matching and two verified signer responses with this device
 in the 0.4.15 mainnet dry run, which reached the final review and then refused the
 mainnet broadcast, as every pre-0.5.0 build does. That is an owner-reported dry
-run, not an on-chain payment. HWI version and Python remain unchanged.
+run, not an on-chain payment. The later 0.5.0 candidate went further: the same
+device signed a mainnet payment that was broadcast and confirmed on chain. HWI
+version and Python remain unchanged.
 
 ### The Jade's PIN relay is an HWI-specific trap
 

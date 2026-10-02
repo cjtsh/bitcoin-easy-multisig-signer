@@ -36,7 +36,8 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.4.6.md`](PATCH-0.4.6.md) | 0.4.6 | Signature checklist after the first device signature |
 | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) | 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys |
 | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) | 0.4.15 | Fix signed HWI/libusb loading; OneKey Classic 1S support; a cleared, unbroadcast mainnet dry run |
-| [`PATCH-0.5.0.md`](PATCH-0.5.0.md) | 0.5.0 | Mainnet broadcast behind explicit final-screen and backend opt-ins |
+| [`PATCH-0.5.0.md`](PATCH-0.5.0.md) | 0.5.0 | Mainnet broadcast behind explicit final-screen and backend opt-ins; made the first live mainnet payment |
+| [`PATCH-0.5.1.md`](PATCH-0.5.1.md) | 0.5.1 | First published mainnet-broadcast release; publishes the 0.5.0 engine unchanged and corrects the change-address guidance |
 
 ## These are historical records
 

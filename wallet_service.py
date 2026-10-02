@@ -406,8 +406,10 @@ def wallet_summary(record: WalletRecord, chain: str | None = None) -> dict:
     if layout.change_assumed:
         change_note = (
             "Leftover Bitcoin is intended to return to this multisig wallet through "
-            "the standard change path. This file does not state that path. Check the "
-            "change shown on your signing device before you approve."
+            "the standard change path, but this file does not state that path. Your "
+            "devices will not display the change address. Compare it with the change "
+            "addresses in the app that created this file before you approve, or send "
+            "the whole balance instead so there is no change to check."
         )
         change_detail = (
             "The BSMS file proves the first receiving address but omits a separate "
@@ -890,8 +892,10 @@ def build_unsigned_psbt(
             "Verify wallet coverage, recipient amount and fee independently on each signer."
             if send_all else
             ("The change address comes from this wallet's standard change addresses, which "
-             "are not listed in your wallet file. Verify it on every signing device. "
+             "are not listed in your wallet file. Compare it in the app that created this "
+             "file before you approve. "
              if layout.change_assumed else "")
-            + "Unsigned only. Verify destination, amount, fee, and change on each signer."
+            + "Unsigned only. Check the destination, amount and fee on each signer, and the "
+            "change address shown on the review screen."
         ),
     }

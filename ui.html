@@ -336,7 +336,7 @@
             <label><input type="radio" id="chain-testnet4" name="chain" value="testnet4">
               <b>Testnet4</b><small>existing test wallets</small></label>
             <label><input type="radio" id="chain-main" name="chain" value="main">
-              <b>Bitcoin LIVE</b><small>real BTC, dry run only</small></label>
+              <b>Bitcoin LIVE</b><small>real BTC, cannot be undone</small></label>
           </div>
         </div>
         <div id="wallet-input">
@@ -365,7 +365,7 @@
       <input id="broadcaster-url" type="text" inputmode="url" autocomplete="off"
         spellcheck="false" placeholder="https://example.com/api">
       <p class="small muted">Broadcasting uses this server after the required device
-        signatures and your final confirmation. Mainnet sends real Bitcoin and require a
+        signatures and your final confirmation. Mainnet sends real Bitcoin and requires a
         separate confirmation on the final screen.
         Electrum TLS servers use a different protocol and cannot be entered here.</p>
       <button id="save-servers" class="action">Save these server URLs</button>
@@ -546,9 +546,9 @@
             <li>Continue below to approve signing on the required hardware devices. The saved file is an optional backup.</li>
             <li>Confirm the final transaction before broadcast. Mainnet sends real Bitcoin and cannot be undone.</li>
           </ol></div>
-        <div class="kv"><div class="with-help"><b>Change (check against your wallet)</b>
+        <div class="kv"><div class="with-help"><b>Change — the rest comes back to your wallet</b>
           <details class="context-help"><summary aria-label="What is change in a Bitcoin transaction?">?</summary>
-            <div class="help-popout"><strong>Where does the rest go?</strong><p>Bitcoin spends whole outputs. On a partial send, the amount not sent or paid as a fee returns to an address in your wallet. Check that change address on your signer.</p></div>
+            <div class="help-popout"><strong>Where does the rest go?</strong><p>Bitcoin spends whole outputs. On a partial send, the amount not sent and not paid as a fee comes back to your own wallet at the address shown here. Nothing is lost.</p><p>Your hardware devices usually do not show this address, so there is nothing to compare on the device screens. That is normal. To check it, open the wallet app that holds this wallet file — for example Sparrow — and look through its list of change addresses for the one that matches exactly.</p></div>
           </details></div><code id="review-change" class="mono"></code></div>
         <div id="review-warning" class="notice"></div>
         <div id="review-fee-warning" class="notice" hidden></div>
@@ -622,7 +622,7 @@
       <p class="small muted">This notice stays on screen where the payment was prepared. The banner at
         the top of the page tracks the same payment until it confirms.</p>
     </section>
-    <footer>Experimental software. Verify every output and fee on your signing devices.
+    <footer>Experimental software. Verify the destination, amount and fee on your signing devices. Change addresses usually do not appear there — check them in your own wallet software.
       Never enter seed words or private keys.
       <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">Full disclaimer</a>.
        <p><button id="save-diagnostics" class="secondary" type="button">Save diagnostic report</button>

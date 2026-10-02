@@ -6,7 +6,7 @@
 <rect x="3" y="3" width="1394" height="894" rx="19" fill="none" stroke="#f97316" stroke-width="7"/>
 <path d="M12 16a4 4 0 0 1 4-4h1368a4 4 0 0 1 4 4v272H12z" fill="#0f172a"/>
 <path d="M12 286h1376" stroke="#14b8a6" stroke-width="4"/>
-<text x="43" y="47" class="brand" fill="#9fb0c7">BITCOIN EASY SIGNER · V0.4.14 · EXPERIMENTAL</text>
+<text x="43" y="47" class="brand" fill="#9fb0c7">BITCOIN EASY SIGNER · V0.5.1 · USE AT YOUR OWN RISK</text>
 <rect x="1204" y="28" width="151" height="42" rx="21" fill="#14b8a6"/>
 <text x="1225" y="55" class="label" fill="#0f172a">Dark Theme</text>
 <text x="43" y="107" class="hero" fill="#f1f5f9">Bitcoin Easy Signer</text>
@@ -14,9 +14,9 @@
 <text x="43" y="169" class="copy" fill="#9fb0c7">hardware signers.</text>
 <text x="43" y="203" class="scope" fill="#f1f5f9">Supports hardware multisig wallets with up to three physical keys.</text>
 <rect x="43" y="229" width="405" height="43" rx="22" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
-<text x="60" y="256" class="label" fill="#92400e">● BITCOIN LIVE · REAL BTC · DRY RUN ONLY</text>
+<text x="60" y="256" class="label" fill="#92400e">● BITCOIN LIVE · REAL BTC</text>
 <rect x="45" y="310" width="1310" height="55" rx="12" fill="#fffbeb" stroke="#d97706" stroke-width="3"/>
-<text x="69" y="344" class="label" fill="#92400e">⚠ LIVE BITCOIN NETWORK · REAL FUNDS · DRY RUN ONLY</text>
+<text x="69" y="344" class="label" fill="#92400e">⚠ LIVE BITCOIN NETWORK · REAL FUNDS · THIS CANNOT BE UNDONE</text>
 <rect x="45" y="390" width="1310" height="415" rx="18" fill="#ffffff" stroke="#e3e8ef" stroke-width="2"/>
 <text x="78" y="438" class="panel-title" fill="#0f172a">1. Open your existing wallet</text>
 <path d="M78 457h1244" stroke="#e3e8ef"/>
@@ -32,7 +32,7 @@
 <text x="123" y="670" class="small" fill="#64748b">existing test wallets</text><rect x="72" y="691" width="590" height="58" rx="12" fill="#e6f4f1" stroke="#0f766e" stroke-width="2"/>
 <circle cx="99" cy="720" r="9" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
 <text x="123" y="718" class="label" fill="#92400e">Bitcoin LIVE</text>
-<text x="123" y="738" class="small" fill="#64748b">real BTC, dry run only</text>
+<text x="123" y="738" class="small" fill="#64748b">real BTC, cannot be undone</text>
 <rect x="727" y="555" width="580" height="83" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
 <rect x="747" y="570" width="165" height="52" rx="9" fill="#eef2f7" stroke="#cbd5e1"/>
 <text x="766" y="603" class="label" fill="#0f766e">Choose File</text>

@@ -11,9 +11,11 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 - **Mainnet broadcast is refused before 0.5.0 and gated from 0.5.0 onward.**
   Every version before 0.5.0 refused a mainnet broadcast in code — including the
   0.4.15 owner-test candidate, whose mainnet dry run reached that refusal at the
-  final screen. 0.5.0 is the first build that can submit one, and only behind a final-screen
-  per-transaction opt-in together with the backend flag. No mainnet broadcast by
-  this app is currently reported as confirmed.
+  final screen. 0.5.0 was the first build that could submit one, and 0.5.1 is the
+  first release that publishes it, behind a final-screen per-transaction opt-in
+  together with a backend flag that fails closed when omitted. One live mainnet
+  payment has been confirmed by the 0.5.0 engine, which 0.5.1 publishes
+  unchanged. One confirmed payment is not an audit.
 - **Never republish under an existing tag.** A bare `vX.Y.Z` tag names a
   published release and is never moved. A suffix marks a build that was not the
   numbered release, but it does not by itself mean the tag is local:
@@ -48,7 +50,8 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | 0.4.13 | Light and dark themes, one palette of roles, and a toggle | — |
 | 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys | [`releases/PATCH-0.4.14.md`](releases/PATCH-0.4.14.md) |
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
-| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400` and tagged `v0.5.0-rc1` locally; not pushed, not published, and no live send is reported | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
+| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400`, tagged `v0.5.0-rc1` locally, never pushed or published. **This is the build that made the project's first live mainnet payment** | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
+| **0.5.1** | First published mainnet-broadcast release: publishes the 0.5.0 engine unchanged, corrects the change-address guidance the live run showed to be wrong, and restates the risk language | [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -769,6 +772,44 @@ owner-reported dry run, not an on-chain payment; no independent raw-transaction 
 report was supplied. The candidate is not a published release. Full evidence is in
 [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md).
 
+## 0.5.1 — the first published release that can send real Bitcoin
+
+0.5.1 publishes the 0.5.0 transaction engine unchanged, together with wording
+that the first live mainnet payment proved was wrong. No transaction logic in
+`wallet_service.py`, `signing.py`, `probe.py`, `network_config.py`, `gui.py` or
+`desktop.py` differs from the candidate tagged `v0.5.0-rc1`, so the engine that
+sent real Bitcoin is the engine published here. The change is documentation,
+interface wording and the version string.
+
+### What the first live payment showed
+
+The owner made the project's first real mainnet payment with the 0.5.0
+candidate: a 2-of-3 native-SegWit spend, signed by an OneKey Classic 1S (through
+HWI's Trezor backend) and a Ledger Nano S, broadcast through the app and
+confirmed on chain. The confirmed transaction was decoded from two independent
+explorers, and its change output script was compared against the change script
+derived locally from the wallet file. The engine behaved as designed: the fee
+stayed inside the 25 sat/vB and 10,000-sat ceilings, the change index chosen was
+the first unused one, and the change output was genuinely this wallet's.
+
+The one thing the run exposed is that **neither signer displayed the change
+address**. That is normal for that firmware class — the app marks the change
+output as belonging to the wallet, and the device folds it into a silent
+"change" line — but the app had been telling the operator, in five separate
+places, to check the change address on the device. An instruction that cannot be
+followed is worse than no instruction, because it manufactures confidence. 0.5.1
+replaces all five with plain-language guidance aimed at the person the app is
+actually for: the devices show the destination, amount and fee, and the change
+address is checked in the wallet software that holds the wallet file.
+
+No transaction identifiers, addresses or amounts are recorded in this
+repository. It is public, and this is the owner's live wallet.
+
+### Evidence
+
+The full record, including the artifact hashes, is in
+[`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md).
+
 ## 0.5.0 candidate — live mainnet broadcast
 
 0.5.0 removes the stopgap that refused every mainnet broadcast. It is the first
@@ -816,6 +857,7 @@ published, read back from the `SHA256SUMS` attached to each GitHub release.
 | `v0.4.12` | `4e85d64` | `f3937c30a69aca4129595d27aac02113508eac801a6b463815a39158fd62c26b` | `21b3c80e3d452ff27343fec011467cc0256b30b4305185337692e51875ba02f8` |
 | `v0.4.13` | `351e126` | `f61b58265c4539467fb33e3d0a26d8373a15cbe78301859620b0d4b6ec65f97a` | `d961255d788ef39dbb4b04667bbc73316bedbdb2dce05c685cdd4a3af74a7c0d` |
 | `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
+| `v0.5.1` | `PENDING-COMMIT` | `PENDING-BUILD-tar` | `PENDING-BUILD-dmg` |
 
 `v0.4.14` resolves to `d530a221de87`, the commit the published assets were built from.
 
@@ -828,7 +870,7 @@ therefore does not take the bare name:
 
 | Build | Anchor | State |
 | --- | --- | --- |
-| 0.5.0 | commit `51ea400`, local annotated tag `v0.5.0-rc1` | Signed and notarized. **Not pushed and not published**, and no live send is reported. The bare tag `v0.5.0` is created only when the release ships, so a published tag never has to move. |
+| 0.5.0 | commit `51ea400`, local annotated tag `v0.5.0-rc1` | Signed and notarized, and the build that made the project's first live mainnet payment. Never published under its own number; 0.5.1 publishes the same engine. The bare tag `v0.5.0` is never created, so no published tag has to move. |
 | 0.4.15 | source archive only — no commit, no tag | Built, signed, notarized and owner-tested; never published. |
 
 From 0.5.0 onward release tags are **annotated**, so the tag object itself carries
