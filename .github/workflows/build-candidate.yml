@@ -153,8 +153,8 @@ jobs:
           cat release-guard.txt
           grep -q "requires MAC_SIGN_IDENTITY and a notarisation credential" release-guard.txt
       - name: A requested notarized build must fail closed without credentials
-        # The cert import above already refuses an empty secret. This proves the
-        # same about the notary credentials, so a "notarized" run cannot quietly
+        # The later cert import refuses an empty secret. This proves the same
+        # about the notary credentials, so a "notarized" run cannot quietly
         # produce an ad-hoc-signed DMG instead.
         if: ${{ inputs.notarize }}
         run: |
@@ -166,6 +166,8 @@ jobs:
           cat notary-guard.txt
           grep -q "MAC_NOTARY_KEY_PATH, MAC_NOTARY_KEY_ID and MAC_NOTARY_ISSUER_ID" notary-guard.txt \
             || grep -q "Notarisation credentials are set incompletely" notary-guard.txt
+      - name: Prepare hash-locked build environment before signing secrets
+        run: PREPARE_ONLY=1 bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
       - name: Import the Developer ID certificate
         # Only the notarized path needs a signing identity. An unsigned test build
         # must keep working without any Apple credentials.
@@ -245,7 +247,8 @@ jobs:
           # closed when the credentials are absent, so a dispatched release can
           # never quietly ship an ad-hoc-signed artifact.
           RELEASE: ${{ inputs.notarize && '1' || '0' }}
-          MAC_SIGN_IDENTITY: ${{ vars.MAC_SIGN_IDENTITY }}
+          BUILD_DEPS_PREPARED: '1'
+          MAC_SIGN_IDENTITY: ${{ inputs.notarize && vars.MAC_SIGN_IDENTITY || '' }}
           # The notary credential — a profile name, or the API key triple — is
           # exported by the "Provide notary credentials" step, so it arrives through
           # the environment rather than being duplicated here.

@@ -118,6 +118,11 @@ class WorkflowConfigTests(unittest.TestCase):
         macos = self.data["jobs"]["macos"]["steps"]
         names = [step.get("name", "") for step in macos]
         signing = names.index("Import the Developer ID certificate")
+        preparation = names.index("Prepare hash-locked build environment before signing secrets")
+        self.assertLess(preparation, signing)
+        self.assertIn("PREPARE_ONLY=1", macos[preparation]["run"])
+        build_step = next(step for step in macos if step.get("name") == "Build the DMG")
+        self.assertEqual(build_step["env"]["BUILD_DEPS_PREPARED"], "1")
         for step in macos[signing + 1:]:
             script = step.get("run", "")
             self.assertNotIn("pip install", script)

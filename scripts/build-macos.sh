@@ -69,13 +69,32 @@ case "$python_minor" in
     exit 1
     ;;
 esac
-# Always rebuild the virtualenv from scratch: a stale .build-venv left over from
-# an earlier run (possibly with tampered or outdated dependencies) must never be
-# reused to produce a build.
-rm -rf .build-venv
-"$python_bin" -m venv .build-venv
-.build-venv/bin/python -m pip install --disable-pip-version-check --require-hashes \
-  -r requirements-desktop.lock
+# Local builds always recreate the environment. CI prepares it before any
+# signing secret is imported, then explicitly reuses that same environment in
+# the build step; no install or fetch occurs while the certificate is present.
+if [[ "${BUILD_DEPS_PREPARED:-0}" == 1 ]]; then
+  [[ -x .build-venv/bin/python ]] || {
+    echo "Prepared build environment is missing." >&2
+    exit 1
+  }
+  expected_lock_sha="$(shasum -a 256 requirements-desktop.lock | awk '{print $1}')"
+  [[ -f .build-venv/requirements-desktop.sha256 && \
+     "$(cat .build-venv/requirements-desktop.sha256)" == "$expected_lock_sha" ]] || {
+    echo "Prepared build environment does not match the desktop lock." >&2
+    exit 1
+  }
+else
+  rm -rf .build-venv
+  "$python_bin" -m venv .build-venv
+  .build-venv/bin/python -m pip install --disable-pip-version-check --require-hashes \
+    -r requirements-desktop.lock
+  shasum -a 256 requirements-desktop.lock | awk '{print $1}' \
+    > .build-venv/requirements-desktop.sha256
+fi
+if [[ "${PREPARE_ONLY:-0}" == 1 ]]; then
+  echo "Hash-locked build environment prepared."
+  exit 0
+fi
 [[ -f assets/AppIcon.icns ]] || { echo "assets/AppIcon.icns is missing." >&2; exit 1; }
 args=(--noconfirm --clean --windowed --onedir --name "Bitcoin Easy Signer"
       --icon "assets/AppIcon.icns"
