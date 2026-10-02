@@ -39,7 +39,7 @@ every version:
 | 0.4.13 | Light and dark themes, one palette of roles, and a toggle | — |
 | 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) |
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) |
-| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400` and tagged `v0.5.0` locally; not pushed, not published, and no live send is reported | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) |
+| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400` and tagged `v0.5.0-rc1` locally; not pushed, not published, and no live send is reported | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -771,12 +771,25 @@ published, read back from the `SHA256SUMS` attached to each GitHub release.
 | `v0.4.12` | `4e85d64` | `f3937c30a69aca4129595d27aac02113508eac801a6b463815a39158fd62c26b` | `21b3c80e3d452ff27343fec011467cc0256b30b4305185337692e51875ba02f8` |
 | `v0.4.13` | `351e126` | `f61b58265c4539467fb33e3d0a26d8373a15cbe78301859620b0d4b6ec65f97a` | `d961255d788ef39dbb4b04667bbc73316bedbdb2dce05c685cdd4a3af74a7c0d` |
 | `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
-| `v0.5.0` | `51ea400` | not published | not published |
 
 `v0.4.14` resolves to `d530a221de87`, the commit [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md)
-already records as the one GitHub Actions built and published. `v0.5.0` is tagged
-locally only: the tag exists on the build machine, nothing is pushed, and the
-release does not yet exist.
+already records as the one GitHub Actions built and published.
+
+### A bare version tag means a published release
+
+Every `vX.Y.Z` tag on the remote is a GitHub release carrying `SHA256SUMS` and a
+CycloneDX SBOM, and this project's rule is that such a tag is never moved. A build
+that is committed but not yet released therefore does not take the bare name:
+
+| Build | Anchor | State |
+| --- | --- | --- |
+| 0.5.0 | commit `51ea400`, local annotated tag `v0.5.0-rc1` | Signed and notarized. **Not pushed and not published**, and no live send is reported. The bare tag `v0.5.0` is created only when the release ships, so a published tag never has to move. |
+| 0.4.15 | source archive only — no commit, no tag | Built, signed, notarized and owner-tested; never published. |
+
+From 0.5.0 onward release tags are **annotated**, so the tag object itself carries
+the artifact hashes and the signing and notarization evidence. The published tags
+before it are lightweight and are left exactly as they are, because correcting them
+would mean moving a published tag.
 
 ### Local build output is not a published asset
 
@@ -801,9 +814,19 @@ working tree alongside the later 0.5.0 changes and was committed once, in
 `51ea400`. Its source survives only as
 `dist/bitcoin-easy-multisig-signer-v0.4.15.tar.gz`, SHA-256
 `261c537b061bf547e4075fde6c15deb4757e3152ffcbdb87621dba0a8af48117`, plus the
-0.4.15 portion of the `51ea400` diff. Because `dist/` is untracked, that archive
-currently exists only on the build machine. The 0.5.0 source archive is
+0.4.15 portion of the `51ea400` diff. Because `dist/` is untracked, that archive is
+not in version control at all. The 0.5.0 source archive is
 `dist/bitcoin-easy-multisig-signer-v0.5.0.tar.gz`, SHA-256
 `3a65fe936023dcd5b44735648ccec1afc69d73dcdc1f21935960efdb7d5d854f`, and is
-likewise local-only until 0.5.0 is published. Preserve both archives when
-publishing, or the source for these two builds is lost.
+likewise local-only until 0.5.0 is published.
+
+Both archives are mirrored, byte-identical and hash-verified, outside the build
+tree at `/Users/christerry/Documents/deepseek-harness/default-workspace/besa-release-archive/`
+(`bitcoin-easy-multisig-signer-v0.4.15.tar.gz` and
+`bitcoin-easy-multisig-signer-v0.5.0.tar.gz`). That mirror is a second copy on the
+same machine, not an off-machine backup.
+
+Because 0.4.15 has no release of its own to attach to, its source archive should be
+attached to the GitHub 0.5.0 release, clearly labelled as the unpublished 0.4.15
+candidate, so its source stops depending on one machine. Preserve both archives
+when publishing, or the source for these two builds is lost.
