@@ -1,9 +1,12 @@
-# v0.6.3 — audit remediation candidate
+# v0.6.3 — audit remediation release
 
-**Signed and notarized candidate built; not published.** The latest published app is v0.6.2.
-This record tracks changes made after the public Z.ai audit of v0.6.2. The audit
-is a dated review of that release, not a certification of this candidate. Do not
-turn this record into a release claim until the gates below have evidence.
+**Published 2026-10-02** as [v0.6.3](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.3), tagged at the owner-tested app source commit
+`f19bc460a2cb64590e8e37268b5be1df1a1f84b0`. The independent follow-up
+audit of this release remains open.
+
+This record tracks changes made after the public Z.ai audit of v0.6.2. That
+audit is a dated review of v0.6.2, not a certification of this release. The
+build, owner acceptance, and publication evidence is recorded below.
 
 ## Changes
 
@@ -46,7 +49,8 @@ turn this record into a release claim until the gates below have evidence.
 
 - Built from app source commit `f19bc460a2cb64590e8e37268b5be1df1a1f84b0`
   by [nonpublishing workflow run 36969063265](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36969063265).
-  All five jobs passed. `v0.6.3` has no public tag or release.
+  All five jobs passed. This run created no tag or release; the exact candidate
+  assets were promoted after the owner's physical acceptance.
 - The full local suite passed 253 Python tests. The workflow passed the Python
   suite, UI DOM tests, tests from its own source archive, signed Apple Silicon
   build, packaged app checks, SBOM generation, and downloaded-byte checksum
@@ -77,11 +81,22 @@ turn this record into a release claim until the gates below have evidence.
   package license/copyright texts; its SHA-256 is
   `b2b9b9d036a3752f5c1b2fcd85829ec32d494c54abdb56610e5246523e0c19a8`.
 
-## Gates to complete before publication
+## Publication verification
 
-1. Publish a new immutable `v0.6.3` tag pointing to the tested app source commit
-   `f19bc460a2cb64590e8e37268b5be1df1a1f84b0`, and attach the exact tested
-   DMG, matching source archive and SBOM, license bundle, and checked sums.
-2. Verify the public assets, tag target, and updated project documentation.
+- The immutable `v0.6.3` tag points to
+  `f19bc460a2cb64590e8e37268b5be1df1a1f84b0`, the signed build's commit.
+  The public release has the tested DMG, matching source archive and SBOM,
+  license bundle, and `SHA256SUMS`. The first three asset hashes match the
+  original workflow outputs; the published sums add the license bundle.
+- All four public assets were downloaded after publication and verified with
+  the public `SHA256SUMS`. The public DMG was also compared byte-for-byte with
+  the owner-tested local DMG. The public release is neither a draft nor a
+  prerelease. No existing asset was replaced.
+- The current `main` branch is intentionally ahead of the release tag: the tag
+  identifies the exact tested executable and source archive, while subsequent
+  commits record owner acceptance, merge the already public v0.6.2 audit
+  documents, and update current-status files. The post-build differences are
+  documentation only. The dated status stamp inside the in-tag source archive
+  is therefore a prepublication snapshot, as explained in `RELEASE-HISTORY.md`.
 
 No independent end-to-end review of v0.6.3 is claimed by these fixes or tests.
