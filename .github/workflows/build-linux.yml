@@ -135,8 +135,11 @@ jobs:
           sudo apt-get update -qq
           # squashfs-tools provides mksquashfs, the AppImage payload format.
           # librsvg2-bin rasterises assets/icon.svg into the AppDir icon.
+          # fuse3 provides fusermount3, which a mounted AppImage needs; libfuse2
+          # is deliberately NOT installed, so these checks prove the pinned
+          # runtime never asks for libfuse.so.2.
           sudo apt-get install -y --no-install-recommends \
-            squashfs-tools librsvg2-bin build-essential
+            squashfs-tools librsvg2-bin build-essential fuse3
       - name: Prepare the hash-locked build environment
         env:
           # The lock is resolved on Linux and pinned by hash; this step is the

@@ -126,7 +126,12 @@ mkdir -p build/libusb
 tar -xjf "$libusb_source" -C build/libusb --strip-components=1
 (
     cd build/libusb
-    ./configure --disable-static --enable-shared --disable-examples-build >/dev/null
+    # --disable-udev keeps a libudev.so.1 dependency out of the bundle.
+    # libusb only uses udev for hotplug notifications, which this app never
+    # asks for: hwilib enumerates on demand. Without the flag the bundle would
+    # refuse to load on a host that has systemd's udev library absent.
+    ./configure --disable-static --enable-shared --disable-examples-build \
+        --disable-udev >/dev/null
     make -j"$(nproc)" >/dev/null
 )
 libusb_built="$(find build/libusb/libusb/.libs -maxdepth 1 -name 'libusb-1.0.so.0.*' -type f | head -n 1)"
