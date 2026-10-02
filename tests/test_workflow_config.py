@@ -103,8 +103,25 @@ class WorkflowConfigTests(unittest.TestCase):
         """Overwriting a published tag changes artifacts somebody already
         downloaded and verified. The publish step must refuse, not delete."""
         self.assertNotIn("gh release delete", self.text)
-        self.assertIn("is already published", self.text)
+        self.assertIn('git ls-remote --exit-code --tags origin "refs/tags/$tag"', self.text)
         self.assertIn("Bump version.py", self.text)
+
+    def test_release_checks_downloaded_bytes_before_any_publish(self):
+        self.assertIn("shasum -a 256 -c SHA256SUMS", self.text)
+        self.assertLess(self.text.index("shasum -a 256 -c SHA256SUMS"),
+                        self.text.index("gh release create"))
+
+    def test_dependency_installation_finishes_before_signing_material(self):
+        self.assertNotIn("pip install --quiet", self.text)
+        self.assertEqual(self.text.count("pip install --require-hashes -r requirements-ci.lock"), 2)
+        macos = self.data["jobs"]["macos"]["steps"]
+        names = [step.get("name", "") for step in macos]
+        signing = names.index("Import the Developer ID certificate")
+        for step in macos[signing + 1:]:
+            script = step.get("run", "")
+            self.assertNotIn("pip install", script)
+            self.assertNotIn("brew install", script)
+        self.assertNotIn('echo "KEYCHAIN_PASSWORD=', self.text)
 
     def test_only_manual_dispatch_can_publish(self):
         """A source push must not publish a money-moving desktop app."""
