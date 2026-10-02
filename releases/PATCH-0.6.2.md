@@ -88,6 +88,43 @@ workflow YAML parse, and the source-archive build.
 - The plain-language operator guide and the nontechnical walkthrough remain
   deferred to the owner.
 
+## Candidate build evidence
+
+A non-publishing dispatch (`notarize=true publish=false`): workflow run
+[36958728418](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36958728418)
+from commit `8712dca` ("0.6.2: retire the network with the review it belonged
+to"), queued 2026-10-02T03:07:07Z and successful. Nothing was published: no
+`v0.6.2` tag and no release were created, and the published release is still
+[v0.6.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.1).
+
+Artifacts downloaded from the run:
+
+- `Bitcoin-Easy-Signer-v0.6.2-macOS.dmg` — 34,874,193 bytes, SHA-256
+  `6e448a22526fa9017fc3c072820996f05fd727262f337ba4a5bbceabe3546a76`
+- `bitcoin-easy-multisig-signer-v0.6.2.tar.gz` — 708,671 bytes, SHA-256
+  `7439ef199ba2aee0ddaadcfee98845381e295df81476d24a1599df4f207fa83f`
+- `BUILD-SBOM.json` — 7,023 bytes, SHA-256
+  `7dba727b3424f8408be9ba0fe4d779b9c76c31cf7f226a89744474c5c2021316`
+
+All three recomputed from the download match the run's `SHA256SUMS`. A copy of
+the DMG sits at `~/Downloads/Bitcoin-Easy-Signer-v0.6.2-macOS.dmg` for
+double-clicking.
+
+Verified on the downloaded DMG: `hdiutil verify` VALID; the bundle reports
+`CFBundleShortVersionString 0.6.2`; `codesign -dvvv` reports
+`Authority=Developer ID Application: Bitseeker LLC (B8G5L7M8TB)`,
+`TeamIdentifier=B8G5L7M8TB` and
+`CDHash=5d17d33075d7e924dd2e817339958ce7f1835dfa`; `codesign --verify --strict
+--deep` OK; `spctl -a -t exec -vv` reports `accepted source=Notarized Developer
+ID`; `xcrun stapler validate` works on the app inside the image and on the DMG
+itself. Apple's record (`xcrun notarytool history --keychain-profile eas-notary`)
+lists the DMG `85e4ee74-43b7-4b2a-b0f1-0056b995e944` and the app zip
+`37cd7d26-c2df-424c-863a-2f3c9a9aabab`, both **Accepted**.
+
+The candidate has not been installed or opened, so nothing here shows that 0.6.2
+works; the checks show that the artifact is the one the workflow built, signed
+by Bitseeker LLC and notarized by Apple.
+
 ## Owner decisions
 
 - The owner asked for the stale-review state to be fixed as 0.6.2, choosing it
