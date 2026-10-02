@@ -34,13 +34,31 @@ the engine published here.
 - Python 3.12 full suite: 238 tests passed.
 - All `ui_*.cjs` DOM regression tests passed.
 - `bash -n` on every `scripts/*.sh`; `git diff --check` clean.
-- Apple Silicon Developer ID signing and Apple notarization; app and DMG
-  stapled and validated; Gatekeeper accepted the app mounted from the DMG;
-  `hdiutil verify` reported a valid image.
-- Local DMG: `Bitcoin-Easy-Signer-v0.5.1-macOS.dmg`.
-  SHA-256: `PENDING-BUILD`.
+- Built and published by the GitHub Actions workflow from commit
+  `e833162cb4cf6d8b50a2bc76254829410d9dffd9` (run `36948967931`), not from a local
+  build; the published artifact is the workflow's.
+- Apple Silicon Developer ID signing — `Developer ID Application: Bitseeker LLC
+  (B8G5L7M8TB)`, hardened runtime — and Apple notarization. The ticket is stapled
+  to both the app and the DMG and both validate; `spctl` accepts the app as
+  `Notarized Developer ID`; `hdiutil verify` reported a valid image.
+- The `com.apple.security.cs.disable-library-validation` entitlement is confined to
+  the nested `hwi` helper; the main app carries no entitlements (payload 0 bytes).
+- Shipped `Contents/Resources/ui.html` is byte-identical to the repository copy:
+  `cd3d97641e283b76798f695ad8a874cf28a9fa60535232393e6ad3573e6c42aa`.
+- Main executable SHA-256
+  `5b1661e9da974b49bc6b55afdd59804f0998b4bbe156adc1970652eb7dfc4cfd`;
+  nested `hwi` SHA-256
+  `33fc787fbe68b2f3763680c3292ae9adc5d4d4481c8f40f912bad9e871ae8329`.
+- Published DMG: `Bitcoin-Easy-Signer-v0.5.1-macOS.dmg`.
+  SHA-256: `73691cc4fd71591cd53acc22f08273a97b20cf09593e6c8009bd5b39706387d0`.
 - Matching source archive: `bitcoin-easy-multisig-signer-v0.5.1.tar.gz`.
-  SHA-256: `PENDING-BUILD`.
+  SHA-256: `b1b3f7e4018fdd1d94758867ccaa05fd083c35f7624bc1ad2ba8abb1ee1c8ba9`.
+- `BUILD-SBOM.json` SHA-256
+  `8a31552ac5d5c1e46d589313afbc3a4554892eda9204b7d11ad95fc79b109ed6`.
+  All three digests verify against the release's published `SHA256SUMS`.
+- The extracted source archive reproduces the tree: `version.py` reads `0.5.1`,
+  every application module and `ui.html` are byte-identical, and `releases/` holds
+  21 records.
 
 ## First live mainnet payment
 

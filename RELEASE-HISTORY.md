@@ -857,7 +857,7 @@ published, read back from the `SHA256SUMS` attached to each GitHub release.
 | `v0.4.12` | `4e85d64` | `f3937c30a69aca4129595d27aac02113508eac801a6b463815a39158fd62c26b` | `21b3c80e3d452ff27343fec011467cc0256b30b4305185337692e51875ba02f8` |
 | `v0.4.13` | `351e126` | `f61b58265c4539467fb33e3d0a26d8373a15cbe78301859620b0d4b6ec65f97a` | `d961255d788ef39dbb4b04667bbc73316bedbdb2dce05c685cdd4a3af74a7c0d` |
 | `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
-| `v0.5.1` | `PENDING-COMMIT` | `PENDING-BUILD-tar` | `PENDING-BUILD-dmg` |
+| `v0.5.1` | `e833162` | `b1b3f7e4018fdd1d94758867ccaa05fd083c35f7624bc1ad2ba8abb1ee1c8ba9` | `73691cc4fd71591cd53acc22f08273a97b20cf09593e6c8009bd5b39706387d0` |
 
 `v0.4.14` resolves to `d530a221de87`, the commit the published assets were built from.
 
@@ -873,10 +873,13 @@ therefore does not take the bare name:
 | 0.5.0 | commit `51ea400`, local annotated tag `v0.5.0-rc1` | Signed and notarized, and the build that made the project's first live mainnet payment. Never published under its own number; 0.5.1 publishes the same engine. The bare tag `v0.5.0` is never created, so no published tag has to move. |
 | 0.4.15 | source archive only — no commit, no tag | Built, signed, notarized and owner-tested; never published. |
 
-From 0.5.0 onward release tags are **annotated**, so the tag object itself carries
-the artifact hashes and the signing and notarization evidence. The published tags
-before it are lightweight and are left exactly as they are, because correcting them
-would mean moving a published tag.
+`v0.5.1` was tagged by the release workflow itself (`gh release create`), which
+writes a **lightweight** tag, so its artifact hashes and signing and notarization
+evidence live in the GitHub release notes, the published `SHA256SUMS` and
+`releases/PATCH-0.5.1.md` rather than in a tag object. Teaching the workflow to
+create an annotated tag is a candidate change for the next release. Every published
+tag in this repository, including the 0.5.1 one, is left exactly as it is, because
+correcting it would mean moving a published tag.
 
 ### Local build output is not a published asset
 
