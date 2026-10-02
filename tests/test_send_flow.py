@@ -128,6 +128,58 @@ class SendFlowTests(unittest.TestCase):
         self.identity_check.assert_called_once_with(
             self.app.record, "hwi", "test", "jade", "/dev/x", 1)
 
+    def test_signing_refuses_when_no_device_binding_was_recorded(self):
+        self.prepare_a_reviewed_transaction()
+        self.app.verified_signers = None
+        reviewed = self.app.prepared
+        with patch("gui.sign_psbt_with_device") as signer, \
+                patch("gui.broadcast_transaction") as broadcaster:
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/x"})
+        self.assertEqual(error.exception.code, 400)
+        self.assertIn("Check signing devices", json.load(error.exception)["error"])
+        signer.assert_not_called()
+        broadcaster.assert_not_called()
+        self.assertIs(self.app.prepared, reviewed)
+        self.assertEqual(reviewed.checked_psbt().inputs[0].partial_sigs, {})
+        self.assertIsNone(self.app.pending_broadcast_txid)
+
+    def test_signing_refuses_a_binding_from_a_different_review(self):
+        self.prepare_a_reviewed_transaction()
+        binding = self.app.verified_signers
+        self.app.verified_signers = ("stale-review", *binding[1:])
+        reviewed = self.app.prepared
+        with patch("gui.sign_psbt_with_device") as signer, \
+                patch("gui.broadcast_transaction") as broadcaster:
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/x"})
+        self.assertEqual(error.exception.code, 400)
+        self.assertIn("Check signing devices", json.load(error.exception)["error"])
+        signer.assert_not_called()
+        broadcaster.assert_not_called()
+        self.assertIs(self.app.prepared, reviewed)
+        self.assertEqual(reviewed.checked_psbt().inputs[0].partial_sigs, {})
+        self.assertIsNone(self.app.pending_broadcast_txid)
+
+    def test_signing_refuses_when_device_reverification_fails(self):
+        self.prepare_a_reviewed_transaction()
+        reviewed = self.app.prepared
+        with patch("gui.verify_signer_device", side_effect=ProbeError("device changed")) as verify, \
+                patch("gui.sign_psbt_with_device") as signer, \
+                patch("gui.broadcast_transaction") as broadcaster:
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/x"})
+        self.assertEqual(error.exception.code, 400)
+        verify.assert_called_once()
+        signer.assert_not_called()
+        broadcaster.assert_not_called()
+        self.assertIs(self.app.prepared, reviewed)
+        self.assertEqual(reviewed.checked_psbt().inputs[0].partial_sigs, {})
+        self.assertIsNone(self.app.pending_broadcast_txid)
+
     def signing_device(self, key):
         """A stand-in for one hardware device holding one key.
 
