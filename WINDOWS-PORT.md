@@ -3,6 +3,16 @@
 This document explains the Windows build, why it lives on its own branch, and what
 has to be reviewed before the first one can be published.
 
+> **Do not merge this branch into `main`, ever.** The v0.6.4 audit is a judgement
+> about how the app is *built* — the script, the order of its gates, the signing and
+> notarisation steps and the exact set of files that ship — not only about the source
+> it compiles. This branch rewrites that path, so a merge would leave `main` shipping
+> something the audit never looked at. It would also delete `docs/` (the live
+> website) and `scripts/build-macos.sh`, because the port removes them. `main` is
+> unmodified and must stay that way. Windows releases are published from this
+> branch's own tag, `v<version>-windows-x64`. The Windows tree is a separate line of
+> work to be audited and locked down on its own terms later.
+
 ## Why this is a separate branch
 
 The macOS app in `besa-audit` is frozen at v0.6.4 (`35cdedb`) and covered by the
