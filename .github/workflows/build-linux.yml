@@ -151,6 +151,101 @@ jobs:
         env:
           BUILD_DEPS_PREPARED: "1"
         run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+      - name: Prove the AppImage starts where libfuse.so.2 is absent
+        # The published promise is that a downloaded AppImage does not need the
+        # host's libfuse.so.2 -- the library whose absence has always made one
+        # do nothing at all on a current Ubuntu. Only a machine without it can
+        # prove that, so this step refuses to run where it is installed, shows
+        # the launcher's runtime asks no dynamic loader for anything, starts the
+        # AppImage the way a user does, and then does it again inside a
+        # container image that carries no libfuse2 at all.
+        run: |
+          set -euo pipefail
+          appimage="$(ls dist/Bitcoin-Easy-Signer-*-linux-x86_64.AppImage)"
+          chmod 755 "$appimage"
+
+          if ldconfig -p | grep -qE 'libfuse\.so\.2'; then
+            echo "::error::libfuse.so.2 is installed on this runner, so a pass here would prove nothing."
+            exit 1
+          fi
+
+          # The runtime prefix is the launcher. A static-pie binary names no
+          # interpreter and no shared library, so there is nothing for the host
+          # to be missing. (It does carry libfuse's licence text; the check is
+          # about the loader's own view of the file, not about strings.)
+          mkdir -p build
+          "./$appimage" --appimage-offset > build/offset
+          head -c "$(cat build/offset)" "$appimage" > build/runtime
+          chmod 755 build/runtime
+          file build/runtime
+          python3 - <<'ELF'
+          import struct
+          import sys
+
+          raw = open("build/runtime", "rb").read()
+          if raw[:4] != b"\x7fELF":
+              sys.exit("the AppImage runtime is not an ELF binary")
+          phoff, = struct.unpack_from("<Q", raw, 32)
+          phentsize, phnum = struct.unpack_from("<HH", raw, 54)
+          interpreter = None
+          dynamic = None
+          for index in range(phnum):
+              start = phoff + index * phentsize
+              p_type, _flags, p_offset, _vaddr, _paddr, p_filesz = struct.unpack_from(
+                  "<IIQQQQ", raw, start
+              )
+              if p_type == 3:
+                  interpreter = raw[p_offset:p_offset + p_filesz].split(b"\0")[0]
+              if p_type == 2:
+                  dynamic = (p_offset, p_filesz)
+          if interpreter is not None:
+              sys.exit("the AppImage runtime asks for a dynamic loader: " + interpreter.decode())
+          needed = []
+          if dynamic is not None:
+              offset, size = dynamic
+              for index in range(size // 16):
+                  tag, _value = struct.unpack_from("<qQ", raw, offset + index * 16)
+                  if tag == 0:
+                      break
+                  if tag == 1:
+                      needed.append(index)
+          if needed:
+              sys.exit("the AppImage runtime names " + str(len(needed)) + " shared library dependency(ies)")
+          print("The AppImage runtime is static-pie: no dynamic loader, no shared library named.")
+          ELF
+
+          # Start it the way a user does: the runtime mounts the payload itself,
+          # which is the path that fails when a machine has only fuse3.
+          sudo modprobe fuse || true
+          if [[ ! -e /dev/fuse ]]; then
+            echo "::error::this runner has no /dev/fuse, so a mounted AppImage cannot be proven here."
+            exit 1
+          fi
+          DSH_LINUX_CHECK_LOG="$PWD/build/appimage-mounted.log" "./$appimage" --dsh-check-bundle
+          test -s build/appimage-mounted.log
+          cat build/appimage-mounted.log
+
+          # And again inside a container that has no libfuse2: an AppImage that
+          # needed the host's libfuse.so.2 dies here with a dlopen failure.
+          cat > build/container-proof.sh <<'SH'
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends fuse3 ca-certificates >/dev/null
+          if ldconfig -p | grep -qE 'libfuse\.so\.2'; then
+            echo "libfuse.so.2 is present in this container; the proof is void." >&2
+            exit 1
+          fi
+          appimage="$(ls /dist/Bitcoin-Easy-Signer-*-linux-x86_64.AppImage)"
+          DSH_LINUX_CHECK_LOG=/work/container.log "$appimage" --dsh-check-bundle
+          test -s /work/container.log
+          SH
+          docker run --rm \
+            --device /dev/fuse --cap-add SYS_ADMIN \
+            --security-opt apparmor=unconfined \
+            -v "$PWD/dist:/dist:ro" -v "$PWD/build:/work" \
+            ubuntu:24.04 bash -lc 'bash /work/container-proof.sh'
+          cat build/container.log
+
       - name: Name the files for one release page with every platform
         run: |
           set -euo pipefail

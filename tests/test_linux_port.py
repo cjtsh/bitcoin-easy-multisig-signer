@@ -242,6 +242,26 @@ class LinuxWorkflowTests(unittest.TestCase):
                      "gh release edit", "--latest"):
             self.assertNotIn(verb, self.text)
 
+    def test_the_promise_of_no_libfuse_so_2_is_proven_where_the_library_is_absent(self):
+        # A machine that has the library cannot show that it is not needed, so
+        # the step refuses to run there, shows the launcher's runtime asks no
+        # dynamic loader for anything, and then starts the AppImage twice --
+        # once on the runner and once in a container that carries no libfuse2.
+        step = self.text[self.text.index("Prove the AppImage starts where libfuse.so.2 is absent"):]
+        self.assertIn("ldconfig -p", step)
+        self.assertIn("libfuse\\.so\\.2", step)
+        self.assertIn("the proof is void", step)
+        self.assertIn("static-pie", step)
+        self.assertIn("p_type == 2", step)
+        self.assertIn("p_type == 3", step)
+        self.assertIn("--device /dev/fuse", step)
+        self.assertIn("ubuntu:24.04", step)
+        self.assertIn("--dsh-check-bundle", step)
+        self.assertLess(
+            self.text.index("Prove the AppImage starts"),
+            self.text.index("Name the files for one release page"),
+        )
+
     def test_the_files_say_which_platform_they_are(self):
         for name in ("linux-x86_64.AppImage", "linux-x86_64.tar.gz",
                      "BUILD-SBOM-linux-x86_64.json", "SHA256SUMS-linux-x86_64.txt"):
