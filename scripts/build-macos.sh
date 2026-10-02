@@ -80,6 +80,7 @@ rm -rf .build-venv
 args=(--noconfirm --clean --windowed --onedir --name "Bitcoin Easy Signer"
       --icon "assets/AppIcon.icns"
       --add-data "ui.html:." --add-data "LICENSE:." --add-data "DISCLAIMER.md:." --add-data "PRIVACY.md:." --add-data "THIRD-PARTY-NOTICES.md:." \
+      --add-data "vendor/libusb-COPYING:." \
       --collect-data certifi --distpath dist desktop.py)
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   args+=(--codesign-identity "$MAC_SIGN_IDENTITY")
@@ -87,18 +88,18 @@ fi
 .build-venv/bin/python -m PyInstaller "${args[@]}"
 app="dist/Bitcoin Easy Signer.app"
 [[ -d "$app" ]] || { echo "PyInstaller did not produce the macOS app." >&2; exit 1; }
-libusb_dylib="$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
+libusb_dylib="vendor/libusb-1.0.0.dylib"
 [[ -f "$libusb_dylib" ]] || {
-  echo "Bundling HWI requires libusb; install it with: brew install libusb" >&2
+  echo "Bundling HWI requires the vendored libusb input at $libusb_dylib." >&2
   exit 1
 }
 # Integrity check for the bundled native library. The dylib is copied into the
 # app with --add-binary and is then code-signed, so a swapped or unexpected
-# Homebrew build would ship as trusted signed code. Verify it first.
+# binary would ship as trusted signed code. Verify it first.
 #
-# Compute the digest on a Mac you trust:
-#   shasum -a 256 "$(brew --prefix libusb)/lib/libusb-1.0.0.dylib"
-# Then build with the expected digest (64 lowercase hex characters):
+# The input was captured from a successful macOS CI run before signing and
+# committed under vendor/; vendor/README.md records its provenance. Build with
+# the reviewed expected digest (64 lowercase hex characters):
 #   LIBUSB_SHA256=<64-hex> bash scripts/build-macos.sh <version>
 # LIBUSB_SHA256 is mandatory: no artifact is built from an unverified dylib.
 libusb_sha256="$(shasum -a 256 "$libusb_dylib" | awk '{print $1}')"

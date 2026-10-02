@@ -25,20 +25,20 @@ hardware-device communication; see the component licenses and source projects.
 
 ### libusb (LGPL-2.1-or-later)
 
-The build verifies the Homebrew `libusb-1.0.0.dylib` input against the reviewed
+The build verifies the vendored `libusb-1.0.0.dylib` input against the reviewed
 `LIBUSB_SHA256` digest. PyInstaller copies it under two names for HWI's USB
 loader and re-signs the copied Mach-O. `BUILD-SBOM.json` records the input
 digest and both shipped, post-signing digests separately. The library code is
-not changed by this project; its complete corresponding source is available
-from the upstream repository linked above.
+not changed by this project. The source archive contains the libusb 1.0.30
+upstream release source and its `COPYING` text under `vendor/`; the app bundle
+also contains `libusb-COPYING`.
 
 The dylib is bundled as a separate dynamic library. The
 fact that a library is dynamically linked does not by itself establish that a
 combined application's packaging satisfies every condition of LGPL-2.1.
 Redistributors should review the complete license and corresponding-source
 requirements for their distribution. The build records the bundled library's
-version and digest in `BUILD-SBOM.json`; its source is available from the
-upstream project linked above.
+version and digest in `BUILD-SBOM.json`.
 
 ### PyInstaller
 

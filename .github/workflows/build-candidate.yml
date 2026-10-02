@@ -106,34 +106,17 @@ jobs:
         with:
           # Same HWI <3.13 constraint as the source job; do not bump one alone.
           python-version: "3.12"
-      - name: Obtain a libusb whose digest matches the reviewed one
+      - name: Verify the vendored libusb input
         env:
           LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
         run: |
           set -euo pipefail
           test -n "$LIBUSB_SHA256" || { echo 'Set the reviewed LIBUSB_SHA256 repository variable.' >&2; exit 1; }
           expected="$(printf '%s' "$LIBUSB_SHA256" | tr '[:upper:]' '[:lower:]')"
-          dylib="$(brew --prefix 2>/dev/null || true)/lib/libusb-1.0.0.dylib"
-          # Prefer a copy that already matches. Homebrew formula code executes
-          # before any digest can be checked, so the verified path is the one
-          # that does not need Homebrew at all; the install is the fallback and
-          # its output is verified immediately after.
-          if [ -f "$dylib" ] && [ "$(shasum -a 256 "$dylib" | awk '{print $1}')" = "$expected" ]; then
-            echo "Using the libusb already present (verified)."
-          else
-            brew install libusb
-            actual="$(shasum -a 256 "$dylib" | awk '{print $1}')"
-            echo "libusb SHA-256: $actual"
-            test "$expected" = "$actual" || { echo 'Unexpected libusb binary; refusing the build.' >&2; exit 1; }
-          fi
-          cp "$dylib" "$RUNNER_TEMP/libusb-1.0.0.dylib"
-      # Capture the already verified public input once. The next revision vendors
-      # these exact bytes and removes Homebrew from the candidate build entirely.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: reviewed-libusb-input
-          path: ${{ runner.temp }}/libusb-1.0.0.dylib
-          if-no-files-found: error
+          dylib="vendor/libusb-1.0.0.dylib"
+          test -f "$dylib" || { echo 'Vendored libusb input is missing.' >&2; exit 1; }
+          actual="$(shasum -a 256 "$dylib" | awk '{print $1}')"
+          test "$expected" = "$actual" || { echo 'Unexpected vendored libusb binary; refusing the build.' >&2; exit 1; }
       - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m pip install --require-hashes -r requirements-ci.lock
       - name: Run the suite and refuse a silent skip

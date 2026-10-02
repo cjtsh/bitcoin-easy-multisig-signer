@@ -32,7 +32,7 @@ class DesktopTests(unittest.TestCase):
         # check_bundle_resources() requires the licence and the third-party
         # notices to ship beside the app, because the bundle redistributes libusb
         # under LGPL-2.1-or-later. Provide them for every frozen-bundle test.
-        for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md", "DISCLAIMER.md", "PRIVACY.md"):
+        for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md", "DISCLAIMER.md", "PRIVACY.md", "libusb-COPYING"):
             (Path(self.temp.name) / notice).write_text(f"synthetic {notice}\n")
         self.raw = b"psbt\xff" + b"synthetic test data"
         self.encoded = base64.b64encode(self.raw).decode()
@@ -246,7 +246,7 @@ class DesktopTests(unittest.TestCase):
         """
         ui = Path(self.temp.name) / "ui.html"
         ui.write_text("<html>__APP_VERSION__ location.hash __DESKTOP_MODE__</html>")
-        for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md"):
+        for notice in ("LICENSE", "THIRD-PARTY-NOTICES.md", "libusb-COPYING"):
             with self.subTest(notice=notice):
                 target = Path(self.temp.name) / notice
                 original = target.read_text(encoding="utf-8")

@@ -114,6 +114,7 @@ class WorkflowConfigTests(unittest.TestCase):
     def test_dependency_installation_finishes_before_signing_material(self):
         self.assertNotIn("pip install --quiet", self.text)
         self.assertEqual(self.text.count("pip install --require-hashes -r requirements-ci.lock"), 2)
+        self.assertNotIn("brew install", self.text)
         macos = self.data["jobs"]["macos"]["steps"]
         names = [step.get("name", "") for step in macos]
         signing = names.index("Import the Developer ID certificate")

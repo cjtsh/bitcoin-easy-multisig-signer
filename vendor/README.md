@@ -25,3 +25,24 @@ This vendoring step avoids an unhashable VCS install and any package build
 while the release job holds signing credentials. The original archive and
 patched source are shipped alongside the wheel so the two local edits
 and the bundled code can be independently compared.
+
+## Pinned libusb for the Apple Silicon helper
+
+`libusb-1.0.0.dylib` is the arm64 macOS libusb 1.0.30 binary obtained by the
+nonpublishing GitHub Actions macOS-15 run
+[`36968320299`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36968320299)
+before any signing secret was imported. The run verified its SHA-256 against the
+previously reviewed `LIBUSB_SHA256` repository variable and uploaded the exact
+input bytes. SHA-256:
+`8f6ad6c17c16f1e7769ad2f780ed2ddf98234ae6580cf5d87d9648cee1769201`.
+The build and workflow verify the vendored bytes against that pin and do not
+install Homebrew packages. PyInstaller signs the two bundled copies; the SBOM
+separately records their resulting shipped digests.
+
+`libusb-1.0.30.tar.bz2` is the upstream release source at
+`https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2`.
+Its SHA-256 is
+`fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf`,
+matching the Homebrew 1.0.30 formula's source checksum. `libusb-COPYING` is the
+unmodified LGPL-2.1-or-later license from that source archive and is bundled
+with the app. The dylib is a separate dynamically loaded library.

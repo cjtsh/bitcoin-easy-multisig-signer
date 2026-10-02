@@ -81,7 +81,9 @@ cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
 mkdir -p "$stage/$root/vendor"
 cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
   vendor/embit-0.8.2+besa.1.tar.gz \
-  vendor/embit-0.8.2+besa.1-py3-none-any.whl "$stage/$root/vendor/"
+  vendor/embit-0.8.2+besa.1-py3-none-any.whl \
+  vendor/libusb-1.0.0.dylib vendor/libusb-1.0.30.tar.bz2 \
+  vendor/libusb-COPYING "$stage/$root/vendor/"
 # USER-MANUAL.md links to these sanitized interface illustrations. Keep them in
 # the source archive so the guide remains complete outside the Git checkout.
 mkdir -p "$stage/$root/docs/assets"
