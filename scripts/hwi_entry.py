@@ -1,18 +1,21 @@
 """Standalone HWI CLI entry point bundled beside the macOS app."""
 
 import ctypes
-import os
 import sys
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
     bundled_libusb = Path(sys._MEIPASS) / "libusb-1.0.0.dylib"
-    if bundled_libusb.is_file():
-        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = (
-            str(bundled_libusb.parent) + os.pathsep
-            + os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
-        )
-        ctypes.CDLL(str(bundled_libusb))
+    bundled_alias = Path(sys._MEIPASS) / "libusb-1.0.dylib"
+    if not bundled_libusb.is_file() or not bundled_alias.is_file():
+        raise RuntimeError("The bundled USB library is missing; the signer helper cannot start.")
+    # usb1 exposes an explicit loader. Bind its first load to the verified
+    # bundle path; preloading a differently named dylib does not stop usb1 from
+    # finding a second Homebrew copy later.
+    import usb1
+    _libusb_handle = ctypes.CDLL(str(bundled_alias))
+    if not usb1.loadLibrary(_libusb_handle):
+        raise RuntimeError("The USB stack loaded a library outside this app.")
 
 def _tolerate_vanished_devices() -> None:
     """Stop one stale device from taking the whole enumeration down with it.
@@ -77,6 +80,12 @@ def _check_libusb() -> int:
 
     with usb1.USBContext() as context:
         list(context.getDeviceList(skip_on_error=True))
+    if getattr(sys, "frozen", False):
+        loaded = Path(usb1.libusb1.libusb._name).resolve()
+        expected = (Path(sys._MEIPASS) / "libusb-1.0.dylib").resolve()
+        if loaded != expected:
+            raise RuntimeError("The USB stack loaded a library outside this app.")
+        print(f"Bundled libusb: {loaded}")
     return 0
 
 

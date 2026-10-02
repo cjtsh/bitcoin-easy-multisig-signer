@@ -9,9 +9,11 @@ That is what a locked Trezor did to the owner's first hardware check.
 
 import importlib.util
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -125,6 +127,32 @@ class HwiEntryTests(unittest.TestCase):
         # sys.modules[name] = None makes "import usb1" raise ImportError.
         module = load_hwi_entry(None)
         self.assertTrue(hasattr(module, "_tolerate_vanished_devices"))
+
+    def test_frozen_helper_refuses_a_missing_bundled_library(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(
+            sys, "frozen", True, create=True
+        ), patch.object(sys, "_MEIPASS", folder, create=True):
+            with self.assertRaisesRegex(RuntimeError, "bundled USB library is missing"):
+                load_hwi_entry(None)
+
+    def test_frozen_helper_binds_usb1_to_the_bundled_alias(self):
+        class Handle:
+            def releaseInterface(self, interface):  # noqa: N802
+                return None
+
+        usb1 = types.ModuleType("usb1")
+        usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
+        usb1.USBDeviceHandle = Handle
+        usb1.loadLibrary = Mock(return_value=True)
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
+                (Path(folder) / name).write_bytes(b"synthetic library")
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "_MEIPASS", folder, create=True
+            ), patch("ctypes.CDLL", return_value="bundled-handle") as loader:
+                load_hwi_entry(usb1)
+            loader.assert_called_once_with(str(Path(folder) / "libusb-1.0.dylib"))
+            usb1.loadLibrary.assert_called_once_with("bundled-handle")
 
 
 if __name__ == "__main__":

@@ -52,16 +52,16 @@ fi
 python_bin="${PYTHON:-python3}"
 command -v "$python_bin" >/dev/null 2>&1 || {
   echo "PYTHON=$python_bin was not found on PATH." >&2
-  echo "Name a Python 3.9-3.12 interpreter, for example:" >&2
+    echo "Name a Python 3.10-3.12 interpreter, for example:" >&2
   echo "  PYTHON=python3.12 bash scripts/build-macos.sh <version>" >&2
   exit 1
 }
 python_minor="$("$python_bin" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 case "$python_minor" in
-  3.9|3.10|3.11|3.12) ;;
+  3.10|3.11|3.12) ;;
   *)
-    echo "This build needs Python 3.9-3.12; $python_bin is Python $python_minor." >&2
-    echo "The bundled hardware-wallet tool (hwi 3.2.0) requires >=3.9,<3.13." >&2
+    echo "This build needs Python 3.10-3.12; $python_bin is Python $python_minor." >&2
+    echo "The bundled HWI requires <3.13 and embit requires >=3.10." >&2
     echo "Name a supported interpreter explicitly:" >&2
     echo "  PYTHON=python3.12 bash scripts/build-macos.sh $version" >&2
     echo "Homebrew's kegs provide python3.12 but deliberately no python3, so adding" >&2
@@ -121,9 +121,12 @@ else
   echo "Observed digest: $libusb_sha256" >&2
   exit 1
 fi
+mkdir -p build/libusb-alias
+cp -f "$libusb_dylib" build/libusb-alias/libusb-1.0.dylib
 hwi_args=(--noconfirm --clean --onefile --name hwi --collect-all hwilib
           --collect-all hid --collect-all requests --collect-all urllib3
-          --collect-all certifi --add-binary "$libusb_dylib:." --distpath dist/hwi
+          --collect-all certifi --add-binary "$libusb_dylib:." \
+          --add-binary "build/libusb-alias/libusb-1.0.dylib:." --distpath dist/hwi
           scripts/hwi_entry.py)
 if [[ -n "${MAC_SIGN_IDENTITY:-}" ]]; then
   hwi_args+=(--codesign-identity "$MAC_SIGN_IDENTITY")

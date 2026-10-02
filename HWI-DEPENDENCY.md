@@ -30,14 +30,29 @@ Because the pin is hash-locked, a change to HWI's `master` branch — including 
 compromised one — cannot reach a released build. Only a deliberate version bump
 can.
 
+## Bundled HWI helper changes
+
+The app packages stock HWI 3.2.0 behind `scripts/hwi_entry.py`. That wrapper
+adds two local diagnostic flags: `--dsh-capabilities` reports whether Jade's
+HTTP PIN relay was bundled, and `--dsh-check-libusb` lists USB descriptors
+without opening a wallet and reports the resolved bundled libusb path in a
+frozen build. Neither flag is an upstream HWI option or a signing command.
+
+The wrapper also patches `usb1.USBDeviceHandle.releaseInterface` to tolerate
+`USBErrorNotFound` when a device disappears during enumeration. Other USB
+errors still fail. In a frozen build it requires both bundled libusb archive
+entries and binds usb1 to the extracted `libusb-1.0.dylib` before HWI can use
+USB. This is a deliberate packaging change around HWI, not a change to its
+wallet or signing protocol. Recheck it whenever HWI or libusb1 changes.
+
 ## What this dependency decides for the project
 
 1. **The device list.** See below.
 2. **The Python version.** HWI 3.2.0 declares `Requires-Python >=3.9,<3.13`, so
    this project builds on **Python 3.12** and cannot move to 3.13 or 3.14 while
    pinned here. This was verified against upstream metadata, and **HWI is the only
-   dependency that caps Python** — `embit` declares no `Requires-Python` at all.
-   Nothing else stands in the way.
+   dependency that caps Python below 3.13**. The vendored embit source requires
+   Python >=3.10, which remains compatible with the pinned 3.12 build.
 3. **When a rebuild is required.** See "When you must act".
 
 ## Devices
