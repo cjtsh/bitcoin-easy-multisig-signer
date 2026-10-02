@@ -2,7 +2,7 @@
 
 **Published version: 0.5.1.** Version 0.4.15 was an owner-test candidate; 0.5.0 was the first build able to broadcast on mainnet and was never published; 0.5.1 publishes that engine with corrected change-address guidance and clearer risk language. Older audit results and release notes remain historical evidence, not claims about the current release.
 
-**0.6.0 is prepared on the `dev-mode-0.6.0` branch and is not published.** It moves the network choice off the opening screen: the app opens on Bitcoin mainnet and Mutinynet/Testnet4 are reached through an "Enter Developer Mode" gate. The transaction and signing engine is unchanged from 0.5.1, so 0.6.0 adds no sending capability. Its record, including what was verified and what was deliberately left out, is [`releases/PATCH-0.6.0.md`](releases/PATCH-0.6.0.md). No 0.6.0 DMG has been built or notarized.
+**0.6.0 is prepared on the `dev-mode-0.6.0` branch and is not published.** It moves the network choice off the opening screen: the app opens on Bitcoin mainnet and Mutinynet/Testnet4 are reached through an "Enter Developer Mode" gate. The transaction and signing engine is unchanged from 0.5.1, so 0.6.0 adds no sending capability. Its record, including what was verified and what was deliberately left out, is [`releases/PATCH-0.6.0.md`](releases/PATCH-0.6.0.md). A signed and notarized candidate build exists — workflow run [36954844052](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36954844052) from commit `f147141` — and it is deliberately **unpublished**: no tag and no release were created, so the download page still serves 0.5.1.
 
 ## What the app does
 

@@ -1,10 +1,13 @@
 # v0.6.0 — developer-mode network gate
 
-**Status: candidate. Not published yet.** Nothing in this file is a claim that a
-0.6.0 build has been signed, notarized, downloaded or used. The published
-release remains [v0.5.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.5.1).
-Publication is a manual workflow dispatch, and the artifact, hashes and run
-number belong in this file only once that run exists.
+**Status: candidate. Not published yet.** A signed and notarized candidate build
+exists — workflow run
+[36954844052](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36954844052)
+from commit `f147141` — and it was made with a non-publishing dispatch, so no tag
+and no release were created. The published release remains
+[v0.5.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.5.1).
+The artifact names, hashes and verification below describe that candidate, not a
+release.
 
 ## Change
 
@@ -69,7 +72,9 @@ screen and the default network change, not because the engine did.
 
 ## Verification
 
-- Python 3.12 full suite: 238 tests passed.
+- Python 3.12 full suite: 240 tests passed (238 before this change, plus two new
+  `tests/test_workflow_config.py` cases covering the candidate dispatch mode and
+  the corrected release notes).
 - All nine `ui_*.cjs` DOM regression tests passed, including the new
   `tests/ui_developer_mode.cjs` (ten numbered checks: opening state, dialog copy,
   cancel, confirm, all three networks against frame and badge, return to Bitcoin,
@@ -86,8 +91,43 @@ screen and the default network change, not because the engine did.
 - `bash -n` on every `scripts/*.sh`; `git diff --check` clean.
 - No DMG was built locally. `scripts/build-macos.sh` gates on a pinned `libusb`
   digest that this Mac's Homebrew `libusb` does not match, so a local build is
-  not the reviewed artifact. Build and publish through
-  `.github/workflows/build-candidate.yml` (`workflow_dispatch`, `notarize=true`).
+  not the reviewed artifact. The candidate was built in CI by
+  `.github/workflows/build-candidate.yml` (`workflow_dispatch`, `notarize=true`,
+  `publish=false`).
+
+## Candidate build evidence
+
+A candidate was dispatched so the owner could install and open it before anything
+is published. `publish=false` is a second, independent dispatch input added for
+this purpose: the release job stops before it creates a tag or a release, and the
+artifacts stay on the workflow run. No `v0.6.0` tag exists and
+`releases?per_page=5` still lists `v0.5.1` as the newest release.
+
+- Run: [36954844052](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36954844052),
+  `workflow_dispatch` on `dev-mode-0.6.0`, commit
+  `f147141cb69c4da5409c506eabcc63bdeb2b42f2`. All five jobs passed (Read version,
+  Apple Silicon DMG, Source archive and tests, SHA256SUMS, Publish release), and
+  the release job reported `==> Candidate build: v0.6.0 was built and NOT published.`
+- Artifacts: `Bitcoin-Easy-Signer-v0.6.0-macOS.dmg` (34,875,710 bytes),
+  `bitcoin-easy-multisig-signer-v0.6.0.tar.gz`, `BUILD-SBOM.json`, `SHA256SUMS`.
+- SHA-256, taken from `SHA256SUMS` and re-computed on the downloaded file:
+  DMG `2ab9d1ea5374d1975ced5b1dc34f0904dad400573cdf4078cc8551db921be99d`,
+  source `5c495085f32ea14e67217c21a2f02a5c97f8965f698a9bbd7bdecbfb29833df1`,
+  SBOM `61cba7ac6a7fde44a38843a04d6955bf18674e4e7321ed59449e9add84867838`.
+- Checked on the downloaded file: `shasum -a 256` matches `SHA256SUMS`;
+  `hdiutil verify` reports the checksum is VALID; the mounted bundle reports
+  version 0.6.0 and is signed
+  `Developer ID Application: Bitseeker LLC (B8G5L7M8TB)`; `codesign --verify
+  --strict` passes; Gatekeeper's own assessment of the app returns `accepted
+  source=Notarized Developer ID`; `stapler validate` succeeds on both the app and
+  the DMG, so a first launch needs no network round trip.
+- The DMG is not itself a signed disk image: `spctl -a -t open` rejects it with
+  `source=no usable signature`. That is expected and unchanged from every
+  published 0.4.12+ release — the app inside is signed and notarized, and the
+  stapled ticket is what Gatekeeper assesses on a normal double-click.
+- Not yet done: the candidate has not been installed, opened or used by the owner.
+  Until that happens, nothing here is evidence that 0.6.0 works, and no claim
+  should be made that it has been tested.
 
 ## Owner decisions recorded
 
