@@ -175,6 +175,17 @@ class LinuxBuildScriptTests(unittest.TestCase):
         self.assertIn('cat "$runtime" build/appdir.squashfs > "$appimage"', self.script)
 
 
+    def test_the_shipped_readme_points_at_the_linux_checksum_list(self):
+        # The tarball is named in SHA256SUMS-linux-x86_64.txt, not in the macOS
+        # SHA256SUMS, so telling the user to check it against the latter is a
+        # check that silently passes without reading the file.
+        start = self.script.index('cat > "$tarball_root/README-LINUX.txt"')
+        readme = self.script[start:self.script.index("\nEOF", start)]
+        self.assertIn("sha256sum -c SHA256SUMS-linux-x86_64.txt", readme)
+        self.assertIn("BUILD-SBOM-linux-x86_64.json", readme)
+        self.assertNotIn("SHA256SUMS --ignore-missing", readme)
+
+
 class LinuxWorkflowTests(unittest.TestCase):
     """The promotion rules for the one release page every platform joins."""
 

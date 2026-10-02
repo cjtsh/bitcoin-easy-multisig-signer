@@ -367,13 +367,15 @@ Unplug and replug the device afterwards.
 
 Verify this download
 --------------------
-Every file on the release page is listed in SHA256SUMS, which is attached to
-the same release. Check this tarball before you run it:
+The Linux files of this release are listed in SHA256SUMS-linux-x86_64.txt,
+which is attached to the same release page. Download it into this directory
+and check this tarball before you run it:
 
-    sha256sum -c SHA256SUMS --ignore-missing
+    sha256sum -c SHA256SUMS-linux-x86_64.txt
 
-The source this was built from is on the release page too, and BUILD-SBOM.json
-lists every packaged component with its version and hash.
+The source this was built from is on the release page too, and
+BUILD-SBOM-linux-x86_64.json lists every packaged component with its version
+and hash.
 EOF
 
 tar -czf "$tarball" -C "$tarball_root" .
