@@ -64,15 +64,24 @@ turn this record into a release claim until the gates below have evidence.
   PSBT-save, and device-bridge self-checks passed with zero devices attached.
   Both embedded libusb digests match the shipped-component SBOM, and the bundled
   LGPL text matches the pinned upstream source archive.
+- On 2026-10-02 the owner reported that the installed candidate completed a
+  Mutinynet payment successfully. The privacy-limited 0.6.3 diagnostic was
+  read locally and not committed: it contains 13 fixed-code Mutinynet events,
+  including two verified signer responses, verified finalization, and an
+  accepted broadcast. It contains no wallet identifiers or transaction bytes.
+  Explorer confirmation was not independently checked in this acceptance step.
+- The exact shipped-component SBOM lists 30 Python distributions, CPython,
+  and the two embedded libusb names. All 30 distribution metadata records were
+  checked for license material. A separate release license bundle contains 47
+  text files, including the full libusb, PyInstaller, Python, and applicable
+  package license/copyright texts; its SHA-256 is
+  `b2b9b9d036a3752f5c1b2fcd85829ec32d494c54abdb56610e5246523e0c19a8`.
 
 ## Gates to complete before publication
 
-1. Review license and source availability for the exact bundled dependency set,
-   beyond the libusb source/license check above.
-2. Owner installs the final candidate and completes one physical Mutinynet
-   payment with the intended hardware devices. Record the outcome without wallet
-   identifiers, transaction bytes, device paths, or other private material.
-3. Only after that acceptance, publish a new immutable `v0.6.3` tag and release
-   with the candidate's DMG, source archive, SBOM, and `SHA256SUMS`.
+1. Publish a new immutable `v0.6.3` tag pointing to the tested app source commit
+   `f19bc460a2cb64590e8e37268b5be1df1a1f84b0`, and attach the exact tested
+   DMG, matching source archive and SBOM, license bundle, and checked sums.
+2. Verify the public assets, tag target, and updated project documentation.
 
 No independent end-to-end review of v0.6.3 is claimed by these fixes or tests.
