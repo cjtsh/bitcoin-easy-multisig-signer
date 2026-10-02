@@ -144,14 +144,17 @@ class HwiEntryTests(unittest.TestCase):
         usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
         usb1.USBDeviceHandle = Handle
         usb1.loadLibrary = Mock(return_value=True)
+        bundled = {"win32": ("libusb-1.0.dll",),
+                   "darwin": ("libusb-1.0.0.dylib", "libusb-1.0.dylib"),
+                   }.get(sys.platform, ("libusb-1.0.so.0",))
         with tempfile.TemporaryDirectory() as folder:
-            for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
+            for name in bundled:
                 (Path(folder) / name).write_bytes(b"synthetic library")
             with patch.object(sys, "frozen", True, create=True), patch.object(
                 sys, "_MEIPASS", folder, create=True
             ), patch("ctypes.CDLL", return_value="bundled-handle") as loader:
                 load_hwi_entry(usb1)
-            loader.assert_called_once_with(str(Path(folder) / "libusb-1.0.dylib"))
+            loader.assert_called_once_with(str(Path(folder) / bundled[-1]))
             usb1.loadLibrary.assert_called_once_with("bundled-handle")
 
 
