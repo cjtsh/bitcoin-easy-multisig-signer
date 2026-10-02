@@ -75,8 +75,14 @@ class LibusbVendorTests(unittest.TestCase):
 
     def test_the_windows_dll_is_built_from_that_same_source(self):
         """A different tarball would make the two platforms different libraries."""
-        inputs = (Path(__file__).resolve().parents[1]
-                  / ".github" / "workflows" / "windows-inputs.yml")
+        root = Path(__file__).resolve().parents[1]
+        # The repository keeps the recipe in .github/workflows/ and the source
+        # archive ships it under ci/, where this suite also runs.
+        inputs = next((path for path in (root / ".github" / "workflows" / "windows-inputs.yml",
+                                         root / "ci" / "windows-inputs.yml")
+                       if path.is_file()), None)
+        if inputs is None:
+            self.fail("windows-inputs.yml is missing from both .github/workflows/ and ci/")
         text = inputs.read_text(encoding="utf-8")
         self.assertIn(LIBUSB_SOURCE_SHA256, text)
         self.assertIn(LIBUSB_SOURCE, text)

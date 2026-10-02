@@ -23,19 +23,64 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WORKFLOW = ROOT / ".github" / "workflows" / "build-windows.yml"
-INPUTS_WORKFLOW = ROOT / ".github" / "workflows" / "windows-inputs.yml"
+
+
+def _recipe(name: str) -> Path:
+    """The workflow, from the repository or from an extracted source archive.
+
+    The repository keeps both recipes in .github/workflows/; scripts/build-source.sh
+    ships them under ci/, and this suite runs in both trees. Reading only one of the
+    two locations is how an archive would pass a suite that never inspected it.
+    """
+    for candidate in (ROOT / ".github" / "workflows" / name, ROOT / "ci" / name):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"{name} is missing from both .github/workflows/ and ci/ under {ROOT}"
+    )
+
+
+WORKFLOW = _recipe("build-windows.yml")
+INPUTS_WORKFLOW = _recipe("windows-inputs.yml")
 
 try:
     import yaml
 except ImportError:  # pragma: no cover - the CI lock installs PyYAML
     yaml = None
+
+
+def bash_executable() -> str:
+    """The bash the workflow's ``shell: bash`` steps run in, not the WSL stub.
+
+    On Windows ``bash`` on PATH is often C:\\Windows\\System32\\bash.exe, the WSL
+    launcher. With no distribution installed it exits 1 having run nothing and
+    with an empty stderr, which is how every shell block came back "not valid
+    shell" the first time this suite ran on the Windows runner. GitHub Actions runs
+    ``shell: bash`` with Git for Windows, so these tests do too.
+    """
+    candidates: list[str] = []
+    if os.name == "nt":
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"),
+                     os.environ.get("ProgramW6432")):
+            if base:
+                candidates.append(os.path.join(base, "Git", "bin", "bash.exe"))
+                candidates.append(os.path.join(base, "Git", "usr", "bin", "bash.exe"))
+    found = shutil.which("bash")
+    if found and "system32" not in found.lower():
+        candidates.append(found)
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    raise AssertionError(
+        "no bash for the shell-block checks; looked for " + ", ".join(candidates)
+    )
 
 
 class WorkflowConfigTests(unittest.TestCase):
@@ -145,16 +190,15 @@ class WorkflowConfigTests(unittest.TestCase):
                              f"{reference} is not pinned to a full commit")
 
     def test_every_shell_block_parses(self) -> None:
+        bash = bash_executable()
         for name, step, shell, body in self.shell_blocks():
             if "pwsh" in shell or "powershell" in shell:
                 continue
-            with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
-                handle.write(body)
-                path = handle.name
-            try:
-                result = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
-            finally:
-                os.unlink(path)
+            # On stdin, not on a temp file: a Windows temp path handed to bash as
+            # C:\Users\... is not the path MSYS bash opens, which makes a valid
+            # block look like a syntax error.
+            result = subprocess.run([bash, "-n"], input=body, capture_output=True,
+                                    text=True)
             self.assertEqual(result.returncode, 0,
                              f"{name}/{step} is not valid shell:\n{result.stderr}")
 
@@ -356,21 +400,31 @@ class ReleaseNotesTests(unittest.TestCase):
         )
         script = (script
                   .replace("${{ inputs.publish }}", "false")
-                  .replace("${{ inputs.allow_unsigned }}", "false"))
+                  .replace("${{ inputs.allow_unsigned }}", "false")) + "\n"
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             (work / "notes.md").write_text("", encoding="utf-8")
+            # The script writes the candidate manifest into dist/, exactly as the
+            # runner's workspace has it.
+            (work / "dist").mkdir()
             environment = dict(
                 os.environ,
                 VERSION=self.VERSION,
                 GITHUB_REF_NAME="windows-port",
                 GITHUB_SHA="abcdef1234567890",
                 GITHUB_RUN_ID="12345",
-                GITHUB_STEP_SUMMARY=str(work / "summary.md"),
+                # as_posix(), because this path is handed to bash: on Windows a
+                # C:\Users\... value is not a path MSYS bash can open, so the step
+                # summary redirect fails where the runner's own step would succeed.
+                GITHUB_STEP_SUMMARY=(work / "summary.md").as_posix(),
             )
-            result = subprocess.run(["bash", "-c", script], cwd=work, env=environment,
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            # The script arrives on stdin rather than as a -c argument: bash reads a
+            # command string off argv with platform-specific quirks on Windows, and
+            # `shell: bash` feeds the step a file.
+            result = subprocess.run([bash_executable()], input=script, cwd=work,
+                                    env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0,
+                             f"{result.stderr}\n{result.stdout}")
             return (work / "notes.md").read_text(encoding="utf-8")
 
     def test_the_notes_say_what_was_built_and_from_where(self) -> None:

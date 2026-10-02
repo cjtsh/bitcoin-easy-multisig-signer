@@ -37,14 +37,19 @@ def windows_filesystem(profile: str | None = None):
 
     ``pathlib`` selects ``WindowsPath`` purely from ``os.name``, and
     ``WindowsPath`` refuses to be instantiated off Windows, so the flavour is
-    pointed at ``PosixPath`` for the duration. The branch under test only
-    compares a resolved path against the operator's profile; it never parses a
-    backslash, so POSIX path semantics are an honest stand-in.
+    pointed at ``PosixPath`` for the duration -- but only off Windows. On Windows
+    the real ``WindowsPath`` is already the flavour ``os.name == "nt"`` selects,
+    and patching it the other way makes ``Path(...)`` raise
+    ``NotImplementedError: cannot instantiate 'PosixPath' on your system``, which
+    is how these tests failed the first time they ran on the Windows runner.
     """
     environment = {"USERPROFILE": profile} if profile else {}
-    with patch.object(os, "name", "nt"), patch.object(
-        pathlib, "WindowsPath", pathlib.PosixPath
-    ), patch.dict(os.environ, environment):
+    real_name = os.name
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch.object(os, "name", "nt"))
+        if real_name != "nt":
+            stack.enter_context(patch.object(pathlib, "WindowsPath", pathlib.PosixPath))
+        stack.enter_context(patch.dict(os.environ, environment))
         yield
 
 
@@ -69,11 +74,27 @@ class PrivateFileTests(unittest.TestCase):
                 ):
                     assert_private_file(saved)
 
-    def test_posix_still_reads_back_the_mode_it_wrote(self):
+    def test_the_mode_check_becomes_a_profile_check_on_windows(self):
+        """Windows has no readable 0600, so the gate there is the profile instead.
+
+        ``os.chmod`` on Windows only toggles the read-only attribute and
+        ``st_mode`` always reports 0666, so a mode assertion cannot hold. What must
+        hold is the substitute: a file that is not inside the operator's own
+        profile is refused even when it was chmod'ed 0600, because that mode is not
+        what protects it.
+        """
         with tempfile.TemporaryDirectory() as folder:
             saved = Path(folder) / "unsigned.psbt"
             saved.write_bytes(b"psbt")
             os.chmod(saved, 0o600)
+            if os.name == "nt":
+                with tempfile.TemporaryDirectory() as profile:
+                    with windows_filesystem(profile):
+                        with self.assertRaisesRegex(
+                            RuntimeError, "outside this user's own profile"
+                        ):
+                            assert_private_file(saved)
+                return
             assert_private_file(saved)
             os.chmod(saved, 0o644)
             with self.assertRaisesRegex(RuntimeError, "not 0600"):
@@ -163,7 +184,17 @@ class SettingsLocationTests(unittest.TestCase):
             )
 
     def test_windows_without_appdata_stays_inside_the_profile(self):
-        with patch.object(sys, "platform", "win32"), patch.dict(os.environ, {}, clear=True):
+        """The fallback is reached with no APPDATA, not with no home directory.
+
+        ``Path.home()`` reads USERPROFILE on Windows and HOME elsewhere, so
+        clearing the whole environment leaves this test with no home to assert
+        against -- on the Windows runner that is a RuntimeError, not a fallback.
+        """
+        with tempfile.TemporaryDirectory() as profile, patch.object(
+            sys, "platform", "win32"
+        ), patch.dict(
+            os.environ, {"USERPROFILE": profile, "HOME": profile}, clear=True
+        ):
             self.assertEqual(
                 settings_path(),
                 Path.home() / "AppData" / "Roaming" / "Easy Bitcoin Multisig"
