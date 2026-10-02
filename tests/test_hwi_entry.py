@@ -162,6 +162,38 @@ class HwiEntryTests(unittest.TestCase):
             loader.assert_called_once_with(str(Path(folder) / bundled[-1]))
             usb1.loadLibrary.assert_called_once_with("bundled-handle")
 
+    def test_frozen_helper_on_windows_binds_the_dll(self):
+        """Drive the Windows branch here, or it first runs on a user's PC."""
+        class Handle:
+            def releaseInterface(self, interface):  # noqa: N802
+                return None
+
+        usb1 = types.ModuleType("usb1")
+        usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
+        usb1.USBDeviceHandle = Handle
+        usb1.loadLibrary = Mock(return_value=True)
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "libusb-1.0.dll").write_bytes(b"synthetic library")
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "_MEIPASS", folder, create=True
+            ), patch.object(sys, "platform", "win32"), patch(
+                "ctypes.CDLL", return_value="bundled-handle"
+            ) as loader:
+                load_hwi_entry(usb1)
+            loader.assert_called_once_with(str(Path(folder) / "libusb-1.0.dll"))
+            usb1.loadLibrary.assert_called_once_with("bundled-handle")
+
+    def test_the_windows_helper_does_not_accept_the_macos_library(self):
+        """A Windows build that shipped the dylib would fail in front of a user."""
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
+                (Path(folder) / name).write_bytes(b"synthetic library")
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "_MEIPASS", folder, create=True
+            ), patch.object(sys, "platform", "win32"):
+                with self.assertRaisesRegex(RuntimeError, "bundled USB library is missing"):
+                    load_hwi_entry(None)
+
 
 if __name__ == "__main__":
     unittest.main()

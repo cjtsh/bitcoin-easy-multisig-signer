@@ -14,7 +14,19 @@ name: Produce reviewed Windows build inputs
 # has nothing to compare against; the point of committing them is the review in
 # between. Run this once, review what it prints, commit the files it names, and
 # then dispatch build-windows.yml. See WINDOWS-PORT.md.
+#
+# It has a push trigger for the same first-run reason as build-windows.yml: a
+# workflow that exists only on a non-default branch is not offered in the "Run
+# workflow" list until it has run once. The path filter keeps it quiet after that,
+# so this only re-runs when the thing it produces from actually changes.
 on:
+  push:
+    branches:
+      - windows-port
+    paths:
+      - .github/workflows/windows-inputs.yml
+      - vendor/libusb-1.0.30.tar.bz2
+      - requirements-desktop.txt
   workflow_dispatch:
 
 permissions:

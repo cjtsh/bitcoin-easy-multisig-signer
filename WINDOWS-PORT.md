@@ -1,27 +1,33 @@
 # Windows port
 
-This document explains the Windows build, why it lives here, and what has to be
-reviewed before the first one can be published.
+This document explains the Windows build, why it lives on its own branch, and what
+has to be reviewed before the first one can be published.
 
-## Why this is a separate project
+## Why this is a separate branch
 
 The macOS app in `besa-audit` is frozen at v0.6.4 (`35cdedb`) and covered by the
 Z.ai audits checked into that repository. A Windows port has to change source
-files, so it cannot land there without decoupling "what was audited" from "what is
-shipped". This directory is a clone of that repository with the port applied, so
-the audited revision keeps meaning exactly what it meant before.
+files, so it cannot land on `main` without decoupling "what was audited" from "what
+is shipped". The port therefore lives on its own branch, `windows-port`, of that
+same repository. `main` is never modified, so the audited revision keeps meaning
+exactly what it meant before.
 
-Two things follow from that and are easy to get wrong:
+Three things follow from that and are easy to get wrong:
 
-* This is not a branch of the audited tree, and the audit does not cover it. A
-  Windows release is a new artifact under the project's own release discipline, not
-  a rebuild of an audited one.
+* A branch and a tag are additions: they cannot change the commit `main` points at,
+  cannot move the tag `v0.6.4`, and cannot replace that release's assets. The audit
+  still covers exactly what it covered, which is `main` at `35cdedb`.
+* The branch is not covered by the audit. A Windows release is a new artifact under
+  the project's own release discipline (candidate, test, promote), not a rebuild of
+  an audited one, and it is tagged `v<version>-windows-x64` so it never answers to
+  an audited version.
 * The website (`bitcoineasysigner.com`) is served from the frozen repository's
-  `docs/` directory, so it cannot link a Windows download until that freeze is
-  lifted. Windows builds live on the GitHub Releases page.
+  `docs/` directory on `main`, so it cannot link a Windows download until that
+  freeze is lifted. The Windows zip appears on the same GitHub Releases page as the
+  macOS DMG; the site links to it later or not at all.
 
-`docs/` was deleted here rather than kept, because a second copy of the site would
-either collide with the first or drift from it.
+`docs/` was deleted on this branch rather than kept, because a second copy of the
+site would either collide with the first or drift from it.
 
 ## What changed
 
@@ -58,8 +64,10 @@ both workflows refuse a suite that reports any skip. That fail-closed state is
 intended: the repository is not buildable before the bootstrap has run once, and
 the Windows job's first step says so by name.
 
-1. Dispatch **`.github/workflows/windows-inputs.yml`** (manual, `workflow_dispatch`
-   only). It uploads two artifacts:
+1. Run **`.github/workflows/windows-inputs.yml`** — it runs on the first push of
+   the `windows-port` branch and can be dispatched by hand after that (see
+   *Releasing* for why a branch-only workflow needs a push trigger). It uploads two
+   artifacts:
    * `windows-desktop-lock` → commit as `requirements-desktop-windows.lock`
    * `windows-libusb` → the `libusb-1.0.dll` compiled from the pinned
      `vendor/libusb-1.0.30.tar.bz2`
@@ -95,8 +103,18 @@ A local build is a development check, not a release artifact.
 
 ## Releasing
 
-Publication goes through `.github/workflows/build-windows.yml`, which is
-manually dispatched only:
+All of it happens on the `windows-port` branch of
+`github.com/cjtsh/bitcoin-easy-multisig-signer`, through
+`.github/workflows/build-windows.yml`:
+
+0. **Push the branch.** A workflow that exists only on a non-default branch is not
+   offered in the "Run workflow" list until it has run once, so the trigger includes
+   a push on `windows-port`. That push builds a `publish=false` candidate and stops.
+   Afterwards, dispatch it by name:
+
+   ```
+   gh workflow run build-windows.yml --ref windows-port
+   ```
 
 1. **Candidate.** Dispatch with `publish=false` (the default). The workflow builds,
    verifies, and uploads the bundle plus `CANDIDATE-MANIFEST.txt`. Nothing is
@@ -105,8 +123,14 @@ manually dispatched only:
    acceptance is required when app behaviour changes.
 3. **Promote.** Dispatch again *from the same commit* with `publish=true`,
    `allow_unsigned=true`, and `candidate_run_id` set to the candidate run's id.
-   The workflow re-downloads that run's artifacts, proves the run id, commit and
-   workflow path, verifies `SHA256SUMS`, and only then creates the release.
+   The workflow re-downloads that run's artifacts, proves the run id, commit,
+   branch and workflow path, verifies `SHA256SUMS`, and only then creates the
+   release. Only a `workflow_dispatch` run counts as a candidate, so a
+   push-triggered build can never become a release.
+
+The release is tagged `v<version>-windows-x64`, for example `v0.6.4-windows-x64`.
+The plain `v<version>` tag belongs to the audited macOS release and is never reused
+or moved: a published release is never rebuilt.
 
 The build is not code-signed. Windows SmartScreen will warn on first launch, and
 `allow_unsigned=true` exists so that an unsigned release is a deliberate decision

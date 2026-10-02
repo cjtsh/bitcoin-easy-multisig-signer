@@ -62,9 +62,14 @@ class WorkflowConfigTests(unittest.TestCase):
 
     # ---- the trigger and its defaults -------------------------------------
 
-    def test_the_workflow_only_runs_when_a_person_asks(self) -> None:
-        self.assertEqual(list(self.triggers), ["workflow_dispatch"])
-        for forbidden in ("push", "pull_request", "schedule", "release"):
+    def test_the_workflow_runs_on_the_windows_branch_and_on_request(self) -> None:
+        # The port lives on its own branch, so the workflow must exist there and
+        # nowhere else. A push to that branch builds a candidate; it can never
+        # publish, because the release notes come from a dispatch and the
+        # promotion step requires a workflow_dispatch run.
+        self.assertEqual(set(self.triggers), {"workflow_dispatch", "push"})
+        self.assertEqual(self.triggers["push"]["branches"], ["windows-port"])
+        for forbidden in ("pull_request", "schedule", "release"):
             self.assertNotIn(forbidden, self.triggers)
 
     def test_publishing_is_off_by_default(self) -> None:
@@ -81,11 +86,28 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIn("allow_unsigned=${{ inputs.allow_unsigned }}", manifest)
         self.assertIn("publish=${{ inputs.publish }}", manifest)
 
-    def test_a_release_must_come_from_main_with_a_named_candidate(self) -> None:
-        guard = self.step_body("Require the default branch for publication")
-        self.assertIn("refs/heads/main", guard)
+    def test_a_release_must_come_from_the_windows_branch_with_a_named_candidate(self) -> None:
+        guard = self.step_body("Require the Windows branch for publication")
+        self.assertIn("refs/heads/windows-port", guard)
         self.assertIn("$CANDIDATE_RUN_ID", guard)
         self.assertIn("^[0-9]+$", guard)
+        # The audited macOS release owns main. A Windows release must never be
+        # published from there, so the old guard must be gone, not just relaxed.
+        self.assertNotIn("refs/heads/main", self.text)
+        promotion = self.step_body("Download and verify the tested candidate artifacts")
+        self.assertIn('and .head_branch == "windows-port"', promotion)
+        # A push run also uploads candidate artifacts. Only a dispatch is a
+        # candidate a human chose to test, so only a dispatch can be promoted.
+        self.assertIn('.event == "workflow_dispatch"', promotion)
+
+    def test_the_release_tag_carries_the_platform_suffix(self) -> None:
+        # v0.6.4 is an audited macOS release. Reusing that tag, or tagging the
+        # Windows build v0.6.4, would make two different artifacts answer to one
+        # version. The Windows release is v<version>-windows-x64 and nothing else.
+        publish = self.step_body("Publish the release")
+        self.assertIn('tag="v${VERSION}-windows-x64"', publish)
+        self.assertIn('release_title="$tag"', publish)
+        self.assertNotIn('tag="v${VERSION}"', publish)
 
     # ---- the jobs ---------------------------------------------------------
 
@@ -311,7 +333,7 @@ class ReleaseNotesTests(unittest.TestCase):
         # Start where the shell defines what the notes interpolate, not at the
         # heredoc, so zip_name/build_kind are real values rather than empty strings.
         opener = next(index for index, line in enumerate(lines)
-                      if 'tag="v${VERSION}"' in line)
+                      if 'tag="v${VERSION}-windows-x64"' in line)
         indent = len(lines[opener]) - len(lines[opener].lstrip())
         closer = next(index for index in range(opener + 1, len(lines))
                       if lines[index][indent:] == "EOF")
@@ -328,7 +350,7 @@ class ReleaseNotesTests(unittest.TestCase):
             environment = dict(
                 os.environ,
                 VERSION=self.VERSION,
-                GITHUB_REF_NAME="main",
+                GITHUB_REF_NAME="windows-port",
                 GITHUB_SHA="abcdef1234567890",
                 GITHUB_RUN_ID="12345",
                 GITHUB_STEP_SUMMARY=str(work / "summary.md"),
@@ -341,7 +363,7 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_the_notes_say_what_was_built_and_from_where(self) -> None:
         notes = self.generate()
         self.assertIn(f"## v{self.VERSION}", notes)
-        self.assertIn("Built from `main` at commit `abcdef1234567890`.", notes)
+        self.assertIn("Built from `windows-port` at commit `abcdef1234567890`.", notes)
         self.assertIn(f"Bitcoin-Easy-Signer-v{self.VERSION}-windows-x64.zip", notes)
         self.assertIn("SHA256SUMS", notes)
         self.assertIn("BUILD-SBOM.json", notes)

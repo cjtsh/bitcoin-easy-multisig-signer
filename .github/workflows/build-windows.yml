@@ -12,8 +12,22 @@ name: Build Windows bundle and release
 # publishing an unsigned build is refused unless the dispatcher also sets
 # `allow_unsigned`, and that acknowledgement is recorded in the candidate manifest.
 # The safe answer stays the default: a plain dispatch cannot publish.
+#
+# The other difference is where this file lives. The audited macOS release was cut
+# from main, and that release has to keep meaning exactly what it meant. So the
+# Windows port lives on its own branch, `windows-port`, and everything below is run
+# there. Main is never modified, and this pipeline publishes under its own tag
+# rather than rewriting an audited one.
 
 on:
+  # A workflow that exists only on a non-default branch is not offered in the
+  # "Run workflow" list yet, so the first run has to arrive from somewhere else.
+  # A push of the Windows branch builds a `publish=false` candidate and stops;
+  # publication still needs a dispatch naming that candidate's run id. Once this
+  # file has run once, the GitHub CLI can dispatch it by name against any branch.
+  push:
+    branches:
+      - windows-port
   workflow_dispatch:
     inputs:
       publish:
@@ -41,15 +55,19 @@ jobs:
       version: ${{ steps.read.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Require the default branch for publication
+      - name: Require the Windows branch for publication
         if: ${{ inputs.publish }}
         env:
           GITHUB_REF: ${{ github.ref }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
-            echo "Refusing to publish from $GITHUB_REF; releases come from main." >&2
+          # The audited macOS release came from main. This one cannot, because main
+          # is frozen at the v0.6.4 audit: a Windows release is published from the
+          # windows-port branch, and its tag points at a commit on that branch.
+          if [[ "$GITHUB_REF" != "refs/heads/windows-port" ]]; then
+            echo "Refusing to publish from $GITHUB_REF; Windows releases come from" >&2
+            echo "the windows-port branch." >&2
             exit 1
           fi
           if [[ -z "$CANDIDATE_RUN_ID" ]]; then
@@ -308,17 +326,17 @@ jobs:
         run: |
           set -euo pipefail
           # Verify the claimed candidate really is a completed publish=false run of
-          # this workflow, from this commit, on the default branch. Without this the
+          # this workflow, from this commit, on the Windows branch. Without this the
           # run id would just be a number somebody typed into a box.
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
           jq -e \
             --arg commit "$RELEASE_COMMIT" \
             '.event == "workflow_dispatch"
              and .status == "completed" and .conclusion == "success"
-             and .head_branch == "main" and .head_sha == $commit
+             and .head_branch == "windows-port" and .head_sha == $commit
              and .path == ".github/workflows/build-windows.yml"' \
             <<<"$run_json" >/dev/null || {
-              echo "Candidate run must be successful, from this workflow, and from the exact release commit on main." >&2
+              echo "Candidate run must be successful, from this workflow, and from the exact release commit on the windows-port branch." >&2
               exit 1
             }
           mkdir -p "$RUNNER_TEMP/candidate-manifest" "$RUNNER_TEMP/candidate-source" \
@@ -399,9 +417,11 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          tag="v${VERSION}"
-          # The title is the version and nothing else. How the artifact was built
-          # belongs in the notes, where it can be a sentence instead of a suffix.
+          # The audited macOS release owns the plain `vX.Y.Z` tag, and a published
+          # release is never rewritten. This pipeline tags its own work with the
+          # platform suffix, so both releases sit side by side on one Releases page
+          # without either one claiming the other's version.
+          tag="v${VERSION}-windows-x64"
           release_title="$tag"
           zip_name="Bitcoin-Easy-Signer-v${VERSION}-windows-x64.zip"
           # There is no signed Windows build yet, so every artifact this pipeline
