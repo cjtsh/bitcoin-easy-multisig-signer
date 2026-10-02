@@ -3,10 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Privacy notice for the Bitcoin Easy Signer website and desktop app, maintained by Bitseeker LLC.">
-  <title>Privacy notice — Bitcoin Easy Signer</title>
+  <meta name="description" content="Privacy information for the Bitcoin Easy Signer website and desktop app, including GitHub Pages hosting, explorer requests, and local wallet data.">
+  <link rel="canonical" href="https://bitcoineasysigner.com/privacy.html">
+  <meta property="og:site_name" content="Bitcoin Easy Signer"><meta property="og:locale" content="en_US"><meta property="og:type" content="article"><meta property="og:url" content="https://bitcoineasysigner.com/privacy.html"><meta property="og:title" content="Privacy Notice | Bitcoin Easy Signer"><meta property="og:description" content="How the Bitcoin Easy Signer website and desktop app handle information."><meta property="og:image" content="https://bitcoineasysigner.com/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Bitcoin Easy Signer helps trusted people follow a clear process for existing Bitcoin multisig wallets."><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Privacy Notice | Bitcoin Easy Signer"><meta name="twitter:description" content="How the Bitcoin Easy Signer website and desktop app handle information."><meta name="twitter:image" content="https://bitcoineasysigner.com/assets/social-card.png"><meta name="twitter:image:alt" content="Bitcoin Easy Signer helps trusted people follow a clear process for existing Bitcoin multisig wallets.">
+  <title>Privacy Notice | Bitcoin Easy Signer</title>
+  <script>try{const t=localStorage.getItem('besa-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
   <style>
-    :root { color-scheme: light; --paper:#f6f4ef; --ink:#202323; --muted:#59615d; --line:#dedbd2; --accent:#a74c00; }
+    :root { color-scheme:light; --paper:#f6f4ef; --white:#fffefa; --ink:#202323; --muted:#59615d; --line:#dedbd2; --accent:#a74c00; }
+    html[data-theme="dark"] { color-scheme:dark; --paper:#141815; --white:#1d231f; --ink:#edf0eb; --muted:#b4beb7; --line:#3b453e; --accent:#ffc46b; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { width:min(800px,calc(100% - 40px)); margin:0 auto; padding:48px 0 80px; }
@@ -16,11 +20,15 @@
     h1 { font-size:clamp(38px,7vw,56px); }
     h2 { margin-top:34px; font-size:26px; }
     .notice { padding:16px 20px; background:#fffefa; border-left:4px solid var(--accent); }
+    .navrow { display:flex; justify-content:space-between; align-items:center; }
+    .theme-toggle { min-height:38px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--ink); cursor:pointer; }
+    html[data-theme="dark"] body { background:var(--paper); }
+    html[data-theme="dark"] .notice { background:var(--white); }
     footer { margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
   </style>
 </head>
 <body>
-  <nav><a href="index.html">← Bitcoin Easy Signer</a></nav>
+  <nav class="navrow"><a href="index.html">← Bitcoin Easy Signer</a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">◐ <span data-theme-label>Dark theme</span></button></nav>
   <main>
     <h1>Privacy notice</h1>
     <p><strong>Publisher: Bitseeker LLC.</strong> This notice describes the project website and desktop app. It does not control the privacy practices of independent services the app contacts.</p>
@@ -42,5 +50,6 @@
     <p>GitHub, public explorers, and hardware vendors have their own terms and privacy practices. Review those policies before use. This notice describes the current source; older downloaded app versions may differ. Consult the documentation for the version you use.</p>
     <footer>Bitcoin Easy Signer · Maintained by Bitseeker LLC · <a href="index.html">Project website</a> · <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/PRIVACY.md">Source notice</a> · <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Safety notice</a></footer>
   </main>
+<script>(()=>{try{const t=localStorage.getItem('besa-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}const b=document.querySelector('[data-theme-toggle]');if(!b)return;const l=b.querySelector('[data-theme-label]');const apply=t=>{document.documentElement.dataset.theme=t;const d=t==='dark';b.setAttribute('aria-pressed',String(d));b.setAttribute('aria-label',`Switch to ${d?'light':'dark'} theme`);l.textContent=d?'Light theme':'Dark theme';try{localStorage.setItem('besa-theme',t)}catch(e){}};apply(document.documentElement.dataset.theme==='dark'?'dark':'light');b.addEventListener('click',()=>apply(document.documentElement.dataset.theme==='dark'?'light':'dark'))})();</script>
 </body>
 </html>

@@ -3,11 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A plain-language, illustrated guide to Bitcoin Easy Signer for a spouse, trustee, lawyer, accountant, or family member.">
-  <title>User manual — Bitcoin Easy Signer</title>
+  <meta name="description" content="Step-by-step Bitcoin multisig user manual for families, trustees, lawyers, and trusted helpers. Learn how to check a wallet, review a payment, and approve on hardware signers.">
+  <link rel="canonical" href="https://bitcoineasysigner.com/user-manual.html">
+  <meta property="og:site_name" content="Bitcoin Easy Signer">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://bitcoineasysigner.com/user-manual.html">
+  <meta property="og:title" content="Bitcoin Easy Signer User Manual | A Plain Guide for Trusted Helpers">
+  <meta property="og:description" content="A plain-language, illustrated walkthrough for helping with an existing Bitcoin multisig wallet.">
+  <meta property="og:image" content="https://bitcoineasysigner.com/assets/social-card.png">
+  <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Bitcoin Easy Signer helps trusted people follow a clear process for existing Bitcoin multisig wallets.">
+  <meta name="twitter:image:alt" content="Bitcoin Easy Signer helps trusted people follow a clear process for existing Bitcoin multisig wallets.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Bitcoin Easy Signer User Manual">
+  <meta name="twitter:description" content="A plain-language walkthrough for trusted helpers using an existing multisig wallet.">
+  <meta name="twitter:image" content="https://bitcoineasysigner.com/assets/social-card.png">
+  <title>Bitcoin Easy Signer User Manual | Plain Guide for Trusted Helpers</title>
+  <script>try{const t=localStorage.getItem('besa-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Bitcoin Easy Signer User Manual","url":"https://bitcoineasysigner.com/user-manual.html","description":"An illustrated plain-language guide to using Bitcoin Easy Signer with an existing multisig wallet."}</script>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <style>
-    :root { color-scheme: light; --paper:#f6f4ef; --white:#fffefa; --ink:#202323; --muted:#626966; --line:#dedbd2; --orange:#a74c00; --green:#176b56; --serif:Georgia,"Times New Roman",serif; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    :root { color-scheme:light; --paper:#f6f4ef; --white:#fffefa; --ink:#202323; --muted:#626966; --line:#dedbd2; --orange:#a74c00; --green:#176b56; --serif:Georgia,"Times New Roman",serif; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    html[data-theme="dark"] { color-scheme:dark; --paper:#141815; --white:#1d231f; --ink:#edf0eb; --muted:#b4beb7; --line:#3b453e; --orange:#ffc46b; --green:#79c6a5; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.72 var(--sans); -webkit-font-smoothing:antialiased; }
     a { color:var(--green); text-underline-offset:3px; }
@@ -37,12 +53,20 @@
     .glossary dt { font-weight:750; }
     .glossary dd { margin:3px 0 0; color:var(--muted); }
     footer { padding:26px 0 42px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+    .navleft { display:flex; align-items:center; gap:18px; }
+    .theme-toggle { min-height:38px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--ink); font:600 12px var(--sans); cursor:pointer; }
+    .theme-toggle:focus-visible { outline:3px solid var(--orange); outline-offset:3px; }
+    html[data-theme="dark"] body, html[data-theme="dark"] header { background:var(--paper); }
+    html[data-theme="dark"] .notice { border-color:#70542f; background:#302619; }
+    html[data-theme="dark"] .checklist, html[data-theme="dark"] figure, html[data-theme="dark"] .glossary div { border-color:var(--line); background:var(--white); }
+    html[data-theme="dark"] .stop { border-color:#e28c75; background:#382720; }
+    html[data-theme="dark"] footer { border-color:var(--line); }
     @media(max-width:620px) { .wrap{width:min(100% - 28px,920px)} nav{min-height:64px} main{padding-top:38px} h2{font-size:28px;margin-top:48px} figure{padding:8px;margin:20px 0 32px} .glossary{grid-template-columns:1fr} }
     @media print { body{background:#fff;font-size:11pt} header{background:#fff} main{padding:20px 0} figure{break-inside:avoid;box-shadow:none} h2{break-after:avoid} a{color:inherit} }
   </style>
 </head>
 <body>
-  <header><nav class="wrap" aria-label="Manual navigation"><a class="brand" href="index.html">← Bitcoin Easy Signer</a><a class="navlink" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/USER-MANUAL.md">Markdown version ↗</a></nav></header>
+  <header><nav class="wrap" aria-label="Manual navigation"><div class="navleft"><a class="brand" href="index.html">← Bitcoin Easy Signer</a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false">◐ <span data-theme-label>Dark theme</span></button></div><a class="navlink" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/USER-MANUAL.md">Markdown version ↗</a></nav></header>
   <main class="wrap">
     <p class="eyebrow">Version 0.6.4 · A guide for the person helping</p>
     <h1>A plain guide to helping with a multisig wallet.</h1>
@@ -139,5 +163,8 @@
     </dl>
   </main>
   <footer><div class="wrap">Bitcoin Easy Signer 0.6.4 · Maintained by Bitseeker LLC · <a href="index.html">Project website</a> · <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/USER-MANUAL.md">Markdown guide</a> · <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">Safety notice</a> · <a href="privacy.html">Privacy notice</a></div></footer>
+  <script>
+    (() => { const b=document.querySelector('[data-theme-toggle]'); if(!b)return; const l=b.querySelector('[data-theme-label]'); const apply=t=>{document.documentElement.dataset.theme=t;const d=t==='dark';b.setAttribute('aria-pressed',String(d));b.setAttribute('aria-label',`Switch to ${d?'light':'dark'} theme`);l.textContent=d?'Light theme':'Dark theme';try{localStorage.setItem('besa-theme',t)}catch(e){}};apply(document.documentElement.dataset.theme==='dark'?'dark':'light');b.addEventListener('click',()=>apply(document.documentElement.dataset.theme==='dark'?'light':'dark')); })();
+  </script>
 </body>
 </html>

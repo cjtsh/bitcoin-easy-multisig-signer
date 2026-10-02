@@ -3,13 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f4ef">
-  <meta name="description" content="Bitcoin Easy Signer is free, open-source Bitcoin multisig software maintained by Bitseeker LLC for families and trusted helpers using an existing wallet.">
-  <meta property="og:title" content="Bitcoin Easy Signer">
+  <meta name="theme-color" content="#f6f4ef" id="theme-color-meta">
+  <meta name="color-scheme" content="light dark">
+  <link rel="canonical" href="https://bitcoineasysigner.com/">
+  <meta property="og:site_name" content="Bitcoin Easy Signer">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:url" content="https://bitcoineasysigner.com/">
+  <meta property="og:image" content="https://bitcoineasysigner.com/assets/social-card.png">
+  <meta property="og:image:secure_url" content="https://bitcoineasysigner.com/assets/social-card.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Bitcoin Easy Signer helps trusted people follow a clear process for existing Bitcoin multisig wallets.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Bitcoin Easy Signer — Multisig for the people you trust">
+  <meta name="twitter:description" content="Free, open-source Bitcoin multisig software and a plain-language guide for families and trusted helpers.">
+  <meta name="twitter:image" content="https://bitcoineasysigner.com/assets/social-card.png">
+  <meta name="twitter:image:alt" content="Bitcoin Easy Signer helps trusted people follow a clear process for existing Bitcoin multisig wallets.">
+  <link rel="image_src" href="https://bitcoineasysigner.com/assets/social-card.png">
+  <meta name="description" content="Free, open-source Bitcoin multisig software for families and trusted helpers. Review and send from an existing hardware-protected wallet with a plain-language guide.">
+  <meta property="og:title" content="Bitcoin Easy Signer — Multisig for the people you trust">
   <meta property="og:description" content="Built to make multisig easier for families, trustees, lawyers, accountants, and the people they trust.">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="https://cjtsh.github.io/bitcoin-easy-multisig-signer/assets/icon.svg">
-  <title>Bitcoin Easy Signer — Multisig for the people you trust.</title>
+  <title>Bitcoin Easy Signer | Bitcoin Multisig for Families</title>
+  <script>try{const t=localStorage.getItem('besa-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Bitcoin Easy Signer","alternateName":"Bitcoin Easy Signer by Bitseeker LLC","url":"https://bitcoineasysigner.com/","description":"Free, open-source Bitcoin multisig software and a plain-language guide for families and trusted helpers."}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Bitcoin Easy Signer","applicationCategory":"FinanceApplication","operatingSystem":"macOS (Apple Silicon)","softwareVersion":"0.6.4","url":"https://bitcoineasysigner.com/","downloadUrl":"https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.6.4/Bitcoin-Easy-Signer-v0.6.4-macOS.dmg","description":"Free, open-source software that helps trusted people prepare, review, and send payments from an existing Bitcoin multisig wallet using hardware signers.","license":"https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/LICENSE","publisher":{"@type":"Organization","name":"Bitseeker LLC"}}</script>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <style>
     :root {
@@ -124,6 +143,36 @@
     .audit-mark { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #d5e7d9; color: var(--green); font-size: 11px; font-weight: 800; }
     .audit-link { color: var(--green); font-size: 13px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
     .audit-link:hover { color: var(--orange-dark); }
+    .brand-group { display:flex; align-items:center; gap:18px; }
+    .theme-toggle { min-height:38px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--ink); font:600 12px var(--sans); cursor:pointer; }
+    .theme-toggle:hover { border-color:var(--orange-dark); }
+    .theme-toggle:focus-visible { outline:3px solid var(--orange); outline-offset:3px; }
+    html[data-theme="dark"] { color-scheme:dark; --paper:#141815; --white:#1d231f; --ink:#edf0eb; --muted:#b4beb7; --line:#3b453e; --orange:#f2a33e; --orange-dark:#ffc46b; --orange-pale:#3b2b16; --green:#79c6a5; --green-pale:#20382d; }
+    html[data-theme="dark"] body { background:var(--paper); }
+    html[data-theme="dark"] .hero-copy, html[data-theme="dark"] .scope-copy, html[data-theme="dark"] .scope-item p { color:#c0c8c1; }
+    html[data-theme="dark"] .art-halo { background:#332a1c; }
+    html[data-theme="dark"] .review-card { border-color:var(--line); box-shadow:0 22px 65px #0008; }
+    html[data-theme="dark"] .card-top, html[data-theme="dark"] .carousel-viewport { border-color:var(--line); }
+    html[data-theme="dark"] .key-icon { border-color:var(--line); background:#242b26; }
+    html[data-theme="dark"] .threshold { background:#2a302b; color:#d1d6d0; }
+    html[data-theme="dark"] .floating-note, html[data-theme="dark"] .audit-bar { border-color:#355344; background:var(--green-pale); color:#c3ead5; }
+    html[data-theme="dark"] .floating-note, html[data-theme="dark"] .audit-bar p { color:#c3ead5; }
+    html[data-theme="dark"] .notice { border-color:#70542f; background:#302619; }
+    html[data-theme="dark"] .notice-mark { background:#60451f; color:#ffe1a8; }
+    html[data-theme="dark"] .notice p { color:#dfcfb1; }
+    html[data-theme="dark"] .notice strong { color:#fff0d1; }
+    html[data-theme="dark"] .gallery { background:#191e1a; }
+    html[data-theme="dark"] .carousel-viewport { background:#202722; }
+    html[data-theme="dark"] .carousel-arrow { border-color:var(--line); background:var(--white); color:var(--ink); }
+    html[data-theme="dark"] .carousel-dot { background:#68736b; }
+    html[data-theme="dark"] .scope { background:#1d2821; }
+    html[data-theme="dark"] .scope-list, html[data-theme="dark"] .scope-item { border-color:#3d5044; }
+    html[data-theme="dark"] .scope-mark { background:#294435; }
+    html[data-theme="dark"] .button:hover { background:#303832; }
+    html[data-theme="dark"] .button.secondary:hover { background:#252d28; }
+    .social-links { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:24px; }
+    .social-links a { padding:10px 14px; border:1px solid var(--line); border-radius:999px; color:var(--ink); font-size:13px; font-weight:650; text-decoration:none; }
+    .social-links a:hover { border-color:var(--orange-dark); color:var(--orange-dark); }
     @media (max-width: 760px) {
       .wrap { width: min(100% - 36px, 560px); }
       .topbar { height: 70px; }
@@ -145,7 +194,7 @@
       .footer-inner { align-items: flex-start; flex-direction: column; justify-content: center; padding: 22px 0; }
     }
     @media (max-width: 420px) {
-      .nav a:first-child { display: none; }
+      .nav a:first-child, .nav a:nth-child(2), .nav a:nth-child(3), .nav a:nth-child(5) { display: none; }
       h1 { font-size: 47px; }
       .actions { align-items: stretch; flex-direction: column; }
       .button { width: 100%; }
@@ -160,10 +209,13 @@
 </head>
 <body>
   <header class="wrap topbar">
-    <a class="brand" href="#top" aria-label="Bitcoin Easy Signer home">
-      <img src="assets/icon.svg" alt="">
-      <span>Bitcoin Easy Signer</span>
-    </a>
+    <div class="brand-group">
+      <a class="brand" href="#top" aria-label="Bitcoin Easy Signer home">
+        <img src="assets/icon.svg" alt="">
+        <span>Bitcoin Easy Signer</span>
+      </a>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark theme" aria-pressed="false"><span aria-hidden="true">◐</span><span data-theme-label>Dark theme</span></button>
+    </div>
     <nav class="nav" aria-label="Main navigation">
       <a href="#how-it-works">How it works</a>
       <a href="#scope">What it supports</a>
@@ -276,6 +328,7 @@
       <h2 id="manual-title">A step-by-step guide for recovery.</h2>
       <p>The manual explains what to prepare, what each screen means, how hardware approvals work, and when to stop. It is written for a spouse, trustee, lawyer, accountant, or family member.</p>
       <div class="actions" style="justify-content:center"><a class="button" href="user-manual.html">Open the user manual</a><a class="button secondary" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/USER-MANUAL.md">View the Markdown guide ↗</a></div>
+      <nav class="social-links" aria-label="Share Bitcoin Easy Signer"><a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fbitcoineasysigner.com%2F&amp;text=Bitcoin%20multisig%20for%20the%20people%20you%20trust" target="_blank" rel="noopener">Share on X</a><a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fbitcoineasysigner.com%2F" target="_blank" rel="noopener">LinkedIn</a><a href="https://api.whatsapp.com/send?text=Bitcoin%20Easy%20Signer%3A%20https%3A%2F%2Fbitcoineasysigner.com%2F" target="_blank" rel="noopener">WhatsApp</a><a href="https://t.me/share/url?url=https%3A%2F%2Fbitcoineasysigner.com%2F&amp;text=Bitcoin%20Easy%20Signer" target="_blank" rel="noopener">Telegram</a></nav>
     </section>
 
     <section class="scope" id="scope">
@@ -323,6 +376,22 @@
   </footer>
   <script>
     (() => {
+      const toggle = document.querySelector("[data-theme-toggle]");
+      if (toggle) {
+        const label = toggle.querySelector("[data-theme-label]");
+        const setTheme = (theme) => {
+          document.documentElement.dataset.theme = theme;
+          const dark = theme === "dark";
+          toggle.setAttribute("aria-pressed", String(dark));
+          toggle.setAttribute("aria-label", `Switch to ${dark ? "light" : "dark"} theme`);
+          label.textContent = dark ? "Light theme" : "Dark theme";
+          const meta = document.querySelector("#theme-color-meta");
+          if (meta) meta.content = dark ? "#141815" : "#f6f4ef";
+          try { localStorage.setItem("besa-theme", theme); } catch (e) {}
+        };
+        setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+        toggle.addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+      }
       const carousel = document.querySelector("[data-carousel]");
       if (!carousel) return;
       const track = carousel.querySelector("[data-carousel-track]");
