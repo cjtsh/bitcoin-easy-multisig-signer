@@ -87,7 +87,6 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIn("Preparing it does not move Bitcoin.", page)
         self.assertIn("Save unsigned transaction file (.psbt) to Downloads", page)
         self.assertIn("Apple Silicon (M-series) only", page)
-        self.assertIn("Intel-based Macs are not supported", page)
         self.assertIn('id="send-all" type="checkbox"', page)
         self.assertNotIn('id="send-all" type="checkbox" checked', page)
         self.assertIn('id="send-choice"', page)

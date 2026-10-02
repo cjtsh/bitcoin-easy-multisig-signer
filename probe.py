@@ -320,6 +320,22 @@ def _same_xpub(expected: Any, received: str) -> bool:
         return False
 
 
+def verify_signer_device(record: WalletRecord, executable: str, chain: str,
+                         device_type: str, device_path: str, signer: int) -> None:
+    """Bind the selected HWI path to its wallet key immediately before signing."""
+    if type(signer) is not int or not 1 <= signer <= len(record.keys):
+        raise ProbeError("Check this signing device again before approving the payment.")
+    key = record.keys[signer - 1]
+    response = invoke_hwi(
+        executable, chain, "--device-type", device_type, "--device-path", device_path,
+        "getxpub", _key_origin_path(key),
+        timeout_seconds=DEVICE_AUTH_TIMEOUT_SECONDS,
+    )
+    if not isinstance(response, dict) or not isinstance(response.get("xpub"), str) \
+            or not _same_xpub(key, response["xpub"]):
+        raise ProbeError("This device no longer matches the wallet. Check devices again.")
+
+
 _DEVICE_BRANDS = {"ledger": "Ledger", "trezor": "Trezor", "coldcard": "Coldcard",
                  "bitbox": "BitBox", "bitbox02": "BitBox02", "digitalbitbox": "Digital BitBox"}
 _DEVICE_SHORT = {"s": "S", "x": "X", "t": "T"}

@@ -50,6 +50,9 @@ class SendFlowTests(unittest.TestCase):
         self.outpoint_patch = patch("gui.verify_selected_outpoints")
         self.outpoint_check = self.outpoint_patch.start()
         self.addCleanup(self.outpoint_patch.stop)
+        self.identity_patch = patch("gui.verify_signer_device")
+        self.identity_check = self.identity_patch.start()
+        self.addCleanup(self.identity_patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.app.handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -93,8 +96,37 @@ class SendFlowTests(unittest.TestCase):
         self.app.prepared = PreparedPayment.create(
             record, chain, self.app.scan_generation, "reviewed-1",
             result["psbt_base64"], review)
+        # A real signing screen discovers and binds devices to this review first.
+        # The separate probe tests exercise the xpub check itself.
+        signable = [
+            {"type": "jade", "path": "/dev/x", "signer": 1},
+            {"type": "trezor", "path": "webusb:1", "signer": 2},
+            {"type": "trezor", "path": "usb:1", "signer": 2},
+            {"type": "ledger", "path": "hid:1", "signer": 1},
+        ]
+        with patch("gui.probe_devices_detailed", return_value={
+                "statuses": [], "signable": signable}):
+            self.post("/api/devices", {"preparation_id": "reviewed-1"})
         keys = [root.derive(signing_path) for root in roots]
         return result, keys
+
+    def test_unmatched_device_path_cannot_receive_the_reviewed_psbt(self):
+        self.prepare_a_reviewed_transaction()
+        with patch("gui.sign_psbt_with_device") as signer:
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/other"})
+        self.assertEqual(error.exception.code, 400)
+        signer.assert_not_called()
+        self.identity_check.assert_not_called()
+
+    def test_matched_device_is_reverified_before_signing(self):
+        _result, keys = self.prepare_a_reviewed_transaction()
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[0])):
+            self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                    "device_type": "jade", "device_path": "/dev/x"})
+        self.identity_check.assert_called_once_with(
+            self.app.record, "hwi", "test", "jade", "/dev/x", 1)
 
     def signing_device(self, key):
         """A stand-in for one hardware device holding one key.

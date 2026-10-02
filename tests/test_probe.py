@@ -17,6 +17,7 @@ from probe import (
     _device_label, _hwi_device_label, device_advice, devices_need_attention,
     invoke_hwi, load_bsms,
     main, probe_devices,
+    verify_signer_device,
 )
 
 
@@ -346,6 +347,18 @@ class ProbeTests(unittest.TestCase):
         self.assertNotIn(packet, args)
         self.assertEqual(run.call_args.kwargs["input"], "signtx " + packet + "\n")
         self.assertEqual(run.call_args.kwargs["timeout"], 600)
+
+    def test_signing_rechecks_the_device_xpub_at_the_wallet_origin(self):
+        text, roots = test_record()
+        wallet = self.write(text)
+        expected = roots[0].derive("m/48h/1h/0h/2h").to_public().to_base58()
+        with patch("probe.invoke_hwi", return_value={"xpub": expected}) as invoke:
+            verify_signer_device(wallet, "hwi", "test", "jade", "/dev/test", 1)
+        self.assertEqual(invoke.call_args.args[-2:], ("getxpub", "m/48h/1h/0h/2h"))
+        self.assertEqual(invoke.call_args.kwargs["timeout_seconds"], 180)
+        with patch("probe.invoke_hwi", return_value={"xpub": "wrong"}):
+            with self.assertRaisesRegex(ProbeError, "no longer matches"):
+                verify_signer_device(wallet, "hwi", "test", "jade", "/dev/test", 1)
 
     def test_signing_psbt_cannot_inject_another_stdin_command(self):
         from probe import sign_psbt_with_device

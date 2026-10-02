@@ -269,6 +269,16 @@ class WalletServiceTests(unittest.TestCase):
             build_unsigned_psbt(self.wallet, {**data, "utxo_consistent": False},
                                 recipient, 1000, 2, self.fake_get)
 
+    def test_trailing_garbage_in_explorer_transaction_has_clear_refusal(self):
+        data = scan_wallet(self.wallet, self.fake_get)
+
+        def malformed(path, *, text=False):
+            value = self.fake_get(path, text=text)
+            return value + "aa" if path.endswith("/hex") else value
+
+        with self.assertRaisesRegex(WalletError, "invalid previous transaction"):
+            build_unsigned_psbt(self.wallet, data, self.receive, 1000, 2, malformed)
+
     def test_send_all_deducts_fee_uses_every_confirmed_output_and_has_no_change(self):
         data = scan_wallet(self.wallet, self.fake_get)
         recipient = self.layout.receive.derive(1).address(NETWORKS["test"])

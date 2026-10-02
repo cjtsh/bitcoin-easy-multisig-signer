@@ -39,7 +39,7 @@ from network_settings import (
 )
 from version import APP_VERSION
 from probe import (MAX_BSMS_BYTES, ProbeError, device_advice, devices_need_attention, parse_bsms,
-                   probe_devices_detailed, sign_psbt_with_device)
+                   probe_devices_detailed, sign_psbt_with_device, verify_signer_device)
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
 from wallet_service import (BroadcastOutcomeUnknown, WalletError, broadcast_transaction,
@@ -401,6 +401,8 @@ class LocalApp:
         self.pending_broadcast_unknown = False
         self.pending_by_wallet: dict[bytes, tuple[str, bool]] = {}
         self.prepared: PreparedPayment | None = None
+        # Session-only binding from a successful device probe to one review.
+        self.verified_signers = None
         self.diagnostic_events = []
         self.revision = 0
         self.scan_generation = 0
@@ -738,6 +740,17 @@ class LocalApp:
                 # tb1 address prefix, so the xpub comparison is byte-exact either way.
                 hwi_chain = "main" if chain == "main" else "test"
                 detailed = probe_devices_detailed(record, "hwi", hwi_chain)
+                if supplied:
+                    with state.lock:
+                        current = state.prepared
+                        if (current is None or current.review_id != supplied
+                                or current.wallet is not record or state.chain != chain):
+                            raise WalletError("The payment changed during the device check. Review it again.")
+                        state.verified_signers = (
+                            supplied, record, chain,
+                            tuple((d["type"], d["path"], d["signer"])
+                                  for d in detailed["signable"]),
+                        )
                 state.note("signer_check", "passed",
                            found=[d.get("type") for d in detailed.get("signable") or []])
                 statuses = detailed["statuses"]
@@ -791,11 +804,28 @@ class LocalApp:
                 device_path = str(data.get("device_path") or "")
                 if not device_type or not device_path:
                     raise WalletError("Choose a connected device to sign with.")
+                with state.lock:
+                    binding = state.verified_signers
+                if (binding is None or binding[0] != payment.review_id
+                        or binding[1] is not record or binding[2] != chain):
+                    raise WalletError("Check signing devices for this payment before signing.")
+                matched = [signer for known_type, known_path, signer in binding[3]
+                           if known_type == device_type and known_path == device_path]
+                if len(matched) != 1:
+                    raise WalletError("This device was not verified for this payment. Check devices again.")
                 hwi_chain = "main" if chain == "main" else "test"
                 before = payment.checked_psbt()
                 try:
+                    verify_signer_device(record, "hwi", hwi_chain,
+                                         device_type, device_path, matched[0])
+                    with state.lock:
+                        if (state.prepared is not payment
+                                or state.verified_signers is not binding):
+                            raise WalletError("The payment changed during the device check. Review it again.")
                     updated = sign_psbt_with_device(
                         "hwi", hwi_chain, device_type, device_path, payment.psbt_base64)
+                except WalletError:
+                    raise
                 except ProbeError as exc:
                     advice = device_advice(device_type, str(exc))
                     raise WalletError(str(exc) + (" " + advice if advice else "")) from exc

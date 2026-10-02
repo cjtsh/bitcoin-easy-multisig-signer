@@ -21,6 +21,7 @@ from urllib.request import Request
 from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
 
 from embit import psbt, script, transaction
+from embit.base import EmbitError
 from embit.psbt import DerivationPath
 from embit.descriptor import Descriptor
 from embit.descriptor.miniscript import Multi, Sortedmulti
@@ -844,7 +845,7 @@ def build_unsigned_psbt(
             raw = query(f"/tx/{utxo['txid']}/hex", text=True)
             previous = transaction.Transaction.parse(bytes.fromhex(raw))
             prevout = previous.vout[utxo["vout"]]
-        except (ValueError, IndexError, TypeError) as exc:
+        except (ValueError, IndexError, TypeError, EmbitError, RuntimeError) as exc:
             raise WalletError("Explorer returned an invalid previous transaction.") from exc
         if (previous.txid().hex() != utxo["txid"].lower()
             or prevout.value != utxo["value"]
