@@ -1,4 +1,4 @@
-# Pinned embit source for 0.6.3
+# Pinned embit source for 0.6.4
 
 `embit-upstream-2b375a.tar.gz` is the upstream GitHub archive at commit
 `2b375a33bd8926caec7e53d7cfd41b165d196566`, two commits after signed tag
@@ -20,6 +20,13 @@ resolution. Its SHA-256 is
 `77aec9344be124c0718503eb1f7f3c44dfbb01a929e5b974f7edfe2ad206dce0`.
 Both lock files require that exact wheel hash. The wheel is pure Python and
 contains no prebuilt crypto library; its MIT license is in the wheel metadata.
+
+The PSBT sequence correction is a local project patch and had not been merged
+upstream at the 0.6.3 audit. Re-check this exact source delta whenever embit is
+upgraded. The app does not import embit's Liquid/PSET code; adding that surface
+requires a separate review. App address parsing also round-trips the decoded
+script back to the selected network's canonical address, which rejects unknown
+HRPs even though the library helper alone does not.
 
 This vendoring step avoids an unhashable VCS install and any package build
 while the release job holds signing credentials. The original archive and

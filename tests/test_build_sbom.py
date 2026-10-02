@@ -27,6 +27,13 @@ class BuildSbomTests(unittest.TestCase):
         self.assertEqual(components["libusb-1.0.0.dylib"]["hashes"][0]["content"], "b" * 64)
         self.assertEqual(components["cpython"]["version"], sys.version.split()[0])
         self.assertIn("embit", components)
+        self.assertEqual(
+            components["embit"]["hashes"],
+            [{"alg": "SHA-256",
+              "content": hashlib.sha256(
+                  (ROOT / build_sbom.EMBIT_WHEEL).read_bytes()).hexdigest()}],
+        )
+        self.assertIn("symbolic", components["embit"]["properties"][0]["value"])
         self.assertNotIn("pip", components)
         properties = {entry["name"]: entry["value"]
                       for entry in result["metadata"]["properties"]}

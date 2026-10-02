@@ -35,6 +35,7 @@ LICENCES = {
     "requests": "Apache-2.0",
     "pyyaml": "MIT",
 }
+EMBIT_WHEEL = Path("vendor/embit-0.8.2+besa.1-py3-none-any.whl")
 
 
 def sha256(path: Path) -> str:
@@ -95,6 +96,18 @@ def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str]
             "type": "library", "name": normalized, "version": version,
             "purl": f"pkg:pypi/{normalized}@{version}",
         }
+        if normalized == "embit":
+            wheel = root / EMBIT_WHEEL
+            if not wheel.is_file():
+                raise ValueError(f"Missing vendored embit wheel: {wheel}")
+            component["hashes"] = [{
+                "alg": "SHA-256", "content": sha256(wheel),
+            }]
+            component["properties"] = [{
+                "name": "source",
+                "value": (f"{EMBIT_WHEEL.as_posix()}; local patched wheel; "
+                          "the PyPI purl is symbolic, not a PyPI artifact reference"),
+            }]
         if normalized in LICENCES:
             component["licenses"] = [{"license": {"id": LICENCES[normalized]}}]
         components.append(component)

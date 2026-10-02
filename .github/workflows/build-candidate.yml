@@ -18,6 +18,10 @@ on:
         description: "Publish the GitHub release. Off builds a candidate: the artifacts stay on the run, with no tag and no release."
         type: boolean
         default: false
+      candidate_run_id:
+        description: "Successful notarized publish=false run for this exact commit; required when publish=true so the tested bytes are promoted."
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -35,6 +39,17 @@ jobs:
         run: |
           echo 'Publishing requires a signed and notarized build.' >&2
           exit 1
+      - name: Require the default branch for publication
+        if: ${{ inputs.publish }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo 'Public releases must be dispatched from main.' >&2
+            exit 1
+          fi
+          if [[ ! "${{ inputs.candidate_run_id }}" =~ ^[0-9]+$ ]]; then
+            echo 'Publishing requires the run ID of a successful notarized candidate.' >&2
+            exit 1
+          fi
       - id: read
         run: |
           echo "version=$(python3 -c 'import version; print(version.APP_VERSION)')" >> "$GITHUB_OUTPUT"
@@ -324,21 +339,81 @@ jobs:
     name: SHA256SUMS
     needs: [version, source, macos]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: Download and verify the tested candidate artifacts
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
+          jq -e \
+            --arg commit "$RELEASE_COMMIT" \
+            '.event == "workflow_dispatch"
+             and .status == "completed" and .conclusion == "success"
+             and .head_branch == "main" and .head_sha == $commit
+             and (.path | startswith(".github/workflows/build-candidate.yml@"))' \
+            <<<"$run_json" >/dev/null || {
+              echo "Candidate run must be successful, from this workflow, and from the exact release commit on main." >&2
+              exit 1
+            }
+          mkdir -p "$RUNNER_TEMP/candidate-manifest" "$RUNNER_TEMP/candidate-source" \
+            "$RUNNER_TEMP/candidate-macos" "$RUNNER_TEMP/candidate-sums" dist
+          gh run download "$CANDIDATE_RUN_ID" --name candidate-manifest \
+            --dir "$RUNNER_TEMP/candidate-manifest"
+          gh run download "$CANDIDATE_RUN_ID" --name source-archive \
+            --dir "$RUNNER_TEMP/candidate-source"
+          gh run download "$CANDIDATE_RUN_ID" --name macos-dmg \
+            --dir "$RUNNER_TEMP/candidate-macos"
+          gh run download "$CANDIDATE_RUN_ID" --name sha256sums \
+            --dir "$RUNNER_TEMP/candidate-sums"
+          manifest="$RUNNER_TEMP/candidate-manifest/CANDIDATE-MANIFEST.txt"
+          test -f "$manifest"
+          grep -Fx "version=$RELEASE_VERSION" "$manifest"
+          grep -Fx "commit=$RELEASE_COMMIT" "$manifest"
+          grep -Fx "run_id=$CANDIDATE_RUN_ID" "$manifest"
+          grep -Fx "notarize=true" "$manifest"
+          grep -Fx "publish=false" "$manifest"
+          cp "$RUNNER_TEMP"/candidate-source/*.tar.gz dist/
+          cp "$RUNNER_TEMP"/candidate-macos/*.dmg "$RUNNER_TEMP"/candidate-macos/BUILD-SBOM.json dist/
+          cp "$RUNNER_TEMP/candidate-sums/SHA256SUMS" dist/
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          test "$(find . -maxdepth 1 -name '*.dmg' | wc -l | tr -d ' ')" = 1
+          test -f BUILD-SBOM.json
+      - name: Download current run artifacts for a nonpublishing candidate
+        if: ${{ !inputs.publish }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: source-archive
           path: dist
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: Download current DMG and SBOM for a nonpublishing candidate
+        if: ${{ !inputs.publish }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: macos-dmg
           path: dist
-      - name: Write SHA256SUMS
+      - name: Write candidate checksums
+        if: ${{ !inputs.publish }}
         run: |
+          set -euo pipefail
           cd dist
           shasum -a 256 *.tar.gz *.dmg BUILD-SBOM.json > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-assets
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !inputs.publish }}
         with:
           name: sha256sums
           path: dist/SHA256SUMS
@@ -354,15 +429,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: source-archive
-          path: dist
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: macos-dmg
-          path: dist
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: sha256sums
+          name: release-assets
           path: dist
       - name: Verify downloaded release bytes
         run: cd dist && shasum -a 256 -c SHA256SUMS
@@ -445,6 +512,11 @@ jobs:
           Hardware signers commonly hide the change output, so check the change address
           in the wallet software that holds the wallet file, not on a device screen.
           EOF
+          release_notes="releases/RELEASE-NOTES-${VERSION}.md"
+          if [[ -f "$release_notes" ]]; then
+            printf '\n' >> notes.md
+            cat "$release_notes" >> notes.md
+          fi
           # publish=false stops here, before anything is created. A dispatch that
           # builds a candidate must be able to test the exact artifact a release
           # would ship without committing the version to it: publishing is
@@ -453,6 +525,13 @@ jobs:
           # release exists, so nothing is downloadable by the public; the DMG and
           # the source archive stay attached to this workflow run as artifacts.
           if [[ "${{ inputs.publish }}" != "true" ]]; then
+            cat > dist/CANDIDATE-MANIFEST.txt <<EOF
+          version=${VERSION}
+          commit=${GITHUB_SHA}
+          run_id=${GITHUB_RUN_ID}
+          notarize=${{ inputs.notarize }}
+          publish=${{ inputs.publish }}
+          EOF
             {
               echo "### Candidate build of v${VERSION} — not published"
               echo
@@ -490,3 +569,10 @@ jobs:
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "$release_title" \
             --notes-file notes.md dist/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        name: Retain signed candidate provenance for automated promotion
+        if: ${{ !inputs.publish }}
+        with:
+          name: candidate-manifest
+          path: dist/CANDIDATE-MANIFEST.txt
+          if-no-files-found: error
