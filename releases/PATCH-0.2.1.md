@@ -22,7 +22,7 @@ The regression test changes PSBT field order after a valid signature and checks 
 
 Version 0.2.1 passed real-device signing and broadcast, and the two-device
 Testnet4 payment later **confirmed on 29 September 2026** (recorded in
-[`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)). Acceptance is no longer pending on
+[`RELEASE-HISTORY.md`](../RELEASE-HISTORY.md)). Acceptance is no longer pending on
 the transaction; the on-device review details remain owner-reported rather than
 independently recorded. Do not request wallet files, addresses, xpubs, PSBTs or signed bytes for debugging.
 

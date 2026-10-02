@@ -16,15 +16,18 @@ root="bitcoin-easy-multisig-signer-v${version}"
 mkdir -p dist
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci"
+mkdir -p "$stage/$root/tests" "$stage/$root/scripts" "$stage/$root/ci" "$stage/$root/releases"
 cp README.md CURRENT-STATUS.md LICENSE THIRD-PARTY-NOTICES.md DISCLAIMER.md replit.md AGENTS.md PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md \
-  RELEASE-HISTORY.md PROJECT-HISTORY.md AUDIT-BASELINE-0.1.27.md \
-  AUDIT-DEEPSEEK-0.4.3.md AUDIT-ZAI-0.4.3.md SECURITY-REVIEW-0.2.0.md \
-  PATCH-0.2.1.md PATCH-0.2.2.md PATCH-0.3.0.md PATCH-0.3.1.md PATCH-0.3.2.md PATCH-0.4.0.md PATCH-0.4.1.md PATCH-0.4.2.md PATCH-0.4.6.md PATCH-0.4.14.md PATCH-0.4.15.md PATCH-0.5.0.md CHANGE-ADDRESS-REVIEW.md \
-  PLAN-0.3.0.md PLAN-0.4.4.md MUTINYNET-0.3.0.md \
+  RELEASE-HISTORY.md PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   signing.py wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
+
+# The per-version evidence records (patch, plan, audit and security records) live in
+# releases/ in the repository rather than in the root. Keep that exact layout in the
+# archive: RELEASE-HISTORY.md links them as releases/<name>.md, and those links have to
+# resolve for a reader who only has the tarball.
+cp releases/*.md "$stage/$root/releases/"
 
 # Every root module must ship. Omitting safe_http.py produced an archive whose own
 # code could not import, and nothing noticed because CI ran the tests from the
@@ -42,12 +45,32 @@ fi
 # notices: the notices have no .md suffix for a glob to catch, and RELEASE-HISTORY.md
 # was once left off this list while README.md and AGENTS.md still directed reviewers
 # to read it, so the archive shipped a README linking to a file it did not contain.
+# Every document under releases/ must ship for the same reason: RELEASE-HISTORY.md
+# and the audit records link to them by name.
 missing_docs=()
 for file in ./*.md ./LICENSE ./THIRD-PARTY-NOTICES.md; do
   [[ -f "$stage/$root/$(basename "$file")" ]] || missing_docs+=("$(basename "$file")")
 done
+for file in ./releases/*.md; do
+  [[ -f "$stage/$root/releases/$(basename "$file")" ]] || missing_docs+=("releases/$(basename "$file")")
+done
 if (( ${#missing_docs[@]} )); then
   echo "Source archive is missing documents: ${missing_docs[*]}" >&2
+  exit 1
+fi
+
+# A glob copy cannot omit a record that exists, but it also cannot notice one that
+# does not: RELEASE-HISTORY.md can link a record that was never written, or was
+# renamed, or lives somewhere the copy line does not reach. That is the same defect
+# class as the missing RELEASE-HISTORY.md above — a shipped document pointing at a
+# file the archive does not contain — so resolve every link it makes before sealing.
+missing_links=()
+while IFS= read -r name; do
+  [[ -n "$name" ]] || continue
+  [[ -f "$stage/$root/releases/$name" ]] || missing_links+=("$name")
+done < <(grep -oE 'releases/[A-Za-z0-9._-]+\.md' RELEASE-HISTORY.md 2>/dev/null | sort -u | sed 's|^releases/||' || true)
+if (( ${#missing_links[@]} )); then
+  echo "RELEASE-HISTORY.md links records the archive does not contain: ${missing_links[*]}" >&2
   exit 1
 fi
 cp tests/test_*.py tests/support.py tests/fake_explorer.py \

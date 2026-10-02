@@ -6,29 +6,36 @@ was later corrected. Each entry links its full evidence file. The earlier
 `0.0.x`–`0.1.26` iteration tags predate that practice and are recorded by tag
 and commit subject below rather than given individual entries. **Current status
 and next gates live in [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md); current
-capabilities live in [`README.md`](README.md).** Two standing facts apply to
-every version:
+capabilities live in [`README.md`](README.md).** Two facts govern this record:
 
-- **Mainnet broadcast requires a final-screen per-transaction opt-in.** No
-  mainnet broadcast by this app is currently reported as confirmed.
-- Every published release is immutable: one version per build, `SHA256SUMS`
-  verified, CycloneDX SBOM attached. Never republish under an existing tag.
+- **Mainnet broadcast is refused before 0.5.0 and gated from 0.5.0 onward.**
+  Every version before 0.5.0 refused a mainnet broadcast in code — including the
+  0.4.15 owner-test candidate, whose mainnet dry run reached that refusal at the
+  final screen. 0.5.0 is the first build that can submit one, and only behind a final-screen
+  per-transaction opt-in together with the backend flag. No mainnet broadcast by
+  this app is currently reported as confirmed.
+- **Never republish under an existing tag.** A bare `vX.Y.Z` tag means a
+  published release; a suffixed tag (`-unsigned-test`, `-rc1`) means a local or
+  unpublished candidate. Every release from 0.2.0 onward attaches `SHA256SUMS`
+  and a CycloneDX SBOM; earlier releases did not do this consistently — some
+  carried neither, one carried `SHA256SUMS` alone — so read the release page
+  rather than assuming.
 
 | Version | One-line summary | Evidence |
 | --- | --- | --- |
-| 0.1.x | Phases 1–4: balance view, send eligibility, unsigned PSBT, testnet signing/broadcast | [`AUDIT-BASELINE-0.1.27.md`](AUDIT-BASELINE-0.1.27.md), [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) |
-| 0.2.0 | Hot-item security fixes; **hardware signing broken — do not use** | [`SECURITY-REVIEW-0.2.0.md`](SECURITY-REVIEW-0.2.0.md) |
-| 0.2.1 | HWI field-order repair; confirmed Testnet4 payment | [`PATCH-0.2.1.md`](PATCH-0.2.1.md) |
-| 0.2.2 | One-payment-at-a-time confirmation wait | [`PATCH-0.2.2.md`](PATCH-0.2.2.md) |
-| 0.3.0 | Warm safety work, Mutinynet, stale-screen fix | [`PATCH-0.3.0.md`](PATCH-0.3.0.md), [`PLAN-0.3.0.md`](PLAN-0.3.0.md), [`MUTINYNET-0.3.0.md`](MUTINYNET-0.3.0.md) |
-| 0.3.1 | Send All never preselected; Mutinynet default network | [`PATCH-0.3.1.md`](PATCH-0.3.1.md) |
-| 0.3.2 | One-file BIP48 custom sends from a Nunchuk BSMS | [`PATCH-0.3.2.md`](PATCH-0.3.2.md) |
-| 0.4.0 | Visual refresh; session-only payment receipt | [`PATCH-0.4.0.md`](PATCH-0.4.0.md) |
-| 0.4.1 | Signature-only signer-response import; longer signing window | [`PATCH-0.4.1.md`](PATCH-0.4.1.md) |
-| 0.4.2 | Three-minute device discovery/authorization waits (Jade) | [`PATCH-0.4.2.md`](PATCH-0.4.2.md) |
+| 0.1.x | Phases 1–4: balance view, send eligibility, unsigned PSBT, testnet signing/broadcast | [`releases/AUDIT-BASELINE-0.1.27.md`](releases/AUDIT-BASELINE-0.1.27.md), [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) |
+| 0.2.0 | Hot-item security fixes; **hardware signing broken — do not use** | [`releases/SECURITY-REVIEW-0.2.0.md`](releases/SECURITY-REVIEW-0.2.0.md) |
+| 0.2.1 | HWI field-order repair; confirmed Testnet4 payment | [`releases/PATCH-0.2.1.md`](releases/PATCH-0.2.1.md) |
+| 0.2.2 | One-payment-at-a-time confirmation wait | [`releases/PATCH-0.2.2.md`](releases/PATCH-0.2.2.md) |
+| 0.3.0 | Warm safety work, Mutinynet, stale-screen fix | [`releases/PATCH-0.3.0.md`](releases/PATCH-0.3.0.md), [`releases/PLAN-0.3.0.md`](releases/PLAN-0.3.0.md), [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) |
+| 0.3.1 | Send All never preselected; Mutinynet default network | [`releases/PATCH-0.3.1.md`](releases/PATCH-0.3.1.md) |
+| 0.3.2 | One-file BIP48 custom sends from a Nunchuk BSMS | [`releases/PATCH-0.3.2.md`](releases/PATCH-0.3.2.md) |
+| 0.4.0 | Visual refresh; session-only payment receipt | [`releases/PATCH-0.4.0.md`](releases/PATCH-0.4.0.md) |
+| 0.4.1 | Signature-only signer-response import; longer signing window | [`releases/PATCH-0.4.1.md`](releases/PATCH-0.4.1.md) |
+| 0.4.2 | Three-minute device discovery/authorization waits (Jade) | [`releases/PATCH-0.4.2.md`](releases/PATCH-0.4.2.md) |
 | 0.4.3 | Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
-| 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`PLAN-0.4.4.md`](PLAN-0.4.4.md), [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md), [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) |
-| 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`PLAN-0.4.4.md`](PLAN-0.4.4.md) |
+| 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md), [`releases/AUDIT-DEEPSEEK-0.4.3.md`](releases/AUDIT-DEEPSEEK-0.4.3.md), [`releases/AUDIT-ZAI-0.4.3.md`](releases/AUDIT-ZAI-0.4.3.md) |
+| 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md) |
 | 0.4.6 | One signing box per cosigner, so the missing signer is visible at a glance | — |
 | 0.4.7 | Correction: the final signature fills its own box, and completing does not scroll the boxes off screen | — |
 | 0.4.8 | Attributable diagnostics, and visible progress that never advertises a wait | — |
@@ -37,9 +44,9 @@ every version:
 | 0.4.11 | The amount box states that a leading zero is optional | — |
 | 0.4.12 | The first **notarized** release: installs with a normal double-click | — |
 | 0.4.13 | Light and dark themes, one palette of roles, and a toggle | — |
-| 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) |
-| **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) |
-| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400` and tagged `v0.5.0-rc1` locally; not pushed, not published, and no live send is reported | [`PATCH-0.5.0.md`](PATCH-0.5.0.md) |
+| 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys | [`releases/PATCH-0.4.14.md`](releases/PATCH-0.4.14.md) |
+| **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
+| **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400` and tagged `v0.5.0-rc1` locally; not pushed, not published, and no live send is reported | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 
@@ -51,7 +58,7 @@ all three supported devices — Jade, Trezor Safe 3, and Ledger Nano S Plus. The
 independent audit of that era, including its hot findings (inferred change
 ownership, incomplete final review, unverified finalization signatures,
 signer-response binding), is preserved in
-[`AUDIT-BASELINE-0.1.27.md`](AUDIT-BASELINE-0.1.27.md); the build and live-use
+[`releases/AUDIT-BASELINE-0.1.27.md`](releases/AUDIT-BASELINE-0.1.27.md); the build and live-use
 history is in [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md). Every one of those
 hot findings was subsequently fixed and regression-tested — see 0.2.0 through
 0.4.1 below.
@@ -118,7 +125,7 @@ SBOM, and manual-only publishing. **However, its signer-response check
 required byte-equality of the whole returned PSBT, and HWI legitimately
 reorders fields: Jade and Ledger reached on-device approval and were then
 rejected. No 0.2.0 payment was broadcast. Do not use 0.2.0 for signing.**
-Record: [`SECURITY-REVIEW-0.2.0.md`](SECURITY-REVIEW-0.2.0.md).
+Record: [`releases/SECURITY-REVIEW-0.2.0.md`](releases/SECURITY-REVIEW-0.2.0.md).
 
 ## 0.2.1 — the field-order correction
 
@@ -127,13 +134,13 @@ broadcast and later **confirmed on 29 September 2026**. The installed 0.2.1
 app could show a new unsigned review above a previous signing/final screen;
 **never broadcast from a screen that mixes two payments** — close the old app
 before installing any newer version. Record:
-[`PATCH-0.2.1.md`](PATCH-0.2.1.md).
+[`releases/PATCH-0.2.1.md`](releases/PATCH-0.2.1.md).
 
 ## 0.2.2 — one payment at a time
 
 After an accepted practice-network broadcast, the app waits for one
 confirmation before another payment, and an address scan's mempool spent total
-pauses sends as well. Record: [`PATCH-0.2.2.md`](PATCH-0.2.2.md).
+pauses sends as well. Record: [`releases/PATCH-0.2.2.md`](releases/PATCH-0.2.2.md).
 
 ## 0.3.0 — warm safety work and Mutinynet
 
@@ -145,9 +152,9 @@ independently operated Esplora on mainnet), unknown broadcast outcomes marked
 outcome-unknown with the payment cleared rather than retried, the Mutinynet
 practice network added with a block-1 checkpoint pin, and the stale
 signing/final panel reset when a new payment is prepared. Design and limits:
-[`PLAN-0.3.0.md`](PLAN-0.3.0.md) and
-[`MUTINYNET-0.3.0.md`](MUTINYNET-0.3.0.md); release record:
-[`PATCH-0.3.0.md`](PATCH-0.3.0.md).
+[`releases/PLAN-0.3.0.md`](releases/PLAN-0.3.0.md) and
+[`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md); release record:
+[`releases/PATCH-0.3.0.md`](releases/PATCH-0.3.0.md).
 
 ## 0.3.1 — Send All never preselected
 
@@ -156,7 +163,7 @@ app safely refused a smaller payment but had preselected Send All — an unsafe
 interface choice for a sweep. 0.3.1 leaves Send All unchecked, explains the
 missing change path beside the amount, opens on Mutinynet, and keeps custom
 amounts blocked when change is absent from the wallet definition. Record:
-[`PATCH-0.3.1.md`](PATCH-0.3.1.md).
+[`releases/PATCH-0.3.1.md`](releases/PATCH-0.3.1.md).
 
 ## 0.3.2 — one-file BIP48 change recovery
 
@@ -168,7 +175,7 @@ from the BSMS alone and labels it **standard-derived**, never declared.
 Custom historical branch layouts remain outside this fallback. The owner then
 reported **two successful physical Mutinynet sends** — Ledger + Trezor and
 Jade + Trezor, the second without restarting the app. Record and evidence
-limits: [`PATCH-0.3.2.md`](PATCH-0.3.2.md).
+limits: [`releases/PATCH-0.3.2.md`](releases/PATCH-0.3.2.md).
 
 ## 0.4.0 — visual refresh, payment receipt
 
@@ -176,7 +183,7 @@ The quiet slate/teal interface for the nontechnical operator, and a
 session-only confirmed-payment receipt with its explorer link (browser memory
 only; not history). No change to BSMS parsing, derivation, PSBT construction,
 HWI transport, signature verification, fee caps, outpoint checks, or the
-mainnet refusal. Record: [`PATCH-0.4.0.md`](PATCH-0.4.0.md).
+mainnet refusal. Record: [`releases/PATCH-0.4.0.md`](releases/PATCH-0.4.0.md).
 
 ## 0.4.1 — signature-only signer-response import
 
@@ -190,7 +197,7 @@ then completed a **Ledger + Jade Mutinynet payment**: the privacy-limited
 diagnostic recorded two verified signer responses, a verified final
 transaction and an accepted broadcast, and the public transaction later
 confirmed on Mutinynet. Record:
-[`PATCH-0.4.1.md`](PATCH-0.4.1.md).
+[`releases/PATCH-0.4.1.md`](releases/PATCH-0.4.1.md).
 
 ## 0.4.2 — longer device-authorization waits
 
@@ -199,7 +206,7 @@ its Jade client and authenticates during `enumerate`). Discovery and matched
 device `getxpub` checks now allow 180 seconds each; signing remains 600. The
 wallet and transaction engine is unchanged from 0.4.1, and this wait change
 has not yet been physically exercised. Record:
-[`PATCH-0.4.2.md`](PATCH-0.4.2.md).
+[`releases/PATCH-0.4.2.md`](releases/PATCH-0.4.2.md).
 
 ## 0.4.3 — fail-closed bare-`/*` change inference
 
@@ -219,7 +226,7 @@ disabled.**
 ## 0.4.4 — audit remediation and hardening
 
 Two independent audits of `main` at `7d622ef` — one by DeepSeek, one by Z.ai —
-were reconciled into [`PLAN-0.4.4.md`](PLAN-0.4.4.md). This release carries the
+were reconciled into [`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md). This release carries the
 Tier 1 items only: fixes and hardening that need no fee-policy decision, no
 hardware and no Apple account. **Mainnet broadcast remains refused in code and
 nothing here weakens it.** No mainnet transaction has ever been prepared,
@@ -270,7 +277,7 @@ broadcast is possible.
 
 ## 0.4.5 — the three deferred interface items
 
-[`PLAN-0.4.4.md`](PLAN-0.4.4.md) held back three Tier 1 items because they change
+[`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md) held back three Tier 1 items because they change
 what the page renders, and 0.4.4 shipped without a browser walkthrough. They land
 here, unchanged in intent.
 
@@ -734,7 +741,7 @@ change path; otherwise the operator must deliberately choose Send All, which cre
 no change output. The app does not build wallets or create keys.
 
 Automated evidence and the local Apple build/notarization checks are recorded in
-[`PATCH-0.4.14.md`](PATCH-0.4.14.md). The owner reported the local install worked;
+[`releases/PATCH-0.4.14.md`](releases/PATCH-0.4.14.md). The owner reported the local install worked;
 that is not evidence of a physical transaction using every supported quorum.
 Mainnet broadcast remained disabled in this release. 0.5.0 is the release that
 changes that, behind the final-screen and backend gates recorded below.
@@ -758,7 +765,43 @@ preparation, two verified signer responses, and verified finalization. The scree
 show no broadcast and subsequent clearing of the signed transaction. This is an
 owner-reported dry run, not an on-chain payment; no independent raw-transaction decode
 report was supplied. The candidate is not a published release. Full evidence is in
-[`PATCH-0.4.15.md`](PATCH-0.4.15.md).
+[`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md).
+
+## 0.5.0 candidate — live mainnet broadcast
+
+0.5.0 removes the stopgap that refused every mainnet broadcast. It is the first
+build that can submit a real Bitcoin payment, and it does so behind two gates:
+the final review screen requires an explicit confirmation that names real
+Bitcoin, and `wallet_service.broadcast_transaction` takes a `mainnet_opt_in`
+argument that defaults to `False`, so any caller that omits it fails closed. The
+operator sees **one** checkbox; the backend flag is defence in depth against a
+caller, not a second human action. Earlier wording in `AGENTS.md` described a
+"separate mainnet checkbox" and was corrected here.
+
+The prepared-payment binding, final review, genesis checks, two-source outpoint
+recheck and txid confirmation are unchanged, as are the 25 sat/vB and 10,000
+estimated-satoshi fee caps. The 0.4.15 OneKey work is included: HWI's own device
+label is preferred over the generic model name, the nested HWI helper carries the
+`disable-library-validation` entitlement alone, and the Mac build preflights
+libusb before sealing.
+
+The DMG is `c1831dde2042c8bebae14d6c545531dcb609a1f2fcedb71a433626bca5f8e056`
+and the source archive
+`3a65fe936023dcd5b44735648ccec1afc69d73dcdc1f21935960efdb7d5d854f`. The app is
+Developer ID signed by Bitseeker LLC (`B8G5L7M8TB`), notarized, stapled and
+accepted by Gatekeeper; the nested helper carries the library-validation
+entitlement and the main app carries no entitlement at all. A PyInstaller
+CArchive extraction of the shipped bundle was compared recursively against the
+working-tree sources — `gui.py`, `wallet_service.py`, `version.py`, `probe.py`
+and `network_config.py` matched with zero differences, the old refusal string
+`not enabled in this build` appears nowhere in the bundle, and the shipped
+`ui.html` is byte-identical to the source. The suite runs 238 tests.
+
+An independent pre-broadcast review of this candidate returned a pass. No mainnet
+transaction has been sent with it: the owner's live send is the next acceptance
+step. The candidate is committed as `51ea400`, tagged `v0.5.0-rc1` locally, and is
+neither pushed nor published. Full evidence is in
+[`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md).
 
 ## Release anchors and artifact provenance
 
