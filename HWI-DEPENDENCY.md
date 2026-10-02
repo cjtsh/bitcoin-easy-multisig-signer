@@ -62,7 +62,7 @@ needs attention. `probe.py` carries tailored advice for:
 Anything else HWI can drive would be discovered and matched, but would fall back
 to generic advice rather than a device-specific instruction.
 
-### OneKey Classic 1S (detection confirmed; signing walkthrough pending)
+### OneKey Classic 1S (detection confirmed; owner-verified signing in the dry run)
 
 The owner-connected [OneKey Classic 1S](https://onekey.so/products/onekey-classic-1s/)
 was enumerated by direct and bundled HWI 3.2.0 as `type=trezor`,
@@ -73,10 +73,11 @@ This is HWI's Trezor transport and signing backend, not a separate OneKey HWI
 driver. The 0.4.15 candidate preserves HWI's OneKey label in the app and fixes
 the hardened-runtime loading of the bundled libusb in its HWI helper.
 
-Enumeration proves only that the host can identify the device. App-driven wallet
-xpub matching and a physical Testnet4 or Mutinynet multisig signature still need
-the owner's walkthrough. Do not claim tested transaction support until that is
-recorded. HWI version and Python remain unchanged.
+Enumeration proves only that the host can identify the device. The owner reports
+app-driven wallet xpub matching and two verified signer responses with this device
+in the 0.4.15 mainnet dry run, which reached the final review and then refused the
+mainnet broadcast, as every pre-0.5.0 build does. That is an owner-reported dry
+run, not an on-chain payment. HWI version and Python remain unchanged.
 
 ### The Jade's PIN relay is an HWI-specific trap
 

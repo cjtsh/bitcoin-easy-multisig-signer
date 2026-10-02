@@ -14,12 +14,14 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
   final screen. 0.5.0 is the first build that can submit one, and only behind a final-screen
   per-transaction opt-in together with the backend flag. No mainnet broadcast by
   this app is currently reported as confirmed.
-- **Never republish under an existing tag.** A bare `vX.Y.Z` tag means a
-  published release; a suffixed tag (`-unsigned-test`, `-rc1`) means a local or
-  unpublished candidate. Every release from 0.2.0 onward attaches `SHA256SUMS`
-  and a CycloneDX SBOM; earlier releases did not do this consistently — some
-  carried neither, one carried `SHA256SUMS` alone — so read the release page
-  rather than assuming.
+- **Never republish under an existing tag.** A bare `vX.Y.Z` tag names a
+  published release and is never moved. A suffix marks a build that was not the
+  numbered release, but it does not by itself mean the tag is local:
+  `v0.0.4-rc1` and `v0.1.0-unsigned-test` are on the remote, the latter as a
+  published pre-release. Asset coverage grew over time — releases before 0.1.11
+  carry only the source archive and the DMG, `SHA256SUMS` begins at 0.1.11, and
+  `BUILD-SBOM.json` begins at 0.2.0 — so read the release page rather than
+  assuming.
 
 | Version | One-line summary | Evidence |
 | --- | --- | --- |
@@ -271,7 +273,7 @@ resetting a developer's own saved server settings and reporting a false failure
 in any environment with a read-only `$HOME`. It is confined to a temporary
 directory now.
 
-Suite: **182 tests, 0 failures.** No change to the PSBT construction path, the
+Suite: **183 tests, 0 failures.** No change to the PSBT construction path, the
 signature-verification rules, fee policy, or the set of networks on which
 broadcast is possible.
 
@@ -465,7 +467,7 @@ A one-line dismissible note now sets that expectation up front: this app talks t
 the Bitcoin network and to signing devices, so a click can take a few seconds —
 please wait rather than clicking again.
 
-Suite: **192 tests, 0 failures**, plus five Node DOM tests. Changes are confined
+Suite: **193 tests, 0 failures**, plus five Node DOM tests. Changes are confined
 to the diagnostic vocabulary, the progress bar and its copy. No change to the
 PSBT construction path, the signature-verification rules, fee policy, or the set
 of networks on which broadcast is possible. Mainnet broadcast remains refused in
@@ -815,14 +817,14 @@ published, read back from the `SHA256SUMS` attached to each GitHub release.
 | `v0.4.13` | `351e126` | `f61b58265c4539467fb33e3d0a26d8373a15cbe78301859620b0d4b6ec65f97a` | `d961255d788ef39dbb4b04667bbc73316bedbdb2dce05c685cdd4a3af74a7c0d` |
 | `v0.4.14` | `d530a22` | `ca9a999df23054b7cb6f0368550eb1137ba3518472ef84236c5d389684578313` | `d80a1fccd70311b76722e506c86f486b0d807f9778b91fd386586840604e6e1d` |
 
-`v0.4.14` resolves to `d530a221de87`, the commit [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md)
-already records as the one GitHub Actions built and published.
+`v0.4.14` resolves to `d530a221de87`, the commit the published assets were built from.
 
 ### A bare version tag means a published release
 
-Every `vX.Y.Z` tag on the remote is a GitHub release carrying `SHA256SUMS` and a
-CycloneDX SBOM, and this project's rule is that such a tag is never moved. A build
-that is committed but not yet released therefore does not take the bare name:
+Every `vX.Y.Z` tag on the remote names a GitHub release, and this project's rule is
+that such a tag is never moved. (Asset coverage before 0.2.0 is uneven — see the
+note at the top of this file.) A build that is committed but not yet released
+therefore does not take the bare name:
 
 | Build | Anchor | State |
 | --- | --- | --- |

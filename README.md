@@ -30,10 +30,10 @@ If neither declared nor guarded standard change is available, the app offers a n
 
 ## Supported scope and limitations
 
-| Item | Published support (0.4.14); candidate changes in 0.4.15 |
+| Item | Published support (0.4.14); candidate changes in 0.4.15 and 0.5.0 |
 | --- | --- |
 | Wallet | Existing BSMS 1.0, P2WSH multisig with two or three keys and xpub origins; threshold comes from the file |
-| Networks | Testnet4, Mutinynet and mainnet through one engine; mainnet broadcast requires an explicit per-transaction final confirmation |
+| Networks | Testnet4, Mutinynet and mainnet through one engine. Mainnet **broadcast** is available only in the unpublished 0.5.0 candidate, behind an explicit per-transaction final confirmation plus a backend opt-in; 0.4.14 and 0.4.15 refuse a mainnet broadcast in code |
 | Hardware exercised | Jade, Trezor Safe 3, Ledger Nano S Plus — Testnet4 through 0.2.1; Mutinynet on 0.3.2 and 0.4.1. Owner reports OneKey Classic 1S signed in the 0.4.15 mainnet dry run; no transaction was broadcast |
 | Distribution | Apple Silicon Developer ID-signed and notarized DMG, source archive; see the release assets and `SHA256SUMS` |
 | Fees | Mainnet mempool.space guidance for mainnet/Testnet4; Mutinynet's Esplora reference in Mutinynet mode; 1–25 sat/vB and 10,000-sat estimated fee caps. No in-app fee bump |
