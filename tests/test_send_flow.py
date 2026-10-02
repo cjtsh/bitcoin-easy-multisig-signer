@@ -392,6 +392,31 @@ class SendFlowTests(unittest.TestCase):
         self.assertEqual(self.app.pending_broadcast_txid, txid)
         self.assertTrue(self.app.pending_broadcast_unknown)
 
+    def test_mismatched_broadcast_txid_is_unknown_and_blocks_retry(self):
+        result, keys = self.prepare_a_reviewed_transaction()
+        expected_txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": expected_txid}
+        with patch("gui.broadcast_transaction", return_value="11" * 32) as send:
+            with self.assertRaises(HTTPError) as error:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(error.exception.code, 409)
+            body = json.load(error.exception)
+            self.assertTrue(body["outcome_unknown"])
+            self.assertIn(expected_txid, body["explorer"])
+            with self.assertRaises(HTTPError) as retry:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(retry.exception.code, 400)
+            send.assert_called_once()
+        self.assertIsNone(self.app.prepared)
+        self.assertEqual(self.app.pending_broadcast_txid, expected_txid)
+        self.assertTrue(self.app.pending_broadcast_unknown)
+
     def test_device_response_after_balance_refresh_cannot_attach_signature(self):
         _result, keys = self.prepare_a_reviewed_transaction()
 
