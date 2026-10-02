@@ -139,6 +139,40 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIn("Refuse an unsigned public release", self.text)
         self.assertIn("Refusing to publish an unsigned or unnotarized build", self.text)
 
+    def test_publication_is_restricted_to_the_default_branch(self):
+        guard = next(step for step in self.data["jobs"]["version"]["steps"]
+                     if step.get("name") == "Require the default branch for publication")
+        self.assertEqual(guard["if"], "${{ inputs.publish }}")
+        self.assertIn('refs/heads/main', guard["run"])
+        self.assertIn("candidate_run_id", guard["run"])
+
+    def test_versioned_release_notes_are_included_when_present(self):
+        self.assertIn('release_notes="releases/RELEASE-NOTES-${VERSION}.md"', self.text)
+        self.assertIn('cat "$release_notes" >> notes.md', self.text)
+
+    def test_publication_promotes_a_successful_notarized_candidate_from_same_commit(self):
+        checksums = self.data["jobs"]["checksums"]
+        self.assertIn("actions", checksums["permissions"])
+        promote = next(step for step in checksums["steps"]
+                       if step.get("name") == "Download and verify the tested candidate artifacts")
+        self.assertEqual(promote["if"], "${{ inputs.publish }}")
+        for required in (
+                "gh api", "head_sha", "conclusion", "head_branch",
+                "CANDIDATE-MANIFEST.txt", "notarize=true", "publish=false",
+                "shasum -a 256 -c SHA256SUMS"):
+            with self.subTest(required=required):
+                self.assertIn(required, promote["run"])
+        release = self.data["jobs"]["release"]
+        download = next(step for step in release["steps"]
+                        if step.get("uses", "").startswith("actions/download-artifact"))
+        self.assertEqual(download["with"]["name"], "release-assets")
+        verify = next(step for step in release["steps"]
+                      if step.get("name") == "Verify downloaded release bytes")
+        publish = next(step for step in release["steps"]
+                       if step.get("name") == "Publish the release")
+        self.assertLess(release["steps"].index(verify), release["steps"].index(publish))
+        self.assertIn("CANDIDATE-MANIFEST.txt", self.text)
+
     def test_a_candidate_dispatch_builds_without_publishing(self):
         """Building and publishing are separate acts.
 
