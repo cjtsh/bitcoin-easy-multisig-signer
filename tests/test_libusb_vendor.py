@@ -21,15 +21,20 @@ VENDOR = Path(__file__).resolve().parents[1] / "vendor"
 LIBUSB_SOURCE = "libusb-1.0.30.tar.bz2"
 LIBUSB_SOURCE_SHA256 = "fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf"
 
-# file name -> reviewed SHA-256, or None until the first Windows artifact has been
-# reviewed. Replacing None with a digest is a deliberate act: it is the moment the
-# project claims "this is the library we ship".
+# file name -> reviewed SHA-256. The Windows digest came from
+# .github/workflows/windows-inputs.yml run 37035301559 and is recorded in three
+# other places (vendor/README.md, scripts/build-windows.ps1, and the
+# LIBUSB_WINDOWS_SHA256 repository variable). Replacing one is a deliberate act:
+# it is the moment the project claims "this is the library we ship".
 REVIEWED = {
     "darwin": (
         "libusb-1.0.0.dylib",
         "8f6ad6c17c16f1e7769ad2f780ed2ddf98234ae6580cf5d87d9648cee1769201",
     ),
-    "win32": ("libusb-1.0.dll", None),
+    "win32": (
+        "libusb-1.0.dll",
+        "f7ca6ca40f70e06140e1fab01deedb262464b45bface9eff62c1864e74ff1311",
+    ),
 }
 
 PINNING_INSTRUCTIONS = (

@@ -68,13 +68,14 @@ helper can choose a library.
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `vendor/libusb-1.0.dll` | not pinned yet |
+| `vendor/libusb-1.0.dll` | `f7ca6ca40f70e06140e1fab01deedb262464b45bface9eff62c1864e74ff1311` |
 
-Until a digest is recorded here, in `$reviewedLibusbSha256` in
+That digest is recorded in four places: here, in `$reviewedLibusbSha256` in
 `scripts/build-windows.ps1`, in the `win32` entry of `REVIEWED` in
 `tests/test_libusb_vendor.py`, and in the `LIBUSB_WINDOWS_SHA256` repository
-variable, the Windows build and the vendor test both fail closed rather than
-accept whatever file happens to be in `vendor/`.
+variable. The Windows build and the vendor test both fail closed if any of the
+four is missing or disagrees with the committed file, rather than accept
+whatever file happens to be in `vendor/`.
 
 Build settings used, so the DLL can be rebuilt and compared: libusb's own MSVC
 project, `msvc\libusb_dll.vcxproj` from inside this same tarball, built with

@@ -32,19 +32,15 @@ $ErrorActionPreference = 'Stop'
 # The reviewed SHA-256 of vendor/libusb-1.0.dll.
 #
 # Same discipline as build-macos.sh, which hardcodes the 8f6ad6c1... digest of the
-# reviewed dylib and refuses to bundle anything else. The Windows DLL does not
-# exist yet, so this is a sentinel rather than a digest: an unset digest must fail
-# closed, never silently accept whatever file happens to sit in vendor/.
+# reviewed dylib and refuses to bundle anything else. This digest was taken from
+# the reviewed artifact produced by .github/workflows/windows-inputs.yml run
+# 37035301559 on 2026-10-02, compiled from the pinned libusb-1.0.30.tar.bz2, and
+# is recorded in three other places: vendor/README.md, REVIEWED in
+# tests/test_libusb_vendor.py, and the LIBUSB_WINDOWS_SHA256 repository variable.
 #
-# Replace it after the first reviewed Windows build. The sequence is:
-#   1. dispatch .github/workflows/windows-inputs.yml
-#   2. download the windows-libusb artifact and verify it against the upstream
-#      libusb 1.0.30 source (vendor/README.md records how)
-#   3. commit the reviewed DLL as vendor/libusb-1.0.dll
-#   4. copy ITS digest here, into tests/test_libusb_vendor.py, and into
-#      vendor/README.md, then set the LIBUSB_WINDOWS_SHA256 repository variable
-#      to the same value
-$reviewedLibusbSha256 = 'PINNED_AFTER_FIRST_REVIEWED_WINDOWS_BUILD'
+# To change it, rebuild with that workflow, verify the bytes against the pinned
+# source, commit the file, then update all four places in one commit.
+$reviewedLibusbSha256 = 'f7ca6ca40f70e06140e1fab01deedb262464b45bface9eff62c1864e74ff1311'
 
 function Fail {
     param([Parameter(Position = 0)][string] $Message)
