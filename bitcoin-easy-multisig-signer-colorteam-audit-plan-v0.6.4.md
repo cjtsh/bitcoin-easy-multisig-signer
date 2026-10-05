@@ -11,10 +11,10 @@ this file is all the surveyor needs) — Red, Blue, Orange, Copper, Amber, White
 | Rank | Asset | What must NOT happen to it |
 |---|---|---|
 | 1 | The Bitcoin in the operator's multisig wallet (mainnet and practice-network funds) | No transaction is signed or broadcast that the operator did not review and explicitly approve — no altered recipient, amount, fee, or change output between review and broadcast |
-| 2 | The reviewed-transaction integrity chain (frozen `PreparedPayment` → PSBT → verified signer responses → final transaction) | Bytes that differ from the reviewed payment must never reach a signer or an explorer; a signer response must never inject anything but verified partial signatures |
-| 3 | Wallet privacy — xpubs, addresses, BSMS contents, txids, device identities | None of it is written to logs, diagnostics, the repository, or any server beyond the operator-chosen Esplora queries; diagnostics carry only fixed codes, the network, device *class*, and timestamps |
+| 2 | Signing and CI credentials (Developer ID certificate, Apple notary key, GitHub token) and the release workflow itself | Credential values never appear in the repo, artifacts, or logs; a push alone never builds or publishes; an unsigned/unnotarized build can never be published. **Owner: "loss of credentials is the same thing as loss of funds"** — stolen credentials enable a fake build, which enables theft |
+| 3 | The reviewed-transaction integrity chain (frozen `PreparedPayment` → PSBT → verified signer responses → final transaction) | Bytes that differ from the reviewed payment must never reach a signer or an explorer; a signer response must never inject anything but verified partial signatures |
 | 4 | Release artifact integrity — the published DMG and SBOM | Nothing is published except the exact bytes of a successful signed/notarized candidate run for the same commit; no tag or release asset is ever overwritten |
-| 5 | Signing and CI credentials (Developer ID certificate, Apple notary key, GitHub token) and the release workflow itself | Credential values never appear in the repo, artifacts, or logs; a push alone never builds or publishes; an unsigned/unnotarized build can never be published |
+| 5 | Wallet privacy — xpubs, addresses, BSMS contents, txids, device identities | None of it is written to logs, diagnostics, the repository, or any server beyond the operator-chosen Esplora queries; diagnostics carry only fixed codes, the network, device *class*, and timestamps |
 
 **The unforgivable acts, in plain words:**
 
@@ -30,9 +30,14 @@ grade:
 
 | Grade | Conditions that must hold here |
 |---|---|
-| ✅ CLEARED | The panel finds no path, in in-scope code at the target revision, to: (a) sign or broadcast transaction bytes that differ from what the operator reviewed; (b) broadcast on mainnet without both the per-transaction final-screen consent and the fail-closed backend opt-in; (c) write wallet-identifying material to diagnostics, logs, or artifacts; (d) publish release bytes other than the verified candidate's. The invariants in `AGENTS.md` hold as stated, with test evidence where the repo claims it. |
-| ⚠️ CONDITIONAL | No unforgivable-act path is demonstrated, but one or more findings weaken a gate, a verification step, privacy hygiene, or the release chain in a way that needs an owner decision — e.g. a gap that only opens under explorer misbehavior, device firmware trust assumptions, or stated invariants that lack the test coverage the repo claims. |
+| ✅ CLEARED | The panel finds no path, in in-scope code at the target revision, to: (a) sign or broadcast transaction bytes that differ from what the operator reviewed; (b) broadcast on mainnet without both the per-transaction final-screen consent and the fail-closed backend opt-in; (c) write wallet-identifying material to diagnostics, logs, or artifacts; (d) publish release bytes other than the verified candidate's; (e) expose a credential value. The invariants in `AGENTS.md` hold as stated, with test evidence where the repo claims it. |
+| ⚠️ CONDITIONAL | No unforgivable-act path is demonstrated, but one or more findings weaken a gate, a verification step, privacy hygiene, credential handling, or the release chain in a way that needs an owner decision — e.g. a gap that only opens under explorer misbehavior, device firmware trust assumptions, or stated invariants that lack the test coverage the repo claims. |
 | ⛔ BLOCKED | Any demonstrated path to an unforgivable act; any handling of seeds, PINs, or private keys; any credential value exposed in the repo, artifacts, or logs; a pipeline able to publish unverified, unsigned, or unnotarized bytes; or any scope/lock mismatch at re-check. |
+
+**No asset is optional** (owner, 2026-10-05): the ranking orders severity, not
+attention. All five assets are mission-critical; a demonstrated path to breach any of
+them is at least CONDITIONAL, and no finding may be dismissed as low-priority because
+its asset is ranked fifth.
 
 **Target revision:** tag `v0.6.4`, commit `35cdedb150cef6d047c39537324faf1321be3c8d`
 — the commit the published, signed and notarized 0.6.4 DMG was built from, so findings
@@ -97,15 +102,19 @@ the audit is void.** Different identifiers establish different runs, not differe
 | Rank | Asset | What must NOT happen to it |
 |---|---|---|
 | 1 | The Bitcoin in the operator's multisig wallet (mainnet and practice-network funds) | No transaction is signed or broadcast that the operator did not review and explicitly approve — no altered recipient, amount, fee, or change output between review and broadcast |
-| 2 | The reviewed-transaction integrity chain (frozen `PreparedPayment` → PSBT → verified signer responses → final transaction) | Bytes that differ from the reviewed payment must never reach a signer or an explorer; a signer response must never inject anything but verified partial signatures |
-| 3 | Wallet privacy — xpubs, addresses, BSMS contents, txids, device identities | None of it is written to logs, diagnostics, the repository, or any server beyond the operator-chosen Esplora queries; diagnostics carry only fixed codes, the network, device *class*, and timestamps |
+| 2 | Signing and CI credentials (Developer ID certificate, Apple notary key, GitHub token) and the release workflow itself | Credential values never appear in the repo, artifacts, or logs; a push alone never builds or publishes; an unsigned/unnotarized build can never be published. **Owner: "loss of credentials is the same thing as loss of funds"** — stolen credentials enable a fake build, which enables theft |
+| 3 | The reviewed-transaction integrity chain (frozen `PreparedPayment` → PSBT → verified signer responses → final transaction) | Bytes that differ from the reviewed payment must never reach a signer or an explorer; a signer response must never inject anything but verified partial signatures |
 | 4 | Release artifact integrity — the published DMG and SBOM | Nothing is published except the exact bytes of a successful signed/notarized candidate run for the same commit; no tag or release asset is ever overwritten |
-| 5 | Signing and CI credentials (Developer ID certificate, Apple notary key, GitHub token) and the release workflow itself | Credential values never appear in the repo, artifacts, or logs; a push alone never builds or publishes; an unsigned/unnotarized build can never be published |
+| 5 | Wallet privacy — xpubs, addresses, BSMS contents, txids, device identities | None of it is written to logs, diagnostics, the repository, or any server beyond the operator-chosen Esplora queries; diagnostics carry only fixed codes, the network, device *class*, and timestamps |
 
-Ranking note: theft of funds outranks privacy, which outranks availability (a stuck or
-blocked payment is recoverable; a misdirected mainnet payment is not). If the owner
-weighs privacy higher, say so in section 9 — it changes specialist emphasis, not the
-unforgivable acts.
+Ranking note (owner, 2026-10-05): all five assets are mission-critical. Funds rank
+first, and credentials rank second because the owner equates their loss with loss of
+funds. Ranks 3–5 are all direct paths to, or protections of, the funds and the
+owner's identity — privacy is ranked fifth because a leak does not move funds by
+itself, **not** because it is optional: the ranking orders severity, not attention,
+and a demonstrated breach path against any declared asset is at least CONDITIONAL.
+A stuck or blocked payment remains recoverable and sits below every asset on this
+table.
 
 ## 3. The unforgivable acts (in plain words)
 
@@ -118,7 +127,7 @@ unforgivable acts.
 
 ## 4. Where the assets live
 
-**Asset 1 & 2 — funds and the integrity chain:**
+**Assets 1 & 3 — funds and the integrity chain:**
 
 - Frozen prepared-payment state: `gui.py:253` (`class PreparedPayment`), created at
   `gui.py:1155-1156` with a random review ID (`secrets.token_urlsafe(18)`)
@@ -136,7 +145,7 @@ unforgivable acts.
 - Final review and broadcast UI: `ui.html` (review screens, per-transaction mainnet
   consent checkbox, developer-mode network gate)
 
-**Asset 3 — privacy:**
+**Asset 5 — privacy:**
 
 - Diagnostic token discipline: `gui.py:341` (`_clean_token` — drop rather than escape),
   `gui.py:439-448` (fixed-code 80-event buffer, device *class* only)
@@ -145,7 +154,7 @@ unforgivable acts.
   URL fragment (`gui.py:85-92`), checked per request (`gui.py:553-557`), never written
   to terminal output (`gui.py:1169-1170`)
 
-**Asset 4 & 5 — release chain and credentials:**
+**Assets 2 & 4 — credentials and the release chain:**
 
 - Dispatch-only workflow: `.github/workflows/build-candidate.yml:11`
   (`workflow_dispatch`, with separate `notarize` and `publish` inputs);
@@ -254,9 +263,9 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
 1. **Revision pinning** — *answered in section 9: pin tag `v0.6.4` exactly.* The
    survey ran at `29249a5`, sixteen documentation-only commits past tag `v0.6.4`, with
    the application code byte-identical to the published release.
-2. **Ranking check:** assets are ranked funds > integrity chain > privacy > release
-   chain > credentials. Is a privacy leak of the wallet's xpubs/addresses actually
-   worse to you than item 4/5 imply, or does this order stand?
+2. **Ranking check** — *answered in section 9: all five assets are mission-critical;
+   credentials rise to rank 2 ("loss of credentials is the same thing as loss of
+   funds"), and the ranking orders severity, not attention.*
 3. **Prior audits:** should the panel be given the earlier AI audit reports
    (`releases/AUDIT-DEEPSEEK-0.4.3.md`, `releases/AUDIT-ZAI-0.4.3.md`,
    `releases/AUDIT-ZAI-0.6.2.md`, `-0.6.3.md`, `-0.6.4.md`) as input, or does this
@@ -282,6 +291,11 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
   The file was renamed from `...-audit-plan-29249a5.md` to `...-audit-plan-v0.6.4.md`
   to match. (Dictated by the owner in an interactive review on 2026-10-05 and
   transcribed by the surveyor at the owner's direction.)
+- *Sections 0 and 2 (owner-directed, before signing):* the asset table was re-ranked —
+  signing/CI credentials moved from rank 5 to rank 2 with the owner's equivalence
+  ("loss of credentials is the same thing as loss of funds"), and the "no asset is
+  optional" note was added to the rubric and the ranking note, because the owner
+  considers every declared asset mission-critical. (Same review, same transcription.)
 
 **Answers to the questions above** *(dictated by the owner in the same interactive
 review, transcribed by the surveyor; the signature below remains the owner's own act).*
@@ -289,7 +303,9 @@ review, transcribed by the surveyor; the signature below remains the owner's own
 1. **Revision pinning:** pin tag `v0.6.4` (`35cdedb`) exactly. The docs-only tail
    after the tag is intentional and excluded; a future release carrying the
    Windows/Linux build work gets its own audit cycle with its own plan.
-2. *(pending)*
+2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
+   because their loss is equivalent to loss of funds; privacy fifth but not optional —
+   a breach path against any asset is at least CONDITIONAL.
 3. *(pending)*
 4. *(pending)*
 5. *(pending)*
