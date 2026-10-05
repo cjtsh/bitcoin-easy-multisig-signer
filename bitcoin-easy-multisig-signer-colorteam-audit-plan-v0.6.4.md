@@ -39,6 +39,12 @@ attention. All five assets are mission-critical; a demonstrated path to breach a
 them is at least CONDITIONAL, and no finding may be dismissed as low-priority because
 its asset is ranked fifth.
 
+**Independence condition (owner, 2026-10-05):** this cycle is a fresh audit under a new
+methodology, and the methodology itself is on trial as much as the code. The prior AI
+audit reports (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) remain in the repository as
+history but are **not inputs** — the panel and the referee run without them, and no
+prior conclusion, grade, or finding may be cited as evidence in this cycle's report.
+
 **Target revision:** tag `v0.6.4`, commit `35cdedb150cef6d047c39537324faf1321be3c8d`
 — the commit the published, signed and notarized 0.6.4 DMG was built from, so findings
 apply byte-for-byte to the shipped artifact. The survey ran at `29249a5`
@@ -53,7 +59,7 @@ deliberate: Windows/Linux download and website work kept out of the Apple build 
 **Out of scope:**
 
 - `docs/` marketing/manual website — GitHub Pages content; ships separately and shares no code with the app.
-- `releases/` and root status/history docs (`CURRENT-STATUS.md`, `RELEASE-HISTORY.md`, etc.) — evidence records the panel checks claims against, not executable code.
+- `releases/` and root status/history docs (`CURRENT-STATUS.md`, `RELEASE-HISTORY.md`, etc.) — historical records, not executable code. **Prior AI audit reports (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) are history only and are NOT inputs to this cycle** — see the independence condition above.
 - Internals of pinned third-party dependencies (hwi 3.2.0, pywebview 6.2.1, pyinstaller 6.22.2, requests 2.32.5, pyyaml 6.0.3, certifi 2026.7.22, upstream embit) — hash-locked; `CURRENT-STATUS.md` already records an independent component audit as outstanding; that is a separate effort.
 - Hardware wallet firmware (Ledger, Trezor, Jade, OneKey) — external devices, not this repository.
 - Live Esplora/explorer operators — external services the design already treats as untrusted observations.
@@ -219,9 +225,12 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
   (CNAME, `.nojekyll`) and shares no code with the application or its build.
 - **`releases/` and root status/history documentation** (`CURRENT-STATUS.md`,
   `RELEASE-HISTORY.md`, `PHASE-HANDOFF.md`, `ROADMAP.md`, `PROJECT-HISTORY.md`,
-  `releases/PATCH-*.md`, `releases/AUDIT-*.md`) — these are evidence and claims the
-  panel verifies against the code, not executable surface; auditing the prose is not
-  this audit's job.
+  `releases/PATCH-*.md`) — the repository's own status and release claims; historical
+  records, not executable surface. Auditing the prose is not this audit's job.
+- **Prior AI audit reports** (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) — history
+  only, and **not inputs to this cycle** (owner, 2026-10-05): this is a fresh audit
+  under a new methodology; the panel and referee run without them, and no prior
+  conclusion, grade, or finding may be cited as evidence in this cycle's report.
 - **Internals of pinned third-party dependencies** — hwi 3.2.0, pywebview 6.2.1,
   pyinstaller 6.22.2, requests 2.32.5, pyyaml 6.0.3, certifi 2026.7.22, and upstream
   embit beyond the documented local delta. They are hash-locked, and
@@ -266,10 +275,9 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
 2. **Ranking check** — *answered in section 9: all five assets are mission-critical;
    credentials rise to rank 2 ("loss of credentials is the same thing as loss of
    funds"), and the ranking orders severity, not attention.*
-3. **Prior audits:** should the panel be given the earlier AI audit reports
-   (`releases/AUDIT-DEEPSEEK-0.4.3.md`, `releases/AUDIT-ZAI-0.4.3.md`,
-   `releases/AUDIT-ZAI-0.6.2.md`, `-0.6.3.md`, `-0.6.4.md`) as input, or does this
-   cycle start fresh so the panel is not anchored by them?
+3. **Prior audits** — *answered in section 9: not shared. Fresh audit, fresh
+   methodology; prior audit reports stay in the repository as history but are not
+   inputs to this cycle, for the panel or the referee.*
 4. **Operator model:** is the app still owner-and-family only, or is it now aimed at
    the general nontechnical public the website addresses? This changes how specialist
    lanes weigh "operator error" against "attacker action."
@@ -296,6 +304,12 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
   ("loss of credentials is the same thing as loss of funds"), and the "no asset is
   optional" note was added to the rubric and the ranking note, because the owner
   considers every declared asset mission-critical. (Same review, same transcription.)
+- *Sections 0 and 6 (owner-directed, before signing):* prior AI audit reports were
+  moved out of this cycle's evidence entirely — they remain in the repository as
+  history, but the panel and referee run without them. Owner's context: this cycle is
+  a fresh audit under a new methodology the owner developed, and the methodology
+  itself is being tested as much as the repository. (Same review, same
+  transcription.)
 
 **Answers to the questions above** *(dictated by the owner in the same interactive
 review, transcribed by the surveyor; the signature below remains the owner's own act).*
@@ -306,7 +320,10 @@ review, transcribed by the surveyor; the signature below remains the owner's own
 2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
    because their loss is equivalent to loss of funds; privacy fifth but not optional —
    a breach path against any asset is at least CONDITIONAL.
-3. *(pending)*
+3. **Prior audits:** not shared. This is a fresh audit with a fresh methodology —
+   stronger and more independent — and the methodology itself is being tested as much
+   as the repository. The prior audit reports stay in the repository for history but
+   are not inputs to this cycle, for the panel or the referee.
 4. *(pending)*
 5. *(pending)*
 
