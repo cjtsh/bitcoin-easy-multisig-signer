@@ -224,3 +224,11 @@ writes the traceback to `desktop-startup-error.log` beside the app's settings fi
 and on Windows shows the error and that path in a message box. The dialog exists
 because a console-less build has no other way to speak; the file exists because a
 screenshot of a dialog is not a bug report.
+
+## Owner clarification, 2026-10-05
+
+Windows works, including transactions, and the owner reports no terminal
+pop-ups in 0.6.5. The startup-only interpretation was an agent misunderstanding
+and is withdrawn. Linux has not yet completed a transaction; Linux testing is
+the next owner step. No transaction identifiers or independent confirmation
+evidence were supplied.
