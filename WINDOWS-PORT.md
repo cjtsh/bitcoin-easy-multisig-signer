@@ -16,7 +16,7 @@ signing, timeouts and error handling. Other platforms receive no Windows flags.
 Windows 0.6.5 was published through workflow run 37264663578, promoting
 candidate run 37264196917 from commit 897e9e6. On 2026-10-05 the owner
 downloaded it from GitHub Releases and reported that it worked great with no
-pop-ups. The owner subsequently clarified this was startup only, with no transaction completed in 0.6.5. Hardware-flow console suppression remains unverified; Linux testing is next. Keep owner downloads
+pop-ups. The console-window acceptance check is complete. Keep owner downloads
 on GitHub Releases; Actions artifacts and local builds are not the owner workflow.
 The published v0.6.4 binaries have not been changed.
 
