@@ -40,6 +40,23 @@ Both carry hwilib's udev rules. Installing them needs root once:
 `./<appimage> --dsh-install-udev-rules` (or
 `sudo cp udev/*.rules /usr/lib/udev/rules.d/`).
 
+### First launch on Ubuntu and other Linux desktops
+
+After downloading the AppImage, mark it as a program before opening it. In
+Ubuntu's Files app, right-click the `.AppImage`, choose **Properties**, open
+**Permissions**, and enable **Allow executing file as program**. Close
+Properties, then double-click the AppImage and choose **Run** if prompted.
+Other Linux file managers have a similar executable-permission setting. From a
+terminal, the equivalent is `chmod +x <file>.AppImage`; then double-click it
+or launch it from that directory. No installation step is needed.
+
+The owner reports completing a transaction with the Linux AppImage. In that
+walkthrough, hardware discovery and signing felt nearly instantaneous and
+faster than on the owner's Mac and Windows systems. This is owner-reported
+experience, not a cross-platform benchmark; the network, devices, transaction
+details and identifiers were not recorded. The full acceptance note is in
+[`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
+
 ## Building
 
 `scripts/build-linux.sh <version>` refuses to run anywhere but Linux x86_64. It

@@ -355,7 +355,13 @@ jobs:
 
           ## Linux x86_64
 
-          \`$appimage\` is the whole app in one file: make it executable and run it.
+          \`$appimage\` is the whole app in one file. Before the first launch on
+          Ubuntu, right-click it in Files, choose **Properties → Permissions**,
+          enable **Allow executing file as program**, close Properties, then
+          double-click the AppImage and choose **Run** if prompted. Other Linux
+          file managers have a similar executable-permission setting. From a
+          terminal, use \`chmod +x $appimage\` and then double-click it or run
+          \`./$appimage\`.
           \`Bitcoin-Easy-Signer-v$version-linux-x86_64.tar.gz\` is the same app for a machine
           where an AppImage cannot mount itself; unpack it and run \`./run-me.sh\`.
 

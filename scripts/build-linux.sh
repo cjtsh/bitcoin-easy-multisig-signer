@@ -335,7 +335,13 @@ copied outside this directory.
 The AppImage
 ------------
 $ARTIFACT_NAME-v$version-linux-x86_64.AppImage from the same release page is
-the same program in one file: make it executable and run it.
+the same program in one file. Before its first launch, mark it as executable.
+In Ubuntu's Files app, right-click the AppImage, choose Properties, open
+Permissions, and enable "Allow executing file as program". Close Properties,
+then double-click the AppImage and choose Run if prompted. Other Linux file
+managers have a similar executable-permission setting.
+
+From a terminal, the equivalent is:
 
     chmod +x $ARTIFACT_NAME-v$version-linux-x86_64.AppImage
     ./$ARTIFACT_NAME-v$version-linux-x86_64.AppImage
