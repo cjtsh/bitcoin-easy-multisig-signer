@@ -34,12 +34,16 @@ grade:
 | ⚠️ CONDITIONAL | No unforgivable-act path is demonstrated, but one or more findings weaken a gate, a verification step, privacy hygiene, or the release chain in a way that needs an owner decision — e.g. a gap that only opens under explorer misbehavior, device firmware trust assumptions, or stated invariants that lack the test coverage the repo claims. |
 | ⛔ BLOCKED | Any demonstrated path to an unforgivable act; any handling of seeds, PINs, or private keys; any credential value exposed in the repo, artifacts, or logs; a pipeline able to publish unverified, unsigned, or unnotarized bytes; or any scope/lock mismatch at re-check. |
 
-**Target revision:** commit `29249a5413a6f5460d1a5f801cacc9e76152c1d2` (branch `main`,
-`git describe`: `v0.6.4-16-g29249a5`; working tree clean at survey time). The 16 commits
-since tag `v0.6.4` (`35cdedb`) are documentation/website-only — `git diff --stat
-35cdedb..HEAD` touches no `.py`, `.html` app, `scripts/`, `.github/`, `vendor/`, or
-`tests/` file — so the shipped application code is byte-identical to published v0.6.4
-(`version.py:3` still reads `APP_VERSION = "0.6.4"`).
+**Target revision:** tag `v0.6.4`, commit `35cdedb150cef6d047c39537324faf1321be3c8d`
+— the commit the published, signed and notarized 0.6.4 DMG was built from, so findings
+apply byte-for-byte to the shipped artifact. The survey ran at `29249a5`
+(`v0.6.4-16-g29249a5`); the 16 commits between the tag and the survey revision are
+documentation/website-only — `git diff --stat 35cdedb..29249a5` touches no `.py`,
+`.html` app, `scripts/`, `.github/`, `vendor/`, or `tests/` file — so the shipped
+application code at the survey revision is byte-identical to the pinned tag
+(`version.py:3` reads `APP_VERSION = "0.6.4"`). The owner confirmed that tail is
+deliberate: Windows/Linux download and website work kept out of the Apple build path
+(section 9). The panel audits the tag, not the docs tail.
 
 **Out of scope:**
 
@@ -80,9 +84,10 @@ the audit is void.** Different identifiers establish different runs, not differe
 
 - **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (local clone at
   `/Users/christerry/projects/bitcoin-easy-multisig-signer`)
-- **Revision surveyed:** `29249a5413a6f5460d1a5f801cacc9e76152c1d2` (`main`,
-  16 docs-only commits past tag `v0.6.4`; application code identical to the published
-  0.6.4 release)
+- **Revision surveyed:** `29249a5413a6f5460d1a5f801cacc9e76152c1d2` (`main`), verified
+  byte-identical in application code to the owner-pinned audit target, **tag `v0.6.4`
+  (`35cdedb150cef6d047c39537324faf1321be3c8d`)** — see sections 0 and 9. The 16
+  intervening commits are documentation/website-only.
 - **Date:** 2026-10-05
 - **Surveyed by:** Kimi Code agent (harness: `com.kimi.code.desktop`). Must NOT be the
   model that runs the audit.
@@ -182,7 +187,7 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
 
 - All first-party application code: `probe.py`, `wallet_service.py`, `signing.py`,
   `gui.py`, `desktop.py`, `network_config.py`, `network_settings.py`, `safe_http.py`,
-  `version.py` @ `29249a5`
+  `version.py` @ `v0.6.4`
 - The entire interface and its gates: `ui.html` (review screens, mainnet consent,
   developer-mode gate, pending-payment banner, busy/progress ownership, palette
   invariants)
@@ -246,10 +251,9 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
 
 ## 8. Questions for the owner
 
-1. **Revision pinning:** the survey ran at `29249a5`, sixteen documentation-only
-   commits past tag `v0.6.4`, with the application code byte-identical to the
-   published release. Should the audit pin `29249a5`, or exactly tag `v0.6.4`
-   (`35cdedb`)?
+1. **Revision pinning** — *answered in section 9: pin tag `v0.6.4` exactly.* The
+   survey ran at `29249a5`, sixteen documentation-only commits past tag `v0.6.4`, with
+   the application code byte-identical to the published release.
 2. **Ranking check:** assets are ranked funds > integrity chain > privacy > release
    chain > credentials. Is a privacy leak of the wallet's xpubs/addresses actually
    worse to you than item 4/5 imply, or does this order stand?
@@ -269,11 +273,26 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
 
 **Corrections and notes.**
 
--
+- *Sections 0, 1, 5, and the file name (owner-directed, before signing):* the audit
+  target was re-pinned from the survey revision `29249a5` to **tag `v0.6.4`
+  (`35cdedb`)** — the exact commit the published, signed and notarized DMG was built
+  from. Owner's context: the commits after the tag are deliberate Windows/Linux
+  download-button and website work on `main`, intentionally kept out of the Apple
+  build path so the notarized macOS release and its audit trail are not disturbed.
+  The file was renamed from `...-audit-plan-29249a5.md` to `...-audit-plan-v0.6.4.md`
+  to match. (Dictated by the owner in an interactive review on 2026-10-05 and
+  transcribed by the surveyor at the owner's direction.)
 
-**Answers to the questions above.**
+**Answers to the questions above** *(dictated by the owner in the same interactive
+review, transcribed by the surveyor; the signature below remains the owner's own act).*
 
--
+1. **Revision pinning:** pin tag `v0.6.4` (`35cdedb`) exactly. The docs-only tail
+   after the tag is intentional and excluded; a future release carrying the
+   Windows/Linux build work gets its own audit cycle with its own plan.
+2. *(pending)*
+3. *(pending)*
+4. *(pending)*
+5. *(pending)*
 
 **Sign-off.**
 
