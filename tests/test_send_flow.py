@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -282,6 +283,81 @@ class SendFlowTests(unittest.TestCase):
                 self.post("/api/sign", {"preparation_id": bad,
                                         "device_type": "jade", "device_path": "/dev/x"})
             self.assertEqual(err.exception.code, 400)
+
+    def test_finalise_refuses_a_final_transaction_that_differs_from_the_review(self):
+        """The final-vs-review backstop must hold at finalisation (CT-03).
+
+        The review amounts are tampered server-side after signing; if the
+        _check_final_review comparison were deleted, this finalise call would
+        succeed instead of refusing.
+        """
+        _result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        reviewed = self.app.prepared
+        tampered = dict(reviewed.review())
+        tampered["amount_sats"] += 1
+        self.app.prepared = replace(reviewed, review_items=tuple(tampered.items()))
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("differs from the reviewed payment",
+                      json.load(err.exception)["error"])
+
+    def test_broadcast_refuses_a_final_transaction_that_differs_from_the_review(self):
+        """The same backstop runs again inside the broadcast lock (CT-03)."""
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        reviewed = self.app.prepared
+        tampered = dict(reviewed.review())
+        tampered["fee_sats"] += 1
+        self.app.prepared = replace(reviewed, review_items=tuple(tampered.items()))
+        with patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": result["txid"]})
+            send.assert_not_called()
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("differs from the reviewed payment",
+                      json.load(err.exception)["error"])
+
+    def test_money_endpoints_refuse_a_stale_review_id_by_name(self):
+        """The review-id binding refuses by its own rule, not by accident (CT-05)."""
+        self.prepare_a_reviewed_transaction()
+        for route, payload in (
+            ("/api/finalize", {"preparation_id": "stale-id"}),
+            ("/api/broadcast", {"preparation_id": "stale-id", "confirm": True,
+                                "confirmed_txid": self.app.prepared.txid}),
+        ):
+            with self.assertRaises(HTTPError) as err:
+                self.post(route, payload)
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("Review the current transaction",
+                          json.load(err.exception)["error"])
+
+    def test_money_endpoints_refuse_after_the_balance_changes(self):
+        """A newer scan generation invalidates the prepared payment (CT-05)."""
+        self.prepare_a_reviewed_transaction()
+        self.app.scan_generation += 1
+        for route, payload in (
+            ("/api/finalize", {"preparation_id": "reviewed-1"}),
+            ("/api/broadcast", {"preparation_id": "reviewed-1", "confirm": True,
+                                "confirmed_txid": self.app.prepared.txid}),
+        ):
+            with self.assertRaises(HTTPError) as err:
+                self.post(route, payload)
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("wallet or balance changed",
+                          json.load(err.exception)["error"])
 
     def test_device_check_reports_slot_state_read_from_the_signed_psbt(self):
         """The signing screen draws one box per cosigner.
