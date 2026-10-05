@@ -292,19 +292,17 @@ if [[ "${RELEASE:-0}" == 1 ]]; then
   spctl -a -t exec -vv "$mount_point/$(basename "$app")"
   hdiutil detach "$mount_point" -quiet
   rmdir "$mount_point"
-  # Also staple the built app in dist/, which makes THAT copy self-contained for
-  # offline testing here.
+  # Also re-staple the built app in dist/, which keeps THAT copy self-contained
+  # for offline testing here.
   #
-  # This does NOT put a ticket inside the DMG, and an earlier version of this comment
-  # claimed it did. The image was created at the line above from a copy taken before
-  # this point, so the app a downloader receives stays unstapled and Gatekeeper
-  # verifies it with an ONLINE lookup: accepted when connected, refused offline.
-  # Measured on the published v0.4.12 DMG -- the image validates, the app inside
-  # reports "does not have a ticket stapled to it".
+  # The app was notarised and stapled BEFORE the image was created (above), and
+  # the mounted-copy check just proved the ticket reached the copy a downloader
+  # runs. This re-staple does not change the already-built image.
   #
-  # Closing that properly means notarizing and stapling the app FIRST, then building
-  # the DMG from the stapled app, which costs a second Apple round trip per release.
-  # Recorded rather than silently reasserted; see PHASE-HANDOFF.md.
+  # An earlier version of this comment claimed the downloader's copy stayed
+  # unstapled. That described the pre-0.4.13 order, measured on the published
+  # v0.4.12 DMG; since 0.4.13 the app is stapled first and the image is built
+  # from the stapled bundle. Recorded rather than silently deleted.
   xcrun stapler staple "$app"
   xcrun stapler validate "$dmg"
   xcrun stapler validate "$app"

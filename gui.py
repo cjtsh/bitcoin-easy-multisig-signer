@@ -86,8 +86,11 @@ def launch_url(port: int, token: str) -> str:
     """Local app URL carrying the access token in the fragment.
 
     The fragment is not sent to the server and is not part of the referrer, so
-    the token is never disclosed in an unauthenticated HTTP response, browser
-    history, or an upstream log.
+    the token is never disclosed in an unauthenticated HTTP response or an
+    upstream log. In browser mode the URL — fragment included — can persist in
+    that browser's history on this machine while the session runs; the desktop
+    window keeps no such history. The token unlocks only this loopback session
+    and dies with it.
     """
     return f"http://127.0.0.1:{port}/#token={token}"
 
@@ -513,8 +516,7 @@ class LocalApp:
                     # unauthenticated response. It travels in the URL fragment of
                     # the launch URL, which a browser never sends to the server.
                     script_nonce = secrets.token_urlsafe(18)
-                    body = (page.replace("__LOCAL_TOKEN__", "")
-                            .replace("__APP_VERSION__", APP_VERSION)
+                    body = (page.replace("__APP_VERSION__", APP_VERSION)
                             .replace("__DESKTOP_MODE__", "true" if state.desktop else "false")
                             .replace("__DESKTOP_HIDE_QUIT__", "hidden" if state.desktop else "")
                             .replace("<script>", f'<script nonce="{script_nonce}">', 1)
