@@ -1,5 +1,8 @@
 # Release history and correction record
 
+**Windows 0.6.5 candidate:** hides blank HWI helper console windows. The owner confirmed v0.6.4 wallet/network checks and Jade + Trezor 3 signing on Windows. Candidate packaging and owner console-free hardware verification are pending; no new release is published. See [PATCH-0.6.5](releases/PATCH-0.6.5.md). macOS remains unchanged.
+
+
 This is the consolidated, chronological record of the published versions that
 carry a reviewed evidence file: what changed, what the evidence was, and what
 was later corrected. Each entry links its full evidence file. The earlier

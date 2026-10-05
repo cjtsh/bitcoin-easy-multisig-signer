@@ -1,5 +1,8 @@
 # Current handoff — Bitcoin Easy Signer
 
+**Windows 0.6.5 candidate:** hides blank HWI helper console windows. The owner confirmed v0.6.4 wallet/network checks and Jade + Trezor 3 signing on Windows. Candidate packaging and owner console-free hardware verification are pending; no new release is published. See [PATCH-0.6.5](releases/PATCH-0.6.5.md). macOS remains unchanged.
+
+
 ## Current stop point — v0.6.4 published; independent follow-up audit ready
 
 The latest published version is [v0.6.4](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.4), published from commit `35cdedb150cef6d047c39537324faf1321be3c8d`. Successful notarized candidate run [37008418851](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37008418851) was promoted by publishing run [37009396873](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37009396873). The workflow verified same-commit provenance and candidate checksums, passed the signed/notarized package and release-byte gates, then created the public tag and release. The public DMG, source archive, and SBOM were downloaded and verified against `SHA256SUMS`. Two earlier workflow attempts failed before publishing and created no tag or assets; their provenance and artifact-download defects were corrected before the final candidate. Version 0.6.4 adds regression tests and release-process enforcement with no transaction or signing behavior changes. The Z.ai v0.6.3 grade remains Yellow pending independent review of v0.6.4. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain. The release is ready for the independent follow-up audit.

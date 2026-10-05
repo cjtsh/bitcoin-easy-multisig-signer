@@ -347,11 +347,13 @@ class ProbeTests(unittest.TestCase):
             with self.subTest(platform=platform), patch("probe.sys.platform", platform):
                 self.assertEqual(hwi_process_options(), {})
 
-    @unittest.skipUnless(__import__("sys").platform == "win32", "Windows process check")
     def test_windows_child_has_no_console_and_retains_pipes(self):
         import subprocess
         import sys
         from probe import hwi_process_options
+        if sys.platform != "win32":
+            self.assertEqual(hwi_process_options(), {})
+            return
         child = subprocess.run(
             [sys.executable, "-c",
              "import ctypes, sys; "
