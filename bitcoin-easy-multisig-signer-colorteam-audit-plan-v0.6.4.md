@@ -45,6 +45,21 @@ audit reports (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) remain in the reposit
 history but are **not inputs** — the panel and the referee run without them, and no
 prior conclusion, grade, or finding may be cited as evidence in this cycle's report.
 
+**Operator model and report audiences (owner, 2026-10-05):** the target operator is a
+nontechnical fiduciary or family member — a lawyer, trustee, accountant, spouse, or
+trusted advisor settling an estate that includes Bitcoin. They know Bitcoin is
+dangerous and cannot audit the app themselves. Consequences:
+
+- **"The operator should have noticed" is never a defense.** Any safety property that
+  depends on the operator spotting a discrepancy is a weakness the panel must report,
+  not a mitigation it may assume.
+- The report has two audiences and must serve both: (a) the nontechnical trusted
+  advisor, who needs plain-language evidence of diligence — thorough, best-effort,
+  and explicitly *not* a guarantee; and (b) the agent that will fix what the audit
+  finds — every finding must be precise, located, and reproducible enough to serve
+  directly as fix-it input, so the improvement loop (step five) can re-run the audit
+  on the revision.
+
 **Target revision:** tag `v0.6.4`, commit `35cdedb150cef6d047c39537324faf1321be3c8d`
 — the commit the published, signed and notarized 0.6.4 DMG was built from, so findings
 apply byte-for-byte to the shipped artifact. The survey ran at `29249a5`
@@ -278,9 +293,11 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
 3. **Prior audits** — *answered in section 9: not shared. Fresh audit, fresh
    methodology; prior audit reports stay in the repository as history but are not
    inputs to this cycle, for the panel or the referee.*
-4. **Operator model:** is the app still owner-and-family only, or is it now aimed at
-   the general nontechnical public the website addresses? This changes how specialist
-   lanes weigh "operator error" against "attacker action."
+4. **Operator model** — *answered in section 9: the general nontechnical public —
+   specifically estate fiduciaries and family members (lawyer, trustee, accountant,
+   spouse, trusted advisor). "The operator should have noticed" is never a defense;
+   the report must serve both the nontechnical reader and the agent who fixes
+   findings.*
 5. **Workflow dispatch rights:** who besides you can dispatch
    `build-candidate.yml`? Repository settings are not visible in the code; if only
    your account can, say so and the release-chain lane can treat dispatch control as
@@ -310,6 +327,12 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
   a fresh audit under a new methodology the owner developed, and the methodology
   itself is being tested as much as the repository. (Same review, same
   transcription.)
+- *Section 0 (owner-directed, before signing):* added the operator model and report
+  audiences block. The target operator is a nontechnical estate fiduciary or family
+  member; "the operator should have noticed" is never a defense; and the report must
+  serve two audiences — the nontechnical trusted advisor reading for diligence
+  assurance, and the agent that will fix what the audit finds. (Same review, same
+  transcription.)
 
 **Answers to the questions above** *(dictated by the owner in the same interactive
 review, transcribed by the surveyor; the signature below remains the owner's own act).*
@@ -324,7 +347,13 @@ review, transcribed by the surveyor; the signature below remains the owner's own
    stronger and more independent — and the methodology itself is being tested as much
    as the repository. The prior audit reports stay in the repository for history but
    are not inputs to this cycle, for the panel or the referee.
-4. *(pending)*
+4. **Operator model:** the app is for the general nontechnical public — specifically
+   a lawyer, trustee, accountant, spouse, or trusted advisor settling an estate that
+   includes Bitcoin: someone who knows Bitcoin is dangerous but cannot review the
+   software themselves. The audit is diligence evidence, not a guarantee. The report
+   has two end users: that nontechnical trusted advisor, and the agent that will fix
+   any issues found — findings must be usable directly as fix-it input so the audit
+   can be re-run on the revision.
 5. *(pending)*
 
 **Sign-off.**
