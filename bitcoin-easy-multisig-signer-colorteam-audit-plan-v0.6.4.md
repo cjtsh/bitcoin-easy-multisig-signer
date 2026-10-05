@@ -60,6 +60,16 @@ dangerous and cannot audit the app themselves. Consequences:
   directly as fix-it input, so the improvement loop (step five) can re-run the audit
   on the revision.
 
+**Contribution model (owner, 2026-10-05):** sole collaborator is the owner (`cjtsh`,
+admin — verified via the GitHub API at survey time); the repository is public and
+forkable, but no third party can push, dispatch workflows, or merge code into it.
+There are no contributors and no inbound PR surface: issues are the only inbound
+channel, and they are reports, not code. Workflow dispatch and push rights therefore
+rest entirely on the owner's GitHub account and are treated as **owner account
+hygiene, outside the application's threat model** — the panel does not audit GitHub
+account security, and the workflow guards are evaluated as protection against
+accidents and workflow-level abuse, not against compromise of the owner's account.
+
 **Target revision:** tag `v0.6.4`, commit `35cdedb150cef6d047c39537324faf1321be3c8d`
 — the commit the published, signed and notarized 0.6.4 DMG was built from, so findings
 apply byte-for-byte to the shipped artifact. The survey ran at `29249a5`
@@ -298,10 +308,11 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
    spouse, trusted advisor). "The operator should have noticed" is never a defense;
    the report must serve both the nontechnical reader and the agent who fixes
    findings.*
-5. **Workflow dispatch rights:** who besides you can dispatch
-   `build-candidate.yml`? Repository settings are not visible in the code; if only
-   your account can, say so and the release-chain lane can treat dispatch control as
-   owner account hygiene rather than an app property.
+5. **Workflow dispatch rights** — *answered in section 9: only the owner. Verified at
+   survey time via the GitHub API — sole collaborator is `cjtsh` (admin). Dispatch and
+   push rights are owner account hygiene, outside the application's threat model; the
+   project is open source and forkable, but there is no inbound code surface —
+   issues are the only inbound channel, and they are reports, not code.*
 
 ## 9. Owner review and sign-off — step two, no AI
 
@@ -333,6 +344,12 @@ in browser memory as a session-only receipt. No wallet material is persisted by 
   serve two audiences — the nontechnical trusted advisor reading for diligence
   assurance, and the agent that will fix what the audit finds. (Same review, same
   transcription.)
+- *Section 0 (owner-directed, before signing):* added the contribution model block.
+  Sole collaborator is the owner (verified via the GitHub API); the repository is
+  public and forkable, but there is no inbound code surface — issues are the only
+  inbound channel. Workflow dispatch and push rights are owner GitHub account
+  hygiene, outside the application's threat model. (Same review, same
+  transcription.)
 
 **Answers to the questions above** *(dictated by the owner in the same interactive
 review, transcribed by the surveyor; the signature below remains the owner's own act).*
@@ -354,7 +371,13 @@ review, transcribed by the surveyor; the signature below remains the owner's own
    has two end users: that nontechnical trusted advisor, and the agent that will fix
    any issues found — findings must be usable directly as fix-it input so the audit
    can be re-run on the revision.
-5. *(pending)*
+5. **Workflow dispatch rights:** only the owner. Verified via the GitHub API at survey
+   time — the sole collaborator is `cjtsh` (admin). This is an open-source tool the
+   owner built for his own family and shared publicly — not a collaborative project;
+   anyone may fork it, and anyone may file an issue if they find something, but no
+   third party can push code, dispatch workflows, or merge anything. Dispatch and
+   push rights are owner GitHub account hygiene, outside the application's threat
+   model, and the panel treats them as such.
 
 **Sign-off.**
 
