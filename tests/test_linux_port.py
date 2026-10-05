@@ -25,7 +25,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import linux_entry  # noqa: E402  (the entry point under test, not a package)
 
-WORKFLOW = ROOT / ".github" / "workflows" / "build-linux.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "build-candidate.yml"
+if not WORKFLOW.is_file():
+    WORKFLOW = ROOT / "ci" / "build-candidate.yml"
 BUILD_SCRIPT = ROOT / "scripts" / "build-linux.sh"
 LOCK = ROOT / "requirements-desktop-linux.lock"
 RUNTIME = ROOT / "vendor" / "appimage-runtime-x86_64"
@@ -187,60 +189,25 @@ class LinuxBuildScriptTests(unittest.TestCase):
 
 
 class LinuxWorkflowTests(unittest.TestCase):
-    """The promotion rules for the one release page every platform joins."""
+    """The Linux guarantees inside the one pipeline every platform joins.
+
+    The standalone build-linux.yml is retired: .github/workflows/build-candidate.yml
+    builds macOS, Windows and Linux from the same commit in the same gated run and
+    is the only publish path. These checks keep the Linux half of that promise.
+    """
 
     @classmethod
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
         cls.document = yaml.safe_load(cls.text)
         cls.jobs = cls.document["jobs"]
-        cls.triggers = cls.document.get(True) or cls.document["on"]
 
-    def test_it_builds_a_candidate_on_a_push_and_publishes_only_on_dispatch(self):
-        self.assertIn("push", self.triggers)
-        self.assertIn("workflow_dispatch", self.triggers)
-        self.assertEqual(
-            sorted(self.triggers["workflow_dispatch"]["inputs"]),
-            ["candidate_run_id", "publish", "release_tag"],
-        )
-
-    def test_the_candidate_is_promoted_by_identity_not_by_hope(self):
-        verify = self.text[self.text.index("Verify the candidate by identity"):]
-        for marker in (
-            "CANDIDATE-MANIFEST.txt",
-            "version=",
-            "commit=",
-            "run_id=",
-            "publish=false",
-            "release_tag=",
-            "sha256sum -c SHA256SUMS-linux-x86_64.txt",
-        ):
-            self.assertIn(marker, verify)
-
-    def test_only_a_dispatched_candidate_can_be_promoted(self):
-        self.assertIn(".event", self.text)
-        self.assertIn('"workflow_dispatch"', self.text)
-
-    def test_a_push_run_cannot_publish(self):
-        self.assertIn("if: ${{ inputs.publish }}", self.text)
-        self.assertIn("if [[ \"$PUBLISH\" == \"true\" ]]", self.text)
-        self.assertIn("Linux releases are dispatched from linux-port", self.text)
-        self.assertIn("if [[ ! \"$CANDIDATE_RUN_ID\" =~ ^[0-9]+$ ]]", self.text)
-
-    def test_the_linux_files_join_the_version_page_instead_of_a_second_one(self):
-        self.assertIn("Attach only to the plain version tag", self.text)
-        self.assertIn('gh release upload "$RELEASE_TAG"', self.text)
-        self.assertIn("a published asset is never replaced", self.text)
-        # A PATCH on the tag-addressed endpoint answers 404; the numeric release
-        # id is the endpoint GitHub accepts.
-        self.assertIn('releases/tags/$RELEASE_TAG" --jq .id', self.text)
-        self.assertIn('gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id"', self.text)
-        self.assertNotIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/', self.text)
-
-    def test_no_publication_escape_hatches(self):
-        for verb in ("--clobber", "--draft", "--prerelease", "gh release delete",
-                     "gh release edit", "--latest"):
-            self.assertNotIn(verb, self.text)
+    def test_the_linux_job_builds_the_appimage_and_the_tarball(self):
+        linux = self.jobs["linux"]
+        self.assertEqual(linux["runs-on"], "ubuntu-latest")
+        build = next(step for step in linux["steps"]
+                     if step.get("name") == "Build the AppImage and the tarball")
+        self.assertIn("build-linux.sh", build["run"])
 
     def test_the_promise_of_no_libfuse_so_2_is_proven_where_the_library_is_absent(self):
         # A machine that has the library cannot show that it is not needed, so
@@ -257,14 +224,10 @@ class LinuxWorkflowTests(unittest.TestCase):
         self.assertIn("--device /dev/fuse", step)
         self.assertIn("ubuntu:24.04", step)
         self.assertIn("--dsh-check-bundle", step)
-        self.assertLess(
-            self.text.index("Prove the AppImage starts"),
-            self.text.index("Name the files for one release page"),
-        )
 
     def test_the_files_say_which_platform_they_are(self):
         for name in ("linux-x86_64.AppImage", "linux-x86_64.tar.gz",
-                     "BUILD-SBOM-linux-x86_64.json", "SHA256SUMS-linux-x86_64.txt"):
+                     "BUILD-SBOM-linux-x86_64.json"):
             self.assertIn(name, self.text)
 
     def test_the_candidate_artifact_is_uploaded(self):
@@ -275,9 +238,14 @@ class LinuxWorkflowTests(unittest.TestCase):
     def test_the_suite_refuses_a_silent_skip(self):
         self.assertIn('grep -qE "skipped=[1-9]"', self.text)
 
-    def test_no_macos_step_survived_the_port(self):
-        self.assertNotIn("build-macos.sh", self.text)
-        self.assertNotIn("shasum", self.text)
+    def test_no_per_platform_publish_machinery_survives(self):
+        """One release page is created once, by the unified release job only."""
+        self.assertNotIn("gh release upload", self.text)
+        self.assertNotIn("release_tag", self.text)
+        self.assertEqual(self.text.count("gh release create"), 1)
+        for verb in ("--clobber", "--draft", "--prerelease", "gh release delete",
+                     "gh release edit", "--latest"):
+            self.assertNotIn(verb, self.text)
 
 
 if __name__ == "__main__":

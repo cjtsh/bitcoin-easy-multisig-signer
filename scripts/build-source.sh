@@ -138,25 +138,20 @@ cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
 # Glob, not a list: build-windows.ps1 calls the other scripts, and an archive missing
 # a script it invokes would build nothing while looking complete.
 cp scripts/*.sh scripts/*.py scripts/*.ps1 "$stage/$root/scripts/"
-# Both recipes, under ci/ rather than .github/workflows/, because the archive is a
-# source tree and the workflow contract tests read them from wherever they land.
-if [[ -f ci/build-windows.yml ]]; then
-  workflow=ci/build-windows.yml
-elif [[ -f .github/workflows/build-windows.yml ]]; then
-  workflow=.github/workflows/build-windows.yml
-else
-  echo "Candidate build recipe is missing." >&2
-  exit 1
-fi
-cp "$workflow" "$stage/$root/ci/build-windows.yml"
-if [[ -f ci/windows-inputs.yml ]]; then
-  inputs_workflow=ci/windows-inputs.yml
-elif [[ -f .github/workflows/windows-inputs.yml ]]; then
-  inputs_workflow=.github/workflows/windows-inputs.yml
-else
-  echo "Windows input recipe is missing." >&2
-  exit 1
-fi
-cp "$inputs_workflow" "$stage/$root/ci/windows-inputs.yml"
+# The build recipes, under ci/ rather than .github/workflows/, because the archive
+# is a source tree and the workflow contract tests read them from wherever they
+# land. One pipeline builds and publishes every platform; the two input producers
+# feed it reviewed Windows and Linux build inputs.
+for recipe in build-candidate.yml windows-inputs.yml linux-inputs.yml; do
+  if [[ -f "ci/$recipe" ]]; then
+    workflow="ci/$recipe"
+  elif [[ -f ".github/workflows/$recipe" ]]; then
+    workflow=".github/workflows/$recipe"
+  else
+    echo "Build recipe $recipe is missing." >&2
+    exit 1
+  fi
+  cp "$workflow" "$stage/$root/ci/$recipe"
+done
 tar -C "$stage" -czf "dist/$root.tar.gz" "$root"
 echo "Created dist/$root.tar.gz (source only; Python required to run it)."

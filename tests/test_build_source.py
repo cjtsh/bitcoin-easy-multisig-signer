@@ -28,8 +28,10 @@ class BuildSourceTests(unittest.TestCase):
                      "vendor/libusb-1.0.30.tar.bz2", "vendor/libusb-COPYING"):
             self.assertIn(name, script, f"the archive must ship {name}")
         self.assertIn("requirements-desktop-windows.lock", script)
-        self.assertIn("ci/build-windows.yml", script)
-        self.assertIn("ci/windows-inputs.yml", script)
+        self.assertIn(
+            "for recipe in build-candidate.yml windows-inputs.yml linux-inputs.yml",
+            script, "the archive must ship the unified pipeline and both inputs recipes")
+        self.assertIn('cp "$workflow" "$stage/$root/ci/$recipe"', script)
 
 
 if __name__ == "__main__":

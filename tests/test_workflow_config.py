@@ -1,535 +1,428 @@
-"""Contract tests for the Windows build workflow.
+"""Static checks on the GitHub Actions workflows.
 
-These are not style checks. Each one pins a decision that was expensive to learn,
-because a workflow is the only part of this project that can turn an untested
-artifact into a published one:
+A broken shell block in a workflow costs a full CI round trip to discover, and a
+tag-pinned action or a hardcoded version is easy to reintroduce. These checks are
+cheap and run in the normal test suite.
 
-  * a candidate is built with `publish=false`, tested, and only then promoted by a
-    later dispatch that names that exact run id - so a release is never built and
-    published in one unverified step;
-  * an unsigned Windows build cannot be published unless the dispatcher says so in
-    writing, and that acknowledgement is recorded in the candidate manifest;
-  * a version that has a tag is never rebuilt, because silently replacing the
-    bytes behind a released tag is what happened to v0.1.11 five times;
-  * checksums are verified, and every action is pinned to a commit, before
-    anything becomes public.
+One pipeline — .github/workflows/build-candidate.yml — builds every platform from
+one commit and is the only workflow allowed to publish. The retired per-platform
+workflows (build-windows.yml, build-linux.yml) must never come back: a second
+publish path is how unverified bytes once reached a tagged release.
 
-The macOS pipeline these mirror lived in .github/workflows/build-candidate.yml.
-Nothing macOS-specific survives here: no .dmg, no codesign, no hdiutil, no
-notarisation, and no macos-* runner.
+Skipped when PyYAML is unavailable (it is deliberately NOT an application
+dependency); CI installs it for the source job so the checks do run there.
 """
 
-from __future__ import annotations
-
-import os
+import pathlib
 import re
-import shutil
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def _recipe(name: str) -> Path:
-    """The workflow, from the repository or from an extracted source archive.
-
-    The repository keeps both recipes in .github/workflows/; scripts/build-source.sh
-    ships them under ci/, and this suite runs in both trees. Reading only one of the
-    two locations is how an archive would pass a suite that never inspected it.
-    """
-    for candidate in (ROOT / ".github" / "workflows" / name, ROOT / "ci" / name):
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(
-        f"{name} is missing from both .github/workflows/ and ci/ under {ROOT}"
-    )
-
-
-WORKFLOW = _recipe("build-windows.yml")
-INPUTS_WORKFLOW = _recipe("windows-inputs.yml")
 
 try:
     import yaml
-except ImportError:  # pragma: no cover - the CI lock installs PyYAML
+except ImportError:  # pragma: no cover - depends on the environment
     yaml = None
 
-
-def bash_executable() -> str:
-    """The bash the workflow's ``shell: bash`` steps run in, not the WSL stub.
-
-    On Windows ``bash`` on PATH is often C:\\Windows\\System32\\bash.exe, the WSL
-    launcher. With no distribution installed it exits 1 having run nothing and
-    with an empty stderr, which is how every shell block came back "not valid
-    shell" the first time this suite ran on the Windows runner. GitHub Actions runs
-    ``shell: bash`` with Git for Windows, so these tests do too.
-    """
-    candidates: list[str] = []
-    if os.name == "nt":
-        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"),
-                     os.environ.get("ProgramW6432")):
-            if base:
-                candidates.append(os.path.join(base, "Git", "bin", "bash.exe"))
-                candidates.append(os.path.join(base, "Git", "usr", "bin", "bash.exe"))
-    found = shutil.which("bash")
-    if found and "system32" not in found.lower():
-        candidates.append(found)
-    for candidate in candidates:
-        if os.path.isfile(candidate):
-            return candidate
-    raise AssertionError(
-        "no bash for the shell-block checks; looked for " + ", ".join(candidates)
-    )
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+# The checkout keeps the canonical workflow under .github; the source archive
+# keeps the generated copy at ci/build-candidate.yml. Pick whichever exists so
+# these checks also run against the archived source, which is where an
+# incomplete archive shows up.
+ACTIVE = ROOT / ".github/workflows/build-candidate.yml"
+if not ACTIVE.is_file():
+    ACTIVE = ROOT / "ci/build-candidate.yml"
 
 
+def all_workflows() -> list[pathlib.Path]:
+    """Every workflow recipe, from the checkout or the extracted archive."""
+    folder = ROOT / ".github" / "workflows"
+    if not folder.is_dir():
+        folder = ROOT / "ci"
+    return sorted(folder.glob("*.yml"))
+
+
+@unittest.skipIf(yaml is None, "PyYAML not installed; workflow lint skipped")
 class WorkflowConfigTests(unittest.TestCase):
     @classmethod
-    def setUpClass(cls) -> None:
-        if yaml is None:
-            raise unittest.SkipTest("PyYAML is required to inspect the build workflow")
-        cls.text = WORKFLOW.read_text(encoding="utf-8")
-        cls.document = yaml.safe_load(cls.text)
-        # PyYAML reads the bare `on:` key as the boolean True.
-        cls.triggers = cls.document[True]
-        cls.jobs = cls.document["jobs"]
+    def setUpClass(cls):
+        cls.text = ACTIVE.read_text(encoding="utf-8")
+        cls.data = yaml.safe_load(cls.text)
 
-    def shell_blocks(self) -> list[tuple[str, str, str, str]]:
-        blocks = []
-        for name, job in self.jobs.items():
-            for step in job.get("steps", []):
-                if "run" in step:
-                    shell = step.get("shell") or (
-                        job.get("defaults", {}).get("run", {}).get("shell") or "bash"
-                    )
-                    blocks.append((name, step.get("name", "<unnamed>"), shell, step["run"]))
-        return blocks
+    def test_the_workflow_has_exactly_one_source_of_truth(self):
+        """One canonical workflow, and no committed duplicate of it.
 
-    # ---- the trigger and its defaults -------------------------------------
-
-    def test_the_workflow_runs_on_the_windows_branch_and_on_request(self) -> None:
-        # The port lives on its own branch, so the workflow must exist there and
-        # nowhere else. A push to that branch builds a candidate; it can never
-        # publish, because the release notes come from a dispatch and the
-        # promotion step requires a workflow_dispatch run.
-        self.assertEqual(set(self.triggers), {"workflow_dispatch", "push"})
-        self.assertEqual(self.triggers["push"]["branches"], ["windows-port"])
-        for forbidden in ("pull_request", "schedule", "release"):
-            self.assertNotIn(forbidden, self.triggers)
-
-    def test_publishing_is_off_by_default(self) -> None:
-        inputs = self.triggers["workflow_dispatch"]["inputs"]
-        self.assertIs(inputs["publish"]["default"], False)
-        self.assertIs(inputs["allow_unsigned"]["default"], False)
-        self.assertIs(inputs["candidate_run_id"]["required"], False)
-
-    def test_publishing_an_unsigned_build_needs_a_second_acknowledgement(self) -> None:
-        refusal = self.step_body("Require an unsigned publication to be acknowledged")
-        self.assertIn('"$ALLOW_UNSIGNED" != "true"', refusal)
-        self.assertIn("is not code-signed", refusal)
-        manifest = self.heredoc_body("cat > dist/CANDIDATE-MANIFEST.txt <<EOF")
-        self.assertIn("allow_unsigned=${{ inputs.allow_unsigned }}", manifest)
-        self.assertIn("publish=${{ inputs.publish }}", manifest)
-
-    def test_a_release_must_come_from_the_windows_branch_with_a_named_candidate(self) -> None:
-        guard = self.step_body("Require the Windows branch for publication")
-        self.assertIn("refs/heads/windows-port", guard)
-        self.assertIn("$CANDIDATE_RUN_ID", guard)
-        self.assertIn("^[0-9]+$", guard)
-        # The audited macOS release owns main. A Windows release must never be
-        # published from there, so the old guard must be gone, not just relaxed.
-        self.assertNotIn("refs/heads/main", self.text)
-        promotion = self.step_body("Download and verify the tested candidate artifacts")
-        self.assertIn('and .head_branch == "windows-port"', promotion)
-        # A push run also uploads candidate artifacts. Only a dispatch is a
-        # candidate a human chose to test, so only a dispatch can be promoted.
-        self.assertIn('.event == "workflow_dispatch"', promotion)
-
-    def test_one_release_carries_every_platform_when_a_release_tag_is_given(self) -> None:
-        # One version, one release page: dispatched with `release_tag`, this build
-        # attaches its files to the release the audited macOS pipeline already created
-        # for that version. An empty release_tag keeps the earlier behaviour, where the
-        # Windows build answers to v<version>-windows-x64 and nothing else -- which is
-        # how v0.6.4 first shipped, before there was a consolidated page.
-        inputs = self.triggers["workflow_dispatch"]["inputs"]
-        self.assertEqual(inputs["release_tag"]["type"], "string")
-        self.assertEqual(inputs["release_tag"]["default"], "")
-        publish = self.step_body("Publish the release")
-        self.assertIn('tag="v${VERSION}-windows-x64"', publish)
-        self.assertIn('release_title="$tag"', publish)
-        self.assertNotIn('tag="v${VERSION}"', publish)
-        self.assertIn('tag="${{ inputs.release_tag }}"', publish)
-        self.assertIn("attaching=true", publish)
-        # Only the plain version tag may be attached to: putting a v0.6.5 build on
-        # v0.5.0's page would be a lie about which version those bytes are.
-        self.assertIn('if [[ "${{ inputs.release_tag }}" != "v${VERSION}" ]]', publish)
-
-    def test_attaching_is_only_allowed_onto_an_existing_release(self) -> None:
-        publish = self.step_body("Publish the release")
-        self.assertIn("does not exist yet", publish)
-        self.assertIn("Publish the macOS release for ${VERSION} first", publish)
-        # The standalone path still refuses to touch a version that already shipped.
-        self.assertIn("Bump version.py rather than republishing a released version", publish)
-        self.assertIn('git ls-remote --exit-code --tags origin "refs/tags/$tag"', publish)
-
-    def test_the_attached_files_say_which_platform_they_are(self) -> None:
-        # Renaming is how one page tells two platforms' files apart. The bytes were
-        # verified against the candidate's SHA256SUMS in the step before the publish
-        # step, and the checksum list is rebuilt over the renamed files afterwards.
-        publish = self.step_body("Publish the release")
-        for name in ("BUILD-SBOM-windows-x64.json",
-                     "SHA256SUMS-windows-x64.txt",
-                     "bitcoin-easy-multisig-signer-v${VERSION}-windows-x64-source.tar.gz"):
-            self.assertIn(name, publish)
-        self.assertIn('sha256sum "${zip_name}" "${source_out}" "${sbom_name}" > "${sums_name}"',
-                      publish)
-        self.assertLess(self.text.index("Verify downloaded release bytes"),
-                        self.text.index('mv "dist/BUILD-SBOM.json"'))
-
-    def test_the_attach_path_adds_but_never_replaces(self) -> None:
-        publish = self.step_body("Publish the release")
-        self.assertIn("a published asset is never replaced", publish)
-        self.assertIn('if grep -Fxq "$asset" <<<"$existing"', publish)
-        self.assertIn('gh release upload "$tag" --repo "$GITHUB_REPOSITORY"', publish)
-        # The notes are extended from what the page already says, never rewritten.
-        self.assertIn("cat existing-notes.md windows-section.md > notes.md", publish)
-        # A PATCH on the tag-addressed endpoint answers 404; the numeric release
-        # id is the endpoint GitHub accepts.
-        self.assertIn('releases/tags/$tag" --jq .id', publish)
-        self.assertIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id"', publish)
-        self.assertNotIn('--method PATCH "repos/$GITHUB_REPOSITORY/releases/tags/', publish)
-        self.assertIn("-F body=@notes.md", publish)
-        start = publish.index("Add this build's four files beside the audited macOS ones.")
-        end = publish.index("\nelse\n", start)
-        attach = publish[start:end]
-        self.assertNotIn("--title", attach)
-        self.assertNotIn("--notes-file", attach)
-        self.assertNotIn("--clobber", publish)
-
-    # ---- the jobs ---------------------------------------------------------
-
-    def test_the_bundle_is_built_on_windows_and_everything_else_on_linux(self) -> None:
-        self.assertEqual(self.jobs["windows"]["runs-on"], "windows-latest")
-        for name in ("version", "source", "checksums", "release"):
-            self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest", name)
-        self.assertIn("Require an x64 Windows runner", self.text)
-        runner = self.step_body("Require an x64 Windows runner")
-        self.assertIn("PROCESSOR_ARCHITECTURE", runner)
-        self.assertIn("AMD64", runner)
-
-    def test_promotion_can_never_start_before_the_bundle_was_built(self) -> None:
-        self.assertEqual(self.jobs["source"]["needs"], "version")
-        self.assertEqual(self.jobs["windows"]["needs"], "version")
-        self.assertEqual(self.jobs["checksums"]["needs"], ["version", "source", "windows"])
-        self.assertEqual(self.jobs["release"]["needs"],
-                         ["version", "source", "windows", "checksums"])
-
-    def test_only_the_release_job_may_write_to_the_repository(self) -> None:
-        self.assertEqual(self.jobs["release"]["permissions"], {"contents": "write"})
-        self.assertNotIn("if", self.jobs["release"])
-        for name, job in self.jobs.items():
-            if name == "release":
-                continue
-            self.assertNotEqual((job.get("permissions") or {}).get("contents"), "write",
-                                f"{name} must not be able to write to the repository")
-        self.assertEqual(self.document["permissions"], {"contents": "read"})
-
-    def test_every_action_is_pinned_to_a_commit(self) -> None:
-        used = re.findall(r"uses:\s*(\S+)", self.text)
-        self.assertTrue(used)
-        for reference in used:
-            self.assertRegex(reference, r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$",
-                             f"{reference} is not pinned to a full commit")
-
-    def test_every_shell_block_parses(self) -> None:
-        bash = bash_executable()
-        for name, step, shell, body in self.shell_blocks():
-            if "pwsh" in shell or "powershell" in shell:
-                continue
-            # On stdin, not on a temp file: a Windows temp path handed to bash as
-            # C:\Users\... is not the path MSYS bash opens, which makes a valid
-            # block look like a syntax error. The encoding is explicit because the
-            # YAML carries typographic punctuation and Windows would otherwise
-            # encode stdin with the console code page (cp1252) and raise instead.
-            result = subprocess.run([bash, "-n"], input=body, capture_output=True,
-                                    text=True, encoding="utf-8", errors="replace")
-            self.assertEqual(result.returncode, 0,
-                             f"{name}/{step} is not valid shell:\n{result.stderr}")
-
-    # ---- the artifact inputs ---------------------------------------------
-
-    def test_the_workflow_refuses_to_build_without_its_windows_inputs(self) -> None:
-        guard = self.step_body("Verify the Windows build inputs are present")
-        self.assertIn("requirements-desktop-windows.lock", guard)
-        self.assertIn("vendor/libusb-1.0.dll", guard)
-        self.assertIn("windows-inputs.yml", guard)
-
-    def test_the_windows_lock_is_resolved_on_windows(self) -> None:
-        inputs = INPUTS_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("runs-on: windows-latest", inputs)
-        self.assertIn("piptools compile --allow-unsafe --generate-hashes", inputs)
-        # Proof that the lock really came from a Windows resolve rather than a
-        # macOS one with the platform markers stripped.
-        self.assertIn("pythonnet", inputs)
-        self.assertIn("pyobjc|macholib", inputs)
-
-    def test_the_libusb_input_is_compiled_from_the_pinned_source(self) -> None:
-        inputs = INPUTS_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf", inputs)
-        # The pinned tarball is libusb's autotools dist: it carries the MSVC
-        # projects and configure, but no CMakeLists.txt, so the DLL is built with
-        # upstream's own MSVC project rather than with CMake.
-        self.assertIn(r"msvc\libusb_dll.vcxproj", inputs)
-        self.assertIn("/p:Platform=x64", inputs)
-        # A statically linked C runtime keeps the Visual C++ redistributable out
-        # of the install instructions.
-        self.assertIn("/p:Configuration=Release-MT", inputs)
-        self.assertIn("LIBUSB_WINDOWS_SHA256", inputs)
-
-    # ---- the build itself -------------------------------------------------
-
-    def test_dependencies_are_lock_installed_before_the_build(self) -> None:
-        prepare = self.step_index("Prepare the hash-locked build environment", job="windows")
-        build = self.step_index("Build the Windows bundle", job="windows")
-        self.assertLess(prepare, build)
-        # PREPARE_ONLY and BUILD_DEPS_PREPARED are step-level env, not shell text.
-        self.assertIn("PREPARE_ONLY", self.step_env("Prepare the hash-locked build environment"))
-        self.assertIn("BUILD_DEPS_PREPARED", self.step_env("Build the Windows bundle"))
-        self.assertIn("LIBUSB_SHA256", self.step_env("Build the Windows bundle"))
-
-    def test_the_ci_lock_is_installed_with_hashes_and_only_where_it_belongs(self) -> None:
-        self.assertEqual(self.text.count("--require-hashes -r requirements-ci.lock"), 2)
-        self.assertIn("--require-hashes -r requirements.lock", self.text)
-        self.assertNotIn("pip install --quiet", self.text)
-        desktop = (ROOT / "requirements-desktop.txt").read_text(encoding="utf-8").lower()
-        self.assertNotIn("pyyaml", desktop, "a test dependency must not become a shipped one")
-
-    def test_the_built_bundle_is_verified_before_it_is_uploaded(self) -> None:
-        verify = self.step_body("Verify the built bundle")
-        for flag in ("--check-bundle", "--check-save", "--check-network", "--check-devices"):
-            self.assertIn(flag, verify)
-        # A --windowed build on Windows has no stdout, so the evidence has to be a
-        # file the app writes. Requiring a non-empty stdout log instead would fail
-        # every run on a bundle that is perfectly healthy.
-        self.assertIn("DSH_DESKTOP_CHECK_LOG", verify)
-        self.assertIn('[[ ! -s "$name.log" ]]', verify)
-        self.assertIn("SSL_CERT_DIR=/nonexistent/certs", verify)
-        self.assertIn("hwi.exe", verify)
-        layout = self.step_body("Check the bundle's layout, icon and archive")
-        self.assertIn("scripts/verify-windows-bundle.py", layout)
-        inventory = self.step_body("Inventory the built dependencies")
-        self.assertIn("scripts/build-sbom.py", inventory)
-        # The verification has to happen in the job that built it, before upload,
-        # and the inventory has to precede the layout check, because that check
-        # reads dist/BUILD-SBOM.json and refuses to pass without one.
-        self.assertLess(self.step_index("Verify the built bundle", job="windows"),
-                        self.step_index("Inventory the built dependencies", job="windows"))
-        self.assertLess(self.step_index("Inventory the built dependencies", job="windows"),
-                        self.step_index("Check the bundle's layout, icon and archive",
-                                        job="windows"))
-        self.assertLess(self.step_index("Check the bundle's layout, icon and archive",
-                                        job="windows"),
-                        len(self.jobs["windows"]["steps"]) - 1)
-
-    def test_the_uploaded_artifact_is_the_zip_and_the_sbom(self) -> None:
-        upload = self.jobs["windows"]["steps"][-1]
-        self.assertEqual(upload["with"]["name"], "windows-bundle")
-        self.assertIn("dist/*.zip", upload["with"]["path"])
-        self.assertIn("dist/BUILD-SBOM.json", upload["with"]["path"])
-        self.assertEqual(upload["with"]["if-no-files-found"], "error")
-
-    # ---- publication ------------------------------------------------------
-
-    def test_the_candidate_is_promoted_by_identity_not_by_hope(self) -> None:
-        promotion = self.step_body("Download and verify the tested candidate artifacts")
-        for marker in ("gh api", "gh run download", "head_sha", "conclusion", "head_branch",
-                       ".path == \".github/workflows/build-windows.yml\"",
-                       "CANDIDATE-MANIFEST.txt", "allow_unsigned=true", "publish=false",
-                       "release_tag=$RELEASE_TAG",
-                       "sha256sum -c SHA256SUMS", "windows-bundle"):
-            self.assertIn(marker, promotion)
-        self.assertIn("run_id=$CANDIDATE_RUN_ID", promotion)
-
-    def test_checksums_are_verified_before_anything_is_published(self) -> None:
-        self.assertLess(self.text.index("sha256sum -c SHA256SUMS"),
-                        self.text.index("gh release create"))
-        self.assertIn("sha256sum *.tar.gz *.zip BUILD-SBOM.json > SHA256SUMS", self.text)
-        self.assertLess(self.text.index("Verify downloaded release bytes"),
-                        self.text.index("Publish the release"))
-
-    def test_a_published_version_is_never_rebuilt(self) -> None:
-        publish = self.step_body("Publish the release")
-        self.assertIn('git ls-remote --exit-code --tags origin "refs/tags/$tag"', publish)
-        self.assertIn("Bump version.py", publish)
-        self.assertIn("Could not verify remote tag state; refusing publication.", publish)
-        self.assertLess(publish.index("git ls-remote"), publish.index("gh release create"))
-
-    def test_no_publication_escape_hatches(self) -> None:
-        # The attach path adds files to a release that already exists, so it must be
-        # able to describe them: it appends a section to the notes with a body-only
-        # PATCH, which is why `gh release edit` -- which can also rewrite a title --
-        # stays banned. Nothing may replace an asset, retitle a release, mark a latest
-        # release, or delete anything.
-        for verb in ("--clobber", "--draft", "--prerelease", "gh release delete",
-                     "gh release edit", "--latest"):
-            self.assertNotIn(verb, self.text)
-
-    def test_the_candidate_stops_before_anything_is_created(self) -> None:
-        publish = self.step_body("Publish the release")
-        self.assertIn('if [[ "${{ inputs.publish }}" != "true" ]]', publish)
-        self.assertIn("was built and NOT published", publish)
-        self.assertIn("exit 0", publish)
-
-    def test_the_release_notes_are_generated_and_extended(self) -> None:
-        publish = self.step_body("Publish the release")
-        self.assertIn('release_notes="releases/RELEASE-NOTES-${VERSION}.md"', publish)
-        self.assertIn('cat "$release_notes" >> notes.md', publish)
-
-    def test_no_macos_step_survived_the_port(self) -> None:
-        # Checked against the shell bodies, not the header comment, which explains
-        # the difference from the macOS pipeline on purpose.
-        combined = "\n".join(body for _, _, _, body in self.shell_blocks())
-        for residue in (".dmg", "codesign", "hdiutil", "PlistBuddy", "Developer ID",
-                        "--options runtime", "hwi-entitlements", "notarize", "macos-",
-                        "shasum", ".icns", "candidate-macos"):
-            self.assertNotIn(residue, combined, f"{residue} is macOS residue")
-        self.assertIn("build-windows.yml", combined)
-
-    # ---- helpers ----------------------------------------------------------
-
-    def step_index(self, name: str, job: str = "version") -> int:
-        for index, step in enumerate(self.jobs[job].get("steps", [])):
-            if step.get("name") == name:
-                return index
-        raise AssertionError(f"{job} has no step named {name!r}")
-
-    def step_body(self, name: str, job: str | None = None) -> str:
-        jobs = [job] if job else list(self.jobs)
-        for candidate in jobs:
-            for step in self.jobs[candidate].get("steps", []):
-                if step.get("name") == name:
-                    self.assertIn("run", step, f"step {name!r} has no shell body")
-                    return step["run"]
-        raise AssertionError(f"no step named {name!r}")
-
-    def step_env(self, name: str, job: str | None = None) -> dict:
-        jobs = [job] if job else list(self.jobs)
-        for candidate in jobs:
-            for step in self.jobs[candidate].get("steps", []):
-                if step.get("name") == name:
-                    return step.get("env") or {}
-        raise AssertionError(f"no step named {name!r}")
-
-    def heredoc_body(self, opener: str) -> str:
-        """The body of a bash heredoc, de-indented the way the runner delivers it.
-
-        The body is indented to match the TERMINATOR, not the opener: a heredoc
-        opened inside an ``if`` sits two spaces deeper than its own body, and the
-        runner strips the block's common indentation, not the opener's.
+        scripts/build-source.sh copies the workflow into the archive as
+        ci/build-candidate.yml. Keeping a second committed copy meant two files
+        that had to be kept byte-identical by hand; the archive copy is generated
+        now, so a committed one is drift waiting to happen.
         """
-        lines = self.text.splitlines()
-        start = next(index for index, line in enumerate(lines) if opener in line)
-        opener_indent = len(lines[start]) - len(lines[start].lstrip())
-        for index in range(start + 1, len(lines)):
-            stripped = lines[index].strip()
-            if stripped != "EOF":
-                continue
-            indent = len(lines[index]) - len(lines[index].lstrip())
-            if indent > opener_indent:
-                continue
-            return "\n".join(
-                line[indent:] if line.startswith(" " * indent) else line.lstrip()
-                for line in lines[start + 1:index]
+        self.assertTrue(ACTIVE.is_file(), "no workflow recipe found")
+        checkout = ROOT / ".github/workflows/build-candidate.yml"
+        if checkout.is_file():
+            self.assertFalse(
+                (ROOT / "ci/build-candidate.yml").is_file(),
+                "ci/build-candidate.yml is generated by scripts/build-source.sh "
+                "and must not also be committed as a second source of truth",
             )
-        raise AssertionError(f"the heredoc opened by {opener!r} is not closed")
+
+    def test_every_shell_block_parses(self):
+        checked = 0
+        for job, spec in self.data["jobs"].items():
+            for index, step in enumerate(spec.get("steps", [])):
+                script = step.get("run")
+                if not script:
+                    continue
+                if step.get("shell") == "pwsh":
+                    # PowerShell is not bash; the Windows runner executes it.
+                    continue
+                checked += 1
+                with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
+                    handle.write(script)
+                    path = handle.name
+                result = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
+                label = f"{job}/{step.get('name') or f'step {index}'}"
+                self.assertEqual(result.returncode, 0,
+                                 f"{label} has invalid shell:\n{result.stderr}")
+        self.assertGreater(checked, 5, "expected to lint the workflow's shell blocks")
+
+    def test_every_workflow_file_lints_and_pins_actions(self):
+        """The inputs producers get the same scrutiny as the release pipeline."""
+        recipes = all_workflows()
+        self.assertGreaterEqual(len(recipes), 3,
+                                "build-candidate plus the two inputs workflows")
+        for recipe in recipes:
+            text = recipe.read_text(encoding="utf-8")
+            data = yaml.safe_load(text)
+            with self.subTest(workflow=recipe.name):
+                for reference in re.findall(r"uses:\s*(\S+)", text):
+                    self.assertRegex(
+                        reference, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$",
+                        f"{recipe.name}: actions must be pinned to a full commit SHA")
+                for job, spec in (data.get("jobs") or {}).items():
+                    for step in spec.get("steps", []):
+                        script = step.get("run")
+                        if not script or step.get("shell") == "pwsh":
+                            continue
+                        with tempfile.NamedTemporaryFile(
+                                "w", suffix=".sh", delete=False) as handle:
+                            handle.write(script)
+                            path = handle.name
+                        result = subprocess.run(
+                            ["bash", "-n", path], capture_output=True, text=True)
+                        self.assertEqual(
+                            result.returncode, 0,
+                            f"{recipe.name}/{job} has invalid shell:\n{result.stderr}")
+
+    def test_actions_are_pinned_to_commit_shas(self):
+        uses = re.findall(r"uses:\s*(\S+)", self.text)
+        self.assertTrue(uses)
+        for reference in uses:
+            with self.subTest(action=reference):
+                self.assertRegex(
+                    reference, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$",
+                    "actions must be pinned to a full commit SHA, not a tag")
+
+    def test_no_version_number_is_hardcoded(self):
+        # The version is read from version.py, so bumping it needs no workflow edit.
+        self.assertNotRegex(self.text, r"\b0\.1\.\d+\b",
+                            "the workflow must not hardcode a version")
+
+    def test_release_is_not_tag_gated_and_not_a_prerelease(self):
+        # The owner asked for a plain release, triggered by explicit dispatch.
+        self.assertNotIn("--prerelease", self.text)
+        self.assertNotIn("--clobber", self.text)
+        release = self.data["jobs"]["release"]
+        self.assertNotIn("if", release, "publishing must not be gated on a tag")
+        self.assertEqual(release["permissions"], {"contents": "write"})
+
+    def test_network_check_also_runs_without_ambient_trust(self):
+        """Guards the check that caught the bundled-trust-store regression."""
+        self.assertIn("SSL_CERT_DIR=/nonexistent/certs", self.text,
+                      "CI must re-verify HTTPS with the host's CA configuration "
+                      "removed, so only the bundled trust store can make it pass")
+
+    def test_a_published_version_is_never_rebuilt(self):
+        """Overwriting a published tag changes artifacts somebody already
+        downloaded and verified. The publish step must refuse, not delete."""
+        self.assertNotIn("gh release delete", self.text)
+        self.assertIn('git ls-remote --exit-code --tags origin "refs/tags/$tag"', self.text)
+        self.assertIn("Bump version.py", self.text)
+
+    def test_release_checks_downloaded_bytes_before_any_publish(self):
+        self.assertIn("shasum -a 256 -c SHA256SUMS", self.text)
+        self.assertLess(self.text.index("shasum -a 256 -c SHA256SUMS"),
+                        self.text.index("gh release create"))
+
+    def test_dependency_installation_finishes_before_signing_material(self):
+        self.assertNotIn("pip install --quiet", self.text)
+        self.assertGreaterEqual(
+            self.text.count("pip install --require-hashes -r requirements-ci.lock"), 3,
+            "the source, macOS and Linux jobs all install the locked CI dependencies")
+        self.assertNotIn("brew install", self.text)
+        macos = self.data["jobs"]["macos"]["steps"]
+        names = [step.get("name", "") for step in macos]
+        signing = names.index("Import the Developer ID certificate")
+        preparation = names.index("Prepare hash-locked build environment before signing secrets")
+        self.assertLess(preparation, signing)
+        self.assertIn("PREPARE_ONLY=1", macos[preparation]["run"])
+        build_step = next(step for step in macos if step.get("name") == "Build the DMG")
+        self.assertEqual(build_step["env"]["BUILD_DEPS_PREPARED"], "1")
+        for step in macos[signing + 1:]:
+            script = step.get("run", "")
+            self.assertNotIn("pip install", script)
+            self.assertNotIn("brew install", script)
+        self.assertNotIn('echo "KEYCHAIN_PASSWORD=', self.text)
+
+    def test_only_manual_dispatch_can_publish(self):
+        """A source push must not publish a money-moving desktop app."""
+        trigger = self.data.get("on", self.data.get(True))
+        self.assertIn("workflow_dispatch", trigger)
+        self.assertNotIn("push", trigger)
+        inputs = trigger["workflow_dispatch"]["inputs"]
+        self.assertIs(inputs["publish"]["default"], False)
+        self.assertIn("Refuse an unsigned public release", self.text)
+        self.assertIn("Refusing to publish an unsigned or unnotarized build", self.text)
+
+    def test_publication_is_restricted_to_the_default_branch(self):
+        guard = next(step for step in self.data["jobs"]["version"]["steps"]
+                     if step.get("name") == "Require the default branch for publication")
+        self.assertEqual(guard["if"], "${{ inputs.publish }}")
+        self.assertIn('refs/heads/main', guard["run"])
+        self.assertIn("candidate_run_id", guard["run"])
+
+    def test_versioned_release_notes_are_included_when_present(self):
+        self.assertIn('release_notes="releases/RELEASE-NOTES-${VERSION}.md"', self.text)
+        self.assertIn('cat "$release_notes" >> notes.md', self.text)
+
+    def test_publication_promotes_a_successful_notarized_candidate_from_same_commit(self):
+        checksums = self.data["jobs"]["checksums"]
+        self.assertIn("actions", checksums["permissions"])
+        promote = next(step for step in checksums["steps"]
+                       if step.get("name") == "Download and verify the tested candidate artifacts")
+        self.assertEqual(promote["if"], "${{ inputs.publish }}")
+        self.assertEqual(promote["env"]["GH_REPO"], "${{ github.repository }}")
+        for required in (
+                "gh api", "gh run download", "head_sha", "conclusion", "head_branch",
+                '.path == ".github/workflows/build-candidate.yml"',
+                "CANDIDATE-MANIFEST.txt", "notarize=true", "publish=false",
+                "shasum -a 256 -c SHA256SUMS"):
+            with self.subTest(required=required):
+                self.assertIn(required, promote["run"])
+        release = self.data["jobs"]["release"]
+        download = next(step for step in release["steps"]
+                        if step.get("uses", "").startswith("actions/download-artifact"))
+        self.assertEqual(download["with"]["name"], "release-assets")
+        verify = next(step for step in release["steps"]
+                      if step.get("name") == "Verify downloaded release bytes")
+        publish = next(step for step in release["steps"]
+                       if step.get("name") == "Publish the release")
+        self.assertLess(release["steps"].index(verify), release["steps"].index(publish))
+        self.assertIn("CANDIDATE-MANIFEST.txt", self.text)
+
+    def test_a_candidate_dispatch_builds_without_publishing(self):
+        """Building and publishing are separate acts.
+
+        Publishing is irreversible by policy: a published tag is never rebuilt. That
+        made the first dispatch of a version the point of no return, so the only way
+        to correct an artifact nobody had opened yet was to bump the version. The
+        candidate path must leave before the release step creates anything, and
+        an ordinary dispatch must stay nonpublishing.
+        """
+        trigger = self.data.get("on", self.data.get(True))
+        inputs = trigger["workflow_dispatch"]["inputs"]
+        self.assertIn("publish", inputs)
+        self.assertIs(inputs["publish"]["default"], False,
+                      "an ordinary dispatch must build only a candidate")
+        self.assertIs(inputs["notarize"]["default"], False)
+        guard = self.text.index('if [[ "${{ inputs.publish }}" != "true" ]]')
+        notes = self.text.index("cat > notes.md <<EOF")
+        publish = self.text.index("gh release create")
+        self.assertLess(notes, guard, "the guard must run after the notes are built")
+        self.assertLess(guard, publish, "the candidate path must exit before publishing")
+        self.assertIn("was built and NOT published", self.text)
+        # A candidate is not a draft release and not a prerelease: it creates no
+        # release object at all, so there is nothing to publish by accident.
+        self.assertNotIn("--draft", self.text)
+
+    def test_one_pipeline_builds_every_platform_from_one_commit(self):
+        """The three platform jobs share one run, one commit, one sums file."""
+        jobs = self.data["jobs"]
+        for job in ("version", "source", "macos", "windows", "linux",
+                    "checksums", "release"):
+            self.assertIn(job, jobs)
+        self.assertEqual(jobs["checksums"]["needs"],
+                         ["version", "source", "macos", "windows", "linux"])
+        self.assertEqual(jobs["release"]["needs"],
+                         ["version", "source", "macos", "windows", "linux", "checksums"])
+        self.assertEqual(jobs["windows"]["runs-on"], "windows-latest")
+        self.assertEqual(jobs["linux"]["runs-on"], "ubuntu-latest")
+        self.assertEqual(jobs["macos"]["runs-on"], "macos-15")
+
+    def test_platform_artifacts_have_distinct_names_and_suffixed_sboms(self):
+        self.assertIn("name: windows-bundle", self.text)
+        self.assertIn("name: linux-desktop", self.text)
+        self.assertIn("BUILD-SBOM-windows-x64.json", self.text)
+        self.assertIn("BUILD-SBOM-linux-x86_64.json", self.text)
+        for step_name in ("Download current Windows bundle for a nonpublishing candidate",
+                          "Download current Linux assets for a nonpublishing candidate"):
+            step = next(step for step in self.data["jobs"]["checksums"]["steps"]
+                        if step.get("name") == step_name)
+            self.assertEqual(step["if"], "${{ !inputs.publish }}")
+
+    def test_the_publish_verification_counts_every_platform(self):
+        promote = next(step for step in self.data["jobs"]["checksums"]["steps"]
+                       if step.get("name") == "Download and verify the tested candidate artifacts")
+        for required in (
+                "-name '*.tar.gz' | wc -l | tr -d ' ')\" = 2",
+                "-name '*.dmg' | wc -l | tr -d ' ')\" = 1",
+                "-name '*.zip' | wc -l | tr -d ' ')\" = 1",
+                "-name '*.AppImage' | wc -l | tr -d ' ')\" = 1",
+                "test -f BUILD-SBOM-windows-x64.json",
+                "test -f BUILD-SBOM-linux-x86_64.json"):
+            with self.subTest(required=required):
+                self.assertIn(required, promote["run"])
+
+    def test_the_checksum_manifest_is_gpg_signed_on_the_publish_path(self):
+        """SHA256SUMS is CI-generated; its signature proves which key released it."""
+        sign = next(step for step in self.data["jobs"]["checksums"]["steps"]
+                    if step.get("name") == "Sign the checksum manifest with the release key")
+        self.assertEqual(sign["if"], "${{ inputs.publish }}")
+        self.assertIn("GPG_PRIVATE_KEY", sign["run"])
+        self.assertIn("SHA256SUMS.asc", sign["run"])
+        self.assertIn("SIGNING.md", sign["run"])
+        release_verify = next(step for step in self.data["jobs"]["release"]["steps"]
+                              if step.get("name") == "Verify downloaded release bytes")
+        self.assertIn("gpg --verify SHA256SUMS.asc SHA256SUMS", release_verify["run"])
+        self.assertIn("signing-key.asc", release_verify["run"])
+
+    def test_every_asset_carries_a_sigstore_build_attestation(self):
+        checksums = self.data["jobs"]["checksums"]
+        self.assertEqual(checksums["permissions"].get("id-token"), "write")
+        self.assertEqual(checksums["permissions"].get("attestations"), "write")
+        attest = next(step for step in checksums["steps"]
+                      if "attest-build-provenance" in step.get("uses", ""))
+        self.assertRegex(attest["uses"], r"@[0-9a-f]{40}$")
+        self.assertEqual(attest["with"]["subject-path"], "dist/*")
+
+    def test_no_second_publish_path_exists(self):
+        """The retired per-platform workflows stay retired."""
+        self.assertFalse((ROOT / ".github/workflows/build-windows.yml").is_file(),
+                         "build-windows.yml is retired; the unified pipeline builds Windows")
+        self.assertFalse((ROOT / ".github/workflows/build-linux.yml").is_file(),
+                         "build-linux.yml is retired; the unified pipeline builds Linux")
+        for recipe in all_workflows():
+            if recipe.name == "build-candidate.yml":
+                continue
+            self.assertNotIn("gh release create",
+                             recipe.read_text(encoding="utf-8"),
+                             f"{recipe.name} must not publish a release")
 
 
 class ReleaseNotesTests(unittest.TestCase):
-    """Run the workflow's own note generation rather than trusting a copy of it."""
+    """What a downloader reads must not describe the build as two different things.
 
-    VERSION = "9.9.9"
+    v0.4.12 was published saying it was "notarized by Apple" AND "Unsigned,
+    unnotarized test build" on consecutive lines, because the template emitted a
+    hardcoded unsigned line regardless of which mode had just been chosen. The
+    release notes are the first thing anyone reads, and nobody re-reads them.
 
-    def generate(self) -> str:
-        text = WORKFLOW.read_text(encoding="utf-8")
-        lines = text.splitlines()
-        # Start where the shell defines what the notes interpolate, not at the
-        # heredoc, so zip_name/build_kind are real values rather than empty strings.
-        opener = next(index for index, line in enumerate(lines)
-                      if 'tag="v${VERSION}-windows-x64"' in line)
-        indent = len(lines[opener]) - len(lines[opener].lstrip())
-        closer = next(index for index in range(opener + 1, len(lines))
-                      if lines[index][indent:] == "EOF")
-        script = "\n".join(
-            line[indent:] if line.startswith(" " * indent) else line.lstrip()
-            for line in lines[opener:closer + 1]
-        )
-        script = (script
-                  .replace("${{ inputs.publish }}", "false")
-                  .replace("${{ inputs.allow_unsigned }}", "false")
-                  # An empty release_tag is the standalone Windows-only release, whose
-                  # notes are what this class reads.
-                  .replace("${{ inputs.release_tag }}", "")) + "\n"
-        with tempfile.TemporaryDirectory() as directory:
-            work = Path(directory)
-            (work / "notes.md").write_text("", encoding="utf-8")
-            # The script writes the candidate manifest into dist/, exactly as the
-            # runner's workspace has it.
-            (work / "dist").mkdir()
-            environment = dict(
-                os.environ,
-                VERSION=self.VERSION,
-                GITHUB_REF_NAME="windows-port",
-                GITHUB_SHA="abcdef1234567890",
-                GITHUB_RUN_ID="12345",
-                # as_posix(), because this path is handed to bash: on Windows a
-                # C:\Users\... value is not a path MSYS bash can open, so the step
-                # summary redirect fails where the runner's own step would succeed.
-                GITHUB_STEP_SUMMARY=(work / "summary.md").as_posix(),
-            )
-            # The script arrives on stdin rather than as a -c argument: bash reads a
-            # command string off argv with platform-specific quirks on Windows, and
-            # `shell: bash` feeds the step a file. The encoding is explicit because
-            # the notes carry typographic punctuation; without it Windows encodes
-            # stdin with the console code page (cp1252) and raises on the arrow.
-            result = subprocess.run([bash_executable()], input=script, cwd=work,
-                                    env=environment, capture_output=True, text=True,
-                                    encoding="utf-8", errors="replace")
-            self.assertEqual(result.returncode, 0,
-                             f"{result.stderr}\n{result.stdout}")
-            return (work / "notes.md").read_text(encoding="utf-8")
+    Deliberately NOT gated on PyYAML: this renders the template with the shell that
+    runs it in CI, so it needs nothing but bash.
+    """
 
-    def test_the_notes_say_what_was_built_and_from_where(self) -> None:
-        notes = self.generate()
-        self.assertIn(f"## v{self.VERSION}", notes)
-        self.assertIn("Built from `windows-port` at commit `abcdef1234567890`.", notes)
-        self.assertIn(f"Bitcoin-Easy-Signer-v{self.VERSION}-windows-x64.zip", notes)
-        self.assertIn("SHA256SUMS", notes)
-        self.assertIn("BUILD-SBOM.json", notes)
-        self.assertIn("Bitcoin Easy Signer.exe", notes)
+    @classmethod
+    def setUpClass(cls):
+        cls.text = ACTIVE.read_text(encoding="utf-8")
 
-    def test_the_notes_admit_the_build_is_unsigned(self) -> None:
-        notes = self.generate()
-        self.assertIn("Unsigned", notes)
-        self.assertIn("SmartScreen", notes)
-        self.assertNotIn("notariz", notes.lower())
-        self.assertNotIn("Apple", notes)
+    def render(self, notarize: str) -> str:
+        """Run the workflow's own notes block with one mode selected.
 
-    def test_the_notes_keep_the_network_story_straight(self) -> None:
-        notes = self.generate()
-        self.assertIn("Opens on Bitcoin mainnet", notes)
-        self.assertIn("Enter Developer Mode", notes)
-        self.assertIn("the app reopens on mainnet", notes)
-        self.assertNotIn("Mutinynet is the opening network", notes)
+        The title is echoed alongside the notes so assertions can reach both.
+        """
+        # Keep the heredoc's own EOF terminator. Without it bash reads to the end of
+        # input, so anything appended below - the title echo - becomes notes text.
+        # The tag assignment is prepended because the split consumed it, and
+        # release_title is built from it.
+        body, _, _ = self.text.split('tag="v${VERSION}"', 1)[1].partition("          EOF")
+        block = 'tag="v${VERSION}"\n' + body + "          EOF\n"
+        script = block.replace("${{ inputs.notarize }}", notarize)
+        # Print instead of writing notes.md, and drop the YAML indentation.
+        script = script.replace("cat > notes.md <<EOF", "cat <<EOF")
+        script = "\n".join(line[10:] if line.startswith(" " * 10) else line
+                           for line in script.splitlines())
+        runner = ("VERSION=9.9.9 GITHUB_REF_NAME=main GITHUB_SHA=abcdef1234567890\n"
+                  + script + '\necho "TITLE=${release_title}"\n')
+        result = subprocess.run(["bash", "-c", runner], capture_output=True,
+                                text=True, cwd=ROOT, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
 
-    def test_the_notes_do_not_carry_stale_boilerplate(self) -> None:
-        notes = self.generate()
-        for stale in ("Sparrow", "Nunchuk", "UNSIGNED-TEST", "right-click → Open", "Apple Silicon"):
-            self.assertNotIn(stale, notes)
+    def title_of(self, notarize: str) -> str:
+        for line in self.render(notarize).splitlines():
+            if line.startswith("TITLE="):
+                return line[len("TITLE="):]
+        self.fail("the block did not set release_title")
 
-    def test_the_notes_keep_the_risk_statement(self) -> None:
-        notes = self.generate()
-        self.assertIn("**Use at your own risk.**", notes)
-        self.assertIn("never retried", notes)
+    def test_the_title_is_the_version_and_nothing_else(self):
+        """A release name is an identity, not a provenance record."""
+        for mode in ("true", "false"):
+            with self.subTest(notarize=mode):
+                self.assertEqual(self.title_of(mode), "v9.9.9")
+
+    def test_a_notarized_release_does_not_also_claim_to_be_unsigned(self):
+        body = self.render("true")
+        self.assertIn("notarized by Apple", body)
+        self.assertNotIn("Unsigned", body)
+        self.assertNotIn("unnotarized", body)
+
+    def test_a_test_build_says_it_is_unsigned(self):
+        body = self.render("false")
+        self.assertIn("Unsigned", body)
+        self.assertNotIn("notarized by Apple", body)
+
+    def test_the_notes_offer_every_platform_and_its_verification(self):
+        """One release page carries macOS, Windows, Linux and how to verify them."""
+        body = self.render("true")
+        self.assertIn("Bitcoin-Easy-Signer-v9.9.9-macOS.dmg", body)
+        self.assertIn("Bitcoin-Easy-Signer-v9.9.9-windows-x64.zip", body)
+        self.assertIn("Bitcoin-Easy-Signer-v9.9.9-linux-x86_64.AppImage", body)
+        self.assertIn("bitcoin-easy-multisig-signer-v9.9.9.tar.gz", body)
+        self.assertIn("SHA256SUMS.asc", body)
+        self.assertIn("signing-key.asc", body)
+        self.assertIn("Sigstore", body)
+        self.assertIn("SIGNING.md", body)
+
+    def test_the_notes_carry_no_stale_version_specific_boilerplate(self):
+        """v0.4.12 shipped a paragraph about a Sparrow/Nunchuk change-path patch."""
+        for mode in ("true", "false"):
+            with self.subTest(notarize=mode):
+                body = self.render(mode)
+                self.assertNotIn("Sparrow", body)
+                self.assertNotIn("Nunchuk", body)
+
+    def test_the_heading_is_the_version_alone(self):
+        """Build provenance is not a release name; it belongs in the notes body."""
+        body = self.render("true")
+        self.assertIn("## v9.9.9", body)
+        self.assertNotIn("— Apple Silicon", body)
+        self.assertNotIn("— notarized", body)
+        self.assertNotIn("— unsigned", body)
+
+    def test_the_notes_name_the_network_the_app_actually_opens_on(self):
+        """The notes described the pre-0.6.0 opening screen.
+
+        They said "Mutinynet is the opening network", which 0.6.1 makes false. The
+        notes are generated by this workflow, so a release would have told every
+        downloader to expect the opposite of what they get.
+        """
+        for mode in ("true", "false"):
+            with self.subTest(notarize=mode):
+                body = self.render(mode)
+                self.assertNotIn("Mutinynet is the opening network", body)
+                self.assertIn("Opens on Bitcoin mainnet", body)
+                self.assertIn("Enter Developer Mode", body)
+                self.assertIn("the app reopens on mainnet", body)
 
 
 if __name__ == "__main__":
