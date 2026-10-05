@@ -1,5 +1,22 @@
 # Windows port
 
+## Owner Windows acceptance and console correction
+
+On 2026-10-04 the owner reported testing the released v0.6.4 Windows app:
+it opened on Bitcoin mainnet, rejected a wallet for the wrong selected network,
+and successfully signed a transaction with Jade and Trezor 3 hardware devices.
+The transaction network, broadcast outcome and confirmation were not supplied;
+this records wallet/network validation and signing acceptance only.
+
+The owner also observed repeated empty terminal windows during hardware use.
+The HWI helper is a console executable, and both its capability check and regular
+discovery/signing launches lacked Windows console suppression. These launches
+now use CREATE_NO_WINDOW on Windows while retaining captured output, stdin
+signing, timeouts and error handling. Other platforms receive no Windows flags.
+This correction is source-only pending a new versioned Windows candidate and
+owner verification that its hardware flow no longer opens terminal windows.
+The published v0.6.4 binaries have not been changed.
+
 This document explains the Windows build, why it lives on its own branch, and what
 has to be reviewed before the first one can be published.
 

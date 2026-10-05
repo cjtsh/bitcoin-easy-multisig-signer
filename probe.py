@@ -218,6 +218,13 @@ DEVICE_AUTH_TIMEOUT_SECONDS = 180
 SIGN_TIMEOUT_SECONDS = 600
 
 
+def hwi_process_options() -> dict[str, Any]:
+    """Keep console HWI helpers invisible when launched by the Windows GUI."""
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def _hwi_reason(text: str) -> str:
     """The first useful line of HWI output, made safe to show.
 
@@ -252,7 +259,9 @@ def invoke_hwi(executable: str, chain: str, *arguments: str,
     expose it. Only the fixed 'signtx <base64>' form is sent by this app.
     """
     try:
-        options = {"input": stdin_command} if stdin_command is not None else {}
+        options = hwi_process_options()
+        if stdin_command is not None:
+            options["input"] = stdin_command
         result = subprocess.run(
             [_hwi_path(executable), "--chain", chain, *arguments],
             capture_output=True,

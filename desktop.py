@@ -21,7 +21,7 @@ from pathlib import Path
 import safe_http
 from gui import LocalApp, assert_private_file, launch_url, save_prepared_psbt, ui_path
 from network_settings import settings_path
-from probe import ProbeError, _hwi_path, invoke_hwi
+from probe import ProbeError, _hwi_path, hwi_process_options, invoke_hwi
 from wallet_service import WalletError
 
 
@@ -211,6 +211,7 @@ def bundled_capabilities() -> dict:
         probe = subprocess.run(
             [_hwi_path("hwi"), "--dsh-capabilities"],
             capture_output=True, text=True, timeout=30, check=False,
+            **hwi_process_options(),
         )
     except Exception as exc:
         raise RuntimeError("The bundled hardware-wallet tool could not be run.") from exc

@@ -329,6 +329,42 @@ class ProbeTests(unittest.TestCase):
         )
         self.assertEqual(run.call_args.kwargs["timeout"], 60)
 
+    def test_windows_hwi_launch_hides_console_and_preserves_stdin(self):
+        from subprocess import CompletedProcess
+        with patch("probe.sys.platform", "win32"), patch(
+            "probe.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True
+        ), patch("probe._hwi_path", return_value="hwi.exe"), patch(
+            "probe.subprocess.run", return_value=CompletedProcess([], 0, "[]", "")
+        ) as run:
+            invoke_hwi("hwi", "testnet4", "--stdin", stdin_command="synthetic\n")
+        self.assertEqual(run.call_args.kwargs["creationflags"], 0x08000000)
+        self.assertEqual(run.call_args.kwargs["input"], "synthetic\n")
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+
+    def test_other_platforms_do_not_receive_windows_process_flags(self):
+        from probe import hwi_process_options
+        for platform in ("darwin", "linux"):
+            with self.subTest(platform=platform), patch("probe.sys.platform", platform):
+                self.assertEqual(hwi_process_options(), {})
+
+    @unittest.skipUnless(__import__("sys").platform == "win32", "Windows process check")
+    def test_windows_child_has_no_console_and_retains_pipes(self):
+        import subprocess
+        import sys
+        from probe import hwi_process_options
+        child = subprocess.run(
+            [sys.executable, "-c",
+             "import ctypes, sys; "
+             "print(ctypes.windll.kernel32.GetConsoleWindow()); "
+             "print(sys.stdin.read(), end=''); "
+             "print('synthetic error', file=sys.stderr)"],
+            input="synthetic input", capture_output=True, text=True, timeout=10,
+            **hwi_process_options(),
+        )
+        self.assertEqual(child.returncode, 0)
+        self.assertEqual(child.stdout, "0\nsynthetic input")
+        self.assertEqual(child.stderr, "synthetic error\n")
+
     def test_signing_psbt_goes_over_stdin_not_process_arguments(self):
         from subprocess import CompletedProcess
         from probe import sign_psbt_with_device

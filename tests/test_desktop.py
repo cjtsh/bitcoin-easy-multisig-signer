@@ -23,6 +23,18 @@ from dataclasses import replace
 
 
 class DesktopTests(unittest.TestCase):
+    def test_windows_capability_helper_hides_console(self):
+        from subprocess import CompletedProcess
+        with patch("probe.sys.platform", "win32"), patch(
+            "probe.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True
+        ), patch("desktop._hwi_path", return_value="hwi.exe"), patch(
+            "desktop.subprocess.run",
+            return_value=CompletedProcess([], 0, '{"synthetic": true}', ""),
+        ) as run:
+            self.assertEqual(bundled_capabilities(), {"synthetic": True})
+        self.assertEqual(run.call_args.kwargs["creationflags"], 0x08000000)
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
