@@ -349,6 +349,21 @@ def _clean_token(value) -> str:
     return text if re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,19}", text) else ""
 
 
+# A diagnostic report may name a device *class* and nothing else. The vocabulary
+# is fixed at the HWI device families this app supports: a well-formed token that
+# is not a known class is dropped too, because a pattern check alone would still
+# pass a 20-character address fragment or device serial that happened to fit.
+DEVICE_CLASSES = frozenset({
+    "bitbox02", "coldcard", "jade", "keepkey", "ledger", "trezor",
+})
+
+
+def _device_class(value) -> str:
+    """Reduce a value to a known device class, or drop it."""
+    token = _clean_token(value)
+    return token if token in DEVICE_CLASSES else ""
+
+
 def save_diagnostic_report(state: "LocalApp", folder: Path | None = None) -> dict:
     """Export fixed-code events only; never wallet identifiers or raw errors.
 
@@ -436,7 +451,7 @@ class LocalApp:
         """
         if stage not in DIAGNOSTIC_STAGES or outcome not in DIAGNOSTIC_OUTCOMES:
             return
-        cleaned = _clean_token(device)
+        cleaned = _device_class(device)
         with self.lock:
             event = {
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -445,7 +460,7 @@ class LocalApp:
             if cleaned:
                 event["device"] = cleaned
             if found is not None:
-                event["found"] = sorted({c for c in (_clean_token(x) for x in found) if c})
+                event["found"] = sorted({c for c in (_device_class(x) for x in found) if c})
             self.diagnostic_events.append(event)
             del self.diagnostic_events[:-80]
 

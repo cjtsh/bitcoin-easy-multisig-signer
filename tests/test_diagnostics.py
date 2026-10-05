@@ -85,6 +85,27 @@ class DiagnosticTests(unittest.TestCase):
         self.assertNotIn("private-xpub", written)
         self.assertNotIn("/dev/", written)
 
+    def test_device_fields_accept_only_a_known_device_class(self):
+        """A well-formed token that is not a device class is dropped (CT-06).
+
+        The pattern check alone would still pass a 20-character address
+        fragment or serial that happened to fit; the fixed vocabulary cannot.
+        """
+        state = LocalApp()
+        state.note("signer_response", "verified", device="nodl")
+        state.note("signer_response", "verified", device="bc1qabcdef0123456789")
+        state.note("signer_response", "verified", device="Ledger")
+        state.note("signer_check", "passed", found=["jade", "nodl", "wwwwwwwwww"])
+        with tempfile.TemporaryDirectory() as temporary:
+            report = json.loads(
+                Path(save_diagnostic_report(state, Path(temporary))["path"]).read_text())
+        self.assertNotIn("device", report["events"][0])
+        self.assertNotIn("device", report["events"][1])
+        self.assertEqual(report["events"][2]["device"], "ledger")
+        self.assertEqual(report["events"][3]["found"], ["jade"])
+        self.assertNotIn("nodl", json.dumps(report))
+        self.assertNotIn("bc1q", json.dumps(report))
+
     def test_the_buffer_is_capped_at_eighty_events(self):
         """Chatter must never erase a money-path event (CT-07)."""
         state = LocalApp()
