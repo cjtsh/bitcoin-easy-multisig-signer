@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from embit import psbt as E  # noqa: E402
 from embit.networks import NETWORKS  # noqa: E402
+from embit.script import Script  # noqa: E402
 
 from fake_explorer import three_output_wallet  # noqa: E402
 from probe import parse_bsms  # noqa: E402
@@ -312,6 +313,44 @@ class FinalizeTests(unittest.TestCase):
             parse_multisig_script(b"\x00\x14" + b"\x11" * 20)
         with self.assertRaises(SigningError):
             parse_multisig_script(b"")
+
+    def test_a_witness_script_that_does_not_own_its_output_is_refused(self):
+        """Prevout-ownership pin, part 1 (CT-15): the script hash must match."""
+        packet, _keys, _result = prepared_psbt()
+        packet.inputs[0].witness_utxo.script_pubkey = Script(b"\x00\x20" + bytes(32))
+        with self.assertRaisesRegex(SigningError, "does not own its output"):
+            verified_input_signatures(packet)
+
+    def test_a_mismatched_previous_transaction_id_is_refused(self):
+        """Prevout-ownership pin, part 2 (CT-15): the prevout txid must match.
+
+        PSBT.tx and InputScope.vin are rebuilt on every access, so the tamper
+        must land on the scope's stored txid attribute, not a rebuilt object.
+        """
+        packet, _keys, _result = prepared_psbt()
+        txid = bytearray(packet.inputs[0].txid)
+        txid[0] ^= 1
+        packet.inputs[0].txid = bytes(txid)
+        with self.assertRaisesRegex(
+                SigningError, "does not match its verified previous transaction"):
+            verified_input_signatures(packet)
+
+    def test_an_out_of_range_output_index_is_refused(self):
+        """Prevout-ownership pin, part 3 (CT-15): the vout must exist."""
+        packet, _keys, _result = prepared_psbt()
+        packet.inputs[0].vout = len(packet.inputs[0].non_witness_utxo.vout) + 10
+        with self.assertRaisesRegex(
+                SigningError, "does not match its verified previous transaction"):
+            verified_input_signatures(packet)
+
+    def test_a_prevout_that_differs_from_the_witness_utxo_is_refused(self):
+        """Prevout-ownership pin, part 4 (CT-15): content must match exactly."""
+        packet, _keys, _result = prepared_psbt()
+        prevout = packet.inputs[0].non_witness_utxo.vout[packet.tx.vin[0].vout]
+        prevout.value += 1
+        with self.assertRaisesRegex(
+                SigningError, "does not match its verified previous transaction"):
+            verified_input_signatures(packet)
 
 
 if __name__ == "__main__":
