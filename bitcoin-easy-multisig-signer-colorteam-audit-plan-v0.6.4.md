@@ -381,5 +381,5 @@ review, transcribed by the surveyor; the signature below remains the owner's own
 
 **Sign-off.**
 
-- **Signed:**
-- **Date:**
+- **Signed: Bitseeker LLC**
+- **Date: 5OCT2026**
