@@ -383,6 +383,14 @@ class ProbeTests(unittest.TestCase):
         self.assertLessEqual(len(_hwi_reason("x" * 400)), 160)
         self.assertNotIn("\x07", _hwi_reason("bell\x07here"))
 
+    def test_a_device_is_never_sent_a_malformed_or_oversized_transaction(self):
+        """The 2 MB and base64-alphabet bound fires before HWI runs (CT-08)."""
+        from probe import sign_psbt_with_device
+        for bad in ("not-base64!!!", "a" * (2_000_000 + 2), 12345):
+            with self.subTest(bad=type(bad).__name__), \
+                    self.assertRaisesRegex(ProbeError, "malformed"):
+                sign_psbt_with_device("hwi", "test", "jade", "/dev/x", bad)
+
 
 if __name__ == "__main__":
     unittest.main()

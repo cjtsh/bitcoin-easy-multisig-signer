@@ -85,6 +85,16 @@ class DiagnosticTests(unittest.TestCase):
         self.assertNotIn("private-xpub", written)
         self.assertNotIn("/dev/", written)
 
+    def test_the_buffer_is_capped_at_eighty_events(self):
+        """Chatter must never erase a money-path event (CT-07)."""
+        state = LocalApp()
+        for _ in range(100):
+            state.note("wallet_import", "passed")
+        self.assertEqual(len(state.diagnostic_events), 80)
+        state.note("broadcast", "accepted")
+        self.assertEqual(len(state.diagnostic_events), 80)
+        self.assertEqual(state.diagnostic_events[-1]["stage"], "broadcast")
+
 
 if __name__ == "__main__":
     unittest.main()

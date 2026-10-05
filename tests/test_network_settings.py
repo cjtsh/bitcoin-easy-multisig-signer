@@ -91,6 +91,12 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(loaded["main"]["explorer"], "https://private.example/api")
         self.assertEqual(loaded["mutinynet"], default_servers()["mutinynet"])
 
+    def test_the_settings_file_is_written_privately(self):
+        """The saved server choices are 0600, never world-readable (CT-09)."""
+        save_servers(default_servers())
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(load_servers(), default_servers())
+
 
 if __name__ == "__main__":
     unittest.main()

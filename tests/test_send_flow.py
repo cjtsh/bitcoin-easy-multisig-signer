@@ -359,6 +359,36 @@ class SendFlowTests(unittest.TestCase):
             self.assertIn("wallet or balance changed",
                           json.load(err.exception)["error"])
 
+    def test_a_stored_psbt_whose_contents_changed_is_refused(self):
+        """checked_psbt re-validates the stored bytes on every read (CT-10)."""
+        self.prepare_a_reviewed_transaction()
+        text, _roots = test_record(bsms_template=True)
+        record = parse_bsms(text)
+        layout = wallet_layout(record)
+        explorer = three_output_wallet(layout, NETWORKS["test"])
+        scan = scan_wallet(record, explorer)
+        other = build_unsigned_psbt(record, scan,
+                                    layout.receive.derive(7).address(NETWORKS["test"]),
+                                    50_000, 5, explorer)
+        tampered = replace(self.app.prepared, psbt_base64=other["psbt_base64"])
+        with self.assertRaisesRegex(WalletError, "prepared transaction changed"):
+            tampered.checked_psbt()
+
+    def test_a_signing_timeout_is_not_retried(self):
+        """No automatic retry after a signing timeout (CT-11).
+
+        The device-open half is pinned by the Ledger test above; this pins the
+        timeout half of the same rule.
+        """
+        self.prepare_a_reviewed_transaction()
+        with patch("gui.sign_psbt_with_device", side_effect=ProbeError(
+                "HWI could not complete the request: timed out")) as signer:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/x"})
+            self.assertEqual(err.exception.code, 400)
+            signer.assert_called_once()
+
     def test_device_check_reports_slot_state_read_from_the_signed_psbt(self):
         """The signing screen draws one box per cosigner.
 
