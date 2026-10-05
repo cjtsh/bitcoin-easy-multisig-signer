@@ -1,5 +1,8 @@
 # Release history and correction record
 
+**Windows 0.6.5 published and owner-tested:** [release download](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.5-windows-x64). Candidate run 37264196917 was promoted by successful workflow run 37264663578 from commit 897e9e6. On 2026-10-05 the owner downloaded the release from GitHub and reported that it worked great with no terminal pop-ups. This closes the console-window acceptance check; transaction network, broadcast and confirmation were not supplied. macOS remains at 0.6.4 and is unchanged. Downloads must use GitHub Releases consistently, rather than requiring the owner to retrieve Actions artifacts or use a local development build.
+
+
 This is the consolidated, chronological record of the published versions that
 carry a reviewed evidence file: what changed, what the evidence was, and what
 was later corrected. Each entry links its full evidence file. The earlier

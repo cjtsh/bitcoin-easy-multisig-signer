@@ -81,6 +81,8 @@ def frozen_helper(root: Path) -> Path:
     """Where PyInstaller put the standalone hardware-wallet helper."""
     if sys.platform == "darwin":
         return root / "dist" / "Bitcoin Easy Signer.app" / "Contents" / "MacOS" / "hwi"
+    if sys.platform == "win32":
+        return root / "dist" / "Bitcoin Easy Signer" / "hwi.exe"
     return root / "dist" / "hwi" / "hwi"
 
 

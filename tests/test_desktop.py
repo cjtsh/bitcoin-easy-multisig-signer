@@ -1,7 +1,8 @@
-"""Desktop wrapper tests run without macOS, WebKit or real wallet files."""
+"""Desktop wrapper tests run without a window toolkit, a real signer or real wallet files."""
 
 import base64
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,17 +10,31 @@ from types import SimpleNamespace
 from urllib.request import urlopen
 from unittest.mock import patch
 
+import desktop
 import safe_http
 from support import real_ca_bundle
 from desktop import (DesktopBridge, bundled_capabilities, check_bundle_resources,
                      check_device_bridge, check_psbt_save, configure_packaged_tls,
-                     main, run_desktop)
+                     main, report, report_startup_failure, require_edge_chromium,
+                     run_desktop, webview_renderer, windows_renderer)
 from probe import ProbeError
-from gui import LocalApp, PreparedPayment, ui_path
+from gui import LocalApp, PreparedPayment, assert_private_file, ui_path
 from dataclasses import replace
 
 
 class DesktopTests(unittest.TestCase):
+    def test_windows_capability_helper_hides_console(self):
+        from subprocess import CompletedProcess
+        with patch("probe.sys.platform", "win32"), patch(
+            "probe.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True
+        ), patch("desktop._hwi_path", return_value="hwi.exe"), patch(
+            "desktop.subprocess.run",
+            return_value=CompletedProcess([], 0, '{"synthetic": true}', ""),
+        ) as run:
+            self.assertEqual(bundled_capabilities(), {"synthetic": True})
+        self.assertEqual(run.call_args.kwargs["creationflags"], 0x08000000)
+        self.assertTrue(run.call_args.kwargs["capture_output"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -59,7 +74,9 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(saved.parent, home / "Downloads")
             self.assertEqual(saved.name, "testnet4-unsigned.psbt")
             self.assertEqual(saved.read_bytes(), self.raw)
-            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+            # Windows protects the file with a per-user access list rather than
+            # POSIX mode bits, so the assertion is the platform-aware one.
+            assert_private_file(saved)
             # A second save must never replace the earlier transaction.
             second = bridge.save_psbt(self.encoded, "testnet4")
             self.assertEqual(Path(second["path"]).name, "testnet4-unsigned-2.psbt")
@@ -124,8 +141,11 @@ class DesktopTests(unittest.TestCase):
                     page = response.read().decode()
                 self.page = page
         fake = FakeWebview()
-        run_desktop(fake)
-        self.assertEqual(fake.asserted_gui, "cocoa")
+        # The renderer the machine really has is not this test's subject, and the
+        # preflight would refuse to start where WebView2 is genuinely absent.
+        with patch.object(desktop, "windows_renderer", return_value="edgechromium"):
+            run_desktop(fake)
+        self.assertEqual(fake.asserted_gui, webview_renderer())
         self.assertTrue(fake.url.startswith("http://127.0.0.1:"))
         self.assertIs(fake.bridge.window, fake.window)
         self.assertIn('id="quit" class="secondary" hidden', fake.page)
@@ -147,18 +167,22 @@ class DesktopTests(unittest.TestCase):
         build script, or it silently reverts to the default.
         """
         root = Path(__file__).resolve().parents[1]
-        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
-        self.assertIn('--icon "assets/AppIcon.icns"', build)
-        icns = root / "assets" / "AppIcon.icns"
-        self.assertTrue(icns.is_file(), "the icon the build references is missing")
-        data = icns.read_bytes()
-        self.assertEqual(data[:4], b"icns", "not a valid .icns container")
+        build = (root / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
+        self.assertIn("'--icon', 'assets\\AppIcon.ico'", build)
+        ico = root / "assets" / "AppIcon.ico"
+        self.assertTrue(ico.is_file(), "the icon the build references is missing")
+        data = ico.read_bytes()
+        self.assertEqual(data[:4], b"\x00\x00\x01\x00", "not a valid .ico container")
         self.assertGreater(len(data), 20_000, "the icon looks suspiciously empty")
-        # The master artwork travels with the compiled icon so it can be rebuilt.
+        # The master artwork travels with the compiled icon so it can be rebuilt,
+        # and the derivation script is checked in beside it.
         self.assertTrue((root / "assets" / "icon.svg").is_file())
-        # And the source archive must carry both, or a rebuild from it loses them.
+        self.assertTrue((root / "assets" / "AppIcon.icns").is_file())
+        self.assertTrue((root / "scripts" / "make-windows-icon.py").is_file())
+        # And the source archive must carry the icon and its master, or a rebuild
+        # from the archive loses them.
         source = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
-        self.assertIn("assets/AppIcon.icns", source)
+        self.assertIn("assets/AppIcon.ico", source)
         self.assertIn("assets/icon.svg", source)
 
     def test_bundled_ui_is_resolved_inside_app(self):
@@ -218,24 +242,27 @@ class DesktopTests(unittest.TestCase):
         device fault rather than a missing dependency."""
         root = Path(__file__).resolve().parents[1]
         self.assertIn("requests", (root / "requirements-desktop.txt").read_text(encoding="utf-8"))
-        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
+        build = (root / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
         self.assertIn("--collect-all requests", build)
 
-    def test_hardened_hwi_gets_scoped_usb_library_validation_exception(self):
+    def test_the_build_proves_the_bundled_usb_library_loads(self):
+        """The check that catches a broken bundled libusb must survive the port.
+
+        On macOS the USB library needed a scoped codesign exception, so the build
+        finished by running HWI's own library check. Windows has no such exception,
+        but it has its own trap: usb1 loads a library at import time, so the DLL has
+        to be present inside the usb1 package as well as beside the helper.
+        """
         root = Path(__file__).resolve().parents[1]
-        build = (root / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
-        entitlement = root / "scripts" / "hwi-entitlements.plist"
-        self.assertTrue(entitlement.is_file())
-        self.assertIn("com.apple.security.cs.disable-library-validation",
-                      entitlement.read_text(encoding="utf-8"))
-        self.assertIn("--entitlements scripts/hwi-entitlements.plist", build)
+        build = (root / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
         self.assertIn("--dsh-check-libusb", build)
-        # The exception is applied while signing HWI only; the app's final
-        # signature keeps the existing hardened-runtime flags.
-        self.assertIn('[[ "$target" == "$hwi_bin"', build)
-        self.assertIn('codesign "${sign_flags[@]}" --sign "$sign_identity" "$app"', build)
+        self.assertIn("vendor\\libusb-1.0.dll", build)
+        self.assertIn("build\\libusb-alias\\libusb-1.0.dll", build)
+        # The alias copy is what usb1's import-time search finds, so it must land
+        # inside the package rather than only in the archive root.
+        self.assertIn("build\\libusb-alias\\libusb-1.0.dll;usb1", build)
         source = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
-        self.assertIn("scripts/*.plist", source)
+        self.assertIn("scripts/*.ps1", source)
 
     def test_bundle_check_requires_the_licence_and_notices(self):
         """The bundle redistributes libusb under LGPL-2.1-or-later.
@@ -297,6 +324,136 @@ class DesktopTests(unittest.TestCase):
         ), patch("desktop.check_testnet4_network") as check:
             main()
         check.assert_called_once_with()
+
+
+class SelfCheckReportTests(unittest.TestCase):
+    """A frozen --windowed build has no stdout, so the checks must report to a file."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.log = Path(self.temp.name) / "check.log"
+
+    def test_every_check_result_reaches_the_report_file(self):
+        with patch.dict(os.environ, {"DSH_DESKTOP_CHECK_LOG": str(self.log)}):
+            report("first line")
+            report("second line")
+        self.assertEqual(self.log.read_text(encoding="utf-8").splitlines(),
+                         ["first line", "second line"])
+
+    def test_a_check_without_the_variable_still_prints_and_writes_nothing(self):
+        with patch.dict(os.environ, {}, clear=True):
+            report("no file asked for")
+        self.assertFalse(self.log.exists())
+
+    def test_the_bundle_check_reports_what_it_verified(self):
+        """--check-bundle must leave evidence; it is the CA-store assertion."""
+        page = Path(self.temp.name) / "ui.html"
+        page.write_text("<html>__APP_VERSION__ location.hash __DESKTOP_MODE__</html>")
+        for notice in ("LICENSE", "DISCLAIMER.md", "PRIVACY.md",
+                       "THIRD-PARTY-NOTICES.md", "libusb-COPYING"):
+            (Path(self.temp.name) / notice).write_text(f"synthetic {notice}\n")
+        with patch.dict(os.environ, {"DSH_DESKTOP_CHECK_LOG": str(self.log)}), patch(
+            "desktop.ui_path", return_value=page
+        ):
+            check_bundle_resources()
+        self.assertIn("check out", self.log.read_text(encoding="utf-8"))
+
+
+class StartupFailureTests(unittest.TestCase):
+    """A window that will not open must say why; a --windowed build has no console."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.settings = Path(self.temp.name) / "settings.json"
+        path_patch = patch("desktop.settings_path", return_value=self.settings)
+        path_patch.start()
+        self.addCleanup(path_patch.stop)
+        # A real message box would block a machine with nobody sitting at it, so
+        # no test may ever reach the real one — the platform is pinned per test.
+        dialog_patch = patch("desktop.windows_error_dialog")
+        self.dialog = dialog_patch.start()
+        self.addCleanup(dialog_patch.stop)
+        self.log = Path(self.temp.name) / "desktop-startup-error.log"
+
+    def test_a_failed_start_writes_the_traceback_beside_the_settings(self):
+        with patch.object(desktop.sys, "platform", "linux"):
+            report_startup_failure(ValueError("the WebView2 runtime is missing"))
+        text = self.log.read_text(encoding="utf-8")
+        self.assertIn("ValueError", text)
+        self.assertIn("the WebView2 runtime is missing", text)
+        self.dialog.assert_not_called()
+
+    def test_windows_also_shows_a_dialog_naming_the_report(self):
+        with patch.object(desktop, "windows_error_dialog") as dialog, patch.object(
+            desktop.sys, "platform", "win32"
+        ):
+            report_startup_failure(ValueError("no edge"))
+        dialog.assert_called_once()
+        title, text = dialog.call_args.args[:2]
+        self.assertEqual(title, "Bitcoin Easy Signer")
+        self.assertIn("could not open its window", text)
+        self.assertIn("no edge", text)
+        self.assertIn(str(self.log), text)
+
+    def test_main_reports_a_window_that_fails_instead_of_dying_silently(self):
+        with patch.dict(sys.modules, {"webview": SimpleNamespace()}), patch.object(
+            desktop.sys, "platform", "win32"
+        ), patch.object(
+            desktop, "run_desktop", side_effect=RuntimeError("no window toolkit")
+        ), patch.object(desktop, "report_startup_failure") as reported:
+            with self.assertRaises(SystemExit) as caught:
+                main()
+        self.assertEqual(caught.exception.code, 1)
+        reported.assert_called_once()
+        self.assertIsInstance(reported.call_args.args[0], RuntimeError)
+
+
+class RendererPreflightTests(unittest.TestCase):
+    """Asking pywebview for EdgeChromium is not the same as getting it.
+
+    When the WebView2 runtime is missing, pywebview imports the legacy MSHTML engine
+    and opens the window anyway — no error, nothing for the startup reporter to
+    catch. This preflight is the only thing between a missing runtime and a user
+    staring at a window that renders wrong.
+    """
+
+    def test_windows_refuses_the_legacy_engine(self):
+        with patch.object(desktop.sys, "platform", "win32"), patch.object(
+            desktop, "windows_renderer", return_value="mshtml"
+        ):
+            with self.assertRaises(RuntimeError) as caught:
+                require_edge_chromium()
+        message = str(caught.exception)
+        self.assertIn("WebView2", message)
+        self.assertIn("mshtml", message)
+
+    def test_windows_accepts_the_engine_it_asked_for(self):
+        with patch.object(desktop.sys, "platform", "win32"), patch.object(
+            desktop, "windows_renderer", return_value="edgechromium"
+        ):
+            require_edge_chromium()
+
+    def test_other_platforms_never_ask_pywebview(self):
+        with patch.object(desktop.sys, "platform", "darwin"), patch.object(
+            desktop, "windows_renderer"
+        ) as renderer:
+            require_edge_chromium()
+        renderer.assert_not_called()
+
+    def test_the_check_runs_before_the_window_is_built(self):
+        with patch.object(desktop, "require_edge_chromium") as required, patch.object(
+            desktop, "LocalApp", side_effect=RuntimeError("stopped here")
+        ):
+            with self.assertRaises(RuntimeError):
+                run_desktop(SimpleNamespace())
+        required.assert_called_once()
+
+    def test_the_answer_still_comes_from_pywebviews_own_decision(self):
+        fake = SimpleNamespace(renderer="mshtml")
+        with patch.dict(sys.modules, {"webview.platforms": SimpleNamespace(winforms=fake)}):
+            self.assertEqual(windows_renderer(), "mshtml")
 
 
 if __name__ == "__main__":

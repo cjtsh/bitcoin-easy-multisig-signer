@@ -292,6 +292,33 @@ class PreparedPayment:
         return dict(self.review_items)
 
 
+def assert_private_file(path: Path) -> None:
+    """Prove a file the app wrote is readable only by the operator's own account.
+
+    POSIX lets the app create these files 0600 and lets this check read that back
+    exactly. Windows has no equivalent to read: ``os.chmod`` there only toggles
+    the read-only attribute, and ``st_mode`` reports 0666 for every ordinary file
+    no matter what mode was requested, so asserting 0600 on Windows would test
+    Windows' reporting rather than the file's protection. What actually protects
+    the file there is the per-user access list inherited from the operator's own
+    profile directory, so that is what is verified instead: the file must
+    genuinely live inside this user's profile and not in a shared location.
+    """
+    resolved = Path(path).resolve()
+    if os.name == "nt":
+        profile = os.environ.get("USERPROFILE") or str(Path.home())
+        try:
+            resolved.relative_to(Path(profile).resolve())
+        except ValueError:
+            raise RuntimeError(
+                "The saved file is outside this user's own profile, which is where "
+                "Windows protects it with a per-user access list."
+            ) from None
+        return
+    if resolved.stat().st_mode & 0o777 != 0o600:
+        raise RuntimeError("The saved file permissions are not 0600.")
+
+
 def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> dict:
     """Write the app's currently prepared PSBT into the user's Downloads folder.
 

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Curated source tarball: no private wallet files, caches, environments or builds.
+#
+# This is the Windows port's archive. The macOS script it was derived from also
+# copied docs/ (the GitHub Pages website) and scripts/*.plist; the port has neither,
+# so those lines are gone rather than left to fail. The remaining completeness
+# checks are kept verbatim in spirit: they caught a real defect each, and a
+# rewritten copy step is exactly when they stop matching reality.
 set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
-version="${1:?Usage: scripts/build-source.sh VERSION (e.g. 0.1.0)}"
+version="${1:?Usage: scripts/build-source.sh VERSION (e.g. 0.6.4)}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-  echo "Expected a numeric version such as 0.1.0." >&2
+  echo "Expected a numeric version such as 0.6.4." >&2
   exit 1
 }
 app_version="$(python3 -c 'from version import APP_VERSION; print(APP_VERSION)')"
@@ -21,13 +27,18 @@ root_docs=(
   README.md CURRENT-STATUS.md DISCLAIMER.md PRIVACY.md SECURITY.md
   CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md
   PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md RELEASE-HISTORY.md
-  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md
+  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md
 )
+# requirements-desktop-windows.lock is the only lock that can be installed on
+# Windows. requirements-desktop.lock is macOS-resolved and is deliberately still
+# shipped: it is the record of what the audited macOS build installs, and dropping
+# it here would silently erase that.
 cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
+  requirements-desktop-windows.lock \
   requirements-ci.txt requirements-ci.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
-  signing.py wallet_service.py ui.html "Start Easy Multisig.command" "$stage/$root/"
+  signing.py wallet_service.py ui.html "$stage/$root/"
 
 # The per-version evidence records (patch, plan, audit and security records) live in
 # releases/ in the repository rather than in the root. Keep that exact layout in the
@@ -79,33 +90,73 @@ if (( ${#missing_links[@]} )); then
   echo "RELEASE-HISTORY.md links records the archive does not contain: ${missing_links[*]}" >&2
   exit 1
 fi
+
 cp tests/test_*.py tests/support.py tests/fake_explorer.py \
   tests/ui_*.cjs "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
-cp assets/icon.svg assets/AppIcon.icns "$stage/$root/assets/"
+cp assets/icon.svg assets/AppIcon.icns assets/AppIcon.ico "$stage/$root/assets/"
+mkdir -p "$stage/$root/assets/manual"
+cp assets/manual/*.svg "$stage/$root/assets/manual/"
+
+# USER-MANUAL.md underlines every step with an illustration. Those images lived in
+# docs/assets/ for the website; deleting the website would have left the manual
+# pointing at nine files the archive does not contain, so they moved to
+# assets/manual/ and the links moved with them. Resolve the links from the document
+# itself rather than from a list, so a tenth illustration cannot be forgotten here.
+#
+# This runs after the copy above on purpose. A completeness check that runs before
+# the copy it is checking reports every file as missing, which is what it did.
+missing_manual=()
+while IFS= read -r target; do
+  [[ -n "$target" ]] || continue
+  [[ -f "$stage/$root/$target" ]] || missing_manual+=("$target")
+done < <(grep -oE 'assets/manual/[A-Za-z0-9._-]+\.svg' USER-MANUAL.md 2>/dev/null | sort -u || true)
+# Only the illustrations the manual actually references are shipped, so a stale link
+# in the manual is caught here rather than at a reader's screen. The loop is inside the
+# guard because macOS ships bash 3.2, where "${array[@]}" on an empty array is an
+# unbound variable under `set -u`.
+if (( ${#missing_manual[@]} )); then
+  for target in "${missing_manual[@]}"; do
+    echo "USER-MANUAL.md references an illustration to copy first: $target" >&2
+  done
+  exit 1
+fi
 mkdir -p "$stage/$root/vendor"
+# Both reviewed native libraries ship with the archive. The suite that runs from
+# inside the extracted archive verifies each one against the digest recorded in
+# tests/test_libusb_vendor.py on every platform, so an archive that dropped a
+# library would fail its own tests -- which is the point: the archive has to be a
+# complete copy of the two build paths, not a platform-specific subset. The
+# libusb-1.0.30 tarball is the source both libraries are accountable to.
 cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
   vendor/embit-0.8.2+besa.1.tar.gz \
   vendor/embit-0.8.2+besa.1-py3-none-any.whl \
-  vendor/libusb-1.0.0.dylib vendor/libusb-1.0.30.tar.bz2 \
+  vendor/libusb-1.0.0.dylib \
+  vendor/libusb-1.0.30.tar.bz2 \
+  vendor/libusb-1.0.dll \
   vendor/libusb-COPYING "$stage/$root/vendor/"
-# USER-MANUAL.md links to these sanitized interface illustrations. Keep them in
-# the source archive so the guide remains complete outside the Git checkout.
-mkdir -p "$stage/$root/docs/assets"
-cp docs/assets/manual-*.svg docs/assets/app-preview-developer-mode.svg \
-  "$stage/$root/docs/assets/"
-cp docs/privacy.html "$stage/$root/docs/privacy.html"
-# Glob, not a list: build-macos.sh calls notary-args.sh, and an archive missing a
-# script it invokes would build nothing while looking complete.
-cp scripts/*.sh scripts/*.py scripts/*.plist "$stage/$root/scripts/"
-if [[ -f ci/build-candidate.yml ]]; then
-  workflow=ci/build-candidate.yml
-elif [[ -f .github/workflows/build-candidate.yml ]]; then
-  workflow=.github/workflows/build-candidate.yml
+# Glob, not a list: build-windows.ps1 calls the other scripts, and an archive missing
+# a script it invokes would build nothing while looking complete.
+cp scripts/*.sh scripts/*.py scripts/*.ps1 "$stage/$root/scripts/"
+# Both recipes, under ci/ rather than .github/workflows/, because the archive is a
+# source tree and the workflow contract tests read them from wherever they land.
+if [[ -f ci/build-windows.yml ]]; then
+  workflow=ci/build-windows.yml
+elif [[ -f .github/workflows/build-windows.yml ]]; then
+  workflow=.github/workflows/build-windows.yml
 else
   echo "Candidate build recipe is missing." >&2
   exit 1
 fi
-cp "$workflow" "$stage/$root/ci/build-candidate.yml"
+cp "$workflow" "$stage/$root/ci/build-windows.yml"
+if [[ -f ci/windows-inputs.yml ]]; then
+  inputs_workflow=ci/windows-inputs.yml
+elif [[ -f .github/workflows/windows-inputs.yml ]]; then
+  inputs_workflow=.github/workflows/windows-inputs.yml
+else
+  echo "Windows input recipe is missing." >&2
+  exit 1
+fi
+cp "$inputs_workflow" "$stage/$root/ci/windows-inputs.yml"
 tar -C "$stage" -czf "dist/$root.tar.gz" "$root"
 echo "Created dist/$root.tar.gz (source only; Python required to run it)."

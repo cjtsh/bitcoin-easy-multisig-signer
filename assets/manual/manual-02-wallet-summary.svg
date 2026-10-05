@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="850" viewBox="0 0 1360 850" role="img" aria-labelledby="title desc">
+<title id="title">Manual illustration: wallet and balance summary</title>
+<desc id="desc">Sanitized illustrative interface view based on Bitcoin Easy Signer version 0.6.2. No wallet identifiers or live payment data are shown.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}</style>
+<rect width="1360" height="850" fill="#f5f7fa"/>
+<rect x="3" y="3" width="1354" height="844" rx="18" fill="none" stroke="#f47b20" stroke-width="6"/>
+<rect x="12" y="12" width="1336" height="260" rx="14" fill="#101a26" stroke="#101a26" stroke-width="1"/>
+<text x="45" y="52" fill="#b9c8d7" font-size="14" font-weight="750" letter-spacing="1.4">BITCOIN EASY SIGNER · V0.6.2 · COMMUNITY SOFTWARE</text>
+<rect x="1170" y="28" width="145" height="38" rx="19" fill="#304356" stroke="#304356" stroke-width="1"/><text x="1185" y="53" fill="#fff" font-size="14" font-weight="700" >Dark Theme</text>
+<text x="46" y="110" fill="#f4f7fb" font-size="42" font-weight="760" >Bitcoin Easy Signer</text>
+<text x="48" y="147" fill="#c3cfda" font-size="18" font-weight="400" >Open an existing multisig wallet, review a payment, and approve it on the required</text>
+<text x="48" y="174" fill="#c3cfda" font-size="18" font-weight="400" >hardware signers. The app never holds a key.</text>
+<text x="48" y="216" fill="#f4f7fb" font-size="19" font-weight="700" >For a spouse, trustee, lawyer, accountant, or family member.</text>
+<rect x="44" y="304" width="1272" height="94" rx="14" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="77" y="344" fill="#18212b" font-size="24" font-weight="750" >Wallet file checked</text>
+<text x="78" y="376" fill="#586777" font-size="16" font-weight="400" >The wallet and connected network are ready to review.</text>
+<rect x="44" y="420" width="610" height="162" rx="14" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="77" y="459" fill="#18212b" font-size="22" font-weight="750" >2. Your balance</text>
+<text x="77" y="505" fill="#586777" font-size="14" font-weight="400" >Confirmed balance</text>
+<text x="77" y="549" fill="#18212b" font-size="33" font-weight="740" >Example balance</text>
+<text x="400" y="548" fill="#586777" font-size="14" font-weight="400" >BTC · sample view</text>
+<rect x="678" y="420" width="638" height="162" rx="14" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="711" y="459" fill="#18212b" font-size="22" font-weight="750" >Wallet details</text>
+<text x="711" y="500" fill="#586777" font-size="14" font-weight="400" >Wallet type</text>
+<text x="870" y="500" fill="#18212b" font-size="16" font-weight="650" >Existing multisig wallet</text>
+<text x="711" y="536" fill="#586777" font-size="14" font-weight="400" >Network</text>
+<text x="870" y="536" fill="#18212b" font-size="16" font-weight="650" >Bitcoin mainnet</text>
+<rect x="44" y="607" width="1272" height="160" rx="14" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="77" y="648" fill="#18212b" font-size="22" font-weight="750" >Before preparing a payment</text>
+<text x="78" y="687" fill="#586777" font-size="16" font-weight="400" >Confirm the balance and wallet details with the person who set up this recovery plan.</text>
+<rect x="78" y="711" width="257" height="38" rx="19" fill="#147c70" stroke="#147c70" stroke-width="1"/><text x="93" y="736" fill="#fff" font-size="14" font-weight="700" >Look for my hardware wallets</text>
+</svg>
