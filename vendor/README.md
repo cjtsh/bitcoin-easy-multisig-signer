@@ -53,3 +53,18 @@ Its SHA-256 is
 matching the Homebrew 1.0.30 formula's source checksum. `libusb-COPYING` is the
 unmodified LGPL-2.1-or-later license from that source archive and is bundled
 with the app. The dylib is a separate dynamically loaded library.
+
+`appimage-runtime-x86_64` is the launcher half of the Linux AppImage, taken
+from the AppImage project's `type2-runtime` release
+[`20251108`](https://github.com/AppImage/type2-runtime/releases/tag/20251108),
+asset `runtime-x86_64`, 944,632 bytes. SHA-256:
+`2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d`.
+It is a statically linked musl binary with squashfuse and libfuse compiled in,
+so the AppImage never asks the host for `libfuse.so.2` -- the missing library
+that makes a downloaded AppImage do nothing on a current Ubuntu. The digest is
+the trust anchor: it is recorded here, enforced by `scripts/build-linux.sh`
+before the runtime is concatenated, and checked by `tests/test_linux_port.py`,
+so changed bytes fail the build instead of shipping. The release also publishes
+a detached signature; it is not verified because no gpg keyring is trusted in
+the build environment. The runtime is concatenated, never patched, and is
+LGPL-2.1-or-later like the rest of libfuse.
