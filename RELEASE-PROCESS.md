@@ -1,10 +1,18 @@
 # Release process for every Bitcoin Easy Signer build
 
-This is the required process for any human or coding agent preparing a Mac DMG,
-regardless of which AI tool or machine they use. AGENTS.md defines product
-safety boundaries; this file defines the repeatable build and publication gates.
-The Apple Developer instructions outside this repository supply credential and
+This is the required process for any human or coding agent preparing a release —
+macOS, Windows, or Linux — regardless of which AI tool or machine they use.
+AGENTS.md defines product safety boundaries; this file defines the repeatable
+build and publication gates; **SIGNING.md defines what each platform's download
+carries (signature and provenance) and the release-key policy**. The Apple
+Developer instructions outside this repository supply credential and
 notarization details, but do not replace these gates.
+
+One pipeline publishes everything: `.github/workflows/build-candidate.yml`
+builds macOS, Windows x64 and Linux x86_64 from the same commit in the same
+dispatch-only run and is the only publish path. The retired per-platform
+workflows must not return; a second publish path is how unverified bytes once
+reached a tagged release.
 
 ## 1. Prepare the release commit
 
@@ -24,10 +32,12 @@ notarization details, but do not replace these gates.
    SBOM updates, complete tests, and a new candidate. Do not change signing.py,
    safe_http.py, or another safety invariant without a scoped review and
    regression tests.
-4. Build only with scripts/build-macos.sh or
-   .github/workflows/build-candidate.yml. Never assemble a release DMG with an
-   ad hoc PyInstaller command. Dependency installation and all other
-   third-party code must finish before Apple signing secrets are loaded.
+4. Build only with the platform build script for local checks
+   (scripts/build-macos.sh, scripts/build-windows.ps1, scripts/build-linux.sh)
+   or .github/workflows/build-candidate.yml for anything that could ship.
+   Never assemble a release artifact with an ad hoc PyInstaller command.
+   Dependency installation and all other third-party code must finish before
+   Apple signing secrets are loaded.
    Local builds are useful for quick development checks. They are not release
    artifacts: the release candidate must be produced by the GitHub workflow,
    and the owner tests that candidate when a hardware walkthrough is required.
@@ -41,11 +51,12 @@ notarization details, but do not replace these gates.
    JavaScript syntax checks, bash -n, and the source archive's own tests.
 3. Dispatch build-candidate.yml from main at the final release commit with
    notarize=true and publish=false. A source push alone never builds or
-   publishes a release. The run must check the vendored libusb digest; install
+   publishes a release. The run must check the vendored libusb digests; install
    dependencies with hashes before importing credentials; sign and notarize
-   the app and DMG; validate staples, signatures, and Gatekeeper; run packaged
-   app and HWI checks; create the shipped-component SBOM; and verify candidate
-   checksums. Record the successful candidate run ID.
+   the macOS app and DMG; validate staples, signatures, and Gatekeeper; build
+   and self-check the Windows and Linux bundles; create the shipped-component
+   SBOMs; and write one candidate SHA256SUMS covering every platform's assets.
+   Record the successful candidate run ID.
 4. Inspect the candidate DMG and its checksums. Request one owner practice-network
    hardware walkthrough when the release changes app behavior. Automated tests
    do not count as physical acceptance. The candidate workflow retains a
@@ -60,11 +71,13 @@ publish=true, and candidate_run_id set to the successful candidate run ID. This
 second run is the publication event. It must itself pass all source, signing,
 notarization, packaging, checksum, and release jobs. The workflow verifies that
 the candidate run succeeded on the same commit, checks its notarization
-manifest, downloads the candidate's signed artifacts, and verifies their
-SHA256SUMS before publishing those exact tested bytes. It also checks that the
-remote version tag does not exist and refuses an unsigned or unnotarized build
-before creating a release. Record both run URLs and the full commit SHA in the
-patch record.
+manifest, downloads the candidate's signed artifacts for every platform, and
+verifies their SHA256SUMS before signing that manifest with the release GPG key
+(SHA256SUMS.asc — it fails closed without GPG_PRIVATE_KEY; see SIGNING.md) and
+attaching a Sigstore build attestation to every asset. It also checks that the
+remote version tag does not exist and refuses an unsigned or unnotarized macOS
+build before creating one release that carries all three platforms. Record both
+run URLs and the full commit SHA in the patch record.
 
 Never use a manual gh release create, website upload, or tag push as the normal
 publication route. Do not dispatch publish=true without the candidate run ID
@@ -73,12 +86,14 @@ commit, rerun the signed candidate on that commit, and publish only from that
 commit.
 
 After publication, independently check that the tag points to the commit named
-by the publishing run; download every public asset; verify the published
-SHA256SUMS; and check the release is neither a draft nor a prerelease. Do not
-replace an existing tag or asset. Record the publication run and verification
-in releases/PATCH-VERSION.md, then update current-status files in a
-documentation-only commit. The source archive and tag are immutable snapshots;
-the post-publication records on main must explain any documented differences.
+by the publishing run; download every public asset for all three platforms;
+verify the published SHA256SUMS; verify SHA256SUMS.asc against the committed
+signing-key.asc; verify at least one asset's Sigstore attestation; and check
+the release is neither a draft nor a prerelease. Do not replace an existing tag
+or asset. Record the publication run and verification in releases/PATCH-VERSION.md,
+then update current-status files in a documentation-only commit. The source
+archive and tag are immutable snapshots; the post-publication records on main
+must explain any documented differences.
 
 Manual publication bypasses machine-enforced release gates and is prohibited.
 If the workflow is unavailable, wait to publish; do not create a tag, GitHub
