@@ -180,6 +180,16 @@ class LocalGuiTests(unittest.TestCase):
         # The old promise that nothing is ever signed is no longer true.
         self.assertNotIn("No transaction is signed or broadcast.", page)
 
+    def test_the_signing_screen_names_the_real_device_press_count(self):
+        """0.6.6 owner walkthrough: the banner said Ledger might ask twice and
+        it asked four times. The copy must use the payment's input count."""
+        page = self.get_page()
+        self.assertNotIn("sometimes twice", page)
+        self.assertIn("reviewInputCount", page)
+        self.assertIn('id="sign-expect"', page)
+        self.assertIn("one per coin", page)
+        self.assertIn("test message", page)
+
     def test_the_fee_speed_buttons_show_which_one_is_selected(self):
         """Reported bug: pressing Slow/Medium/Fast gave no confirmation at all."""
         page = self.get_page()
@@ -241,7 +251,7 @@ class LocalGuiTests(unittest.TestCase):
         for message in ("Reading your wallet file",
                         "Checking the blockchain for your balance",
                         "Looking for your signing device",
-                        "Check each screen carefully"):
+                        "Use the device as the yes button"):
             self.assertIn(message, page, f"missing progress message: {message}")
         # The bar must take its colours from the palette so it themes with the rest
         # of the app. This assertion used to pin a literal "#ffd447", which is

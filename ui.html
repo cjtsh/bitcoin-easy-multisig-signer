@@ -651,9 +651,11 @@
         <div id="sign-step" hidden>
           <h3>Sign this transaction</h3>
           <p class="small muted">Any <strong id="sign-threshold">2</strong> of your
-            <strong id="sign-total">3</strong> devices can sign this payment. Each device shows the
-            destination and amount on its own screen — check them there and approve on the device.
-            This app cannot approve anything for you.</p>
+            <strong id="sign-total">3</strong> devices can sign this payment.
+            Each device asks for a short test message first, then one approval per coin this
+            payment spends. The app has already checked the destination and amount on this
+            screen — the device is the yes button. This app cannot approve anything for you.</p>
+          <p class="small muted" id="sign-expect"></p>
           <div id="sign-buttons"></div>
           <button id="check-more-devices" type="button" class="secondary">Look for more devices</button>
           <div id="sign-progress" role="status" aria-live="polite"></div>
@@ -819,6 +821,11 @@
     });
     let currentPsbt = null;
     let rate = null, lastScan = null, reviewAmountSats = null, reviewFeeSats = null;
+    // How many confirmed outputs the reviewed payment spends. Ledger and Trezor
+    // ask once per input plus once for the key-proof message, so the honest
+    // press count is inputs + 1. An earlier banner promised a much smaller
+    // number and the device then asked for every coin; the owner almost gave up.
+    let reviewInputCount = null;
     let priceRequestId = 0, feeRequestId = 0, walletActionId = 0, feeQuote = null;
     let feeRateCustomized = false, sendActionId = 0, preparing = false;
     // The network this page is on, held in memory exactly as the backend holds
@@ -956,7 +963,7 @@
       walletCanPrepare = false; walletCanSendAll = false; lastScan = null;
       feeEstimate = null; feeQuote = null;
       $("explorer-consent").checked = false;
-      currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
+      currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null; reviewInputCount = null;
       $("destination").value = ""; $("amount").value = "";
       $("send-all").checked = false;
       feeRateCustomized = false;
@@ -1233,7 +1240,7 @@
       // mainnet_opt_in from it, so a retired review must not leave its chain
       // behind for a later payment to inherit.
       currentPsbt = null; preparationId = null; finalTxid = null; finalChain = null;
-      reviewAmountSats = null; reviewFeeSats = null;
+      reviewAmountSats = null; reviewFeeSats = null; reviewInputCount = null;
       $("review").hidden = true; $("download").disabled = true;
       $("next-signers").disabled = true; $("signer-step").hidden = true;
       $("sign-step").hidden = true; $("finalize-step").hidden = true;
@@ -1486,7 +1493,7 @@
       }
       $("balance-send-status").hidden = allowSend;
       setText("balance-send-status", sendBlockReason);
-      $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null;
+      $("review").hidden = true; currentPsbt = null; reviewAmountSats = null; reviewFeeSats = null; reviewInputCount = null;
       lastScan = data;
       $("send-all").checked = false;
       $("send-all").disabled = !walletCanSendAll;
@@ -1622,7 +1629,7 @@
       $("refresh-top").hidden = true;
       lastScan = null; currentPsbt = null;
       feeEstimate = null; feeEstimateError = "";
-      reviewAmountSats = null; reviewFeeSats = null;
+      reviewAmountSats = null; reviewFeeSats = null; reviewInputCount = null;
       $("destination").value = ""; $("amount").value = "";
       $("download").disabled = true;
       msg("message", "");
@@ -1736,6 +1743,7 @@
         setText("review-total", btc(result.total_spend_sats) + " BTC (" + fmt(result.total_spend_sats) + " sats)");
         setText("review-remaining", btc(result.remaining_confirmed_sats) + " BTC");
         setText("review-inputs", result.inputs);
+        reviewInputCount = result.inputs;
         setText("review-change", result.send_all ? "None — all confirmed outputs are used." :
           result.change_address + " · " + btc(result.change_sats) + " BTC (" + fmt(result.change_sats) + " sats)");
         setText("review-txid", result.txid || "unavailable");
@@ -1857,8 +1865,7 @@
         setText("sign-progress", "No signing device is readable right now. Unlock the device, "
           + "open its Bitcoin app if it has one, then look again.");
       } else {
-        setText("sign-progress", "Choose a device to sign with. Approve the transaction on "
-          + "the device screen.");
+        setText("sign-progress", "Choose a device to sign with. It will ask for a short test message, then one approval per coin.");
       }
       // Only scroll when entering the step. A refresh after a device is found
       // must not move the page: the operator is watching the boxes.
@@ -1872,6 +1879,12 @@
       const quotaMet = done.size >= threshold;
       setText("sign-threshold", String(threshold));
       setText("sign-total", String(keys));
+      if (reviewInputCount) {
+        const presses = reviewInputCount + 1;
+        setText("sign-expect",
+          "Plan for about " + presses + " confirmations on each device: 1 short test message, then 1 per coin (" +
+          reviewInputCount + " coin" + (reviewInputCount === 1 ? "" : "s") + " in this payment).");
+      }
       for (let n = 1; n <= keys; n++) {
         const device = devices.find((d) => Number(d.signer) === n);
         const box = document.createElement("div");
@@ -1933,14 +1946,16 @@
       signing = true;
       box.classList.add("busy");
       const ledger = String(device.type || "").toLowerCase().includes("ledger");
-      // Two on-device steps happen inside one click: a short key-proof message,
-      // then the payment. Without saying so, the pause before the payment screens
-      // looks like a hang on a small device display.
-      const busy = setBusy("On the device: confirm a short test message first, then the payment. The app is waiting — it is not stuck.");
+      // On-device presses = one key-proof message + one per input. Naming the
+      // real count up front is what stops a four-press Ledger from looking hung.
+      const coins = reviewInputCount || 1;
+      const presses = coins + 1;
+      const busy = setBusy("On the device: about " + presses + " confirmations — one short test message, then one per coin. The app is waiting — it is not stuck.");
       $("sign-progress").className = "";
-      setText("sign-progress", ledger ?
-        "Ledger will show a short test message first (wallet key check), then the payment screens. The text on a Ledger is too small to compare comfortably — this app has already checked the destination and amount on the big screen. Use the device as the yes button, and take your time." :
-        "Your device will ask you to confirm a short test message first (this proves the wallet key), then the payment. If the screen is small, you do not need to read every code — the destination and amount are already checked here. Approve when you are ready.");
+      setText("sign-progress",
+        "About " + presses + " confirmations on the device (1 test message + " + coins +
+        " coin" + (coins === 1 ? "" : "s") + "). The text on the device is too small to compare comfortably — this app has already checked the destination and amount on the big screen. Use the device as the yes button, and take your time." +
+        (ledger ? " A Ledger shows each input on its own screen." : ""));
       try {
         const result = await post("/api/sign", {preparation_id: reviewId,
           device_type: device.type, device_path: device.path});
