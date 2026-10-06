@@ -1,6 +1,10 @@
 # Release history and correction record
 
-**Windows 0.6.5 published and owner-tested:** [release download](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.5-windows-x64). Candidate run 37264196917 was promoted by successful workflow run 37264663578 from commit 897e9e6. On 2026-10-05 the owner downloaded the release from GitHub and reported that it worked great with no terminal pop-ups. This closes the console-window acceptance check; transaction network, broadcast and confirmation were not supplied. macOS remains at 0.6.4 and is unchanged. Downloads must use GitHub Releases consistently, rather than requiring the owner to retrieve Actions artifacts or use a local development build.
+**The out-of-gate `v0.6.5-windows-x64` release was deleted** (CT-27): it
+carried same-named different-byte Windows assets from a retired workflow.
+Its owner-reported console-window acceptance is preserved in
+`releases/PATCH-0.6.5.md`. Supported binaries live only on each version's
+own release page.
 
 
 This is the consolidated, chronological record of the published versions that
@@ -64,6 +68,7 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | **0.6.2** | Internal state fix: retiring a review also retires the network it was bound to, so the mainnet opt-in posted with a broadcast can never be inherited from an earlier payment. No user-visible change; the engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.2` from commit `7b4db85` (run 36959242210) | [`releases/PATCH-0.6.2.md`](releases/PATCH-0.6.2.md) |
 | **0.6.3** | Audit remediation in signing checks, embit, libusb, build inventory, and release controls. Owner-tested Mutinynet payment. Published 2026-10-02 as tag `v0.6.3` from tested app commit `f19bc46` (nonpublishing build run 36969063265); public DMG verified byte-identical to the tested file | [`releases/PATCH-0.6.3.md`](releases/PATCH-0.6.3.md) |
 | **0.6.4** | No transaction or signing behavior change. Adds API regression coverage, embit wheel hash to the SBOM, and workflow-only publication of the exact verified candidate bytes. Published 2026-10-02 as tag `v0.6.4` at commit `35cdedb` by candidate run 37008418851 and publishing run 37009396873. The AI-generated Z.ai follow-up report assigns Green under its rubric; no independent human end-to-end review is recorded | [`releases/PATCH-0.6.4.md`](releases/PATCH-0.6.4.md) · [`releases/AUDIT-ZAI-0.6.4.md`](releases/AUDIT-ZAI-0.6.4.md) |
+| **0.6.6** | Color Team cycle-2 remediation. BIP-143 published vectors; money-path and HWI-identity pins; BIP-62 low-S; key-proof before any PSBT is sent; large-amount prompt a lying price cannot suppress; broadcast pre-checks outside the session lock; pinned runners and lock tooling; release-channel hygiene. Owner hardware walkthrough required before publication | [`releases/PATCH-0.6.6.md`](releases/PATCH-0.6.6.md) · [`releases/RELEASE-NOTES-0.6.6.md`](releases/RELEASE-NOTES-0.6.6.md) |
 
 ## 0.1.x — Phases 1 through 4 on Testnet4
 

@@ -54,6 +54,12 @@ FEES_CACHE_SECONDS = 120
 # Mainnet payments at or above this size always need the high-value confirmation,
 # independent of any remote BTC/USD quote. 0.1 BTC is 10,000,000 satoshis.
 LARGE_AMOUNT_SATS_FLOOR = 10_000_000
+# A lying-low BTC/USD quote must not suppress the prompt. The USD trigger is
+# also evaluated at this conservative ceiling, so $10,000 is reached at
+# 10_000 * 1e8 / 250_000 = 4,000,000 sats (0.04 BTC) no matter what the feed
+# says (CT-30). The quoted price can still fire the prompt earlier when it is
+# honest and higher.
+LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE = 4_000_000
 DIAGNOSTIC_STAGES = frozenset({
     "wallet_import", "change_path", "wallet_scan", "transaction_prepare",
     "signer_check", "signer_response", "final_transaction", "broadcast",
@@ -341,8 +347,19 @@ def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> 
         folder = Path.home() / "Downloads"
         if not folder.is_dir():
             folder = Path.home()
+    # CT-43: once verified signatures attach, the file is no longer "unsigned".
+    # Calling a signed PSBT unsigned mislabels its spend authority. A packet
+    # we cannot parse cannot prove it carries signatures, so it keeps the
+    # conservative name.
+    label = "unsigned"
+    try:
+        packet = PSBT.parse(raw)
+        if any(scope.partial_sigs for scope in packet.inputs):
+            label = "signed"
+    except Exception:
+        pass
     for suffix in ("",) + tuple(f"-{n}" for n in range(2, 100)):
-        target = folder / f"{chain}-unsigned{suffix}.psbt"
+        target = folder / f"{chain}-{label}{suffix}.psbt"
         try:
             handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
@@ -363,7 +380,7 @@ def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> 
             raise WalletError(f"Could not save the transaction file to {folder}.") from exc
         return {"saved": True, "path": str(target)}
     raise WalletError(
-        f"Too many files named {chain}-unsigned*.psbt already exist in {folder}. "
+        f"Too many files named {chain}-{label}*.psbt already exist in {folder}. "
         "Move or rename some and try again."
     )
 
@@ -715,11 +732,12 @@ class LocalApp:
                     generation = state.scan_generation
                 if record is None:
                     raise WalletError("Import a BSMS wallet first.")
-                if (explorer != CHAIN_CONFIGS[chain].explorer_url or
-                    CHAIN_CONFIGS[chain].checkpoint_height is not None):
-                    # Custom Signet shares the standard Signet genesis block.
-                    # Verify its fork checkpoint even for the built-in URL.
-                    verify_esplora(chain, explorer)
+                # Always check the explorer's network before trusting its
+                # numbers, including the built-in default (CT-20). A TLS-pinned
+                # canonical URL is not a substitute for seeing the genesis hash
+                # this chain config expects. Custom Signet shares the standard
+                # Signet genesis block, so verify its fork checkpoint too.
+                verify_esplora(chain, explorer)
                 result = scan_wallet(record, base_url=explorer, chain=chain)
                 if pending_txid:
                     # A newly broadcast tx may not yet appear in address statistics.
@@ -958,25 +976,28 @@ class LocalApp:
                     raise WalletError(
                         "The confirmed transaction is not the one prepared. Nothing was sent."
                     )
-                # Keep payment state locked until the network request finishes.
-                # A concurrent refresh/import/settings edit must not invalidate
-                # the reviewed payment during the irreversible submit call.
+                # CT-13: network pre-checks run before the session lock. They
+                # do not mutate prepared state, and holding the lock across a
+                # slow explorer would stall every other operation. The
+                # irreversible submit still runs under the lock so a concurrent
+                # refresh/import/settings edit cannot swap the payment mid-send.
+                with state.lock:
+                    broadcaster = state.servers[chain]["broadcaster"]
+                    primary = state.servers[chain]["explorer"]
+                packet = payment.checked_psbt()
+                try:
+                    final = finalize_multisig(packet, txid)
+                except SigningError as exc:
+                    raise WalletError(str(exc)) from exc
+                self._check_final_review(_record, packet, final, payment.review())
+                # A scan can become stale while the owner reviews devices.
+                # Recheck the exact chosen coins before submitting anything.
+                verify_selected_outpoints(packet, chain, primary)
+                if CHAIN_CONFIGS[chain].checkpoint_height is not None:
+                    verify_esplora(chain, broadcaster)
                 with state.lock:
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The payment changed before broadcast.")
-                    broadcaster = state.servers[chain]["broadcaster"]
-                    packet = payment.checked_psbt()
-                    try:
-                        final = finalize_multisig(packet, txid)
-                    except SigningError as exc:
-                        raise WalletError(str(exc)) from exc
-                    self._check_final_review(state.record, packet, final, payment.review())
-                    # A scan can become stale while the owner reviews devices.
-                    # Recheck the exact chosen coins before submitting anything.
-                    primary = state.servers[chain]["explorer"]
-                    verify_selected_outpoints(packet, chain, primary)
-                    if CHAIN_CONFIGS[chain].checkpoint_height is not None:
-                        verify_esplora(chain, broadcaster)
                     try:
                         sent = broadcast_transaction(
                             final["raw_transaction_hex"], chain, broadcaster,
@@ -1100,9 +1121,7 @@ class LocalApp:
                     raise WalletError("Selected network does not match the open wallet.")
                 if scan.get("source") != explorer:
                     raise WalletError("Explorer changed since the balance scan; refresh before preparing.")
-                if (explorer != CHAIN_CONFIGS[chain].explorer_url or
-                    CHAIN_CONFIGS[chain].checkpoint_height is not None):
-                    verify_esplora(chain, explorer)
+                verify_esplora(chain, explorer)
                 with state.lock:
                     mutinynet = chain == "mutinynet"
                     fee_value = state.mutinynet_fees if mutinynet else state.fees
@@ -1144,11 +1163,12 @@ class LocalApp:
                             state.price_checked = time.monotonic()
                     requested_amount = (scan["confirmed_sats"] if data.get("send_all")
                                         else data.get("amount_sats"))
-                    # Two independent triggers: an absolute satoshi floor that no
-                    # remote feed can influence, and the USD reference when the
-                    # price quote is available.
+                    # Independent triggers: absolute satoshi floors that no remote
+                    # feed can push higher (CT-30), plus the USD reference at the
+                    # quoted price when that quote is honest and high.
                     if (type(requested_amount) is int
                         and (requested_amount >= LARGE_AMOUNT_SATS_FLOOR
+                             or requested_amount >= LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE
                              or requested_amount * price["usd_per_btc"] / 100_000_000 >= 10_000)
                         and data.get("large_amount_confirmed") is not True):
                         raise WalletError(

@@ -26,6 +26,41 @@ from embit.psbt import PSBT
 # OP_0..OP_16
 _OP_1_TO_16 = {0x50 + n: n for n in range(1, 17)}
 
+# BIP-62 low-S: a signature whose S value exceeds n/2 is valid ECDSA but
+# non-canonical. Bitcoin relay treats it as non-standard, so a malicious
+# device can hand back a high-S signature that finalizes here and then fails
+# to broadcast — an availability attack on the owner's payment.
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+SECP256K1_HALF_ORDER = SECP256K1_ORDER // 2
+
+
+def _is_low_s(der: bytes) -> bool:
+    """True only when a DER ECDSA signature carries S <= n/2 (BIP-62).
+
+    Parsed here rather than through embit so the gate is ours: a backend that
+    accepts high-S at parse or verify time must not reach finalisation.
+    """
+    data = bytes(der)
+    if len(data) < 8 or data[0] != 0x30 or data[1] != len(data) - 2:
+        return False
+    if data[2] != 0x02:
+        return False
+    r_len = data[3]
+    if r_len < 1 or r_len > 33 or 4 + r_len >= len(data):
+        return False
+    if data[4 + r_len] != 0x02:
+        return False
+    s_len = data[5 + r_len]
+    if s_len < 1 or s_len > 33 or 6 + r_len + s_len != len(data):
+        return False
+    s_bytes = data[6 + r_len:6 + r_len + s_len]
+    if s_bytes[0] & 0x80:
+        return False
+    if s_len > 1 and s_bytes[0] == 0x00 and not (s_bytes[1] & 0x80):
+        return False
+    s = int.from_bytes(s_bytes, "big")
+    return 0 < s <= SECP256K1_HALF_ORDER
+
 
 class SigningError(Exception):
     """A signing or finalisation problem that should be shown to the user."""
@@ -101,6 +136,10 @@ def verified_input_signatures(psbt) -> list[set[bytes]]:
         for pubkey, signature in partial_sigs_as_bytes(scope).items():
             if pubkey not in keys or len(signature) < 2 or signature[-1] != 1:
                 raise SigningError(f"Input {index + 1} contains an unexpected signature or sighash type.")
+            if not _is_low_s(signature[:-1]):
+                raise SigningError(
+                    f"Input {index + 1} contains a high-S signature (BIP-62 low-S required)."
+                )
             try:
                 parsed = ec.Signature.parse(signature[:-1])
                 digest = psbt.tx.sighash_segwit(

@@ -43,6 +43,12 @@ class LocalGuiTests(unittest.TestCase):
         self.outpoint_patch = patch("gui.verify_selected_outpoints")
         self.outpoint_patch.start()
         self.addCleanup(self.outpoint_patch.stop)
+        # CT-20 always genesis-checks the explorer, including the built-in URL.
+        # The harness never touches the network, so stub the probe here; the
+        # dedicated pin asserts it is actually consulted.
+        self.genesis_patch = patch("gui.verify_esplora")
+        self.genesis_patch.start()
+        self.addCleanup(self.genesis_patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self.app.handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

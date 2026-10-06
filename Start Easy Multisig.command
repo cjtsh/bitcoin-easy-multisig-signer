@@ -23,4 +23,8 @@ if ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0 if
 fi
 
 echo "Opening the Bitcoin Easy Signer GUI in your browser..."
+# Source mode resolves the hardware-wallet helper beside this interpreter
+# first (the venv's own hwi), then on PATH. probe.py refuses any helper that
+# does not identify as the pinned HWI release, so a planted binary is not
+# executed. Install hwi==3.2.0 into .venv for the self-contained path.
 .venv/bin/python3 gui.py

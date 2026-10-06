@@ -319,10 +319,13 @@ class ProbeTests(unittest.TestCase):
         from subprocess import CompletedProcess
 
         with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
+            "probe._verify_hwi_identity"
+        ) as identify, patch(
             "probe.subprocess.run",
             return_value=CompletedProcess([], 0, "[]", ""),
         ) as run:
             self.assertEqual(invoke_hwi("fake", "testnet4", "enumerate"), [])
+        identify.assert_called_once_with("/fake/hwi")
         self.assertEqual(
             run.call_args.args[0],
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
@@ -334,6 +337,8 @@ class ProbeTests(unittest.TestCase):
         with patch("probe.sys.platform", "win32"), patch(
             "probe.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True
         ), patch("probe._hwi_path", return_value="hwi.exe"), patch(
+            "probe._verify_hwi_identity"
+        ), patch(
             "probe.subprocess.run", return_value=CompletedProcess([], 0, "[]", "")
         ) as run:
             invoke_hwi("hwi", "testnet4", "--stdin", stdin_command="synthetic\n")
@@ -373,6 +378,8 @@ class ProbeTests(unittest.TestCase):
 
         packet = "cHNidP8="
         with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
+            "probe._verify_hwi_identity"
+        ), patch(
             "probe.subprocess.run",
             return_value=CompletedProcess([], 0, '{"psbt":"cHNidP8="}', ""),
         ) as run:
@@ -390,13 +397,17 @@ class ProbeTests(unittest.TestCase):
         text, roots = test_record()
         wallet = self.write(text)
         expected = roots[0].derive("m/48h/1h/0h/2h").to_public().to_base58()
-        with patch("probe.invoke_hwi", return_value={"xpub": expected}) as invoke:
+        with patch("probe.invoke_hwi", return_value={"xpub": expected}) as invoke, \
+                patch("probe.prove_signer_holds_key") as proof:
             verify_signer_device(wallet, "hwi", "test", "jade", "/dev/test", 1)
         self.assertEqual(invoke.call_args.args[-2:], ("getxpub", "m/48h/1h/0h/2h"))
         self.assertEqual(invoke.call_args.kwargs["timeout_seconds"], 180)
-        with patch("probe.invoke_hwi", return_value={"xpub": "wrong"}):
+        proof.assert_called_once()
+        with patch("probe.invoke_hwi", return_value={"xpub": "wrong"}), \
+                patch("probe.prove_signer_holds_key") as proof:
             with self.assertRaisesRegex(ProbeError, "no longer matches"):
                 verify_signer_device(wallet, "hwi", "test", "jade", "/dev/test", 1)
+        proof.assert_not_called()
 
     def test_signing_psbt_cannot_inject_another_stdin_command(self):
         from probe import sign_psbt_with_device

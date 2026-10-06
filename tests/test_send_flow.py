@@ -250,6 +250,56 @@ class SendFlowTests(unittest.TestCase):
         self.assertEqual(send.call_args.args[1], "mutinynet")
         self.assertIn("mutinynet.com", sent["explorer"])
 
+    def test_broadcast_prechecks_do_not_hold_the_session_lock(self):
+        """CT-13: explorer I/O before submit must not stall every other operation.
+
+        The irreversible broadcast itself stays under the lock so a concurrent
+        refresh cannot swap the payment mid-send.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[0])):
+            self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                    "device_type": "jade", "device_path": "/dev/x"})
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[1])):
+            self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                    "device_type": "trezor", "device_path": "webusb:1"})
+        self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+
+        held = {"outpoint": None, "submit": None}
+
+        class RecordingLock:
+            def __init__(self, inner):
+                self._inner = inner
+                self.depth = 0
+
+            def __enter__(self):
+                self.depth += 1
+                return self._inner.__enter__()
+
+            def __exit__(self, *args):
+                self.depth -= 1
+                return self._inner.__exit__(*args)
+
+        recorder = RecordingLock(self.app.lock)
+        self.app.lock = recorder
+
+        def note_outpoints(*_args, **_kwargs):
+            held["outpoint"] = recorder.depth
+
+        def note_submit(*_args, **_kwargs):
+            held["submit"] = recorder.depth
+            return txid
+
+        with patch("gui.verify_selected_outpoints", side_effect=note_outpoints), \
+                patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction", side_effect=note_submit):
+            sent = self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                                "confirm": True, "confirmed_txid": txid})
+        self.assertEqual(sent["txid"], txid)
+        self.assertEqual(held["outpoint"], 0, "prechecks must run outside the lock")
+        self.assertGreater(held["submit"], 0, "the irreversible submit must hold the lock")
+
     def test_jade_style_metadata_rewrite_keeps_only_verified_signatures(self):
         result, keys = self.prepare_a_reviewed_transaction(chain="mutinynet")
         original = E.PSBT.from_base64(self.app.prepared.psbt_base64)

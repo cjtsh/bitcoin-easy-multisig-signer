@@ -113,3 +113,46 @@ remaining owner or audit gates belong in CURRENT-STATUS.md,
 PHASE-HANDOFF.md, RELEASE-HISTORY.md, and the versioned record under releases/.
 Keep dated audit reports intact. Do not claim a newer audit grade until the
 independent reviewer records it.
+
+## 5. Audit tripwires and release-channel hygiene (learned the hard way)
+
+Cycles 1 and 2 spent more effort re-proving the software than building it.
+These rules exist so cycle N does not repeat that. They apply to every future
+revision, including 0.7.0.
+
+**A test that cannot fail does not count as a fix.** Every load-bearing
+money-path or release-path control needs a tripwire demonstrated able to fail:
+break the control on a disposable copy, watch the named test go red, restore.
+Record that transcript beside the change. Cycle 3's referee will break-and-watch
+every pin. The test must assert the *specific* refusal message the gate produces
+(so a weaker backend fallback cannot make it pass) and must include the positive
+half (the honest path still works).
+
+**External oracles catch what shared code cannot.** Sign-then-verify tests that
+call the same function twice stay green under a digest substitution. Pin
+published test vectors (BIP-143 and friends) and recompute them without the
+library under test. See `tests/test_bip143_vectors.py`.
+
+**Release-channel hygiene is part of the release.** A GitHub release page is the
+shop window. Same-named different-byte files and unsigned sums destroy operator
+verification even when the bytes themselves are fine. Before the next audit
+cycle: delete or clearly supersede any out-of-gate asset; never leave two files
+with one name; keep exactly one `SHA256SUMS` covering every platform and its
+`.asc`. A supersession banner must say which files were removed and where the
+supported binaries now live.
+
+**Pin what used to float.** Runner images must name a specific
+(`ubuntu-24.04`, `windows-2022`, `macos-15`) — never a `-latest` alias.
+Source-mode tool resolution must prove the helper's identity (the pinned HWI
+release) before it sees an account xpub or PSBT. Actions stay pinned to full
+commit SHAs. `tests/test_workflow_config.py` and
+`tests/test_hardening_pins.py` hold these.
+
+**Stale version strings are findings.** When `version.py` moves, update
+`AGENTS.md`, release notes, user-facing references and the audit plan's target
+revision together in the same commit. "Current published version is X" inside
+tag X+1 is stale-by-construction and was filed as CT-46.
+
+**The audit ledger is the backlog.** Work the appendix of the latest
+color-team report as the fix list. Close each finding with a test demonstrated
+able to fail, or with a written owner acceptance — never by silence.

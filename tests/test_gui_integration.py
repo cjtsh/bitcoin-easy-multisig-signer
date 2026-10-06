@@ -103,6 +103,7 @@ class ApiTestCase(unittest.TestCase):
             ("fetch_fee_rates", lambda: FEE_QUOTE),
             ("fetch_btc_usd", lambda: PRICE),
             ("verify_selected_outpoints", lambda *_args: None),
+            ("verify_esplora", lambda *_args: None),
         ):
             patcher = patch.object(gui, target, value)
             patcher.start()
@@ -189,6 +190,20 @@ class TransactionJourneyTests(ApiTestCase):
             self.assertEqual(psbt.PSBT.from_base64(prepared["psbt_base64"]).tx.txid().hex(),
                              prepared["txid"])
             verify.assert_any_call("mutinynet", "https://mutinynet.com/api")
+
+    def test_scan_of_the_built_in_explorer_still_checks_its_genesis(self):
+        """CT-20: the default URL is not exempt from seeing its own genesis.
+
+        Before the fix, a scan against the built-in testnet4/main URL skipped
+        verify_esplora entirely. Remove the unconditional call and this test
+        goes red.
+        """
+        self.import_wallet()
+        with patch.object(gui, "verify_esplora") as verify:
+            status, scan = self.post("/api/scan", {"chain": "testnet4"})
+        self.assertEqual(status, 200)
+        verify.assert_called_once_with(
+            "testnet4", gui.CHAIN_CONFIGS["testnet4"].explorer_url)
 
     def test_outpoint_check_can_stop_preparation_after_scan(self):
         self.import_wallet()
@@ -542,6 +557,28 @@ class LargeAmountGateTests(ApiTestCase):
         status, prepared = self.post("/api/prepare", {**payload, "large_amount_confirmed": True})
         self.assertEqual(status, 200)
         self.assertEqual(prepared["amount_sats"], 20_000_000)
+
+    def test_a_lying_low_price_cannot_hide_a_large_payment_under_one_bitcoin(self):
+        """CT-30: 0.05 BTC is large whenever BTC is near $200k; $1 must not hide it."""
+        patcher = patch.object(gui, "fetch_btc_usd", lambda: {**PRICE, "usd_per_btc": 1.0})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        status, summary = self.import_wallet(chain="main")
+        self.assertEqual(status, 200)
+        status, scan = self.post("/api/scan", {"chain": "main"})
+        self.assertEqual(status, 200)
+
+        recipient = self.layout.receive.derive(1).address(NETWORKS["main"])
+        payload = {"chain": "main", "recipient": recipient, "amount_sats": 5_000_000,
+                   "send_all": False, "fee_rate": 2}
+        status, body = self.post("/api/prepare", payload)
+        self.assertEqual(status, 400)
+        self.assertIn("large mainnet payment", body["error"])
+
+        status, prepared = self.post("/api/prepare", {**payload, "large_amount_confirmed": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(prepared["amount_sats"], 5_000_000)
 
     def test_below_the_floor_does_not_require_the_extra_confirmation(self):
         self.import_wallet(chain="main")

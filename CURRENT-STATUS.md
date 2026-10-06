@@ -1,29 +1,25 @@
 # Current status — Bitcoin Easy Signer
 
-**0.6.5 is in preparation: the Color Team audit remediation.** An independent
-five-lane Color Team audit of v0.6.4 (report, plan, lock and index are in this
-repository's root) found no path to move a user's Bitcoin wrongly in the macOS
-app and verified its build→notarize→publish chain end-to-end; the cycle graded
-BLOCKED because the v0.6.4 release page also carried Windows and Linux assets
-uploaded by hand from unmerged commits (CT-01, CT-02), and because the
-source-mode launcher's substituted-embit guard validated the wrong version
-(CT-04). The remediation on the `audit-fixes-0.6.5` branch: the Windows and
-Linux ports are merged onto one tree; one dispatch-only pipeline
-(`build-candidate.yml`) builds all three platforms from the same commit and is
-the only publish path; `SHA256SUMS` is CI-generated, GPG-signed at publish and
-Sigstore-attested per asset (`SIGNING.md` is the signing/provenance policy);
-the launcher guard checks the pinned embit `0.8.2+besa.1`; the final-review
-backstop, preparation binding, prevout-ownership refusals and six smaller
-controls are pinned by fail-capable tests; diagnostics accept only a fixed
-device-class vocabulary. CT-13 (broadcast lock across explorer I/O) and CT-14
-(counterfeit echo device receives the still-refused PSBT) are deferred by
-decision and recorded here as open. The owner reports functional acceptance of
-the Windows (`v0.6.5-windows-x64`) and Linux (AppImage) builds from the port
-pipelines, including signing and, on Linux, a full transaction; those builds
-are superseded by the unified 0.6.5. Publication, a fresh audit plan pinned to
-the 0.6.5 tag, and the cycle-2 audit are pending.
+**0.6.6 is in preparation: Color Team cycle-2 remediation.** The cycle-2
+five-lane Color Team audit of the 0.6.5 tree (report, plan, lock and index in
+this repository's root) graded CONDITIONAL. The four Mediums were release-channel
+findings (CT-01/CT-02 manual assets on the v0.6.4 page, CT-27 a second live
+0.6.5 Windows set) and an unpinned BIP-143 digest (CT-26). The Lows were
+unpinned money-path controls and two deferred design items (CT-13 broadcast
+lock scope, CT-14 counterfeit echo). Version 0.6.6 answers all of them in
+code: channel cleanup, published BIP-143 vectors, money-path and HWI-identity
+pins, BIP-62 low-S, a key-proof before any PSBT is sent, a large-amount prompt
+a lying price cannot suppress, broadcast pre-checks outside the session lock,
+pinned runners and lock tooling. Every fix is held by a test demonstrated able
+to fail. `releases/PATCH-0.6.6.md` is the evidence record. Publication through
+the unified pipeline, a cycle-3 audit plan pinned to the 0.6.6 tag, and the
+panel rerun are pending.
 
-**Windows 0.6.5 published and owner-tested:** [release download](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.5-windows-x64). Candidate run 37264196917 was promoted by successful workflow run 37264663578 from commit 897e9e6. On 2026-10-05 the owner downloaded the release from GitHub and reported that it worked great with no terminal pop-ups. This closes the console-window acceptance check; transaction network, broadcast and confirmation were not supplied. macOS remains at 0.6.4 and is unchanged. Downloads must use GitHub Releases consistently, rather than requiring the owner to retrieve Actions artifacts or use a local development build.
+The out-of-gate `v0.6.5-windows-x64` release and tag, and the manually
+uploaded Windows/Linux assets on the v0.6.4 page, were deleted (CT-01, CT-02,
+CT-27). Supported binaries live only on the version's own release page, under
+one `SHA256SUMS` and its `.asc`. A supersession banner on v0.6.4 names what
+was removed.
 
 **Linux v0.6.4 owner acceptance is complete.** On 2026-10-05 the owner reports
 testing the Linux AppImage through a transaction and says the implementation

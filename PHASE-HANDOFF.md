@@ -1,10 +1,20 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Windows 0.6.5 published and owner-tested:** [release download](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.5-windows-x64). Candidate run 37264196917 was promoted by successful workflow run 37264663578 from commit 897e9e6. On 2026-10-05 the owner downloaded the release from GitHub and reported that it worked great with no terminal pop-ups. This closes the console-window acceptance check; transaction network, broadcast and confirmation were not supplied. macOS remains at 0.6.4 and is unchanged. Downloads must use GitHub Releases consistently, rather than requiring the owner to retrieve Actions artifacts or use a local development build.
+**Source revision 0.6.6 is the Color Team cycle-2 remediation.** The
+out-of-gate `v0.6.5-windows-x64` release was deleted (CT-27). Owner-reported
+acceptance of that Windows console fix and of the Linux AppImage remains in
+this file's history and in `releases/`; those port builds are superseded by
+the unified pipeline.
 
-## Current stop point — v0.6.4 published; AI review complete, human review open
+## Current stop point — 0.6.6 ready for candidate; v0.6.4 still the latest published
 
-The latest published version is [v0.6.4](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.4), published from commit `35cdedb150cef6d047c39537324faf1321be3c8d`. Successful notarized candidate run [37008418851](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37008418851) was promoted by publishing run [37009396873](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37009396873). The workflow verified same-commit provenance and candidate checksums, passed the signed/notarized package and release-byte gates, then created the public tag and release. The public DMG, source archive, and SBOM were downloaded and verified against `SHA256SUMS`. Two earlier workflow attempts failed before publishing and created no tag or assets; their provenance and artifact-download defects were corrected before the final candidate. Version 0.6.4 adds regression tests and release-process enforcement with no transaction or signing behavior changes. The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+The latest published version is [v0.6.4](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.4), published from commit `35cdedb150cef6d047c39537324faf1321be3c8d`. Successful notarized candidate run [37008418851](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37008418851) was promoted by publishing run [37009396873](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37009396873). The workflow verified same-commit provenance and candidate checksums, passed the signed/notarized package and release-byte gates, then created the public tag and release. The public DMG, source archive, and SBOM were downloaded and verified against `SHA256SUMS`. Version 0.6.4 adds regression tests and release-process enforcement with no transaction or signing behavior changes. The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+
+**Next for 0.6.6:** owner practice-network hardware walkthrough (signing now
+includes a key-proof step; the large-amount prompt fires earlier for
+0.04–0.1 BTC), then candidate `publish=false`, promote `publish=true` with
+that candidate's run ID, then a signed cycle-3 audit plan and panel rerun.
+See `releases/PATCH-0.6.6.md` and `RELEASE-PROCESS.md`.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 

@@ -115,6 +115,26 @@ class WorkflowConfigTests(unittest.TestCase):
                     reference, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$",
                     "actions must be pinned to a full commit SHA, not a tag")
 
+    def test_runner_images_are_pinned_not_floating(self):
+        """CT-17: a `-latest` label silently changes the build environment.
+
+        Every runs-on in every recipe must name a specific image. The release
+        this closes was built on whatever `ubuntu-latest`/`windows-latest`
+        happened to mean that week.
+        """
+        pinned = re.compile(
+            r"runs-on:\s*(ubuntu-\d+\.\d+|windows-\d{4}|macos-\d+)\s*$")
+        for recipe in all_workflows():
+            text = recipe.read_text(encoding="utf-8")
+            labels = [line.strip() for line in text.splitlines()
+                      if line.strip().startswith("runs-on:")]
+            self.assertTrue(labels, f"{recipe.name} has no runs-on to pin")
+            for label in labels:
+                with self.subTest(workflow=recipe.name, label=label):
+                    self.assertNotIn("-latest", label,
+                                     "runner images must not float on a -latest alias")
+                    self.assertRegex(label, pinned)
+
     def test_no_version_number_is_hardcoded(self):
         # The version is read from version.py, so bumping it needs no workflow edit.
         self.assertNotRegex(self.text, r"\b0\.1\.\d+\b",
@@ -247,8 +267,8 @@ class WorkflowConfigTests(unittest.TestCase):
                          ["version", "source", "macos", "windows", "linux"])
         self.assertEqual(jobs["release"]["needs"],
                          ["version", "source", "macos", "windows", "linux", "checksums"])
-        self.assertEqual(jobs["windows"]["runs-on"], "windows-latest")
-        self.assertEqual(jobs["linux"]["runs-on"], "ubuntu-latest")
+        self.assertEqual(jobs["windows"]["runs-on"], "windows-2022")
+        self.assertEqual(jobs["linux"]["runs-on"], "ubuntu-24.04")
         self.assertEqual(jobs["macos"]["runs-on"], "macos-15")
 
     def test_platform_artifacts_have_distinct_names_and_suffixed_sboms(self):

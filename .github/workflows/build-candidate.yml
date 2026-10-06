@@ -37,7 +37,7 @@ permissions:
 jobs:
   version:
     name: Read version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
@@ -65,7 +65,7 @@ jobs:
   source:
     name: Source archive and tests
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -346,7 +346,7 @@ jobs:
   windows:
     name: Windows x64 bundle
     needs: version
-    runs-on: windows-latest
+    runs-on: windows-2022
     defaults:
       run:
         shell: bash
@@ -496,7 +496,7 @@ jobs:
   linux:
     name: Linux x86_64 AppImage
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -658,7 +658,7 @@ jobs:
   checksums:
     name: SHA256SUMS
     needs: [version, source, macos, windows, linux]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
@@ -800,7 +800,7 @@ jobs:
   release:
     name: Publish release
     needs: [version, source, macos, windows, linux, checksums]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:

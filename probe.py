@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from embit import bip32, script
+from embit import bip32, compact, ec, script
 from embit.descriptor import Descriptor
 from embit.descriptor.checksum import checksum as descriptor_checksum
 from embit.descriptor.miniscript import Multi
@@ -190,6 +193,10 @@ def parse_bsms(text: str) -> WalletRecord:
     )
 
 
+EXPECTED_HWI_VERSION = "3.2.0"
+_verified_hwi_paths: set[str] = set()
+
+
 def _hwi_path(executable: str) -> str:
     if getattr(sys, "frozen", False):
         # The packaged build ships the tool under the name its platform runs:
@@ -206,10 +213,59 @@ def _hwi_path(executable: str) -> str:
         raise ProbeError(
             "The bundled hardware-wallet tool is missing from this installation."
         )
+    # An explicit path is used as given. A bare name is first looked for beside
+    # the running interpreter (the source checkout's own venv helper, the same
+    # trust model as the frozen build's bundled copy) and only then on PATH.
+    # CT-29: a planted `hwi` on PATH must not silently receive account xpubs
+    # and PSBTs — see _verify_hwi_identity, which every invocation passes.
+    candidate = Path(executable)
+    if candidate.is_absolute() or candidate.parent != Path("."):
+        if candidate.is_file():
+            return str(candidate)
+        raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
+    sibling = Path(sys.executable).with_name(executable)
+    if sibling.is_file():
+        return str(sibling)
+    if sys.platform == "win32":
+        sibling_exe = Path(sys.executable).with_name(executable + ".exe")
+        if sibling_exe.is_file():
+            return str(sibling_exe)
     found = shutil.which(executable)
     if found is None:
         raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
     return found
+
+
+def _verify_hwi_identity(path: str) -> None:
+    """Refuse a helper that does not identify as the pinned HWI release.
+
+    Frozen builds bundle the helper and never search PATH. Source mode can
+    still pick up a planted binary, so the tool must name itself before it is
+    allowed to see an account xpub or a PSBT (CT-29).
+    """
+    if path in _verified_hwi_paths:
+        return
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            **hwi_process_options(),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProbeError(
+            "The hardware-wallet tool could not be identified. "
+            "Pass --hwi /path/to/the/official/hwi binary."
+        ) from exc
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0 or EXPECTED_HWI_VERSION not in output:
+        raise ProbeError(
+            f"The hardware-wallet tool does not identify as HWI {EXPECTED_HWI_VERSION}. "
+            "Pass --hwi /path/to/the/official/hwi binary."
+        )
+    _verified_hwi_paths.add(path)
 
 
 _PATH_LIKE = re.compile(r"(/\S+|[A-Za-z]:\\\S+)")
@@ -262,8 +318,10 @@ def invoke_hwi(executable: str, chain: str, *arguments: str,
         options = hwi_process_options()
         if stdin_command is not None:
             options["input"] = stdin_command
+        path = _hwi_path(executable)
+        _verify_hwi_identity(path)
         result = subprocess.run(
-            [_hwi_path(executable), "--chain", chain, *arguments],
+            [path, "--chain", chain, *arguments],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -334,6 +392,89 @@ def _same_xpub(expected: Any, received: str) -> bool:
         return False
 
 
+def _bitcoin_message_digest(message: bytes) -> bytes:
+    """BIP-322/electrum message digest: sha256d of the Bitcoin message envelope."""
+    payload = b"\x18Bitcoin Signed Message:\n" + compact.to_bytes(len(message)) + message
+    return sha256(sha256(payload).digest()).digest()
+
+
+def _der_from_message_signature(raw: Any) -> bytes:
+    """Normalise HWI's message signature to DER, whether hex/base64 and compact/DER."""
+    text = raw.strip() if isinstance(raw, str) else ""
+    blobs: list[bytes] = []
+    try:
+        blobs.append(bytes.fromhex(text))
+    except ValueError:
+        pass
+    try:
+        blobs.append(base64.b64decode(text, validate=True))
+    except Exception:
+        pass
+    for blob in blobs:
+        if not blob:
+            continue
+        if 8 <= len(blob) <= 72 and blob[0] == 0x30:
+            return blob
+        if len(blob) == 65:
+            return _compact_to_der(blob[1:33], blob[33:65])
+    raise ProbeError("This device did not return a usable signature. Nothing was sent.")
+
+
+def _compact_to_der(r: bytes, s: bytes) -> bytes:
+    def _int(value: bytes) -> bytes:
+        data = value.lstrip(b"\x00") or b"\x00"
+        if data[0] & 0x80:
+            data = b"\x00" + data
+        return b"\x02" + bytes([len(data)]) + data
+
+    body = _int(r) + _int(s)
+    return b"\x30" + bytes([len(body)]) + body
+
+
+def _verify_message_signature(pubkey_sec: bytes, message: bytes, signature: Any) -> bool:
+    try:
+        der = _der_from_message_signature(signature)
+        parsed = ec.Signature.parse(der)
+        return bool(ec.PublicKey.parse(pubkey_sec).verify(
+            parsed, _bitcoin_message_digest(message)))
+    except ProbeError:
+        raise
+    except Exception:
+        return False
+
+
+def prove_signer_holds_key(record: WalletRecord, executable: str, chain: str,
+                           device_type: str, device_path: str, signer: int) -> None:
+    """Require a signature over a fresh challenge before any PSBT is sent.
+
+    A counterfeit USB device can echo a previously observed account xpub and
+    then receive the payment PSBT (destination, amount, cosigners). Matching
+    public identity is not proof of the private key. A random message signature
+    verified against the wallet's known public key is (CT-14).
+    """
+    if type(signer) is not int or not 1 <= signer <= len(record.keys):
+        raise ProbeError("Check this signing device again before approving the payment.")
+    key = record.keys[signer - 1]
+    challenge = "Bitcoin Easy Signer key proof " + secrets.token_hex(16)
+    response = invoke_hwi(
+        executable, chain, "--device-type", device_type, "--device-path", device_path,
+        "signmessage", challenge, _key_origin_path(key),
+        timeout_seconds=DEVICE_AUTH_TIMEOUT_SECONDS,
+    )
+    signature = response.get("signature") if isinstance(response, dict) else None
+    pubkey = key.key.get_public_key().sec()
+    proved = False
+    if isinstance(signature, str):
+        try:
+            proved = _verify_message_signature(pubkey, challenge.encode("utf-8"), signature)
+        except ProbeError:
+            proved = False
+    if not proved:
+        raise ProbeError(
+            "This device did not prove it holds the wallet key. Nothing was sent."
+        )
+
+
 def verify_signer_device(record: WalletRecord, executable: str, chain: str,
                          device_type: str, device_path: str, signer: int) -> None:
     """Bind the selected HWI path to its wallet key immediately before signing."""
@@ -348,6 +489,9 @@ def verify_signer_device(record: WalletRecord, executable: str, chain: str,
     if not isinstance(response, dict) or not isinstance(response.get("xpub"), str) \
             or not _same_xpub(key, response["xpub"]):
         raise ProbeError("This device no longer matches the wallet. Check devices again.")
+    # CT-14: public identity is not private-key possession. Prove the key
+    # before the caller hands over the payment PSBT.
+    prove_signer_holds_key(record, executable, chain, device_type, device_path, signer)
 
 
 _DEVICE_BRANDS = {"ledger": "Ledger", "trezor": "Trezor", "coldcard": "Coldcard",

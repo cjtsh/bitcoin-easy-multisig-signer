@@ -35,7 +35,7 @@ permissions:
 jobs:
   lock:
     name: Windows desktop lock
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install --disable-pip-version-check pip-tools
+          python -m pip install --disable-pip-version-check pip-tools==7.6.1
           # Same flags as the macOS lock, so the two files can be read side by side.
           python -m piptools compile --allow-unsafe --generate-hashes `
             --output-file requirements-desktop-windows.lock requirements-desktop.txt
@@ -68,7 +68,7 @@ jobs:
 
   libusb:
     name: Windows libusb DLL
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Verify the vendored libusb source before using it
