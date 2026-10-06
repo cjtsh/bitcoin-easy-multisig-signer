@@ -8,6 +8,31 @@ Bitcoin Easy Signer helps a spouse, estate professional, or other nontechnical p
 
 Standing cautions that survive across versions: Mutinynet needs a funded BSMS wallet, and existing Testnet4 coins cannot move between networks. Very old installed builds (0.2.1) could show stale signing/final details when a new payment was prepared; **never broadcast from a screen that mixes two payments** — close the old app and install the current release. Never send a sweep to work around a missing change path, and never sweep a real wallet merely to test Send All.
 
+## Windows and Linux: opening the app
+
+Download the file for your computer from the [release page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases).
+
+### Windows
+
+**Unblock the ZIP before extracting it.** Otherwise Windows can block a bundled library and the app may report `Failed to resolve Python.Runtime.Loader.Initialize`.
+
+1. Right-click the downloaded Windows ZIP and select **Properties**.
+2. Check **Unblock**, then click **Apply** and **OK**. If Unblock is not shown, continue.
+3. Right-click the ZIP and select **Extract All**.
+4. Open the extracted folder, then the **Bitcoin Easy Signer** folder, and double-click **Bitcoin Easy Signer.exe**.
+
+![Windows ZIP Properties: check Unblock, then click Apply](docs/assets/windows-unblock.png)
+
+Already extracted it and received the startup error? Close the app, unblock the original ZIP, and extract it again into a fresh folder. Run the EXE from that new folder. Keep the EXE together with its extracted files.
+
+The Windows build is unsigned. If SmartScreen appears, select **More info**, then **Run anyway** after verifying you downloaded the release from this repository.
+
+### Linux
+
+**The Linux app opens in your default web browser.** This is expected: the launcher runs the app locally and opens its interface in a browser tab.
+
+Make the downloaded **AppImage** executable and run it. For the **tar.gz** download, extract it and run **./run-me.sh**. Keep the launcher running while using the browser interface.
+
 ## What this version does
 
 - Imports a BSMS 1.0 definition for a native-SegWit multisig wallet with two or three keys. It follows the quorum in the file, for any valid threshold, and checks the reference receive address, public cosigner identities, and selected network.
