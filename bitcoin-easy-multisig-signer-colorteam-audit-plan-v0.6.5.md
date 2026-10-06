@@ -83,7 +83,7 @@ pipeline: since cycle 1, the Windows and Linux ports were merged onto the tree a
 `.github/workflows/build-candidate.yml` became the single build-and-publish path, so
 sections 4–7 now name that pipeline rather than the retired per-platform workflows.
 
-**Target revision:** tag `v0.6.5`, commit **`REPLACE-AFTER-PUBLISH`** — the commit the
+**Target revision:** tag `v0.6.5`, commit **`29c8002b154a4e968308376b1e514a965ffa92d8`** — the commit the
 `v0.6.5` tag points to, created by the publish run of
 `.github/workflows/build-candidate.yml` on `main`. The tag does not exist until the
 unified pipeline publishes it; fill this line with the tag's commit after publication
@@ -365,5 +365,5 @@ plan; the signature below ratifies them for this cycle).*
 tag's commit hash into the section 0 target-revision line in place of
 `REPLACE-AFTER-PUBLISH`, then sign the two lines below.*
 
-- **Signed:**
-- **Date:**
+- **Signed:** Bitseeker LLC
+- **Date:** 2026-10-06 ("6OCT2026")
