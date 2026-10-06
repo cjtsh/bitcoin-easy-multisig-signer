@@ -56,6 +56,13 @@ with a test demonstrated able to fail.
   payment. This adds one on-device message-signing step to every signing
   attempt and needs an owner practice-network hardware walkthrough before
   publication (already required when app behavior changes).
+  The proof is taken at the first receive path under the wallet origin
+  (`…/0/0`), not the all-hardened BIP48 account node. Trezor Safe 3 and
+  OneKey (Trezor firmware) answer `forbidden key path` for `signmessage`
+  on an account path; ordinary address paths are allowed. The child sits
+  under the same account xpub `getxpub` already matched, so a valid
+  signature still proves the device holds the key. Ledger and Jade
+  accept both paths.
 
 ## Break-and-watch transcripts
 
@@ -66,6 +73,7 @@ observed red, and the file was restored green. `PYTHONPATH=tests:.
 | Gate | Break | Test that went red |
 | --- | --- | --- |
 | CT-14 | removed the `prove_signer_holds_key` call from `verify_signer_device` | `DeviceProofPins.test_identity_check_also_demands_the_proof_before_returning` (1 != 2 calls); `test_identity_check_refuses_when_the_proof_fails` (ProbeError not raised) |
+| CT-14 (Trezor path) | moved the proof back to the bare account node `m/48h/1h/0h/2h` | `DeviceProofPins.test_the_proof_signs_at_the_first_receive_path_not_the_account_node` (`['m/48h/1h/0h/2h'] != ['m/48h/1h/0h/2h/0/0']`); `test_identity_check_also_demands_the_proof_before_returning` (same path mismatch) |
 | CT-30 | removed the `LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE` trigger from the prepare handler | `LargeAmountGateTests.test_a_lying_low_price_cannot_hide_a_large_payment_under_one_bitcoin` (200 != 400) |
 | CT-30 | raised `LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE` above the absolute floor | `LargeAmountPins.test_the_untrusted_quote_floor_is_below_the_absolute_floor` (20_000_000 not less than 10_000_000) |
 | CT-13 | moved `verify_selected_outpoints` back inside the session lock | `SendFlowTests.test_broadcast_prechecks_do_not_hold_the_session_lock` (outpoint depth 1 != 0) |
@@ -96,3 +104,22 @@ Build only through `.github/workflows/build-candidate.yml` (candidate
 `publish=false`, then promote `publish=true` with that candidate's run ID).
 Record both run URLs and the commit SHA here after publication. Never
 publish by hand.
+
+### Candidate attempts
+
+- Run [37464977050](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37464977050)
+  from `26ed211` **failed** the Windows and source-archive jobs. Two
+  tripwire tests were not portable: `HwiIdentityPins` wrote `#!/bin/sh`
+  helpers that CreateProcess cannot exec (WinError 193), and
+  `PipToolsPinTests` read only `.github/workflows/` while the source
+  archive ships recipes under `ci/`. The macOS DMG job still passed.
+  Fix is `f1dc627`; both rules are now canaried in
+  `tests/test_windows_portability.py` (`HardeningPinPortabilityTests`).
+- Candidate run [37467030340](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37467030340)
+  from `f1dc6278829d85414b476df7dbb2d88c057c0fc3` **succeeded** all jobs
+  (notarized Apple Silicon DMG, Windows x64, Linux AppImage, source archive
+  and in-archive tests, candidate SHA256SUMS). It published nothing
+  (`publish=false`): no tag, no release. **Superseded** before promotion:
+  the owner Trezor Safe 3 walkthrough failed with HWI `forbidden key path`
+  because the CT-14 proof signed at the all-hardened account node. The
+  proof now signs at `…/0/0`; a fresh candidate is required.

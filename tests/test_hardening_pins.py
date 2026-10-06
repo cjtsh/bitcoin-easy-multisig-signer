@@ -247,17 +247,22 @@ class DeviceProofPins(unittest.TestCase):
         self.account = self.roots[0].derive("m/48h/1h/0h/2h")
 
     def _signed_response(self, message: str) -> dict:
+        # Sign at the first receive child, not the account node. Trezor (and
+        # OneKey on Trezor firmware) refuse signmessage on an all-hardened
+        # BIP48 account path; the proof is taken at /0/0 under that account.
         digest = _bitcoin_message_digest(message.encode("utf-8"))
-        return {"signature": self.account.key.sign(digest).serialize().hex()}
+        return {"signature": self.account.child(0).child(0).key.sign(digest).serialize().hex()}
 
     def test_a_fresh_challenge_is_required_before_any_psbt_is_sent(self):
         """CT-14: echoing an account xpub is not proof of the private key."""
         seen = []
+        paths = []
 
         def fake_hwi(_exe, _chain, *args, **options):
             if "signmessage" in args:
                 message = args[args.index("signmessage") + 1]
                 seen.append(message)
+                paths.append(args[args.index("signmessage") + 2])
                 return self._signed_response(message)
             raise AssertionError(f"unexpected HWI call: {args}")
 
@@ -266,13 +271,42 @@ class DeviceProofPins(unittest.TestCase):
         self.assertEqual(len(seen), 1)
         self.assertTrue(seen[0].startswith("Bitcoin Easy Signer key proof "))
 
+    def test_the_proof_signs_at_the_first_receive_path_not_the_account_node(self):
+        """Trezor Safe 3 / OneKey answer 'forbidden key path' on m/48h/1h/0h/2h.
+
+        The proof must therefore travel at the first receive address under the
+        same account xpub getxpub already matched.
+        """
+        paths = []
+
+        def fake_hwi(_exe, _chain, *args, **options):
+            paths.append(args[args.index("signmessage") + 2])
+            message = args[args.index("signmessage") + 1]
+            return self._signed_response(message)
+
+        with patch("probe.invoke_hwi", side_effect=fake_hwi):
+            prove_signer_holds_key(self.wallet, "hwi", "test", "trezor", "webusb:1", 1)
+        self.assertEqual(paths, ["m/48h/1h/0h/2h/0/0"])
+        self.assertNotEqual(paths[0], "m/48h/1h/0h/2h")
+
     def test_a_signature_from_the_wrong_key_is_refused(self):
         other = self.roots[1].derive("m/48h/1h/0h/2h")
 
         def fake_hwi(_exe, _chain, *args, **options):
             message = args[args.index("signmessage") + 1]
             digest = _bitcoin_message_digest(message.encode("utf-8"))
-            return {"signature": other.key.sign(digest).serialize().hex()}
+            return {"signature": other.child(0).child(0).key.sign(digest).serialize().hex()}
+
+        with patch("probe.invoke_hwi", side_effect=fake_hwi):
+            with self.assertRaisesRegex(ProbeError, "did not prove it holds the wallet key"):
+                prove_signer_holds_key(self.wallet, "hwi", "test", "jade", "/dev/x", 1)
+
+    def test_a_signature_from_the_account_node_itself_is_refused(self):
+        """Signing with the account key must not pass — the gate is /0/0."""
+        def fake_hwi(_exe, _chain, *args, **options):
+            message = args[args.index("signmessage") + 1]
+            digest = _bitcoin_message_digest(message.encode("utf-8"))
+            return {"signature": self.account.key.sign(digest).serialize().hex()}
 
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
             with self.assertRaisesRegex(ProbeError, "did not prove it holds the wallet key"):
@@ -303,6 +337,10 @@ class DeviceProofPins(unittest.TestCase):
             verify_signer_device(self.wallet, "hwi", "test", "jade", "/dev/x", 1)
         self.assertEqual(len(calls), 2)
         self.assertIn("signmessage", calls[1])
+        # The proof is taken at the first receive path so Trezor firmware
+        # (and OneKey on that firmware) accept signmessage.
+        self.assertEqual(calls[1][calls[1].index("signmessage") + 2],
+                         "m/48h/1h/0h/2h/0/0")
 
     def test_identity_check_refuses_when_the_proof_fails(self):
         expected = self.account.to_public().to_base58()

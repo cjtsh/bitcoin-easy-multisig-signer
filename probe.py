@@ -456,13 +456,19 @@ def prove_signer_holds_key(record: WalletRecord, executable: str, chain: str,
         raise ProbeError("Check this signing device again before approving the payment.")
     key = record.keys[signer - 1]
     challenge = "Bitcoin Easy Signer key proof " + secrets.token_hex(16)
+    # Sign at the first receive address, not the account node. Trezor (and
+    # OneKey on Trezor firmware) refuse signmessage on an all-hardened BIP48
+    # account path with "forbidden key path"; ordinary address paths are
+    # allowed. The child is under the same account xpub getxpub already
+    # matched, so a valid signature still proves this device holds the key.
+    address_path = _key_origin_path(key) + "/0/0"
     response = invoke_hwi(
         executable, chain, "--device-type", device_type, "--device-path", device_path,
-        "signmessage", challenge, _key_origin_path(key),
+        "signmessage", challenge, address_path,
         timeout_seconds=DEVICE_AUTH_TIMEOUT_SECONDS,
     )
     signature = response.get("signature") if isinstance(response, dict) else None
-    pubkey = key.key.get_public_key().sec()
+    pubkey = key.key.child(0).child(0).get_public_key().sec()
     proved = False
     if isinstance(signature, str):
         try:
