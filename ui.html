@@ -1933,12 +1933,14 @@
       signing = true;
       box.classList.add("busy");
       const ledger = String(device.type || "").toLowerCase().includes("ledger");
-      const busy = setBusy(ledger ? "Ledger may show many small review screens, sometimes twice. Check each screen carefully — the app waits for you." :
-        "Waiting for the device to sign. Approve on the device screen.");
+      // Two on-device steps happen inside one click: a short key-proof message,
+      // then the payment. Without saying so, the pause before the payment screens
+      // looks like a hang on a small device display.
+      const busy = setBusy("On the device: confirm a short test message first, then the payment. The app is waiting — it is not stuck.");
       $("sign-progress").className = "";
       setText("sign-progress", ledger ?
-        "Read each Ledger screen carefully. Check the destination, amount and fee each time, then wait for the app to confirm the signature. There is no need to rush." :
-        "Approve the transaction on the device screen.");
+        "Ledger will show a short test message first (wallet key check), then the payment screens. The text on a Ledger is too small to compare comfortably — this app has already checked the destination and amount on the big screen. Use the device as the yes button, and take your time." :
+        "Your device will ask you to confirm a short test message first (this proves the wallet key), then the payment. If the screen is small, you do not need to read every code — the destination and amount are already checked here. Approve when you are ready.");
       try {
         const result = await post("/api/sign", {preparation_id: reviewId,
           device_type: device.type, device_path: device.path});

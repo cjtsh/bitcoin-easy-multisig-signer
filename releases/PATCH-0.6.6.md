@@ -62,7 +62,11 @@ with a test demonstrated able to fail.
   on an account path; ordinary address paths are allowed. The child sits
   under the same account xpub `getxpub` already matched, so a valid
   signature still proves the device holds the key. Ledger and Jade
-  accept both paths.
+  accept both paths. Owner practice-network walkthrough on candidate
+  `37474707538`: Trezor Safe 3 and Ledger Nano both signed and the
+  payment broadcast. The signing screen now says the device will ask for
+  a short test message before the payment, so the pause does not look
+  like a hang.
 
 ## Break-and-watch transcripts
 
@@ -123,3 +127,10 @@ publish by hand.
   the owner Trezor Safe 3 walkthrough failed with HWI `forbidden key path`
   because the CT-14 proof signed at the all-hardened account node. The
   proof now signs at `…/0/0`; a fresh candidate is required.
+- Candidate run [37474707538](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37474707538)
+  from `cee43a09fc2f920d08951e5b7abb940ef62abcd0` **succeeded** all jobs
+  (notarized Apple Silicon DMG, Windows x64, Linux AppImage, source archive
+  and in-archive tests, candidate SHA256SUMS). It published nothing
+  (`publish=false`). Promote with `candidate_run_id=37474707538` after the
+  owner re-walks Trezor Safe 3 (and the OneKey on Trezor firmware) on the
+  practice network.
