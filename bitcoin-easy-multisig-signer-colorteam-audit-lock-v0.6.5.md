@@ -8,12 +8,12 @@
 | **Target revision** | tag `v0.6.5`, commit `29c8002b154a4e968308376b1e514a965ffa92d8` (published by the unified pipeline's publish run; tag created on that commit) |
 | **Publish run** | [37411746360](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37411746360) — `notarize=true, publish=true`, candidate run 37409812638, commit `29c8002` |
 | **Candidate run** | [37409812638](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37409812638) — `notarize=true, publish=false`, same commit |
-| **Surveyor** | *(filled by the surveyor at lock time)* |
-| **Auditor** | *(filled by the lead harness at lock time)* |
-| **Same session for both?** | *(filled at lock time)* |
-| **Locked at** | *(set when the panel starts; this file is the binding record)* |
-| **Published before the panel ran** | *(witnessed at lock time)* |
-| **Plan SHA-256 at the end of the audit** | *(re-hashed by the referee at gate time)* |
+| **Surveyor** | Kimi Code desktop app (environment variable `__CFBundleIdentifier=com.kimi.code.desktop`) · session `not exposed by the harness` · model `not exposed by the harness` — copied verbatim from the signed plan's section 0 provenance table |
+| **Auditor** | ZCode desktop app (`ZCODE_APP_VERSION=3.14.4`) · session `not exposed by the harness` (environment inspected for session/ZCODE variables; only app version and build commit are present) · model `zai-api/GLM-5.3` (declared by the harness system prompt, not verified) |
+| **Same session for both?** | cannot be determined — both identifiers read `not exposed by the harness`; the two harnesses differ as declared (Kimi Code vs ZCode), so independence rests on the operator's declaration |
+| **Locked at** | 2026-10-06T04:28:37Z (lead auditor, before the first specialist was dispatched) |
+| **Published before the panel ran** | commit `6bdb083` on `main` (2026-10-06) — the owner pinned the signed plan and this lock to the public repository before dispatching the panel |
+| **Plan SHA-256 at the end of the audit** | `ecc1b42ea0ff581cf81fcae2d835052083753d7f5ae516a7c924321effe80c69` — equal to the start hash; scope never moved (re-hashed by the referee at gate time, 2026-10-06) |
 
 **Rubric lock.** The grade conditions in force are the owner-adapted rubric in the signed
 plan's section 0 (CLEARED / CONDITIONAL / BLOCKED table) plus the rulings of
