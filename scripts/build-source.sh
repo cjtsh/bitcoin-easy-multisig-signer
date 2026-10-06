@@ -27,15 +27,16 @@ root_docs=(
   README.md CURRENT-STATUS.md DISCLAIMER.md PRIVACY.md SECURITY.md
   CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md
   PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md RELEASE-HISTORY.md
-  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md
+  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md SIGNING.md
 )
 # requirements-desktop-windows.lock is the only lock that can be installed on
 # Windows. requirements-desktop.lock is macOS-resolved and is deliberately still
 # shipped: it is the record of what the audited macOS build installs, and dropping
-# it here would silently erase that.
-cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md \
+# it here would silently erase that. requirements-desktop-linux.lock is the
+# Linux-resolved record, and the archive's own test suite checks it.
+cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md "Start Easy Multisig.command" \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
-  requirements-desktop-windows.lock \
+  requirements-desktop-windows.lock requirements-desktop-linux.lock \
   requirements-ci.txt requirements-ci.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   signing.py wallet_service.py ui.html "$stage/$root/"
@@ -134,6 +135,7 @@ cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
   vendor/libusb-1.0.0.dylib \
   vendor/libusb-1.0.30.tar.bz2 \
   vendor/libusb-1.0.dll \
+  vendor/appimage-runtime-x86_64 \
   vendor/libusb-COPYING "$stage/$root/vendor/"
 # Glob, not a list: build-windows.ps1 calls the other scripts, and an archive missing
 # a script it invokes would build nothing while looking complete.
