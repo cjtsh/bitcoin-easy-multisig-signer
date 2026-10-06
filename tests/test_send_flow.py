@@ -14,6 +14,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -282,6 +283,111 @@ class SendFlowTests(unittest.TestCase):
                 self.post("/api/sign", {"preparation_id": bad,
                                         "device_type": "jade", "device_path": "/dev/x"})
             self.assertEqual(err.exception.code, 400)
+
+    def test_finalise_refuses_a_final_transaction_that_differs_from_the_review(self):
+        """The final-vs-review backstop must hold at finalisation (CT-03).
+
+        The review amounts are tampered server-side after signing; if the
+        _check_final_review comparison were deleted, this finalise call would
+        succeed instead of refusing.
+        """
+        _result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        reviewed = self.app.prepared
+        tampered = dict(reviewed.review())
+        tampered["amount_sats"] += 1
+        self.app.prepared = replace(reviewed, review_items=tuple(tampered.items()))
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("differs from the reviewed payment",
+                      json.load(err.exception)["error"])
+
+    def test_broadcast_refuses_a_final_transaction_that_differs_from_the_review(self):
+        """The same backstop runs again inside the broadcast lock (CT-03)."""
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        reviewed = self.app.prepared
+        tampered = dict(reviewed.review())
+        tampered["fee_sats"] += 1
+        self.app.prepared = replace(reviewed, review_items=tuple(tampered.items()))
+        with patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": result["txid"]})
+            send.assert_not_called()
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("differs from the reviewed payment",
+                      json.load(err.exception)["error"])
+
+    def test_money_endpoints_refuse_a_stale_review_id_by_name(self):
+        """The review-id binding refuses by its own rule, not by accident (CT-05)."""
+        self.prepare_a_reviewed_transaction()
+        for route, payload in (
+            ("/api/finalize", {"preparation_id": "stale-id"}),
+            ("/api/broadcast", {"preparation_id": "stale-id", "confirm": True,
+                                "confirmed_txid": self.app.prepared.txid}),
+        ):
+            with self.assertRaises(HTTPError) as err:
+                self.post(route, payload)
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("Review the current transaction",
+                          json.load(err.exception)["error"])
+
+    def test_money_endpoints_refuse_after_the_balance_changes(self):
+        """A newer scan generation invalidates the prepared payment (CT-05)."""
+        self.prepare_a_reviewed_transaction()
+        self.app.scan_generation += 1
+        for route, payload in (
+            ("/api/finalize", {"preparation_id": "reviewed-1"}),
+            ("/api/broadcast", {"preparation_id": "reviewed-1", "confirm": True,
+                                "confirmed_txid": self.app.prepared.txid}),
+        ):
+            with self.assertRaises(HTTPError) as err:
+                self.post(route, payload)
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("wallet or balance changed",
+                          json.load(err.exception)["error"])
+
+    def test_a_stored_psbt_whose_contents_changed_is_refused(self):
+        """checked_psbt re-validates the stored bytes on every read (CT-10)."""
+        self.prepare_a_reviewed_transaction()
+        text, _roots = test_record(bsms_template=True)
+        record = parse_bsms(text)
+        layout = wallet_layout(record)
+        explorer = three_output_wallet(layout, NETWORKS["test"])
+        scan = scan_wallet(record, explorer)
+        other = build_unsigned_psbt(record, scan,
+                                    layout.receive.derive(7).address(NETWORKS["test"]),
+                                    50_000, 5, explorer)
+        tampered = replace(self.app.prepared, psbt_base64=other["psbt_base64"])
+        with self.assertRaisesRegex(WalletError, "prepared transaction changed"):
+            tampered.checked_psbt()
+
+    def test_a_signing_timeout_is_not_retried(self):
+        """No automatic retry after a signing timeout (CT-11).
+
+        The device-open half is pinned by the Ledger test above; this pins the
+        timeout half of the same rule.
+        """
+        self.prepare_a_reviewed_transaction()
+        with patch("gui.sign_psbt_with_device", side_effect=ProbeError(
+                "HWI could not complete the request: timed out")) as signer:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": "jade", "device_path": "/dev/x"})
+            self.assertEqual(err.exception.code, 400)
+            signer.assert_called_once()
 
     def test_device_check_reports_slot_state_read_from_the_signed_psbt(self):
         """The signing screen draws one box per cosigner.

@@ -448,6 +448,16 @@ class LocalGuiTests(unittest.TestCase):
                       token="wrong-token")
         self.assertEqual(err.exception.code, 403)
 
+    def test_oversized_requests_are_refused_before_parsing(self):
+        """The request-size bound holds at the HTTP boundary (CT-08)."""
+        from gui import MAX_REQUEST_BYTES
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/import", {"chain": "testnet4",
+                                      "text": "x" * MAX_REQUEST_BYTES})
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("too large or malformed",
+                      json.load(err.exception)["error"])
+
     def test_gui_scan_returns_balance_and_does_not_store_file_on_disk(self):
         text, _ = test_record()
         self.post("/api/import", {"chain": "testnet4", "text": text,

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="850" viewBox="0 0 1360 850" role="img" aria-labelledby="title desc">
+<title id="title">Manual illustration: checking hardware signers</title>
+<desc id="desc">Sanitized illustrative interface view based on Bitcoin Easy Signer version 0.6.2. No wallet identifiers or live payment data are shown.</desc>
+<style>text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}</style>
+<rect width="1360" height="850" fill="#f5f7fa"/>
+<rect x="3" y="3" width="1354" height="844" rx="18" fill="none" stroke="#f47b20" stroke-width="6"/>
+<rect x="12" y="12" width="1336" height="260" rx="14" fill="#101a26" stroke="#101a26" stroke-width="1"/>
+<text x="45" y="52" fill="#b9c8d7" font-size="14" font-weight="750" letter-spacing="1.4">BITCOIN EASY SIGNER · V0.6.2 · COMMUNITY SOFTWARE</text>
+<rect x="1170" y="28" width="145" height="38" rx="19" fill="#304356" stroke="#304356" stroke-width="1"/><text x="1185" y="53" fill="#fff" font-size="14" font-weight="700" >Dark Theme</text>
+<text x="46" y="110" fill="#f4f7fb" font-size="42" font-weight="760" >Bitcoin Easy Signer</text>
+<text x="48" y="147" fill="#c3cfda" font-size="18" font-weight="400" >Open an existing multisig wallet, review a payment, and approve it on the required</text>
+<text x="48" y="174" fill="#c3cfda" font-size="18" font-weight="400" >hardware signers. The app never holds a key.</text>
+<text x="48" y="216" fill="#f4f7fb" font-size="19" font-weight="700" >For a spouse, trustee, lawyer, accountant, or family member.</text>
+<rect x="44" y="304" width="1272" height="440" rx="14" fill="#ffffff" stroke="#d9e0e7" stroke-width="1"/>
+<text x="77" y="352" fill="#18212b" font-size="27" font-weight="750" >3. Check the signing devices</text>
+<text x="78" y="391" fill="#586777" font-size="16" font-weight="400" >This checks public wallet identities only. Nothing is signed or sent.</text>
+<rect x="78" y="430" width="1203" height="70" rx="10" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="104" y="463" fill="#18212b" font-size="16" font-weight="700" >Signer 1</text>
+<text x="252" y="463" fill="#586777" font-size="16" font-weight="400" >Connect and unlock the hardware device</text>
+<text x="1088" y="463" fill="#586777" font-size="15" font-weight="400" >Waiting</text>
+<rect x="78" y="516" width="1203" height="70" rx="10" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="104" y="549" fill="#18212b" font-size="16" font-weight="700" >Signer 2</text>
+<text x="252" y="549" fill="#586777" font-size="16" font-weight="400" >Connect and unlock the hardware device</text>
+<text x="1088" y="549" fill="#586777" font-size="15" font-weight="400" >Waiting</text>
+<rect x="78" y="602" width="1203" height="70" rx="10" fill="#eaf1f7" stroke="#d9e0e7" stroke-width="1"/>
+<text x="104" y="635" fill="#18212b" font-size="16" font-weight="700" >Signer 3, if required</text>
+<text x="252" y="635" fill="#586777" font-size="16" font-weight="400" >The wallet file determines how many are needed</text>
+<text x="1088" y="635" fill="#586777" font-size="15" font-weight="400" >Optional</text>
+<text x="80" y="714" fill="#586777" font-size="15" font-weight="400" >If asked for a PIN, enter it on the device itself—never in this app.</text>
+</svg>

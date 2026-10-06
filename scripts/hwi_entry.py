@@ -1,19 +1,29 @@
-"""Standalone HWI CLI entry point bundled beside the macOS app."""
+"""Standalone HWI CLI entry point bundled beside the desktop app."""
 
 import ctypes
 import sys
 from pathlib import Path
 
+def _bundled_usb_names() -> tuple[str, ...]:
+    """The names the bundled USB library ships under on this platform."""
+    if sys.platform == "win32":
+        return ("libusb-1.0.dll",)
+    if sys.platform == "darwin":
+        return ("libusb-1.0.0.dylib", "libusb-1.0.dylib")
+    return ("libusb-1.0.so.0",)
+
+
+_usb_names = _bundled_usb_names()
+
 if getattr(sys, "frozen", False):
-    bundled_libusb = Path(sys._MEIPASS) / "libusb-1.0.0.dylib"
-    bundled_alias = Path(sys._MEIPASS) / "libusb-1.0.dylib"
-    if not bundled_libusb.is_file() or not bundled_alias.is_file():
+    bundled = [Path(sys._MEIPASS) / name for name in _usb_names]
+    if not all(path.is_file() for path in bundled):
         raise RuntimeError("The bundled USB library is missing; the signer helper cannot start.")
     # usb1 exposes an explicit loader. Bind its first load to the verified
-    # bundle path; preloading a differently named dylib does not stop usb1 from
-    # finding a second Homebrew copy later.
+    # bundle path; preloading a differently named library does not stop usb1
+    # from finding a second copy installed on the machine later.
     import usb1
-    _libusb_handle = ctypes.CDLL(str(bundled_alias))
+    _libusb_handle = ctypes.CDLL(str(bundled[-1]))
     if not usb1.loadLibrary(_libusb_handle):
         raise RuntimeError("The USB stack loaded a library outside this app.")
 
@@ -82,7 +92,7 @@ def _check_libusb() -> int:
         list(context.getDeviceList(skip_on_error=True))
     if getattr(sys, "frozen", False):
         loaded = Path(usb1.libusb1.libusb._name).resolve()
-        expected = (Path(sys._MEIPASS) / "libusb-1.0.dylib").resolve()
+        expected = (Path(sys._MEIPASS) / _usb_names[-1]).resolve()
         if loaded != expected:
             raise RuntimeError("The USB stack loaded a library outside this app.")
         print(f"Bundled libusb: {loaded}")

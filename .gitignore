@@ -13,3 +13,4 @@ __pycache__/
 *.psbt
 *.txn
 *.log
+.venv-ci/

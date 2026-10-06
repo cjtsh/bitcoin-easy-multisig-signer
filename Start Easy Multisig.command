@@ -17,7 +17,7 @@ fi
 # The exact version is asserted, not merely the import: an older or substituted
 # embit must not satisfy this check. requirements.lock carries the hash, so the
 # install is verified rather than trusted to whatever the index serves.
-if ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0 if m.version("embit") == "0.8.0" else 1)' >/dev/null 2>&1; then
+if ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0 if m.version("embit") == "0.8.2+besa.1" else 1)' >/dev/null 2>&1; then
   echo "Installing the hash-verified open-source descriptor library (first launch only)..."
   .venv/bin/python3 -m pip install --disable-pip-version-check --require-hashes -r requirements.lock
 fi

@@ -1,8 +1,13 @@
-"""Static checks on the GitHub Actions workflow.
+"""Static checks on the GitHub Actions workflows.
 
 A broken shell block in a workflow costs a full CI round trip to discover, and a
 tag-pinned action or a hardcoded version is easy to reintroduce. These checks are
 cheap and run in the normal test suite.
+
+One pipeline — .github/workflows/build-candidate.yml — builds every platform from
+one commit and is the only workflow allowed to publish. The retired per-platform
+workflows (build-windows.yml, build-linux.yml) must never come back: a second
+publish path is how unverified bytes once reached a tagged release.
 
 Skipped when PyYAML is unavailable (it is deliberately NOT an application
 dependency); CI installs it for the source job so the checks do run there.
@@ -27,6 +32,14 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ACTIVE = ROOT / ".github/workflows/build-candidate.yml"
 if not ACTIVE.is_file():
     ACTIVE = ROOT / "ci/build-candidate.yml"
+
+
+def all_workflows() -> list[pathlib.Path]:
+    """Every workflow recipe, from the checkout or the extracted archive."""
+    folder = ROOT / ".github" / "workflows"
+    if not folder.is_dir():
+        folder = ROOT / "ci"
+    return sorted(folder.glob("*.yml"))
 
 
 @unittest.skipIf(yaml is None, "PyYAML not installed; workflow lint skipped")
@@ -60,6 +73,9 @@ class WorkflowConfigTests(unittest.TestCase):
                 script = step.get("run")
                 if not script:
                     continue
+                if step.get("shell") == "pwsh":
+                    # PowerShell is not bash; the Windows runner executes it.
+                    continue
                 checked += 1
                 with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
                     handle.write(script)
@@ -70,6 +86,34 @@ class WorkflowConfigTests(unittest.TestCase):
                                  f"{label} has invalid shell:\n{result.stderr}")
         self.assertGreater(checked, 5, "expected to lint the workflow's shell blocks")
 
+    def test_every_workflow_file_lints_and_pins_actions(self):
+        """The inputs producers get the same scrutiny as the release pipeline."""
+        recipes = all_workflows()
+        self.assertGreaterEqual(len(recipes), 3,
+                                "build-candidate plus the two inputs workflows")
+        for recipe in recipes:
+            text = recipe.read_text(encoding="utf-8")
+            data = yaml.safe_load(text)
+            with self.subTest(workflow=recipe.name):
+                for reference in re.findall(r"uses:\s*(\S+)", text):
+                    self.assertRegex(
+                        reference, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$",
+                        f"{recipe.name}: actions must be pinned to a full commit SHA")
+                for job, spec in (data.get("jobs") or {}).items():
+                    for step in spec.get("steps", []):
+                        script = step.get("run")
+                        if not script or step.get("shell") == "pwsh":
+                            continue
+                        with tempfile.NamedTemporaryFile(
+                                "w", suffix=".sh", delete=False) as handle:
+                            handle.write(script)
+                            path = handle.name
+                        result = subprocess.run(
+                            ["bash", "-n", path], capture_output=True, text=True)
+                        self.assertEqual(
+                            result.returncode, 0,
+                            f"{recipe.name}/{job} has invalid shell:\n{result.stderr}")
+
     def test_actions_are_pinned_to_commit_shas(self):
         uses = re.findall(r"uses:\s*(\S+)", self.text)
         self.assertTrue(uses)
@@ -77,8 +121,7 @@ class WorkflowConfigTests(unittest.TestCase):
             with self.subTest(action=reference):
                 self.assertRegex(
                     reference, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$",
-                    "actions must be pinned to a full commit SHA, not a tag",
-                )
+                    "actions must be pinned to a full commit SHA, not a tag")
 
     def test_no_version_number_is_hardcoded(self):
         # The version is read from version.py, so bumping it needs no workflow edit.
@@ -113,7 +156,9 @@ class WorkflowConfigTests(unittest.TestCase):
 
     def test_dependency_installation_finishes_before_signing_material(self):
         self.assertNotIn("pip install --quiet", self.text)
-        self.assertEqual(self.text.count("pip install --require-hashes -r requirements-ci.lock"), 2)
+        self.assertGreaterEqual(
+            self.text.count("pip install --require-hashes -r requirements-ci.lock"), 3,
+            "the source, macOS and Linux jobs all install the locked CI dependencies")
         self.assertNotIn("brew install", self.text)
         macos = self.data["jobs"]["macos"]["steps"]
         names = [step.get("name", "") for step in macos]
@@ -200,6 +245,79 @@ class WorkflowConfigTests(unittest.TestCase):
         # release object at all, so there is nothing to publish by accident.
         self.assertNotIn("--draft", self.text)
 
+    def test_one_pipeline_builds_every_platform_from_one_commit(self):
+        """The three platform jobs share one run, one commit, one sums file."""
+        jobs = self.data["jobs"]
+        for job in ("version", "source", "macos", "windows", "linux",
+                    "checksums", "release"):
+            self.assertIn(job, jobs)
+        self.assertEqual(jobs["checksums"]["needs"],
+                         ["version", "source", "macos", "windows", "linux"])
+        self.assertEqual(jobs["release"]["needs"],
+                         ["version", "source", "macos", "windows", "linux", "checksums"])
+        self.assertEqual(jobs["windows"]["runs-on"], "windows-latest")
+        self.assertEqual(jobs["linux"]["runs-on"], "ubuntu-latest")
+        self.assertEqual(jobs["macos"]["runs-on"], "macos-15")
+
+    def test_platform_artifacts_have_distinct_names_and_suffixed_sboms(self):
+        self.assertIn("name: windows-bundle", self.text)
+        self.assertIn("name: linux-desktop", self.text)
+        self.assertIn("BUILD-SBOM-windows-x64.json", self.text)
+        self.assertIn("BUILD-SBOM-linux-x86_64.json", self.text)
+        for step_name in ("Download current Windows bundle for a nonpublishing candidate",
+                          "Download current Linux assets for a nonpublishing candidate"):
+            step = next(step for step in self.data["jobs"]["checksums"]["steps"]
+                        if step.get("name") == step_name)
+            self.assertEqual(step["if"], "${{ !inputs.publish }}")
+
+    def test_the_publish_verification_counts_every_platform(self):
+        promote = next(step for step in self.data["jobs"]["checksums"]["steps"]
+                       if step.get("name") == "Download and verify the tested candidate artifacts")
+        for required in (
+                "-name '*.tar.gz' | wc -l | tr -d ' ')\" = 2",
+                "-name '*.dmg' | wc -l | tr -d ' ')\" = 1",
+                "-name '*.zip' | wc -l | tr -d ' ')\" = 1",
+                "-name '*.AppImage' | wc -l | tr -d ' ')\" = 1",
+                "test -f BUILD-SBOM-windows-x64.json",
+                "test -f BUILD-SBOM-linux-x86_64.json"):
+            with self.subTest(required=required):
+                self.assertIn(required, promote["run"])
+
+    def test_the_checksum_manifest_is_gpg_signed_on_the_publish_path(self):
+        """SHA256SUMS is CI-generated; its signature proves which key released it."""
+        sign = next(step for step in self.data["jobs"]["checksums"]["steps"]
+                    if step.get("name") == "Sign the checksum manifest with the release key")
+        self.assertEqual(sign["if"], "${{ inputs.publish }}")
+        self.assertIn("GPG_PRIVATE_KEY", sign["run"])
+        self.assertIn("SHA256SUMS.asc", sign["run"])
+        self.assertIn("SIGNING.md", sign["run"])
+        release_verify = next(step for step in self.data["jobs"]["release"]["steps"]
+                              if step.get("name") == "Verify downloaded release bytes")
+        self.assertIn("gpg --verify SHA256SUMS.asc SHA256SUMS", release_verify["run"])
+        self.assertIn("signing-key.asc", release_verify["run"])
+
+    def test_every_asset_carries_a_sigstore_build_attestation(self):
+        checksums = self.data["jobs"]["checksums"]
+        self.assertEqual(checksums["permissions"].get("id-token"), "write")
+        self.assertEqual(checksums["permissions"].get("attestations"), "write")
+        attest = next(step for step in checksums["steps"]
+                      if "attest-build-provenance" in step.get("uses", ""))
+        self.assertRegex(attest["uses"], r"@[0-9a-f]{40}$")
+        self.assertEqual(attest["with"]["subject-path"], "dist/*")
+
+    def test_no_second_publish_path_exists(self):
+        """The retired per-platform workflows stay retired."""
+        self.assertFalse((ROOT / ".github/workflows/build-windows.yml").is_file(),
+                         "build-windows.yml is retired; the unified pipeline builds Windows")
+        self.assertFalse((ROOT / ".github/workflows/build-linux.yml").is_file(),
+                         "build-linux.yml is retired; the unified pipeline builds Linux")
+        for recipe in all_workflows():
+            if recipe.name == "build-candidate.yml":
+                continue
+            self.assertNotIn("gh release create",
+                             recipe.read_text(encoding="utf-8"),
+                             f"{recipe.name} must not publish a release")
+
 
 class ReleaseNotesTests(unittest.TestCase):
     """What a downloader reads must not describe the build as two different things.
@@ -247,13 +365,7 @@ class ReleaseNotesTests(unittest.TestCase):
         self.fail("the block did not set release_title")
 
     def test_the_title_is_the_version_and_nothing_else(self):
-        """A release name is an identity, not a provenance record.
-
-        v0.4.12 shipped as "v0.4.12 - notarized Apple Silicon build", which describes
-        how the file was made. The unsigned path was worse: "unsigned Apple Silicon
-        test build" was never a name, and the test path cannot be published on
-        crates/releases without the guard refusing it anyway.
-        """
+        """A release name is an identity, not a provenance record."""
         for mode in ("true", "false"):
             with self.subTest(notarize=mode):
                 self.assertEqual(self.title_of(mode), "v9.9.9")
@@ -268,6 +380,18 @@ class ReleaseNotesTests(unittest.TestCase):
         body = self.render("false")
         self.assertIn("Unsigned", body)
         self.assertNotIn("notarized by Apple", body)
+
+    def test_the_notes_offer_every_platform_and_its_verification(self):
+        """One release page carries macOS, Windows, Linux and how to verify them."""
+        body = self.render("true")
+        self.assertIn("Bitcoin-Easy-Signer-v9.9.9-macOS.dmg", body)
+        self.assertIn("Bitcoin-Easy-Signer-v9.9.9-windows-x64.zip", body)
+        self.assertIn("Bitcoin-Easy-Signer-v9.9.9-linux-x86_64.AppImage", body)
+        self.assertIn("bitcoin-easy-multisig-signer-v9.9.9.tar.gz", body)
+        self.assertIn("SHA256SUMS.asc", body)
+        self.assertIn("signing-key.asc", body)
+        self.assertIn("Sigstore", body)
+        self.assertIn("SIGNING.md", body)
 
     def test_the_notes_carry_no_stale_version_specific_boilerplate(self):
         """v0.4.12 shipped a paragraph about a Sparrow/Nunchuk change-path patch."""

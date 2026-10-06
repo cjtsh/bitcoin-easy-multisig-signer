@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from gui import (DIAGNOSTIC_ROUTE_STAGES, DIAGNOSTIC_STAGES, LocalApp,
-                 save_diagnostic_report)
+                 assert_private_file, save_diagnostic_report)
 
 
 class DiagnosticTests(unittest.TestCase):
@@ -17,7 +17,9 @@ class DiagnosticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             result = save_diagnostic_report(state, Path(temporary))
             saved = Path(result["path"])
-            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+            # Windows protects the file with a per-user access list rather than
+            # POSIX mode bits, so the assertion is the platform-aware one.
+            assert_private_file(saved)
             report = json.loads(saved.read_text())
         self.assertEqual(report["events"][0]["stage"], "wallet_import")
         self.assertEqual(report["events"][0]["outcome"], "passed")
@@ -84,6 +86,37 @@ class DiagnosticTests(unittest.TestCase):
         written = json.dumps(report)
         self.assertNotIn("private-xpub", written)
         self.assertNotIn("/dev/", written)
+
+    def test_device_fields_accept_only_a_known_device_class(self):
+        """A well-formed token that is not a device class is dropped (CT-06).
+
+        The pattern check alone would still pass a 20-character address
+        fragment or serial that happened to fit; the fixed vocabulary cannot.
+        """
+        state = LocalApp()
+        state.note("signer_response", "verified", device="nodl")
+        state.note("signer_response", "verified", device="bc1qabcdef0123456789")
+        state.note("signer_response", "verified", device="Ledger")
+        state.note("signer_check", "passed", found=["jade", "nodl", "wwwwwwwwww"])
+        with tempfile.TemporaryDirectory() as temporary:
+            report = json.loads(
+                Path(save_diagnostic_report(state, Path(temporary))["path"]).read_text())
+        self.assertNotIn("device", report["events"][0])
+        self.assertNotIn("device", report["events"][1])
+        self.assertEqual(report["events"][2]["device"], "ledger")
+        self.assertEqual(report["events"][3]["found"], ["jade"])
+        self.assertNotIn("nodl", json.dumps(report))
+        self.assertNotIn("bc1q", json.dumps(report))
+
+    def test_the_buffer_is_capped_at_eighty_events(self):
+        """Chatter must never erase a money-path event (CT-07)."""
+        state = LocalApp()
+        for _ in range(100):
+            state.note("wallet_import", "passed")
+        self.assertEqual(len(state.diagnostic_events), 80)
+        state.note("broadcast", "accepted")
+        self.assertEqual(len(state.diagnostic_events), 80)
+        self.assertEqual(state.diagnostic_events[-1]["stage"], "broadcast")
 
 
 if __name__ == "__main__":

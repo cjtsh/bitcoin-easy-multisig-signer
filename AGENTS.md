@@ -8,7 +8,7 @@
 4. `RELEASE-HISTORY.md` for the version-by-version record; each entry links its full evidence file where one exists.
 5. `CHANGE-ADDRESS-REVIEW.md` for the BSMS/change trust boundary and the mainnet change-policy gate.
 6. `HWI-DEPENDENCY.md` before touching the Python version, the device list, or a dependency bump. HWI decides which devices work, which Python the app builds on, and when a rebuild is mandatory.
-7. `RELEASE-PROCESS.md` before building a DMG or changing release controls. It is the agent-neutral build and promotion contract.
+7. `RELEASE-PROCESS.md` before building a DMG or changing release controls. It is the agent-neutral build and promotion contract. `SIGNING.md` defines what each platform's download carries — signature and provenance — and the release-key policy; read it before touching any workflow or build script.
 8. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture
@@ -39,12 +39,18 @@ One engine serves Testnet4, Mutinynet and mainnet. `probe.py` parses BSMS and ch
 
 These rules apply to every coding agent and tool. Follow `RELEASE-PROCESS.md`
 for every candidate and public release. Build only through the checked-in script
-or manually dispatched workflow. A release uses a signed, notarized
+or manually dispatched workflow. One dispatch-only pipeline,
+`.github/workflows/build-candidate.yml`, builds macOS, Windows and Linux from
+the same commit in the same run and is the only publish path; the retired
+per-platform workflows must not return. A release uses a signed, notarized
 `publish=false` candidate, then a `publish=true` dispatch from the same commit
 with that candidate's run ID; the workflow verifies and publishes those exact
-candidate bytes. Local builds are fine for quick development checks but are not
-release artifacts. Owner hardware acceptance is required when app behavior changes.
-Manual publication is prohibited; if the workflow is unavailable, wait to publish.
+candidate bytes for every platform, signs the CI-generated `SHA256SUMS` with the
+release GPG key (`SHA256SUMS.asc`), and attaches a Sigstore attestation to every
+asset — see `SIGNING.md`. Local builds are fine for quick development checks but
+are not release artifacts. Owner hardware acceptance is required when app
+behavior changes. Manual publication is prohibited; if the workflow is
+unavailable, wait to publish.
 Do not skip the dependency, libusb, packaged-app, SBOM, checksum, notarization,
 or applicable hardware acceptance gates.
 

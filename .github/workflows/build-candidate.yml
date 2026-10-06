@@ -1,8 +1,16 @@
-name: Build macOS DMG and release
+name: Build all platform artifacts and release
 
 # Explicit dispatch only. A push cannot publish a money-moving app. The version
 # and tag are immutable once released; failed candidate runs may be corrected
 # and dispatched again before publication.
+#
+# One pipeline builds every platform from the same commit in the same run:
+# macOS (signed and notarized on the release path), Windows x64 and Linux
+# x86_64 (unsigned by policy; see SIGNING.md), the source archive, one CI-
+# generated SHA256SUMS over every asset, a GPG-signed SHA256SUMS.asc on the
+# publish path, and Sigstore provenance attestations. The retired per-platform
+# workflows (build-windows.yml, build-linux.yml) no longer exist, so no second
+# path can attach bytes to a release.
 #
 # Two independent choices, because building and publishing are not the same act:
 #   notarize=true  build the artifact that would be published
@@ -335,13 +343,328 @@ jobs:
             security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
           fi
 
+  windows:
+    name: Windows x64 bundle
+    needs: version
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Require an x64 Windows runner
+        run: |
+          set -euo pipefail
+          architecture="${PROCESSOR_ARCHITEW6432:-$PROCESSOR_ARCHITECTURE}"
+          if [[ "$architecture" != "AMD64" ]]; then
+            echo "This job builds a 64-bit Windows bundle; the runner reports $architecture." >&2
+            exit 1
+          fi
+      - name: Verify the Windows build inputs are present
+        run: |
+          set -euo pipefail
+          missing=()
+          # Neither of these can be produced on the machine that writes this
+          # workflow: the lock must be resolved on Windows and the DLL must be
+          # compiled on Windows. They are generated once by
+          # .github/workflows/windows-inputs.yml, reviewed, and committed.
+          [[ -f requirements-desktop-windows.lock ]] || missing+=(requirements-desktop-windows.lock)
+          [[ -f vendor/libusb-1.0.dll ]] || missing+=(vendor/libusb-1.0.dll)
+          if (( ${#missing[@]} )); then
+            echo "Missing Windows build input(s): ${missing[*]}" >&2
+            echo "Dispatch .github/workflows/windows-inputs.yml, review its artifacts," >&2
+            echo "and commit them as vendor/README.md explains." >&2
+            exit 1
+          fi
+      - name: Verify the vendored libusb input
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_WINDOWS_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${LIBUSB_SHA256:-}" ]]; then
+            echo "Set the LIBUSB_WINDOWS_SHA256 repository variable to the reviewed" >&2
+            echo "SHA-256 of vendor/libusb-1.0.dll before building a release." >&2
+            exit 1
+          fi
+          expected="$(printf '%s' "$LIBUSB_SHA256" | tr 'A-Z' 'a-z')"
+          observed_line="$(sha256sum vendor/libusb-1.0.dll)"
+          observed="${observed_line%% *}"
+          if [[ "$observed" != "$expected" ]]; then
+            echo "vendor/libusb-1.0.dll does not match LIBUSB_WINDOWS_SHA256." >&2
+            echo "  expected $expected" >&2
+            echo "  observed $observed" >&2
+            exit 1
+          fi
+      - name: Install the locked app dependencies
+        run: python -m pip install --disable-pip-version-check --require-hashes -r requirements.lock
+      - name: Install the locked CI-only dependencies
+        run: python -m pip install --disable-pip-version-check --require-hashes -r requirements-ci.lock
+      - name: Run the suite and refuse a silent skip
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v 2>&1 | tee suite.log
+          if grep -qE 'skipped=[1-9]' suite.log; then
+            echo "==> A test skipped itself; the Windows job has no excuse for that." >&2
+            exit 1
+          fi
+      - name: Run the UI DOM tests
+        run: |
+          set -euo pipefail
+          for test in tests/ui_*.cjs; do
+            echo "==> $test"
+            node "$test"
+          done
+      # Dependencies are installed and the lock digest is recorded BEFORE the
+      # build runs, so a build that needs to install something is a visible
+      # failure rather than a quiet network fetch halfway through.
+      - name: Prepare the hash-locked build environment
+        shell: pwsh
+        env:
+          PREPARE_ONLY: "1"
+        run: ./scripts/build-windows.ps1 -Version "${{ needs.version.outputs.version }}"
+      - name: Build the Windows bundle
+        shell: pwsh
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_WINDOWS_SHA256 }}
+          BUILD_DEPS_PREPARED: "1"
+        run: ./scripts/build-windows.ps1 -Version "${{ needs.version.outputs.version }}"
+      - name: Verify the built bundle
+        run: |
+          set -euo pipefail
+          app="dist/Bitcoin Easy Signer"
+          exe="$app/Bitcoin Easy Signer.exe"
+          hwi="$app/hwi.exe"
+          test -f "$exe" || { echo "Missing $exe" >&2; exit 1; }
+          test -f "$hwi" || { echo "Missing $hwi" >&2; exit 1; }
+          "$hwi" --help > hwi-help.log
+          printf '%s\n' 'enumerate' | "$hwi" --chain test --stdin > hwi-stdin.json
+          python -m json.tool < hwi-stdin.json > /dev/null
+          # The app's own headless self-checks. A --windowed executable has no
+          # console on Windows: sys.stdout is None, so its prints vanish and the
+          # runner's pipe would look exactly like a check that never ran. The app
+          # mirrors every result into DSH_DESKTOP_CHECK_LOG, which is the evidence
+          # read below; the pipe is kept so a failure can be shown in full.
+          for flag in --check-bundle --check-save --check-network --check-devices; do
+            name="${flag#--}"
+            export DSH_DESKTOP_CHECK_LOG="$name.log"
+            if ! "$exe" "$flag" > "$name.stdout.log" 2>&1; then
+              echo "==> $flag failed:" >&2
+              { cat "$name.stdout.log" 2>/dev/null; cat "$name.log" 2>/dev/null; } >&2
+              exit 1
+            fi
+            if [[ ! -s "$name.log" ]]; then
+              echo "==> $flag reported nothing; a silent pass is not a pass." >&2
+              exit 1
+            fi
+            cat "$name.log"
+          done
+          unset DSH_DESKTOP_CHECK_LOG
+          # A host with a CA file configured must not be what makes HTTPS work.
+          # On Windows the OS certificate store is the ambient source of trust, so
+          # the load-bearing check is --check-bundle above: it asserts that the
+          # BUNDLED store is the one the app configured for use.
+          SSL_CERT_FILE=/nonexistent/ca.pem "$exe" --check-network > ca-file.log 2>&1
+          SSL_CERT_DIR=/nonexistent/certs "$exe" --check-network > ca-dir.log 2>&1
+      # The inventory comes first because the layout check reads dist/BUILD-SBOM.json
+      # and refuses a release that ships without one.
+      - name: Inventory the built dependencies
+        env:
+          LIBUSB_SHA256: ${{ vars.LIBUSB_WINDOWS_SHA256 }}
+        run: |
+          set -euo pipefail
+          ./.build-venv/Scripts/python.exe scripts/build-sbom.py \
+            --libusb-sha "$LIBUSB_SHA256" --output dist/BUILD-SBOM.json
+      - name: Check the bundle's layout, icon and archive
+        run: |
+          set -euo pipefail
+          ./.build-venv/Scripts/python.exe scripts/verify-windows-bundle.py \
+            --version "${{ needs.version.outputs.version }}" \
+            --sbom dist/BUILD-SBOM.json
+      - name: Name the SBOM for one shared release page
+        run: mv dist/BUILD-SBOM.json dist/BUILD-SBOM-windows-x64.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-bundle
+          path: |
+            dist/*.zip
+            dist/BUILD-SBOM-windows-x64.json
+          if-no-files-found: error
+
+  linux:
+    name: Linux x86_64 AppImage
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          # HWI 3.2.0 (the bundled hardware-wallet dependency) requires <3.13.
+          python-version: "3.12"
+      - name: Install the test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements.lock
+          # PyYAML only lints the workflow; its own lock keeps it out of the
+          # packaged application. Without it the lint module skips, and a skip
+          # looks exactly like success.
+          python -m pip install --require-hashes -r requirements-ci.lock
+      - name: Run the suite and refuse a silent skip
+        run: |
+          set -euo pipefail
+          output="$(python -m unittest discover -s tests 2>&1)" || status=$?
+          echo "$output"
+          if [ "${status:-0}" -ne 0 ]; then
+            echo "The test suite failed." >&2
+            exit 1
+          fi
+          if grep -qE "skipped=[1-9]" <<<"$output"; then
+            echo "Tests were skipped; a dependency is missing." >&2
+            exit 1
+          fi
+          for test in tests/ui_*.cjs; do
+            echo "== $test"
+            node "$test"
+          done
+      - name: Install the packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          # squashfs-tools provides mksquashfs, the AppImage payload format.
+          # librsvg2-bin rasterises assets/icon.svg into the AppDir icon.
+          # fuse3 provides fusermount3, which a mounted AppImage needs; libfuse2
+          # is deliberately NOT installed, so these checks prove the pinned
+          # runtime never asks for libfuse.so.2.
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools librsvg2-bin build-essential fuse3
+      - name: Prepare the hash-locked build environment
+        env:
+          # The lock is resolved on Linux and pinned by hash; this step is the
+          # only place it is installed, so a lock that does not match its
+          # requirements file fails here rather than inside a build.
+          PREPARE_ONLY: "1"
+        run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+      - name: Build the AppImage and the tarball
+        env:
+          BUILD_DEPS_PREPARED: "1"
+        run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+      - name: Prove the AppImage starts where libfuse.so.2 is absent
+        # The published promise is that a downloaded AppImage does not need the
+        # host's libfuse.so.2 -- the library whose absence has always made one
+        # do nothing at all on a current Ubuntu. Only a machine without it can
+        # prove that, so this step refuses to run where it is installed, shows
+        # the launcher's runtime asks no dynamic loader for anything, starts the
+        # AppImage the way a user does, and then does it again inside a
+        # container image that carries no libfuse2 at all.
+        run: |
+          set -euo pipefail
+          appimage="$(ls dist/Bitcoin-Easy-Signer-*-linux-x86_64.AppImage)"
+          chmod 755 "$appimage"
+
+          if ldconfig -p | grep -qE 'libfuse\.so\.2'; then
+            echo "::error::libfuse.so.2 is installed on this runner, so a pass here would prove nothing."
+            exit 1
+          fi
+
+          # The runtime prefix is the launcher. A static-pie binary names no
+          # interpreter and no shared library, so there is nothing for the host
+          # to be missing. (It does carry libfuse's licence text; the check is
+          # about the loader's own view of the file, not about strings.)
+          mkdir -p build
+          "./$appimage" --appimage-offset > build/offset
+          head -c "$(cat build/offset)" "$appimage" > build/runtime
+          chmod 755 build/runtime
+          file build/runtime
+          python3 - <<'ELF'
+          import struct
+          import sys
+
+          raw = open("build/runtime", "rb").read()
+          if raw[:4] != b"\x7fELF":
+              sys.exit("the AppImage runtime is not an ELF binary")
+          phoff, = struct.unpack_from("<Q", raw, 32)
+          phentsize, phnum = struct.unpack_from("<HH", raw, 54)
+          interpreter = None
+          dynamic = None
+          for index in range(phnum):
+              start = phoff + index * phentsize
+              p_type, _flags, p_offset, _vaddr, _paddr, p_filesz = struct.unpack_from(
+                  "<IIQQQQ", raw, start
+              )
+              if p_type == 3:
+                  interpreter = raw[p_offset:p_offset + p_filesz].split(b"\0")[0]
+              if p_type == 2:
+                  dynamic = (p_offset, p_filesz)
+          if interpreter is not None:
+              sys.exit("the AppImage runtime asks for a dynamic loader: " + interpreter.decode())
+          needed = []
+          if dynamic is not None:
+              offset, size = dynamic
+              for index in range(size // 16):
+                  tag, _value = struct.unpack_from("<qQ", raw, offset + index * 16)
+                  if tag == 0:
+                      break
+                  if tag == 1:
+                      needed.append(index)
+          if needed:
+              sys.exit("the AppImage runtime names " + str(len(needed)) + " shared library dependency(ies)")
+          print("The AppImage runtime is static-pie: no dynamic loader, no shared library named.")
+          ELF
+
+          # Start it the way a user does: the runtime mounts the payload itself,
+          # which is the path that fails when a machine has only fuse3.
+          sudo modprobe fuse || true
+          if [[ ! -e /dev/fuse ]]; then
+            echo "::error::this runner has no /dev/fuse, so a mounted AppImage cannot be proven here."
+            exit 1
+          fi
+          DSH_LINUX_CHECK_LOG="$PWD/build/appimage-mounted.log" "./$appimage" --dsh-check-bundle
+          test -s build/appimage-mounted.log
+          cat build/appimage-mounted.log
+
+          # And again inside a container that has no libfuse2: an AppImage that
+          # needed the host's libfuse.so.2 dies here with a dlopen failure.
+          cat > build/container-proof.sh <<'SH'
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends fuse3 ca-certificates >/dev/null
+          if ldconfig -p | grep -qE 'libfuse\.so\.2'; then
+            echo "libfuse.so.2 is present in this container; the proof is void." >&2
+            exit 1
+          fi
+          appimage="$(ls /dist/Bitcoin-Easy-Signer-*-linux-x86_64.AppImage)"
+          DSH_LINUX_CHECK_LOG=/work/container.log "$appimage" --dsh-check-bundle
+          test -s /work/container.log
+          SH
+          docker run --rm \
+            --device /dev/fuse --cap-add SYS_ADMIN \
+            --security-opt apparmor=unconfined \
+            -v "$PWD/dist:/dist:ro" -v "$PWD/build:/work" \
+            ubuntu:24.04 bash -lc 'bash /work/container-proof.sh'
+          cat build/container.log
+      - name: Name the SBOM for one shared release page
+        run: mv dist/BUILD-SBOM.json dist/BUILD-SBOM-linux-x86_64.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-desktop
+          path: |
+            dist/*.AppImage
+            dist/*-linux-x86_64.tar.gz
+            dist/BUILD-SBOM-linux-x86_64.json
+          if-no-files-found: error
+
   checksums:
     name: SHA256SUMS
-    needs: [version, source, macos]
+    needs: [version, source, macos, windows, linux]
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
+      # Sigstore provenance attestation binds every asset to this workflow run.
+      id-token: write
+      attestations: write
     steps:
       - name: Download and verify the tested candidate artifacts
         if: ${{ inputs.publish }}
@@ -365,13 +688,18 @@ jobs:
               exit 1
             }
           mkdir -p "$RUNNER_TEMP/candidate-manifest" "$RUNNER_TEMP/candidate-source" \
-            "$RUNNER_TEMP/candidate-macos" "$RUNNER_TEMP/candidate-sums" dist
+            "$RUNNER_TEMP/candidate-macos" "$RUNNER_TEMP/candidate-windows" \
+            "$RUNNER_TEMP/candidate-linux" "$RUNNER_TEMP/candidate-sums" dist
           gh run download "$CANDIDATE_RUN_ID" --name candidate-manifest \
             --dir "$RUNNER_TEMP/candidate-manifest"
           gh run download "$CANDIDATE_RUN_ID" --name source-archive \
             --dir "$RUNNER_TEMP/candidate-source"
           gh run download "$CANDIDATE_RUN_ID" --name macos-dmg \
             --dir "$RUNNER_TEMP/candidate-macos"
+          gh run download "$CANDIDATE_RUN_ID" --name windows-bundle \
+            --dir "$RUNNER_TEMP/candidate-windows"
+          gh run download "$CANDIDATE_RUN_ID" --name linux-desktop \
+            --dir "$RUNNER_TEMP/candidate-linux"
           gh run download "$CANDIDATE_RUN_ID" --name sha256sums \
             --dir "$RUNNER_TEMP/candidate-sums"
           manifest="$RUNNER_TEMP/candidate-manifest/CANDIDATE-MANIFEST.txt"
@@ -383,12 +711,19 @@ jobs:
           grep -Fx "publish=false" "$manifest"
           cp "$RUNNER_TEMP"/candidate-source/*.tar.gz dist/
           cp "$RUNNER_TEMP"/candidate-macos/*.dmg "$RUNNER_TEMP"/candidate-macos/BUILD-SBOM.json dist/
+          cp "$RUNNER_TEMP"/candidate-windows/*.zip "$RUNNER_TEMP"/candidate-windows/BUILD-SBOM-windows-x64.json dist/
+          cp "$RUNNER_TEMP"/candidate-linux/*.AppImage "$RUNNER_TEMP"/candidate-linux/*-linux-x86_64.tar.gz \
+            "$RUNNER_TEMP"/candidate-linux/BUILD-SBOM-linux-x86_64.json dist/
           cp "$RUNNER_TEMP/candidate-sums/SHA256SUMS" dist/
           cd dist
           shasum -a 256 -c SHA256SUMS
-          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 1
+          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l | tr -d ' ')" = 2
           test "$(find . -maxdepth 1 -name '*.dmg' | wc -l | tr -d ' ')" = 1
+          test "$(find . -maxdepth 1 -name '*.zip' | wc -l | tr -d ' ')" = 1
+          test "$(find . -maxdepth 1 -name '*.AppImage' | wc -l | tr -d ' ')" = 1
           test -f BUILD-SBOM.json
+          test -f BUILD-SBOM-windows-x64.json
+          test -f BUILD-SBOM-linux-x86_64.json
       - name: Download current run artifacts for a nonpublishing candidate
         if: ${{ !inputs.publish }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -401,13 +736,55 @@ jobs:
         with:
           name: macos-dmg
           path: dist
+      - name: Download current Windows bundle for a nonpublishing candidate
+        if: ${{ !inputs.publish }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-bundle
+          path: dist
+      - name: Download current Linux assets for a nonpublishing candidate
+        if: ${{ !inputs.publish }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: linux-desktop
+          path: dist
       - name: Write candidate checksums
         if: ${{ !inputs.publish }}
         run: |
           set -euo pipefail
           cd dist
-          shasum -a 256 *.tar.gz *.dmg BUILD-SBOM.json > SHA256SUMS
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%f\0' \
+            | sort -z | xargs -0 shasum -a 256 > SHA256SUMS
           cat SHA256SUMS
+      - name: Sign the checksum manifest with the release key
+        # Only the publish path signs. A candidate must be promotable byte-for-byte,
+        # so nothing about its files changes here; the signature is added over the
+        # verified candidate sums. Publishing without the key fails closed with the
+        # one-time setup in SIGNING.md.
+        if: ${{ inputs.publish }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
+            echo "GPG_PRIVATE_KEY is not set; a release cannot ship an unsigned" >&2
+            echo "checksum manifest. See SIGNING.md for the one-time release-key setup." >&2
+            exit 1
+          fi
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          if [[ -n "${GPG_PASSPHRASE:-}" ]]; then
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+              --armor --detach-sign --output dist/SHA256SUMS.asc dist/SHA256SUMS
+          else
+            gpg --batch --yes --armor --detach-sign \
+              --output dist/SHA256SUMS.asc dist/SHA256SUMS
+          fi
+          gpg --verify dist/SHA256SUMS.asc dist/SHA256SUMS
+      - name: Attest build provenance for every asset
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-assets
@@ -422,7 +799,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [version, source, macos, checksums]
+    needs: [version, source, macos, windows, linux, checksums]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -433,7 +810,18 @@ jobs:
           name: release-assets
           path: dist
       - name: Verify downloaded release bytes
-        run: cd dist && shasum -a 256 -c SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+          if [[ "${{ inputs.publish }}" == "true" ]]; then
+            # The publish path must carry the release-key signature, verified
+            # against the public key committed in this repository (SIGNING.md).
+            test -f SHA256SUMS.asc || { echo "SHA256SUMS.asc is missing." >&2; exit 1; }
+            test -f ../signing-key.asc || { echo "signing-key.asc is not committed." >&2; exit 1; }
+            gpg --batch --import ../signing-key.asc
+            gpg --verify SHA256SUMS.asc SHA256SUMS
+          fi
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -454,10 +842,10 @@ jobs:
           # below, where it can be a sentence instead of a suffix.
           release_title="$tag"
           if [[ "${{ inputs.notarize }}" == "true" ]]; then
-            build_kind="Signed with a Developer ID certificate and **notarized by Apple**, so it installs with a normal double-click."
+            build_kind="The macOS download is signed with a Developer ID certificate and **notarized by Apple**, so it installs with a normal double-click. The Windows and Linux downloads are **unsigned**: their guarantee is provenance, not a certificate — every asset was built from this exact commit in one gated workflow run, is covered by the CI-generated \`SHA256SUMS\` and its release-key signature \`SHA256SUMS.asc\`, and carries a GitHub Sigstore build attestation. See \`SIGNING.md\`."
             dmg_name="Bitcoin-Easy-Signer-v${VERSION}-macOS.dmg"
           else
-            build_kind="**Unsigned and unnotarized.** macOS will require right-click → Open on first launch. Built for testing, not for handing to anyone."
+            build_kind="**Unsigned and unnotarized, every platform.** macOS will require right-click → Open on first launch. Built for testing, not for handing to anyone."
             dmg_name="Bitcoin-Easy-Signer-v${VERSION}-UNSIGNED-TEST.dmg"
           fi
           cat > notes.md <<EOF
@@ -501,10 +889,20 @@ jobs:
           - Saves an optional unsigned PSBT and an opt-in privacy-limited diagnostic
             report. Dependencies are hash-locked; native libusb digest is required.
 
-          Downloads: \`${dmg_name}\` (Apple Silicon) and
-          \`bitcoin-easy-multisig-signer-v${VERSION}.tar.gz\` (source).
-          Verify either file against \`SHA256SUMS\`.
-          \`BUILD-SBOM.json\` inventories the packaged Python environment and native libusb.
+          Downloads — every platform built from this exact commit in one gated run:
+
+          - \`${dmg_name}\` — macOS, Apple Silicon
+          - \`Bitcoin-Easy-Signer-v${VERSION}-windows-x64.zip\` — Windows x64
+          - \`Bitcoin-Easy-Signer-v${VERSION}-linux-x86_64.AppImage\` — Linux x86_64
+          - \`Bitcoin-Easy-Signer-v${VERSION}-linux-x86_64.tar.gz\` — Linux x86_64, unpackaged
+          - \`bitcoin-easy-multisig-signer-v${VERSION}.tar.gz\` — source
+
+          Verify any download against \`SHA256SUMS\` and its release-key signature
+          \`SHA256SUMS.asc\` (the public key is \`signing-key.asc\` in this repository),
+          and check each file's GitHub Sigstore build attestation.
+          \`BUILD-SBOM.json\`, \`BUILD-SBOM-windows-x64.json\` and
+          \`BUILD-SBOM-linux-x86_64.json\` inventory each packaged environment and its
+          native libusb.
 
           **Use at your own risk.** Bitcoin Easy Signer is free, open-source software
           maintained by Bitseeker LLC, without warranty or guarantee. Real Bitcoin can be
@@ -539,8 +937,9 @@ jobs:
               echo "Nothing was published and no tag was created. The release notes"
               echo "this run would have used are in \`notes.md\` below."
               echo
-              echo "Download the \`macos-dmg\` artifact for the DMG and"
-              echo "\`BUILD-SBOM.json\`, and \`sha256sums\` for \`SHA256SUMS\`."
+              echo "Download the \`macos-dmg\`, \`windows-bundle\` and \`linux-desktop\`"
+              echo "artifacts for the platform builds and their SBOMs, and"
+              echo "\`sha256sums\` for \`SHA256SUMS\`."
               echo
               echo "Expected DMG name: \`${dmg_name}\`"
             } >> "$GITHUB_STEP_SUMMARY"

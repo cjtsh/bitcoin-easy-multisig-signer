@@ -86,8 +86,11 @@ def launch_url(port: int, token: str) -> str:
     """Local app URL carrying the access token in the fragment.
 
     The fragment is not sent to the server and is not part of the referrer, so
-    the token is never disclosed in an unauthenticated HTTP response, browser
-    history, or an upstream log.
+    the token is never disclosed in an unauthenticated HTTP response or an
+    upstream log. In browser mode the URL — fragment included — can persist in
+    that browser's history on this machine while the session runs; the desktop
+    window keeps no such history. The token unlocks only this loopback session
+    and dies with it.
     """
     return f"http://127.0.0.1:{port}/#token={token}"
 
@@ -289,6 +292,33 @@ class PreparedPayment:
         return dict(self.review_items)
 
 
+def assert_private_file(path: Path) -> None:
+    """Prove a file the app wrote is readable only by the operator's own account.
+
+    POSIX lets the app create these files 0600 and lets this check read that back
+    exactly. Windows has no equivalent to read: ``os.chmod`` there only toggles
+    the read-only attribute, and ``st_mode`` reports 0666 for every ordinary file
+    no matter what mode was requested, so asserting 0600 on Windows would test
+    Windows' reporting rather than the file's protection. What actually protects
+    the file there is the per-user access list inherited from the operator's own
+    profile directory, so that is what is verified instead: the file must
+    genuinely live inside this user's profile and not in a shared location.
+    """
+    resolved = Path(path).resolve()
+    if os.name == "nt":
+        profile = os.environ.get("USERPROFILE") or str(Path.home())
+        try:
+            resolved.relative_to(Path(profile).resolve())
+        except ValueError:
+            raise RuntimeError(
+                "The saved file is outside this user's own profile, which is where "
+                "Windows protects it with a per-user access list."
+            ) from None
+        return
+    if resolved.stat().st_mode & 0o777 != 0o600:
+        raise RuntimeError("The saved file permissions are not 0600.")
+
+
 def save_prepared_psbt(state: "LocalApp", chain, folder: Path | None = None) -> dict:
     """Write the app's currently prepared PSBT into the user's Downloads folder.
 
@@ -347,6 +377,21 @@ def _clean_token(value) -> str:
     """
     text = str(value or "").strip().lower()
     return text if re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,19}", text) else ""
+
+
+# A diagnostic report may name a device *class* and nothing else. The vocabulary
+# is fixed at the HWI device families this app supports: a well-formed token that
+# is not a known class is dropped too, because a pattern check alone would still
+# pass a 20-character address fragment or device serial that happened to fit.
+DEVICE_CLASSES = frozenset({
+    "bitbox02", "coldcard", "jade", "keepkey", "ledger", "trezor",
+})
+
+
+def _device_class(value) -> str:
+    """Reduce a value to a known device class, or drop it."""
+    token = _clean_token(value)
+    return token if token in DEVICE_CLASSES else ""
 
 
 def save_diagnostic_report(state: "LocalApp", folder: Path | None = None) -> dict:
@@ -436,7 +481,7 @@ class LocalApp:
         """
         if stage not in DIAGNOSTIC_STAGES or outcome not in DIAGNOSTIC_OUTCOMES:
             return
-        cleaned = _clean_token(device)
+        cleaned = _device_class(device)
         with self.lock:
             event = {
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -445,7 +490,7 @@ class LocalApp:
             if cleaned:
                 event["device"] = cleaned
             if found is not None:
-                event["found"] = sorted({c for c in (_clean_token(x) for x in found) if c})
+                event["found"] = sorted({c for c in (_device_class(x) for x in found) if c})
             self.diagnostic_events.append(event)
             del self.diagnostic_events[:-80]
 
@@ -498,8 +543,7 @@ class LocalApp:
                     # unauthenticated response. It travels in the URL fragment of
                     # the launch URL, which a browser never sends to the server.
                     script_nonce = secrets.token_urlsafe(18)
-                    body = (page.replace("__LOCAL_TOKEN__", "")
-                            .replace("__APP_VERSION__", APP_VERSION)
+                    body = (page.replace("__APP_VERSION__", APP_VERSION)
                             .replace("__DESKTOP_MODE__", "true" if state.desktop else "false")
                             .replace("__DESKTOP_HIDE_QUIT__", "hidden" if state.desktop else "")
                             .replace("<script>", f'<script nonce="{script_nonce}">', 1)

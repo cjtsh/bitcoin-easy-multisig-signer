@@ -192,7 +192,12 @@ def parse_bsms(text: str) -> WalletRecord:
 
 def _hwi_path(executable: str) -> str:
     if getattr(sys, "frozen", False):
-        bundled = Path(sys.executable).with_name("hwi")
+        # The packaged build ships the tool under the name its platform runs:
+        # `hwi` on macOS, `hwi.exe` on Windows. The non-frozen branch below needs
+        # no such split, because shutil.which() already resolves .EXE through
+        # PATHEXT on Windows.
+        name = "hwi.exe" if sys.platform == "win32" else "hwi"
+        bundled = Path(sys.executable).with_name(name)
         if bundled.is_file():
             return str(bundled)
         # A packaged build must never fall through to a PATH search: a
@@ -211,6 +216,13 @@ _PATH_LIKE = re.compile(r"(/\S+|[A-Za-z]:\\\S+)")
 DEFAULT_HWI_TIMEOUT_SECONDS = 60
 DEVICE_AUTH_TIMEOUT_SECONDS = 180
 SIGN_TIMEOUT_SECONDS = 600
+
+
+def hwi_process_options() -> dict[str, Any]:
+    """Keep console HWI helpers invisible when launched by the Windows GUI."""
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 
 
 def _hwi_reason(text: str) -> str:
@@ -247,7 +259,9 @@ def invoke_hwi(executable: str, chain: str, *arguments: str,
     expose it. Only the fixed 'signtx <base64>' form is sent by this app.
     """
     try:
-        options = {"input": stdin_command} if stdin_command is not None else {}
+        options = hwi_process_options()
+        if stdin_command is not None:
+            options["input"] = stdin_command
         result = subprocess.run(
             [_hwi_path(executable), "--chain", chain, *arguments],
             capture_output=True,

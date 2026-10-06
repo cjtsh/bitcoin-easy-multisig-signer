@@ -1,4 +1,9 @@
-"""Thin macOS window around the existing localhost GUI; no wallet engine fork."""
+"""Thin native window around the existing localhost GUI; no wallet engine fork.
+
+The window is the only platform-specific part. It is WebKit on macOS and
+WebView2 on Windows; the wallet engine, the interface and the HTTP API are the
+same files on both.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +14,31 @@ import os
 import subprocess
 import sys
 import threading
+import traceback
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import safe_http
-from gui import LocalApp, launch_url, save_prepared_psbt, ui_path
-from probe import ProbeError, _hwi_path, invoke_hwi
+from gui import LocalApp, assert_private_file, launch_url, save_prepared_psbt, ui_path
+from network_settings import settings_path
+from probe import ProbeError, _hwi_path, hwi_process_options, invoke_hwi
 from wallet_service import WalletError
+
+
+def report(message: str) -> None:
+    """Record what a headless self-check verified.
+
+    A --windowed build has no console on Windows: ``sys.stdout`` is None, so
+    ``print`` writes nothing and the build log cannot tell a check that passed
+    from one that never ran. ``DSH_DESKTOP_CHECK_LOG`` names a file the build
+    workflow reads for that evidence; where a console exists the same line still
+    reaches the terminal.
+    """
+    print(message)
+    destination = os.environ.get("DSH_DESKTOP_CHECK_LOG")
+    if destination:
+        with open(destination, "a", encoding="utf-8") as handle:
+            handle.write(f"{message}\n")
 
 
 class DesktopBridge:
@@ -97,7 +120,7 @@ def check_bundle_resources() -> None:
         # that "some CA is loaded" is not enough: on a build machine with ambient
         # OpenSSL CA files that passes even when the bundle is ignored, which is
         # precisely how an earlier build shipped while being unable to verify any
-        # certificate on the user's Mac.
+        # certificate on the user's computer.
         if Path(safe_http.trust_bundle() or "\0") != bundle:
             raise RuntimeError(
                 "The bundled HTTPS trust store is not the one configured for use; "
@@ -108,6 +131,9 @@ def check_bundle_resources() -> None:
                 "No trusted CA certificates are loaded, so every HTTPS request "
                 "would fail. The bundled trust store is not in effect."
             )
+        report("Bundled ui.html, the licence notices and the packaged HTTPS trust store all check out.")
+    else:
+        report("Bundled ui.html and the licence notices check out; the trust store is checked in the frozen app.")
 
 
 def configure_packaged_tls() -> None:
@@ -132,9 +158,9 @@ def check_testnet4_network() -> None:
     genesis = explorer_get("/block-height/0", text=True, chain="testnet4").strip().lower()
     if genesis != NETWORKS["testnet4"].genesis_hash:
         raise RuntimeError("Testnet4 explorer returned the wrong network's genesis block.")
-    print("Bundled Testnet4 explorer HTTPS check passed.")
+    report("Bundled Testnet4 explorer HTTPS check passed.")
     verify_esplora("mutinynet", NETWORKS["mutinynet"].explorer_url)
-    print("Bundled Mutinynet genesis and fork-checkpoint HTTPS checks passed.")
+    report("Bundled Mutinynet genesis and fork-checkpoint HTTPS checks passed.")
 
 
 def check_psbt_save() -> None:
@@ -169,9 +195,8 @@ def check_psbt_save() -> None:
             raise RuntimeError("Two saves produced different files.")
         if not saved.read_bytes().startswith(b"psbt\xff"):
             raise RuntimeError("The saved file is not a PSBT.")
-        if saved.stat().st_mode & 0o777 != 0o600:
-            raise RuntimeError("The saved file permissions are not 0600.")
-    print("Bundled unsigned-PSBT save check passed.")
+        assert_private_file(saved)
+    report("Bundled unsigned-PSBT save check passed.")
 
 
 def bundled_capabilities() -> dict:
@@ -186,6 +211,7 @@ def bundled_capabilities() -> dict:
         probe = subprocess.run(
             [_hwi_path("hwi"), "--dsh-capabilities"],
             capture_output=True, text=True, timeout=30, check=False,
+            **hwi_process_options(),
         )
     except Exception as exc:
         raise RuntimeError("The bundled hardware-wallet tool could not be run.") from exc
@@ -227,12 +253,58 @@ def check_device_bridge() -> None:
     for device in devices:
         if not isinstance(device, dict):
             raise RuntimeError("The bundled hardware-wallet tool returned a malformed device.")
-    print(f"Bundled HWI responded: {len(devices)} device(s) attached right now.")
-    print("The device bridge works; plugging in a signer is what remains untested.")
+    report(f"Bundled HWI responded: {len(devices)} device(s) attached right now.")
+    report("The device bridge works; plugging in a signer is what remains untested.")
+
+
+def webview_renderer() -> str:
+    """The renderer to ask pywebview for, named rather than left to chance.
+
+    macOS has one option. On Windows the name states the intent, but asking is not
+    the same as being obeyed: pywebview picks EdgeChromium when the WebView2
+    runtime is present and imports the legacy MSHTML engine when it is not, with no
+    error either way. ``require_edge_chromium`` checks which engine it actually
+    chose, because this interface uses modern CSS that MSHTML cannot lay out.
+    """
+    return "edgechromium" if sys.platform == "win32" else "cocoa"
+
+
+def windows_renderer() -> str:
+    """Which engine pywebview will really use on this Windows machine.
+
+    pywebview decides once, when its Windows platform module is imported, and never
+    revisits it, so asking that module is the only truthful answer. Kept separate
+    from the check so the check can be tested without a Windows toolkit.
+    """
+    from webview.platforms import winforms
+
+    return winforms.renderer
+
+
+def require_edge_chromium() -> None:
+    """Refuse to open a window that would render in the legacy IE engine.
+
+    A window that opens and renders wrong is the one failure a user cannot
+    describe, and the shipped bundle has no other way to notice it: pywebview
+    reports no error when the WebView2 runtime is missing, so nothing would reach
+    the startup reporter. Failing here turns that silence into a message naming
+    the fix.
+    """
+    if sys.platform != "win32":
+        return
+    renderer = windows_renderer()
+    if renderer != "edgechromium":
+        raise RuntimeError(
+            "The Microsoft Edge WebView2 runtime is not installed, so the window "
+            f"would fall back to the legacy {renderer} engine that cannot display "
+            "this interface. Install the WebView2 runtime (free, from Microsoft) "
+            "and start the app again."
+        )
 
 
 def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
+    require_edge_chromium()
     state = LocalApp(desktop=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
     port = server.server_address[1]
@@ -245,12 +317,59 @@ def run_desktop(webview_module) -> None:
             "Bitcoin Easy Signer", launch_url(port, state.token), js_api=bridge,
             width=1100, height=820, min_size=(780, 600),
         )
-        webview_module.start(gui="cocoa")
+        webview_module.start(gui=webview_renderer())
     finally:
         server.shutdown()
         server.server_close()
         if thread.is_alive():
             thread.join(timeout=5)
+
+
+def startup_error_log() -> Path:
+    """Where a window that failed to start leaves its traceback.
+
+    A ``--windowed`` build has no console on any platform, so the app cannot be
+    run "in a terminal" to see why it stopped: a failure to open the window looks
+    like nothing happening at all. The report goes beside the settings file the
+    app already owns, inside the user's own profile.
+    """
+    return settings_path().parent / "desktop-startup-error.log"
+
+
+def windows_error_dialog(title: str, text: str) -> None:
+    """A modal error box, the only way a console-less Windows app can speak."""
+    import ctypes
+
+    ctypes.windll.user32.MessageBoxW(None, text, title, 0x00000010)
+
+
+def report_startup_failure(error: BaseException) -> None:
+    """Say why the window did not open, where the operator can find it.
+
+    Windows has no crash reporter and a windowed build has no console, so a
+    failed start is invisible. The traceback is written next to the app's
+    settings and, on Windows, shown in a message box naming that file.
+    """
+    details = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    destination: Path | None = None
+    try:
+        destination = startup_error_log()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(details, encoding="utf-8")
+    except OSError:
+        destination = None
+    if sys.platform == "win32":
+        where = (
+            f"The full report is in:\n{destination}"
+            if destination is not None
+            else "The report could not be written to disk."
+        )
+        windows_error_dialog(
+            "Bitcoin Easy Signer",
+            f"Bitcoin Easy Signer could not open its window.\n\n{error}\n\n{where}",
+        )
+    else:
+        print(details)
 
 
 def main() -> None:
@@ -267,10 +386,19 @@ def main() -> None:
     if "--check-devices" in sys.argv[1:]:
         check_device_bridge()
         return
-    if sys.platform != "darwin":
-        raise SystemExit("The desktop window bundle is for macOS; Linux can use gui.py.")
-    import webview
-    run_desktop(webview)
+    if sys.platform not in ("darwin", "win32"):
+        raise SystemExit(
+            "The desktop window bundle is built for macOS and Windows; "
+            "other systems can use gui.py in a browser."
+        )
+    try:
+        import webview
+        run_desktop(webview)
+    except Exception as error:
+        # Nothing is watching stderr in a windowed build, so an unreported failure
+        # here is indistinguishable from the app doing nothing at all.
+        report_startup_failure(error)
+        raise SystemExit(1) from error
 
 
 if __name__ == "__main__":

@@ -37,11 +37,11 @@ The app opens on **Bitcoin mainnet**, the live network where real Bitcoin exists
 
 Choose the BSMS wallet-definition file supplied by the wallet owner. Before opening it, the app asks you to acknowledge that a public explorer will see the wallet's public addresses. A mainnet payment also checks selected public transaction IDs with a second explorer. This is a privacy disclosure: the app does not silently switch to another server.
 
-![Illustration of the 0.6.2 opening screen on Bitcoin mainnet. No wallet file or real wallet data is shown.](docs/assets/manual-01-open-wallet.svg)
+![Illustration of the 0.6.2 opening screen on Bitcoin mainnet. No wallet file or real wallet data is shown.](assets/manual/manual-01-open-wallet.svg)
 
 When the scan finishes, review the wallet and balance summary. The scan checks a limited address range; **it is not a complete sweep of every address the wallet may ever have used**. If the balance looks wrong or the wallet owner expects funds that are not shown, stop and ask the owner before proceeding.
 
-![Illustration of the wallet summary after a scan. The example contains no real balance or wallet identifiers.](docs/assets/manual-02-wallet-summary.svg)
+![Illustration of the wallet summary after a scan. The example contains no real balance or wallet identifiers.](assets/manual/manual-02-wallet-summary.svg)
 
 ## Step 2 — Check the hardware signers
 
@@ -49,7 +49,7 @@ Use the button to look for the required hardware wallets. This step checks that 
 
 If a device is not found, connect one device at a time, unlock it, open the device's Bitcoin app if it has one, and close other wallet programs that may be using it. Do not retry a signing action automatically after a timeout; reconnect and ask the wallet owner for help if the app still cannot identify the required signer.
 
-![Illustration of the hardware signer check. It shows waiting states only and no device identity.](docs/assets/manual-03-check-signers.svg)
+![Illustration of the hardware signer check. It shows waiting states only and no device identity.](assets/manual/manual-03-check-signers.svg)
 
 ## Step 3 — Prepare a payment
 
@@ -57,7 +57,7 @@ Enter the recipient's address and the amount they expect. Choose a fee speed and
 
 Do not select **Send all** unless the wallet owner's instructions specifically call for spending every confirmed coin found by this scan. If the app says it cannot safely make a partial payment because the change layout is unsupported, stop and ask the wallet owner. Do not solve that warning by guessing about wallet paths. The Send All option is a deliberate choice, never a default.
 
-![Illustration of the payment preparation form with example prompts and no recipient address or amount.](docs/assets/manual-04-prepare-payment.svg)
+![Illustration of the payment preparation form with example prompts and no recipient address or amount.](assets/manual/manual-04-prepare-payment.svg)
 
 ## Step 4 — Review every payment detail
 
@@ -65,7 +65,7 @@ Before asking a signer to approve, compare the app's review with the recipient's
 
 Many hardware signers do not show a change address on their screens. Check the change address in the wallet software that holds the wallet file; do not assume the device checked it. If the destination, amount, fee, network, or change is missing or unexpected, stop and do not sign.
 
-![Illustration of the payment review screen. It points out the destination, amount, fee, and change fields without using live payment data.](docs/assets/manual-05-review-payment.svg)
+![Illustration of the payment review screen. It points out the destination, amount, fee, and change fields without using live payment data.](assets/manual/manual-05-review-payment.svg)
 
 ## Step 5 — Approve on each hardware device
 
@@ -73,7 +73,7 @@ The device screen is where you approve a payment. Read each device's screen care
 
 If a device shows a different destination or amount, reject the request on the device and stop. Never approve a prompt just to make the app continue.
 
-![Illustration of the signing step showing that each approval happens on a hardware device. No real device identity is displayed.](docs/assets/manual-06-sign-on-device.svg)
+![Illustration of the signing step showing that each approval happens on a hardware device. No real device identity is displayed.](assets/manual/manual-06-sign-on-device.svg)
 
 ## Step 6 — Final review and broadcast
 
@@ -81,13 +81,13 @@ After signing, the app shows a final review. Compare the network, destination, a
 
 The app will not broadcast on its own. If you are uncertain, do not check the box. Ask the wallet owner or another trusted reviewer.
 
-![Illustration of the final mainnet confirmation screen. The example shows the real-Bitcoin warning and an unchecked confirmation.](docs/assets/manual-07-final-review.svg)
+![Illustration of the final mainnet confirmation screen. The example shows the real-Bitcoin warning and an unchecked confirmation.](assets/manual/manual-07-final-review.svg)
 
 ## Step 7 — Wait for confirmation
 
 After a broadcast is accepted, the app reports that the payment is waiting for one confirmation. This can take time. The pending notice is the source of truth; a missing status or a link opening in a browser does not mean the payment is confirmed. Use **Check again** later. Do not make another payment from that wallet until the app reports one confirmation.
 
-![Illustration of the pending-payment notice. It makes clear that a missing status is not confirmation.](docs/assets/manual-08-pending-confirmation.svg)
+![Illustration of the pending-payment notice. It makes clear that a missing status is not confirmation.](assets/manual/manual-08-pending-confirmation.svg)
 
 If the broadcast appears to hang or the app reports that the result is unknown, do not retry blindly. The payment might have reached the network even if the app did not receive a clear reply. Ask the wallet owner to check the transaction ID with a trusted source.
 
@@ -107,7 +107,7 @@ If the broadcast appears to hang or the app reports that the result is unknown, 
 
 Developer Mode is a test bench for people who already have a practice wallet file and practice coins. It reveals Mutinynet and Testnet4 after an extra confirmation; the app provides neither wallet files nor coins. The choice lasts for the session, and **Return to Bitcoin** exits it. A practice payment does not prove how a particular hardware device will treat change on a later live payment.
 
-![Illustration of the developer-only practice network panel, marked “Developer access” so it is distinct from the normal recovery flow.](docs/assets/app-preview-developer-mode.svg)
+![Illustration of the developer-only practice network panel, marked “Developer access” so it is distinct from the normal recovery flow.](assets/manual/app-preview-developer-mode.svg)
 
 ## Important limits and honest expectations
 

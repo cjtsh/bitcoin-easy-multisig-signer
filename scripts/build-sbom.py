@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Inventory the collected Python packages and native libusb in a built DMG.
+"""Inventory the collected Python packages and native libusb in a built bundle.
 
-Run with the fresh .build-venv interpreter after build-macos.sh completes.
+Run with the fresh .build-venv interpreter after the platform build script completes.
 The result is a CycloneDX JSON SBOM shipped beside the immutable release assets.
 It contains package names/versions, hashes of the reviewed lock and libusb,
 and the GitHub commit/run identifiers; never wallet or device data.
@@ -46,13 +46,29 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+# Each platform names the frozen app bundle differently; the helper is "hwi"
+# everywhere. Both analyses are looked up rather than assumed, so a build that
+# never ran PyInstaller fails here instead of shipping an SBOM that quietly
+# omits half the packages.
+APP_BUNDLE_NAMES = ("Bitcoin Easy Signer", "bitcoin-easy-signer")
+
+# The hash-locked dependency file this platform's build resolves against.
+LOCK_FILE = {"darwin": "requirements-desktop.lock",
+             "win32": "requirements-desktop-windows.lock"}.get(
+                 sys.platform, "requirements-desktop-linux.lock")
+
+
 def collected_packages(root: Path) -> set[str]:
     """Use both PyInstaller analyses, not the build virtualenv's installed set."""
     modules = set()
-    for name in ("Bitcoin Easy Signer", "hwi"):
+    analyses = []
+    for name in (*APP_BUNDLE_NAMES, "hwi"):
         toc = root / "build" / name / "Analysis-00.toc"
-        if not toc.is_file():
-            raise ValueError(f"Missing PyInstaller analysis: {toc}")
+        if toc.is_file():
+            analyses.append(toc)
+    if len(analyses) < 2:
+        raise ValueError("Missing a PyInstaller analysis: expected the app bundle and hwi")
+    for toc in analyses:
         analysis = ast.literal_eval(toc.read_text(encoding="utf-8"))
         for entry in analysis[11] + analysis[14] + analysis[15] + analysis[18]:
             modules.add(entry[0].split(".")[0].split("/")[0])
@@ -61,14 +77,31 @@ def collected_packages(root: Path) -> set[str]:
             for module in modules for name in mapping.get(module, [])}
 
 
+def frozen_helper(root: Path) -> Path:
+    """Where PyInstaller put the standalone hardware-wallet helper."""
+    if sys.platform == "darwin":
+        return root / "dist" / "Bitcoin Easy Signer.app" / "Contents" / "MacOS" / "hwi"
+    if sys.platform == "win32":
+        return root / "dist" / "Bitcoin Easy Signer" / "hwi.exe"
+    return root / "dist" / "hwi" / "hwi"
+
+
+def native_library_names() -> tuple[str, ...]:
+    """The names the bundled USB library ships under on this platform."""
+    if sys.platform == "win32":
+        return ("libusb-1.0.dll",)
+    if sys.platform == "darwin":
+        return ("libusb-1.0.0.dylib", "libusb-1.0.dylib")
+    return ("libusb-1.0.so.0",)
+
+
 def embedded_libusb(root: Path) -> dict[str, str]:
     """Hash the actual post-PyInstaller, post-signing bytes inside frozen HWI."""
     from PyInstaller.archive.readers import CArchiveReader
 
-    archive = CArchiveReader(str(root / "dist" / "Bitcoin Easy Signer.app"
-                                 / "Contents" / "MacOS" / "hwi"))
+    archive = CArchiveReader(str(frozen_helper(root)))
     result = {}
-    for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
+    for name in native_library_names():
         content = archive.extract(name)
         if not isinstance(content, bytes) or not content:
             raise ValueError(f"Bundled HWI is missing {name}")
@@ -112,7 +145,7 @@ def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str]
             component["licenses"] = [{"license": {"id": LICENCES[normalized]}}]
         components.append(component)
     components.sort(key=lambda component: (component["name"], component["version"]))
-    for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib"):
+    for name in native_library_names():
         digest = embedded.get(name)
         if not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError(f"Missing shipped digest for {name}")
@@ -138,7 +171,7 @@ def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str]
                 {"name": "git_commit", "value": os.environ.get("GITHUB_SHA", "local-build")},
                 {"name": "github_run_id", "value": os.environ.get("GITHUB_RUN_ID", "local-build")},
                 {"name": "requirements_desktop_sha256",
-                 "value": sha256(root / "requirements-desktop.lock")},
+                 "value": sha256(root / LOCK_FILE)},
                 # PyInstaller re-signs each collected Mach-O, changing its bytes.
                 # This pin is the verified build input; components above are shipped bytes.
                 {"name": "libusb_input_sha256", "value": lib_hash},
