@@ -109,17 +109,21 @@ class LinuxEntryPointTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "checked\n")
 
     def test_report_writes_no_file_when_none_was_asked_for(self):
+        # Windows cannot rmtree a directory that is still the process working
+        # directory (WinError 32), so restore cwd before the TemporaryDirectory
+        # context exits — addCleanup runs too late for that.
+        original_cwd = os.getcwd()
         with tempfile.TemporaryDirectory() as tmp:
-            # A relative report path must be the only way a file could appear
-            # here, so the working directory is the temporary one. Restore it on
-            # the way out: a leaked working directory breaks every later test
-            # that spawns a subprocess.
-            self.addCleanup(os.chdir, os.getcwd())
-            with mock.patch.dict(os.environ, {}, clear=True):
-                os.chdir(tmp)
-                with contextlib.redirect_stdout(io.StringIO()):
-                    linux_entry.report("checked")
-                self.assertEqual(list(Path(tmp).iterdir()), [])
+            try:
+                # A relative report path must be the only way a file could appear
+                # here, so the working directory is the temporary one.
+                with mock.patch.dict(os.environ, {}, clear=True):
+                    os.chdir(tmp)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        linux_entry.report("checked")
+                    self.assertEqual(list(Path(tmp).iterdir()), [])
+            finally:
+                os.chdir(original_cwd)
 
     def test_the_udev_installer_only_touches_system_rules_directly(self):
         self.assertEqual(linux_entry.SYSTEM_UDEV_RULES, Path("/usr/lib/udev/rules.d"))

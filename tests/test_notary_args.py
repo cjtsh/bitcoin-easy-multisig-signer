@@ -13,10 +13,11 @@ Apple account.
 import os
 import pathlib
 import re
-import subprocess
 import sys
 import tempfile
 import unittest
+
+from support import run_bash_file
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NOTARY_ARGS = ROOT / "scripts/notary-args.sh"
@@ -38,8 +39,7 @@ def clean_env(**overrides):
 
 class NotaryArgsTests(unittest.TestCase):
     def run_notary_args(self, **env):
-        return subprocess.run(["bash", str(NOTARY_ARGS)], capture_output=True,
-                              text=True, env=clean_env(**env), timeout=60)
+        return run_bash_file(NOTARY_ARGS, env=clean_env(**env), timeout=60)
 
     def test_no_route_configured_prints_nothing_and_is_not_an_error(self):
         """The caller decides whether missing credentials are fatal."""
@@ -116,9 +116,8 @@ class BuildFailsClosedTests(unittest.TestCase):
     """
 
     def run_build(self, **env):
-        return subprocess.run(["bash", str(BUILD_MACOS), APP_VERSION], cwd=ROOT,
-                              capture_output=True, text=True,
-                              env=clean_env(**env), timeout=120)
+        return run_bash_file(BUILD_MACOS, APP_VERSION, cwd=ROOT,
+                             env=clean_env(**env), timeout=120)
 
     def test_the_unsigned_path_is_not_gated(self):
         """No RELEASE means an intentional test build, which needs no credentials.
@@ -233,9 +232,8 @@ class BuildPythonSelectionTests(unittest.TestCase):
     """
 
     def run_build(self, **env):
-        return subprocess.run(["bash", str(BUILD_MACOS), APP_VERSION], cwd=ROOT,
-                              capture_output=True, text=True,
-                              env=clean_env(**env), timeout=120)
+        return run_bash_file(BUILD_MACOS, APP_VERSION, cwd=ROOT,
+                             env=clean_env(**env), timeout=120)
 
     def test_the_interpreter_is_selectable_and_defaults_to_python3(self):
         text = BUILD_MACOS.read_text(encoding="utf-8")

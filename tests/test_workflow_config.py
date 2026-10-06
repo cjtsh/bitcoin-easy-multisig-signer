@@ -15,9 +15,9 @@ dependency); CI installs it for the source job so the checks do run there.
 
 import pathlib
 import re
-import subprocess
-import tempfile
 import unittest
+
+from support import bash_syntax_check, run_bash_script
 
 try:
     import yaml
@@ -77,10 +77,7 @@ class WorkflowConfigTests(unittest.TestCase):
                     # PowerShell is not bash; the Windows runner executes it.
                     continue
                 checked += 1
-                with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
-                    handle.write(script)
-                    path = handle.name
-                result = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
+                result = bash_syntax_check(script)
                 label = f"{job}/{step.get('name') or f'step {index}'}"
                 self.assertEqual(result.returncode, 0,
                                  f"{label} has invalid shell:\n{result.stderr}")
@@ -104,12 +101,7 @@ class WorkflowConfigTests(unittest.TestCase):
                         script = step.get("run")
                         if not script or step.get("shell") == "pwsh":
                             continue
-                        with tempfile.NamedTemporaryFile(
-                                "w", suffix=".sh", delete=False) as handle:
-                            handle.write(script)
-                            path = handle.name
-                        result = subprocess.run(
-                            ["bash", "-n", path], capture_output=True, text=True)
+                        result = bash_syntax_check(script)
                         self.assertEqual(
                             result.returncode, 0,
                             f"{recipe.name}/{job} has invalid shell:\n{result.stderr}")
@@ -353,8 +345,10 @@ class ReleaseNotesTests(unittest.TestCase):
                            for line in script.splitlines())
         runner = ("VERSION=9.9.9 GITHUB_REF_NAME=main GITHUB_SHA=abcdef1234567890\n"
                   + script + '\necho "TITLE=${release_title}"\n')
-        result = subprocess.run(["bash", "-c", runner], capture_output=True,
-                                text=True, cwd=ROOT, timeout=60)
+        # Never bash -c: Windows CreateProcess quoting mangles multiline -c
+        # scripts into an exit-1/empty-stderr failure. run_bash_script writes
+        # LF-terminated text to a file and executes that.
+        result = run_bash_script(runner, cwd=ROOT, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 

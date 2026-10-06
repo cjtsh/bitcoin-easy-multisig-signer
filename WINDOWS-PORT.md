@@ -1,5 +1,59 @@
 # Windows port
 
+## Current process (0.6.5 unified pipeline) — read this first
+
+As of 0.6.5 the Windows port is **merged onto `main`** and built by the single
+dispatch-only workflow `.github/workflows/build-candidate.yml`, together with
+macOS and Linux, from one commit in one run. The old standalone `windows-port`
+branch, its own tag scheme (`v<version>-windows-x64`), and the retired
+`build-windows.yml` workflow are historical. `SIGNING.md` is the signing and
+provenance policy; `RELEASE-PROCESS.md` is the build/promotion contract. There
+is **no second publish path**.
+
+### Windows CI rules — pin these, do not rediscover them
+
+The Windows job runs the **same** Python suite as macOS and Linux and refuses
+any skip. That suite is POSIX-first; three Windows quirks produced 22 false
+failures on the first unified 0.6.5 candidate (run 37407453856) before any
+Windows binary was built. The helpers in `tests/support.py` exist so every
+future version (0.6.6, 0.7.x, 1.x, …) reuses one fix:
+
+| Quirk | Wrong approach | Required approach |
+|---|---|---|
+| `subprocess.run(["bash", "-c", "<multiline>"])` | Rely on it everywhere | Windows CreateProcess quoting mangles multiline `-c` text → bare exit 1, empty stderr. Use `tests.support.run_bash_script` / `run_bash_file` (script goes through a file). |
+| Script newlines | `tempfile.NamedTemporaryFile("w")` | Windows text mode writes CRLF; `bash -n` rejects it. Use `tests.support.write_lf_script` / `bash_syntax_check`. |
+| File privacy | `st_mode & 0o777 == 0o600` | `os.chmod` is not a permission on Windows and `st_mode` reports 0666. Use `tests.support.assert_private_file` → `gui.assert_private_file` (0600 on POSIX, profile-directory ACL on Windows). |
+| `bash` on PATH | Whatever `bash` resolves to | May be a WSL/Store stub that exits 1 silently. Use `tests.support.bash_executable` (prefers Git Bash). |
+| CWD vs `TemporaryDirectory` | `addCleanup(os.chdir, …)` | Windows cannot rmtree a directory that is still the CWD (`WinError 32`). Restore CWD in a `finally` **before** the temp context exits. |
+
+A change to `tests/support.py` that weakens these helpers is a release-gate
+regression; `tests/test_windows_portability.py` pins the helpers.
+
+### Building and verifying on Windows
+
+1. `requirements-desktop-windows.lock` and `vendor/libusb-1.0.dll` are the
+   reviewed Windows inputs. They are produced by `.github/workflows/windows-inputs.yml`
+   (or the equivalent documented process), reviewed, and committed. Never
+   regenerate them casually inside a release run.
+2. The job installs hash-locked deps, **then** runs the full suite and UI tests,
+   **then** builds with `scripts/build-windows.ps1`. A test failure stops the
+   build — which is what happened to the first unified candidate, correctly.
+3. The bundle is verified by `scripts/verify-windows-bundle.py` and the bundled
+   `hwi.exe`, including stdin transport and the headless `--check-*` flags
+   (evidence via `DSH_DESKTOP_CHECK_LOG`, because a `--windowed` exe has no console).
+4. Windows artifacts are **unsigned by policy** (no Authenticode certificate).
+   Provenance is CI-built, `SHA256SUMS`-covered, GPG-signed at publish, and
+   Sigstore-attested. Do not describe them as signed; see `SIGNING.md`.
+5. Owner acceptance stays on GitHub Releases downloads, never Actions artifacts
+   or local builds.
+
+## Historical: the standalone Windows fork (pre-0.6.5)
+
+The sections below record how the Windows port was first developed and shipped
+as a standalone branch with its own tags. **That structure is retired.** It is
+kept as evidence for the v0.6.4 Color Team findings CT-01/CT-02 (hand-uploaded
+assets from unmerged commits). Do not revive a per-platform publish workflow.
+
 ## Owner Windows acceptance and console correction
 
 On 2026-10-04 the owner reported testing the released v0.6.4 Windows app:

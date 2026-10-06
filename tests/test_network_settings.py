@@ -12,6 +12,7 @@ from network_settings import (
     SettingsError, default_servers, load_servers, save_servers,
     validate_esplora_url, verify_esplora,
 )
+from support import assert_private_file
 
 
 class SettingsTests(unittest.TestCase):
@@ -92,9 +93,13 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(loaded["mutinynet"], default_servers()["mutinynet"])
 
     def test_the_settings_file_is_written_privately(self):
-        """The saved server choices are 0600, never world-readable (CT-09)."""
+        """The saved server choices are never world-readable (CT-09).
+
+        POSIX: mode 0600. Windows: inside the user's profile (the ACL there).
+        One rule, asserted through the app's own ``assert_private_file``.
+        """
         save_servers(default_servers())
-        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        assert_private_file(self, self.path)
         self.assertEqual(load_servers(), default_servers())
 
 

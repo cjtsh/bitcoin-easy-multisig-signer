@@ -8,7 +8,7 @@
 4. `RELEASE-HISTORY.md` for the version-by-version record; each entry links its full evidence file where one exists.
 5. `CHANGE-ADDRESS-REVIEW.md` for the BSMS/change trust boundary and the mainnet change-policy gate.
 6. `HWI-DEPENDENCY.md` before touching the Python version, the device list, or a dependency bump. HWI decides which devices work, which Python the app builds on, and when a rebuild is mandatory.
-7. `RELEASE-PROCESS.md` before building a DMG or changing release controls. It is the agent-neutral build and promotion contract. `SIGNING.md` defines what each platform's download carries — signature and provenance — and the release-key policy; read it before touching any workflow or build script.
+7. `RELEASE-PROCESS.md` before building a DMG or changing release controls. It is the agent-neutral build and promotion contract. `SIGNING.md` defines what each platform's download carries — signature and provenance — and the release-key policy; read it before touching any workflow or build script. `WINDOWS-PORT.md` carries the Windows CI portability rules and the retired standalone-fork history.
 8. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
 ## Architecture

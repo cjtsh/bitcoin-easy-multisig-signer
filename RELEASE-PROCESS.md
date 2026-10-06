@@ -49,6 +49,12 @@ reached a tagged release.
    corresponding remote tag does not already exist.
 2. Run the full Python suite without skips, every tests/ui_*.cjs test,
    JavaScript syntax checks, bash -n, and the source archive's own tests.
+   The suite must pass on **macOS, Linux and Windows** — the unified workflow
+   runs it on each runner before that platform builds. Windows portability
+   rules (bash via `tests/support.py`, LF scripts, `assert_private_file`,
+   restore CWD before temp cleanup) are documented in `WINDOWS-PORT.md`;
+   do not call `bash -c` with a multiline script from Python or assert POSIX
+   `0600` directly on Windows.
 3. Dispatch build-candidate.yml from main at the final release commit with
    notarize=true and publish=false. A source push alone never builds or
    publishes a release. The run must check the vendored libusb digests; install
