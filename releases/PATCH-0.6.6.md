@@ -57,6 +57,25 @@ with a test demonstrated able to fail.
   attempt and needs an owner practice-network hardware walkthrough before
   publication (already required when app behavior changes).
 
+## Break-and-watch transcripts
+
+Each control below was broken on a disposable copy, the named test was
+observed red, and the file was restored green. `PYTHONPATH=tests:.
+.venv-ci/bin/python -m unittest <test>`.
+
+| Gate | Break | Test that went red |
+| --- | --- | --- |
+| CT-14 | removed the `prove_signer_holds_key` call from `verify_signer_device` | `DeviceProofPins.test_identity_check_also_demands_the_proof_before_returning` (1 != 2 calls); `test_identity_check_refuses_when_the_proof_fails` (ProbeError not raised) |
+| CT-30 | removed the `LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE` trigger from the prepare handler | `LargeAmountGateTests.test_a_lying_low_price_cannot_hide_a_large_payment_under_one_bitcoin` (200 != 400) |
+| CT-30 | raised `LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE` above the absolute floor | `LargeAmountPins.test_the_untrusted_quote_floor_is_below_the_absolute_floor` (20_000_000 not less than 10_000_000) |
+| CT-13 | moved `verify_selected_outpoints` back inside the session lock | `SendFlowTests.test_broadcast_prechecks_do_not_hold_the_session_lock` (outpoint depth 1 != 0) |
+| CT-29 | made `_verify_hwi_identity` always accept | `HwiIdentityPins` (4 failures: planted helper reached JSON parsing instead of the identity refusal) |
+| CT-34 | disabled the `_is_low_s` gate | `LowSPins.test_a_high_s_signature_is_refused_with_the_low_s_message` ("low-S" does not match generic "invalid signature") |
+| CT-33 | unpinned `pip-tools` in `windows-inputs.yml` | `PipToolsPinTests.test_every_lock_job_pins_the_same_piptools_release` |
+| CT-46 | stale `AGENTS.md` source-revision string | `VersionStringPins.test_agents_names_the_tree_revision_from_version_py` |
+
+After each restore the named test returned OK.
+
 ## Process
 
 `RELEASE-PROCESS.md` §5 and the matching `AGENTS.md` invariant memorialise
