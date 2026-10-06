@@ -48,11 +48,24 @@ class HwiIdentityPins(unittest.TestCase):
         probe._verified_hwi_paths.clear()
 
     def _scripted_hwi(self, folder: Path, version_line: str) -> Path:
+        # Windows CreateProcess cannot exec a shebang script (WinError 193),
+        # so the planted helper must be a real .cmd there and a shell script
+        # elsewhere. The identity gate runs [path, "--version"] either way.
+        if sys.platform == "win32":
+            helper = Path(folder) / "hwi.cmd"
+            helper.write_text(
+                "@echo off\r\n"
+                f'if "%1"=="--version" (\r\n  echo {version_line}\r\n  exit /b 0\r\n)\r\n'
+                "echo []\r\n",
+                encoding="utf-8",
+            )
+            return helper
         helper = Path(folder) / "hwi"
         helper.write_text(
             "#!/bin/sh\n"
             f'if [ "$1" = "--version" ]; then echo "{version_line}"; exit 0; fi\n'
-            "echo '[]'\n"
+            "echo '[]'\n",
+            encoding="utf-8",
         )
         helper.chmod(0o755)
         return helper
@@ -75,9 +88,13 @@ class HwiIdentityPins(unittest.TestCase):
 
     def test_a_helper_that_cannot_answer_version_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
-            helper = Path(folder) / "hwi"
-            helper.write_text("#!/bin/sh\nexit 1\n")
-            helper.chmod(0o755)
+            if sys.platform == "win32":
+                helper = Path(folder) / "hwi.cmd"
+                helper.write_text("@echo off\r\nexit /b 1\r\n", encoding="utf-8")
+            else:
+                helper = Path(folder) / "hwi"
+                helper.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+                helper.chmod(0o755)
             with self.assertRaisesRegex(
                     ProbeError, "does not identify as HWI|could not be identified"):
                 _verify_hwi_identity(str(helper))
@@ -332,7 +349,14 @@ class PipToolsPinTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         versions = set()
         for name in ("windows-inputs.yml", "linux-inputs.yml"):
-            text = (root / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            # The checkout keeps recipes in .github/workflows/; the source
+            # archive ships them under ci/ (see scripts/build-source.sh).
+            recipe = next((path for path in (root / ".github" / "workflows" / name,
+                                             root / "ci" / name)
+                           if path.is_file()), None)
+            self.assertIsNotNone(
+                recipe, f"{name} is missing from both .github/workflows/ and ci/")
+            text = recipe.read_text(encoding="utf-8")
             found = re.findall(r"pip-tools==([0-9.]+)", text)
             self.assertTrue(found, f"{name} must pin pip-tools==…")
             versions.update(found)

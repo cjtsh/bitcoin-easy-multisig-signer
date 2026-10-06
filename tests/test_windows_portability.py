@@ -100,5 +100,26 @@ class PrivateFileHelperTests(unittest.TestCase):
                     support.assert_private_file(self, target)
 
 
+class HardeningPinPortabilityTests(unittest.TestCase):
+    """The 0.6.6 tripwire tests themselves must be Windows-portable.
+
+    Candidate run 37464977050 failed the Windows job because HwiIdentityPins
+    wrote a #!/bin/sh helper (CreateProcess: WinError 193) and the source
+    archive job because PipToolsPinTests only looked under .github/workflows/
+    while the archive ships recipes under ci/.
+    """
+
+    def test_hwi_identity_helpers_never_rely_on_a_shebang_alone(self):
+        text = (ROOT / "tests" / "test_hardening_pins.py").read_text(encoding="utf-8")
+        self.assertIn('if sys.platform == "win32"', text)
+        self.assertIn("hwi.cmd", text)
+        self.assertIn("@echo off", text)
+
+    def test_piptools_pin_looks_in_ci_as_well_as_github_workflows(self):
+        text = (ROOT / "tests" / "test_hardening_pins.py").read_text(encoding="utf-8")
+        self.assertIn('root / "ci" / name', text)
+        self.assertIn('root / ".github" / "workflows" / name', text)
+
+
 if __name__ == "__main__":
     unittest.main()
