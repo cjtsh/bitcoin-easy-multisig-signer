@@ -53,12 +53,14 @@ Release flow, unchanged from the audited macOS process, now covering all three:
 standard Bitcoin-community verification habit. Publishing **fails closed**
 without this key.
 
-1. Generate a dedicated release key (sign-only, 4096-bit):
+1. Generate a dedicated release key (sign-only, 4096-bit) in the company
+   name — publisher identity is Bitseeker LLC, matching the Apple Developer
+   ID, not an individual:
    ```bash
    gpg --full-generate-key
    # RSA (sign only), 4096 bits
-   # Name:  Bitcoin Easy Signer release key
-   # Email: release@bitseeker.com
+   # Name:  Bitseeker LLC
+   # Email: release@bitseeker.llc
    ```
 2. Commit the **public** key to the repository root so downloaders can import it:
    ```bash
