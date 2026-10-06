@@ -104,10 +104,12 @@ fires earlier for amounts between 0.04 and 0.1 BTC.
 
 ## Publication
 
-Build only through `.github/workflows/build-candidate.yml` (candidate
-`publish=false`, then promote `publish=true` with that candidate's run ID).
-Record both run URLs and the commit SHA here after publication. Never
-publish by hand.
+Published as tag `v0.6.6` on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1`
+via `.github/workflows/build-candidate.yml` promote run
+[37486264639](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37486264639)
+(`publish=true`, `candidate_run_id=37482475884`). The release page carries
+macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
+`SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
 
 ### Candidate attempts
 
@@ -129,8 +131,13 @@ publish by hand.
   proof now signs at `…/0/0`; a fresh candidate is required.
 - Candidate run [37474707538](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37474707538)
   from `cee43a09fc2f920d08951e5b7abb940ef62abcd0` **succeeded** all jobs
-  (notarized Apple Silicon DMG, Windows x64, Linux AppImage, source archive
-  and in-archive tests, candidate SHA256SUMS). It published nothing
-  (`publish=false`). Promote with `candidate_run_id=37474707538` after the
-  owner re-walks Trezor Safe 3 (and the OneKey on Trezor firmware) on the
-  practice network.
+  and the owner practice-network walkthrough passed on it (Trezor Safe 3
+  and Ledger Nano signed; broadcast accepted). **Superseded** before
+  promotion so the signing screen can name the real device press count
+  instead of the old "asked twice" banner.
+- Candidate run [37482475884](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37482475884)
+  from `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` **succeeded** all jobs
+  and carries the honest press-count copy. It published nothing
+  (`publish=false`). Promote with `candidate_run_id=37482475884` once the
+  owner glances at the new signing screen (device behaviour is unchanged
+  from the walkthrough that passed).
