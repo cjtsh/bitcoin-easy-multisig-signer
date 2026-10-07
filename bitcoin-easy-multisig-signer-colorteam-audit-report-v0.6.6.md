@@ -69,7 +69,9 @@ CT-30 (floors) · CT-31 (a–d) · CT-32 (prevout pin) · CT-33 (pip-tools pin) 
 (channel cleanup complete).
 **Partially fixed:** CT-01 — its channel half is remedied, but its root cause (the
 second publish path) was never actually deleted; it returns as CT-48.
-**Closed as observation:** CT-22. **Open (awaiting fixes or a dated owner acceptance
+**Closed as observation:** CT-22. **CT-23** is accounted through its cycle-2
+decomposition — its components were carried into CT-29 (fixed, pinned) and CT-35 (open),
+both dispositioned above. **Open (awaiting fixes or a dated owner acceptance
 note):** CT-35 and nine carried Infos (CT-36–42, CT-44, CT-47).
 The ledger did not shrink — and the round trip did what it exists to do: it caught a
 prior cycle's false premise.
@@ -190,7 +192,7 @@ if it rots. The items below are about one undemolished door and safety margins.
 | ⛔ DANGER SIGN | **The old publishing pipelines were never actually demolished — copies live in two side branches, switch-on, able to publish unsigned files to new release pages. One was used the day before this version was built. The main pipeline's documentation claims they no longer exist. Your v0.6.6 downloads are unaffected and verified clean.** Fix: delete two files. | CT-48 |
 | 🟠 IMPORTANT TO FIX | The source-code-mode helper check trusts the helper's self-introduction (a planted helper can lie); the key-proof still stops it from ever seeing transaction data, and the downloaded app is immune. | CT-49 |
 | 🟠 IMPORTANT TO FIX | Four protections hold but lack their tripwire test (the on-screen large-amount mirror, log silence, the publish-guards' bodies, the file-format header). | CT-50–53 |
-| 🟡 MINOR IMPROVEMENT | Twelve smaller hardening items: the Mac helper binary's birth certificate, version-number drift across build machines, missing files in the source archive, a use-time check for the broadcaster, and others. | CT-54–60 |
+| 🟡 MINOR IMPROVEMENT | Seven smaller hardening items: the Mac helper binary's birth certificate, version-number drift across build machines, missing files in the source archive, a use-time check for the broadcaster, and others. | CT-54–60 |
 | ⚪ HOUSEKEEPING | Eleven notes for maintainers, plus ten small observations carried from last audit awaiting a one-line owner sign-off. | CT-61–71; CT-35 + carried |
 
 ## What this review does not cover
@@ -217,7 +219,7 @@ You can read every page of the evidence yourself.
 
 ## Appendix — findings ledger (final IDs, referee-numbered; continuous across cycles)
 
-Open totals at this revision: **1 High · 1 Medium · 12 Low · ~18 Info · 0 Critical.**
+Open totals at this revision: **1 High · 1 Medium · 11 Low · 21 Info · 0 Critical.** *(Totals corrected 2026-10-07 after independent referee verification — the original appendix miscounted its own table as "12 Low · ~18 Info"; the correction is grade-neutral.)*
 Prior-cycle accounting (all 47 IDs): verified fixed CT-02…CT-34 (as itemized in the
 report body), CT-43, CT-45, CT-46 · partially fixed CT-01 (root cause → CT-48) · closed
 as observation CT-22 · open CT-35, CT-36…CT-42, CT-44, CT-47 (carried; closable by dated
