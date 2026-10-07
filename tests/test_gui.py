@@ -1,5 +1,6 @@
 """Exercise the local browser API without a network or real wallet file."""
 
+import contextlib
 import json
 import io
 import re
@@ -8,7 +9,7 @@ import threading
 import time
 import unittest
 from datetime import datetime, timezone
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -814,6 +815,103 @@ class LocalGuiTests(unittest.TestCase):
         self.assertEqual(quote["usd_per_btc"], 84362)
         self.assertEqual(fetch.call_args.args[0].full_url,
                          "https://mempool.space/api/v1/prices")
+
+
+# ---------------------------------------------------------------------------
+# CT-50 — the UI's large-amount floor is a mirror of gui.py's, and must stay one
+# ---------------------------------------------------------------------------
+
+class LargeAmountMirrorPins(unittest.TestCase):
+    """CT-50: two files state the same money-trigger; they drifted.
+
+    ui.html:858 carried a bare literal that no test compared against
+    gui.py:56. Raising the UI copy would leave the backend authoritative and
+    the owner pressing Prepare into a refusal they were never shown — or
+    lowering it would leave the owner never asked. tests/ui_large_amount.cjs
+    pins the behaviour; this pins the two numbers to each other.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parent.parent
+        cls.ui = (root / "ui.html").read_text(encoding="utf-8")
+        cls.backend = (root / "gui.py").read_text(encoding="utf-8")
+
+    def _literals(self, text: str, name: str) -> set[int]:
+        found = re.findall(rf"{name}\s*=\s*([0-9_]+)", text)
+        self.assertTrue(found, f"{name} is missing")
+        return {int(value.replace("_", "")) for value in found}
+
+    def test_ui_and_backend_share_the_same_satoshi_floor(self):
+        ui_floor = self._literals(self.ui, "LARGE_AMOUNT_SATS_FLOOR")
+        backend_floor = self._literals(self.backend, "LARGE_AMOUNT_SATS_FLOOR")
+        self.assertEqual(ui_floor, backend_floor,
+                         "the UI and the backend disagree about the absolute floor")
+        self.assertEqual(ui_floor, {10_000_000}, "the floor is 0.1 BTC")
+
+    def test_ui_and_backend_share_the_untrusted_quote_floor(self):
+        """The UI was missing this constant entirely (CT-50, found while fixing)."""
+        ui_floor = self._literals(self.ui, "LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE")
+        backend_floor = self._literals(self.backend, "LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE")
+        self.assertEqual(ui_floor, backend_floor)
+        self.assertEqual(ui_floor, {4_000_000},
+                         "the conservative floor is 0.04 BTC")
+        self.assertLess(4_000_000, 10_000_000,
+                        "the untrusted-quote floor sits below the absolute one")
+
+    def test_the_ui_gate_reads_both_floors(self):
+        self.assertIn("LARGE_AMOUNT_SATS_FLOOR", self.ui)
+        self.assertIn("LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE", self.ui)
+        self.assertRegex(self.ui, r"sats >= LARGE_AMOUNT_SATS_FLOOR")
+        self.assertRegex(self.ui, r"sats >= LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE")
+
+    def test_the_prepare_refusal_names_every_trigger(self):
+        """CT-62: the message said "at least 0.1 BTC" and fired at 0.04.
+
+        A message that understates its own trigger is how an owner learns not
+        to trust the warning.
+        """
+        self.assertIn("0.04 BTC", self.backend)
+        self.assertIn("$10,000", self.backend)
+        self.assertIn("dollar equivalent", self.backend)
+        self.assertIn("conservative floor", self.backend)
+
+
+# ---------------------------------------------------------------------------
+# CT-51 — request-log suppression
+# ---------------------------------------------------------------------------
+
+class RequestLogPins(LocalGuiTests):
+    """CT-51: the handler's log_message no-op was pinned by nothing.
+
+    Restoring the base implementation prints every browser request to the
+    console. The no-op is the control; this is its tripwire.
+    """
+
+    def test_the_local_server_never_writes_request_lines_to_stderr(self):
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            with urlopen(self.base, timeout=3) as response:
+                self.assertEqual(response.status, 200)
+        self.assertEqual(captured.getvalue(), "",
+                         "the server must not print request lines")
+
+    def test_the_default_handler_would_have_printed_them(self):
+        """Break half: with the base log_message, the same request is logged.
+
+        This is the test that goes red when the no-op is removed. It runs the
+        real server with the real request — not a mock call — so the leak it
+        demonstrates is the one that would actually happen.
+        """
+        handler_cls = self.server.RequestHandlerClass
+        captured = io.StringIO()
+        with patch.object(handler_cls, "log_message",
+                          BaseHTTPRequestHandler.log_message):
+            with contextlib.redirect_stderr(captured):
+                with urlopen(self.base, timeout=3) as response:
+                    self.assertEqual(response.status, 200)
+        self.assertIn("GET", captured.getvalue(),
+                      "the base implementation is what would have leaked")
 
 
 if __name__ == "__main__":

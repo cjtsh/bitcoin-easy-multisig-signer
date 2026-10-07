@@ -853,12 +853,18 @@
     let changeAssumed = false;
     let feeEstimateError = "";
     let feeEstimateTimer = null;
-    // Matches the backend floor: a mainnet payment at or above 0.1 BTC always
-    // needs the high-value confirmation, whatever the price feed reports.
+    // Matches the backend floors: a mainnet payment at or above 0.1 BTC always
+    // needs the high-value confirmation, whatever the price feed reports, and a
+    // wrong or missing price quote can never talk the app out of asking at all.
+    // Both literals are pinned to gui.py by tests/test_gui.py — a mirror that
+    // drifts is how the owner ends up pressing Prepare into a backend refusal
+    // they were never warned about.
     const LARGE_AMOUNT_SATS_FLOOR = 10000000;
+    const LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE = 4000000;
     function isLargeAmount(sats) {
       if (sats === null || sats === undefined) return false;
       if (sats >= LARGE_AMOUNT_SATS_FLOOR) return true;
+      if (sats >= LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE) return true;
       return rate ? sats / 100000000 * rate.usd_per_btc >= 10000 : false;
     }
     // Every network this app can talk to, in the order the cards used to appear.
@@ -1181,6 +1187,7 @@
       $("large-amount-warning").hidden = !large;
       setText("large-amount-warning", large ? "This is a large Bitcoin payment (" +
         (sats >= LARGE_AMOUNT_SATS_FLOOR ? "at least 0.1 BTC"
+          : sats >= LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE ? "at least 0.04 BTC"
           : "about " + usdLabel(sats)) +
         "). Check the BTC amount and destination carefully before continuing." : "");
       $("large-amount-ack-row").hidden = !large;

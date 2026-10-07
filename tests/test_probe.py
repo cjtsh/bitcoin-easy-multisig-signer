@@ -15,7 +15,7 @@ from embit.networks import NETWORKS
 from probe import (
     ProbeError, _same_xpub, _validate_chain, funding_address,
     _device_label, _hwi_device_label, device_advice, devices_need_attention,
-    invoke_hwi, load_bsms,
+    invoke_hwi, load_bsms, parse_bsms,
     main, probe_devices,
     verify_signer_device,
 )
@@ -142,6 +142,47 @@ class ProbeTests(unittest.TestCase):
         record, _ = test_record(bsms_template=True)
         with self.assertRaisesRegex(ProbeError, "supports either"):
             self.write(record.replace("/0/*,/1/*", "/0/*,/2/*"))
+
+    def test_a_hostile_bsms_header_is_refused_with_the_four_line_message(self):
+        """CT-53: the magic-line gate was reachable and unpinned.
+
+        The line is cheap insurance against a file that is not a BSMS record
+        being parsed as one. Downstream would refuse most of these anyway, but
+        "would have been caught later" is not the same as "is refused here with
+        a message that says why".
+        """
+        good, _ = test_record()
+        body = good.splitlines()[1:]
+        self.assertEqual(len(body), 3)
+        for header in ("BSMS 2.0", "bsms 1.0", "BSMS 1.0 ", "BSMS 1.0x",
+                       "BSMS", "", "BSMS 1.0\t", "BSMS 1.0\rx"):
+            with self.subTest(header=header):
+                hostile = "\n".join([header, *body]) + "\n"
+                with self.assertRaisesRegex(
+                        ProbeError, "Expected a four-line BSMS 1.0 wallet record."):
+                    parse_bsms(hostile)
+
+    def test_a_wrong_line_count_is_refused_the_same_way(self):
+        good, _ = test_record()
+        with self.assertRaisesRegex(
+                ProbeError, "Expected a four-line BSMS 1.0 wallet record."):
+            parse_bsms(good + "extra line\n")
+        with self.assertRaisesRegex(
+                ProbeError, "Expected a four-line BSMS 1.0 wallet record."):
+            parse_bsms("\n".join(good.splitlines()[:3]) + "\n")
+
+    def test_a_well_formed_bsms_header_still_parses(self):
+        """Positive half: the gate is not so strict it turns away real records."""
+        good, _ = test_record()
+        wallet = parse_bsms(good)
+        self.assertEqual((wallet.threshold, len(wallet.keys)), (2, 3))
+        self.assertEqual(wallet.reference_status, "verified")
+
+        # A leading BOM is legitimate — some editors write one.
+        self.assertEqual(parse_bsms("﻿" + good).reference_status, "verified")
+        # So is CRLF: a wallet file saved on Windows is still a BSMS record.
+        self.assertEqual(parse_bsms(good.replace("\n", "\r\n")).reference_status,
+                         "verified")
 
     def test_bad_checksum_fails_closed(self):
         record, _ = test_record()

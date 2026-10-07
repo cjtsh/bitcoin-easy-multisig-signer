@@ -1172,9 +1172,11 @@ class LocalApp:
                              or requested_amount * price["usd_per_btc"] / 100_000_000 >= 10_000)
                         and data.get("large_amount_confirmed") is not True):
                         raise WalletError(
-                            "This is a large mainnet payment: at least 0.1 BTC, or worth "
-                            "$10,000 or more at the current BTC/USD reference. Confirm the "
-                            "BTC amount and dollar equivalent before preparing it."
+                            "This is a large mainnet payment: at least 0.04 BTC — the "
+                            "conservative floor this app never lets a wrong price quote "
+                            "raise — or worth $10,000 or more at the current BTC/USD "
+                            "reference. Confirm the BTC amount and dollar equivalent "
+                            "before preparing it."
                         )
                 requested_rate = data.get("fee_rate", 2)
                 if type(requested_rate) is not int or not 1 <= requested_rate <= 25:
