@@ -85,7 +85,7 @@ workflows. The referee also breaks-and-watches every tripwire listed in
 `releases/PATCH-0.6.7.md` — that file is the only list, so it cannot drift from
 the pins the repository actually carries. A pin that cannot fail is a finding.
 
-**Target revision:** tag `v0.6.7`, commit **`REPLACE-AFTER-PUBLISH`** — the commit the
+**Target revision:** tag `v0.6.7`, commit **`81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b`** — the commit the
 `v0.6.7` tag points to, created by the publish run of
 `.github/workflows/build-candidate.yml` on `main`. The tag does not exist until the
 unified pipeline publishes it; fill this line with the tag's commit after publication
@@ -371,5 +371,5 @@ plan; the signature below ratifies them for this cycle).*
 tag's commit hash into the section 0 target-revision line in place of
 `REPLACE-AFTER-PUBLISH`, then sign the two lines below.*
 
-- **Signed:** _(pending publication of `v0.6.7`)_
-- **Date:** _(pending)_
+- **Signed:** Bitseeker LLC
+- **Date:** 2026-10-07

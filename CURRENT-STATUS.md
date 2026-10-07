@@ -18,9 +18,15 @@ hash-locked; the source tarball can rebuild a signed Mac app; and the
 broadcaster is verified at use on every network. Every fix is held by a
 test demonstrated able to fail. `releases/PATCH-0.6.7.md` is the
 evidence record; `releases/OWNER-ACCEPTANCE-2026-10-07.md` closes the
-by-design observations. **0.6.7 is not published yet**: a signed,
-notarized `publish=false` candidate is built from this revision and the
-owner hardware walkthrough is the gate before promotion.
+by-design observations. **0.6.7 is published** as tag
+[`v0.6.7`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.7)
+on commit `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` through the unified
+pipeline (candidate run 37644267740, promote run 37655666900), after the
+owner installed that candidate's DMG and accepted a practice-network
+payment on hardware. Post-publication verification — tag binding, every
+asset against `SHA256SUMS`, `SHA256SUMS.asc` against the committed
+release key, and a Sigstore attestation — is recorded in
+`releases/PATCH-0.6.7.md`.
 
 The prior release, **0.6.6**, is published as tag
 [`v0.6.6`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6)
