@@ -239,6 +239,13 @@ if ($LASTEXITCODE -ne 0) {
     Fail 'Bundled HWI could not load libusb and query USB devices.'
 }
 
+# Record the helper's bytes beside the copy this build ships. probe.py refuses
+# a helper whose bytes do not match the sidecar next to it (CT-49), and
+# BUILD-SBOM.json records the same digest.
+$hwiDigest = (Get-FileHash -Algorithm SHA256 -LiteralPath $hwiExe).Hash.ToLowerInvariant()
+Set-Content -LiteralPath (Join-Path $appDir 'hwi.sha256') -Value "$hwiDigest  hwi" -Encoding ascii
+Write-Host "Bundled hwi sha256 $hwiDigest (recorded in hwi.sha256)."
+
 $zip = Join-Path 'dist' "Bitcoin-Easy-Signer-v$Version-windows-x64.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 Compress-Archive -LiteralPath $appDir -DestinationPath $zip -CompressionLevel Optimal

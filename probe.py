@@ -7,7 +7,6 @@ import base64
 import json
 import re
 import secrets
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -194,15 +193,79 @@ def parse_bsms(text: str) -> WalletRecord:
 
 
 EXPECTED_HWI_VERSION = "3.2.0"
+# argparse prints '%(prog)s <version>' and prog is the basename of argv[0], so
+# the line is not one fixed string across the three ways this app starts the
+# helper. Exact membership in this set, not a substring test: a planted binary
+# whose whole vocabulary is 'hwi-3.2.0' used to pass an `in` check.
+_HWI_VERSION_LINES = frozenset({
+    f"hwi {EXPECTED_HWI_VERSION}",
+    f"hwi.exe {EXPECTED_HWI_VERSION}",
+    f"hwi_entry.py {EXPECTED_HWI_VERSION}",
+})
+
+# Byte pins for the third-party package the in-tree entry point imports.
+# Keyed by module; the files are hwilib/__init__.py and hwilib/_cli.py.
+# Source mode runs scripts/hwi_entry.py under the running interpreter, so there
+# is no helper binary left to substitute — the remaining swap is the hwilib
+# those pins cover (CT-49).
+HWI_PAYLOAD_PINS: dict[str, str] = {
+    "hwilib": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
+    "hwilib._cli": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
+}
+# A frozen build writes this beside its bundled helper; it is also what the
+# SBOM records for that helper. An explicitly named helper carries its own.
+HWI_DIGEST_SIDECAR = "hwi.sha256"
+
+_HWI_NO_DIGEST = (
+    "The hardware-wallet tool carries no digest for this app to verify. "
+    "Refusing to run it."
+)
+_HWI_WRONG_DIGEST = (
+    "The hardware-wallet tool does not match its recorded digest. "
+    "Refusing to run it."
+)
+_HWI_UNIDENTIFIED = (
+    "The hardware-wallet tool could not be identified. "
+    "Pass --hwi /path/to/the/official/hwi binary."
+)
+_HWI_NOT_THE_RELEASE = (
+    f"The hardware-wallet tool does not identify as HWI {EXPECTED_HWI_VERSION}. "
+    "Pass --hwi /path/to/the/official/hwi binary."
+)
+
 _verified_hwi_paths: set[str] = set()
 
 
+def begin_signing_session() -> None:
+    """Drop every cached helper identity, so the next call re-identifies.
+
+    CT-58: the cache used to live for the whole process, so a helper swapped on
+    disk after the first check would run unverified for the rest of the session.
+    A signing session is the unit the owner experiences, so it is the unit this
+    trust decision is bounded by.
+    """
+    _verified_hwi_paths.clear()
+
+
+def _in_tree_hwi_entry() -> Path:
+    """scripts/hwi_entry.py in this checkout. Source mode only.
+
+    Inside a PyInstaller bundle the helper is the standalone binary beside the
+    executable, not a script, and this path is not consulted.
+    """
+    return Path(__file__).resolve().parent / "scripts" / "hwi_entry.py"
+
+
 def _hwi_path(executable: str) -> str:
+    """The file whose bytes identify the helper.
+
+    Frozen builds ship the tool beside the app as `hwi` (macOS) or `hwi.exe`
+    (Windows) and never fall through to a PATH search. Source mode has no
+    helper binary at all: it runs the repository's own entry point, so there is
+    nothing on PATH to plant. An explicit path is used as given, and must carry
+    its own digest sidecar before _verify_hwi_identity will run it.
+    """
     if getattr(sys, "frozen", False):
-        # The packaged build ships the tool under the name its platform runs:
-        # `hwi` on macOS, `hwi.exe` on Windows. The non-frozen branch below needs
-        # no such split, because shutil.which() already resolves .EXE through
-        # PATHEXT on Windows.
         name = "hwi.exe" if sys.platform == "win32" else "hwi"
         bundled = Path(sys.executable).with_name(name)
         if bundled.is_file():
@@ -213,41 +276,118 @@ def _hwi_path(executable: str) -> str:
         raise ProbeError(
             "The bundled hardware-wallet tool is missing from this installation."
         )
-    # An explicit path is used as given. A bare name is first looked for beside
-    # the running interpreter (the source checkout's own venv helper, the same
-    # trust model as the frozen build's bundled copy) and only then on PATH.
-    # CT-29: a planted `hwi` on PATH must not silently receive account xpubs
-    # and PSBTs — see _verify_hwi_identity, which every invocation passes.
     candidate = Path(executable)
     if candidate.is_absolute() or candidate.parent != Path("."):
         if candidate.is_file():
             return str(candidate)
         raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
-    sibling = Path(sys.executable).with_name(executable)
-    if sibling.is_file():
-        return str(sibling)
-    if sys.platform == "win32":
-        sibling_exe = Path(sys.executable).with_name(executable + ".exe")
-        if sibling_exe.is_file():
-            return str(sibling_exe)
-    found = shutil.which(executable)
-    if found is None:
-        raise ProbeError("HWI not found. Pass --hwi /path/to/the/official/hwi binary.")
-    return found
+    entry = _in_tree_hwi_entry()
+    if not entry.is_file():
+        raise ProbeError(
+            "The hardware-wallet tool entry point is missing from this checkout."
+        )
+    return str(entry)
 
 
-def _verify_hwi_identity(path: str) -> None:
-    """Refuse a helper that does not identify as the pinned HWI release.
+def _hwi_command(executable: str) -> list[str]:
+    """The argv prefix that actually runs the helper.
 
-    Frozen builds bundle the helper and never search PATH. Source mode can
-    still pick up a planted binary, so the tool must name itself before it is
-    allowed to see an account xpub or a PSBT (CT-29).
+    Source mode does not execute a helper binary at all: it runs the
+    repository's entry point under the interpreter this app is already using.
+    That is the same trust model as the frozen bundle's own copy, without a
+    binary on disk for a neighbour to replace.
+    """
+    path = _hwi_path(executable)
+    if getattr(sys, "frozen", False):
+        return [path]
+    candidate = Path(executable)
+    if candidate.is_absolute() or candidate.parent != Path("."):
+        return [path]
+    return [sys.executable, path]
+
+
+def _verify_hwi_payload() -> None:
+    """Refuse a substituted hwilib before it can see an xpub or a PSBT.
+
+    The in-tree entry point is repository source; the code that can be swapped
+    out from under a running interpreter is the third-party package it imports.
+    The two files behind the pinned HWI release are hashed here by the anchored
+    interpreter, so a poisoned site-packages is refused rather than believed.
+    """
+    script = (
+        "import hashlib, importlib, pathlib\n"
+        "for name in ('hwilib', 'hwilib._cli'):\n"
+        "    path = pathlib.Path(importlib.import_module(name).__file__)\n"
+        "    print(name + ' ' + hashlib.sha256(path.read_bytes()).hexdigest())\n"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            **hwi_process_options(),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProbeError(_HWI_UNIDENTIFIED) from exc
+    if result.returncode != 0:
+        raise ProbeError(
+            "The pinned hardware-wallet library is not installed in this "
+            "environment. Install hwi " + EXPECTED_HWI_VERSION + " to use devices."
+        )
+    seen: dict[str, str] = {}
+    for line in (result.stdout or "").splitlines():
+        parts = line.split(" ", 1)
+        if len(parts) == 2:
+            seen[parts[0]] = parts[1].strip()
+    for name, expected in HWI_PAYLOAD_PINS.items():
+        if seen.get(name) != expected:
+            raise ProbeError(_HWI_WRONG_DIGEST)
+
+
+def _verify_hwi_bytes(path: str) -> None:
+    """Compare a standalone helper against a digest that is not its own claim.
+
+    A frozen build's sidecar sits inside the signed bundle it authenticates, so
+    replacing the helper means breaking that signature first. An explicitly
+    named helper is refused outright without one. Source mode runs no helper
+    binary at all — see _verify_hwi_payload for the surface it does pin.
+    """
+    sidecar = Path(path).with_name(HWI_DIGEST_SIDECAR)
+    if not sidecar.is_file():
+        raise ProbeError(_HWI_NO_DIGEST)
+    recorded = sidecar.read_text(encoding="utf-8").strip().split()
+    if not recorded:
+        raise ProbeError(_HWI_NO_DIGEST)
+    actual = sha256(Path(path).read_bytes()).hexdigest()
+    if recorded[0].lower() != actual:
+        raise ProbeError(_HWI_WRONG_DIGEST)
+
+
+def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
+    """Refuse a helper that is not the bytes this app expects to run.
+
+    Byte identity comes first and is not something the helper gets to assert:
+    a standalone helper must match the digest recorded beside it, and source
+    mode runs the repository's own entry point and pins the hwilib it imports.
+
+    Only then does the helper say what version it is, and it has to say it
+    exactly (CT-29, CT-49).
     """
     if path in _verified_hwi_paths:
         return
+    argv = list(command) if command is not None else [path]
+    # A two-element prefix is [interpreter, entry]: the in-tree source-mode
+    # helper, whose substitution surface is the package it imports. Anything
+    # else is a standalone binary whose own bytes are what we pin.
+    if len(argv) >= 2:
+        _verify_hwi_payload()
+    else:
+        _verify_hwi_bytes(path)
     try:
         result = subprocess.run(
-            [path, "--version"],
+            [*argv, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -255,17 +395,25 @@ def _verify_hwi_identity(path: str) -> None:
             **hwi_process_options(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ProbeError(
-            "The hardware-wallet tool could not be identified. "
-            "Pass --hwi /path/to/the/official/hwi binary."
-        ) from exc
+        raise ProbeError(_HWI_UNIDENTIFIED) from exc
     output = (result.stdout or "") + (result.stderr or "")
-    if result.returncode != 0 or EXPECTED_HWI_VERSION not in output:
-        raise ProbeError(
-            f"The hardware-wallet tool does not identify as HWI {EXPECTED_HWI_VERSION}. "
-            "Pass --hwi /path/to/the/official/hwi binary."
-        )
+    first_line = output.strip().splitlines()[0].strip() if output.strip() else ""
+    if result.returncode != 0 or first_line not in _HWI_VERSION_LINES:
+        raise ProbeError(_HWI_NOT_THE_RELEASE)
     _verified_hwi_paths.add(path)
+
+
+def verify_hwi_identity_for_command(executable: str) -> list[str]:
+    """Resolve, verify and return the argv prefix that runs the helper.
+
+    Callers that start the tool outside invoke_hwi — the build-time capability
+    probe in desktop.py — go through here so nothing runs before its bytes and
+    its version line have been checked.
+    """
+    path = _hwi_path(executable)
+    command = _hwi_command(executable)
+    _verify_hwi_identity(path, command)
+    return command
 
 
 _PATH_LIKE = re.compile(r"(/\S+|[A-Za-z]:\\\S+)")
@@ -319,9 +467,10 @@ def invoke_hwi(executable: str, chain: str, *arguments: str,
         if stdin_command is not None:
             options["input"] = stdin_command
         path = _hwi_path(executable)
-        _verify_hwi_identity(path)
+        command = _hwi_command(executable)
+        _verify_hwi_identity(path, command)
         result = subprocess.run(
-            [path, "--chain", chain, *arguments],
+            [*command, "--chain", chain, *arguments],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -484,6 +633,8 @@ def prove_signer_holds_key(record: WalletRecord, executable: str, chain: str,
 def verify_signer_device(record: WalletRecord, executable: str, chain: str,
                          device_type: str, device_path: str, signer: int) -> None:
     """Bind the selected HWI path to its wallet key immediately before signing."""
+    # CT-58: every signing session re-identifies the helper from its bytes.
+    begin_signing_session()
     if type(signer) is not int or not 1 <= signer <= len(record.keys):
         raise ProbeError("Check this signing device again before approving the payment.")
     key = record.keys[signer - 1]

@@ -235,6 +235,14 @@ fi
 # build-time xattrs after that preflight and before sealing the outer app.
 xattr -cr "$app"
 
+# The helper's bytes are final now that it is signed. Record them beside the
+# helper, inside the bundle the outer signature is about to authenticate, so
+# probe.py can refuse a substituted binary at run time (CT-49). The same digest
+# is what BUILD-SBOM.json records for this helper.
+hwi_digest="$(shasum -a 256 "$hwi_bin" | awk '{print $1}')"
+printf '%s  %s\n' "$hwi_digest" "hwi" > "$app/Contents/MacOS/hwi.sha256"
+echo "Bundled hwi sha256 $hwi_digest (recorded in hwi.sha256)."
+
 # Seal the .app last, with no recursive signing.
 codesign "${sign_flags[@]}" --sign "$sign_identity" "$app"
 codesign --verify --strict --verbose=2 "$app" || {

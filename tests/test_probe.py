@@ -360,13 +360,15 @@ class ProbeTests(unittest.TestCase):
         from subprocess import CompletedProcess
 
         with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
+            "probe._hwi_command", return_value=["/fake/hwi"]
+        ), patch(
             "probe._verify_hwi_identity"
         ) as identify, patch(
             "probe.subprocess.run",
             return_value=CompletedProcess([], 0, "[]", ""),
         ) as run:
             self.assertEqual(invoke_hwi("fake", "testnet4", "enumerate"), [])
-        identify.assert_called_once_with("/fake/hwi")
+        identify.assert_called_once_with("/fake/hwi", ["/fake/hwi"])
         self.assertEqual(
             run.call_args.args[0],
             ["/fake/hwi", "--chain", "testnet4", "enumerate"],
@@ -378,6 +380,8 @@ class ProbeTests(unittest.TestCase):
         with patch("probe.sys.platform", "win32"), patch(
             "probe.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True
         ), patch("probe._hwi_path", return_value="hwi.exe"), patch(
+            "probe._hwi_command", return_value=["hwi.exe"]
+        ), patch(
             "probe._verify_hwi_identity"
         ), patch(
             "probe.subprocess.run", return_value=CompletedProcess([], 0, "[]", "")
@@ -419,6 +423,8 @@ class ProbeTests(unittest.TestCase):
 
         packet = "cHNidP8="
         with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
+            "probe._hwi_command", return_value=["/fake/hwi"]
+        ), patch(
             "probe._verify_hwi_identity"
         ), patch(
             "probe.subprocess.run",

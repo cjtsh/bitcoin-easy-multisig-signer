@@ -21,7 +21,13 @@ from pathlib import Path
 import safe_http
 from gui import LocalApp, assert_private_file, launch_url, save_prepared_psbt, ui_path
 from network_settings import settings_path
-from probe import ProbeError, _hwi_path, hwi_process_options, invoke_hwi
+from probe import (
+    ProbeError,
+    _hwi_command,
+    hwi_process_options,
+    invoke_hwi,
+    verify_hwi_identity_for_command,
+)
 from wallet_service import WalletError
 
 
@@ -208,8 +214,9 @@ def bundled_capabilities() -> dict:
     disables one whole device family.
     """
     try:
+        command = verify_hwi_identity_for_command("hwi")
         probe = subprocess.run(
-            [_hwi_path("hwi"), "--dsh-capabilities"],
+            [*command, "--dsh-capabilities"],
             capture_output=True, text=True, timeout=30, check=False,
             **hwi_process_options(),
         )

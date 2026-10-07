@@ -12,12 +12,14 @@ cycle-3 fixes and nothing else in the suite would notice if a later edit
 weakened it. Break-and-watch: remove the gate, watch this file go red.
 """
 
+import hashlib
 import re
 import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -29,9 +31,9 @@ import gui
 import probe
 from fake_explorer import three_output_wallet
 from probe import (
-    EXPECTED_HWI_VERSION, ProbeError, _bitcoin_message_digest, _hwi_path,
-    _verify_hwi_identity, invoke_hwi, parse_bsms, prove_signer_holds_key,
-    verify_signer_device,
+    EXPECTED_HWI_VERSION, HWI_PAYLOAD_PINS, ProbeError, _bitcoin_message_digest,
+    _hwi_command, _hwi_path, _verify_hwi_identity, begin_signing_session,
+    invoke_hwi, parse_bsms, prove_signer_holds_key, verify_signer_device,
 )
 from signing import SECP256K1_HALF_ORDER, SigningError, _is_low_s, verified_input_signatures
 from test_money_path_pins import prepared
@@ -40,14 +42,23 @@ from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout
 
 
 # ---------------------------------------------------------------------------
-# CT-29 — source-mode HWI identity
+# CT-29 / CT-49 / CT-58 — HWI helper identity
 # ---------------------------------------------------------------------------
 
 class HwiIdentityPins(unittest.TestCase):
+    """The helper is pinned by bytes, not by what it says about itself.
+
+    CT-49: a planted helper that echoes the pinned version string used to be
+    believed. It is now refused unless its bytes match a digest that is not
+    its own claim, and source mode does not execute a helper binary at all.
+    CT-58: the identity is re-checked at every signing session.
+    """
+
     def setUp(self):
         probe._verified_hwi_paths.clear()
 
-    def _scripted_hwi(self, folder: Path, version_line: str) -> Path:
+    def _planted_helper(self, folder: Path, version_line: str,
+                        with_digest: bool = True) -> Path:
         # Windows CreateProcess cannot exec a shebang script (WinError 193),
         # so the planted helper must be a real .cmd there and a shell script
         # elsewhere. The identity gate runs [path, "--version"] either way.
@@ -59,75 +70,233 @@ class HwiIdentityPins(unittest.TestCase):
                 "echo []\r\n",
                 encoding="utf-8",
             )
-            return helper
-        helper = Path(folder) / "hwi"
-        helper.write_text(
-            "#!/bin/sh\n"
-            f'if [ "$1" = "--version" ]; then echo "{version_line}"; exit 0; fi\n'
-            "echo '[]'\n",
-            encoding="utf-8",
-        )
-        helper.chmod(0o755)
+        else:
+            helper = Path(folder) / "hwi"
+            helper.write_text(
+                "#!/bin/sh\n"
+                f'if [ "$1" = "--version" ]; then echo "{version_line}"; exit 0; fi\n'
+                "echo '[]'\n",
+                encoding="utf-8",
+            )
+            helper.chmod(0o755)
+        if with_digest:
+            digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+            helper.with_name("hwi.sha256").write_text(f"{digest}  hwi\n", encoding="utf-8")
         return helper
 
-    def test_a_planted_helper_that_does_not_name_the_pinned_release_is_refused(self):
-        """CT-29: PATH substitution must not reach account xpubs or PSBTs."""
+    # -- the named CT-49 test ----------------------------------------------
+
+    def test_a_planted_helper_that_echoes_the_pinned_version_string_is_refused(self):
+        """CT-49: saying 'hwi 3.2.0' is no longer an identity.
+
+        The bytes gate runs first and does not execute the helper at all, so
+        the version string never gets a chance to be believed.
+        """
         with tempfile.TemporaryDirectory() as folder:
-            helper = self._scripted_hwi(folder, "evil-stealer 9.9.9")
-            with self.assertRaisesRegex(ProbeError, "does not identify as HWI"):
-                _verify_hwi_identity(str(helper))
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}",
+                                          with_digest=False)
+            with patch("probe.subprocess.run") as run:
+                with self.assertRaisesRegex(
+                        ProbeError, "carries no digest for this app to verify"):
+                    _verify_hwi_identity(str(helper))
+            run.assert_not_called()
+
+    # -- the positive halves ----------------------------------------------
+
+    def test_an_honest_helper_with_a_matching_hash_sidecar_is_accepted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            _verify_hwi_identity(str(helper))
+            self.assertIn(str(helper), probe._verified_hwi_paths)
 
     def test_a_helper_that_reports_the_pinned_release_is_accepted_once(self):
         with tempfile.TemporaryDirectory() as folder:
-            helper = self._scripted_hwi(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
             _verify_hwi_identity(str(helper))
-            self.assertIn(str(helper), probe._verified_hwi_paths)
             with patch("probe.subprocess.run") as run:
                 _verify_hwi_identity(str(helper))
             run.assert_not_called()
 
+    # -- the byte gate ----------------------------------------------------
+
+    def test_a_frozen_build_refuses_a_helper_that_does_not_match_its_sidecar(self):
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            helper.with_name("hwi.sha256").write_text(
+                "0" * 64 + "  hwi\n", encoding="utf-8")
+            with patch("probe.subprocess.run") as run:
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    _verify_hwi_identity(str(helper))
+            run.assert_not_called()
+
+    def test_a_standalone_helper_without_a_sidecar_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}",
+                                          with_digest=False)
+            with self.assertRaisesRegex(
+                    ProbeError, "carries no digest for this app to verify"):
+                _verify_hwi_identity(str(helper))
+
+    def test_an_empty_sidecar_is_not_a_digest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            helper.with_name("hwi.sha256").write_text("\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                    ProbeError, "carries no digest for this app to verify"):
+                _verify_hwi_identity(str(helper))
+
+    # -- version is exact, not a substring --------------------------------
+
+    def test_a_helper_that_only_uses_the_version_number_as_a_substring_is_refused(self):
+        """`hwi-3.2.0` and `evil hwi 3.2.0 inside` used to pass an `in` check."""
+        for spelling in (f"hwi-{EXPECTED_HWI_VERSION}",
+                         f"evil hwi {EXPECTED_HWI_VERSION} inside",
+                         f"hwi {EXPECTED_HWI_VERSION}-evil",
+                         f"hwi {EXPECTED_HWI_VERSION}",
+                         f"hwi.exe {EXPECTED_HWI_VERSION}",
+                         f"hwi_entry.py {EXPECTED_HWI_VERSION}"):
+            expected = (spelling == f"hwi {EXPECTED_HWI_VERSION}"
+                        or spelling == f"hwi.exe {EXPECTED_HWI_VERSION}"
+                        or spelling == f"hwi_entry.py {EXPECTED_HWI_VERSION}")
+            with self.subTest(spelling=spelling):
+                with tempfile.TemporaryDirectory() as folder:
+                    helper = self._planted_helper(folder, spelling)
+                    if expected:
+                        _verify_hwi_identity(str(helper))
+                        probe._verified_hwi_paths.clear()
+                    else:
+                        with self.assertRaisesRegex(ProbeError, "does not identify as HWI"):
+                            _verify_hwi_identity(str(helper))
+
     def test_a_helper_that_cannot_answer_version_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
             if sys.platform == "win32":
-                helper = Path(folder) / "hwi.cmd"
                 helper.write_text("@echo off\r\nexit /b 1\r\n", encoding="utf-8")
             else:
-                helper = Path(folder) / "hwi"
                 helper.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
                 helper.chmod(0o755)
+            digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+            helper.with_name("hwi.sha256").write_text(f"{digest}  hwi\n", encoding="utf-8")
             with self.assertRaisesRegex(
                     ProbeError, "does not identify as HWI|could not be identified"):
                 _verify_hwi_identity(str(helper))
 
-    def test_invoke_hwi_refuses_before_it_sends_any_wallet_material(self):
-        from subprocess import CompletedProcess
-        with patch("probe._hwi_path", return_value="/fake/hwi"), patch(
-            "probe.subprocess.run",
-            return_value=CompletedProcess([], 0, "planted 0.0.1", ""),
-        ) as run:
-            with self.assertRaisesRegex(ProbeError, "does not identify as HWI"):
-                invoke_hwi("fake", "testnet4", "enumerate")
-        self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.args[0], ["/fake/hwi", "--version"])
+    # -- source mode: no helper binary, no PATH ---------------------------
 
-    def test_source_mode_prefers_the_interpreter_siblings_helper_over_path(self):
-        """The venv's own helper is the same trust model as the frozen bundle."""
-        with tempfile.TemporaryDirectory() as folder:
-            helper = Path(folder) / "hwi"
-            helper.write_bytes(b"")
-            interpreter = Path(folder) / "python3"
-            interpreter.write_bytes(b"")
-            with patch.object(sys, "frozen", False, create=True), \
-                    patch.object(sys, "executable", str(interpreter)), \
-                    patch("probe.shutil.which", return_value="/usr/local/bin/hwi") as which:
-                self.assertEqual(_hwi_path("hwi"), str(helper))
-            which.assert_not_called()
+    def test_source_mode_executes_the_in_tree_entry_under_the_anchored_interpreter(self):
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        self.assertTrue(entry.is_file(),
+                        "scripts/hwi_entry.py must exist for source mode to run")
+        with patch.object(sys, "frozen", False, create=True), \
+                patch.object(sys, "executable", "/nowhere/python3"):
+            self.assertEqual(_hwi_command("hwi"), ["/nowhere/python3", str(entry)])
+
+    def test_the_path_lookup_fallback_is_gone(self):
+        """CT-49: probe.py must not be able to resolve a helper from PATH.
+
+        The lookup was a `shutil.which` fallback. Removing the import removes
+        the capability, not just the call site.
+        """
+        source = Path(probe.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("shutil.which", source)
+        self.assertNotIn("import shutil", source)
+        self.assertNotIn("which(", source)
 
     def test_an_explicit_path_is_used_as_given(self):
         with tempfile.TemporaryDirectory() as folder:
             helper = Path(folder) / "official-hwi"
             helper.write_bytes(b"")
             self.assertEqual(_hwi_path(str(helper)), str(helper))
+
+    def test_source_mode_refuses_a_bare_name_whose_entry_point_is_missing(self):
+        with patch.object(sys, "frozen", False, create=True), \
+                patch.object(probe, "_in_tree_hwi_entry",
+                             return_value=Path("/nowhere/hwi_entry.py")):
+            with self.assertRaisesRegex(ProbeError, "missing from this checkout"):
+                _hwi_path("hwi")
+
+    # -- the payload pin for source mode ----------------------------------
+
+    def test_the_payload_pins_pin_the_published_hwilib_files(self):
+        """Nobody may 'update' a pin without changing this test."""
+        self.assertEqual(HWI_PAYLOAD_PINS, {
+            "hwilib": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
+            "hwilib._cli": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
+        })
+
+    def test_a_substituted_hwilib_payload_is_refused(self):
+        """A poisoned site-packages must not be believed just because it imports."""
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        with tempfile.TemporaryDirectory() as folder:
+            helper = Path(folder) / "hwi_entry.py"
+            helper.write_bytes(entry.read_bytes())
+            seen = "\n".join(f"{name} {'0' * 64}" for name in HWI_PAYLOAD_PINS)
+            with patch("probe.subprocess.run",
+                       return_value=CompletedProcess([], 0, seen, "")) as run:
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    _verify_hwi_identity(str(helper), [sys.executable, str(helper)])
+        # The payload check ran before any --version question was asked.
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("hwilib", run.call_args.args[0][2])
+
+    def test_the_payload_checker_accepts_the_anchored_interpreter(self):
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        with tempfile.TemporaryDirectory() as folder:
+            helper = Path(folder) / "hwi_entry.py"
+            helper.write_bytes(entry.read_bytes())
+            seen = "\n".join(
+                f"{name} {digest}" for name, digest in HWI_PAYLOAD_PINS.items())
+            version = f"hwi_entry.py {EXPECTED_HWI_VERSION}"
+
+            def fake_run(argv, **kwargs):
+                if "--version" in argv:
+                    return CompletedProcess(argv, 0, version, "")
+                return CompletedProcess(argv, 0, seen, "")
+
+            with patch("probe.subprocess.run", side_effect=fake_run):
+                _verify_hwi_identity(str(helper), [sys.executable, str(helper)])
+            self.assertIn(str(helper), probe._verified_hwi_paths)
+
+    # -- CT-58: re-identify at every signing session ----------------------
+
+    def test_the_verified_helper_is_re_identified_at_each_signing_session(self):
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            _verify_hwi_identity(str(helper))
+            self.assertIn(str(helper), probe._verified_hwi_paths)
+            record = type("R", (), {"keys": [None, None, None]})()
+            # A bad signer index fails after begin_signing_session() has run.
+            with self.assertRaisesRegex(ProbeError, "Check this signing device"):
+                verify_signer_device(record, str(helper), "test", "trezor", "p", 99)
+            self.assertNotIn(str(helper), probe._verified_hwi_paths,
+                             "a signing session must not inherit a cached identity")
+            with patch("probe.subprocess.run",
+                       return_value=CompletedProcess(
+                           [], 0, f"hwi {EXPECTED_HWI_VERSION}", "")) as run:
+                _verify_hwi_identity(str(helper))
+            self.assertEqual(run.call_count, 1,
+                             "the next call pays the identity check again")
+
+    def test_begin_signing_session_clears_every_cached_identity(self):
+        probe._verified_hwi_paths.add("/one")
+        probe._verified_hwi_paths.add("/two")
+        begin_signing_session()
+        self.assertEqual(probe._verified_hwi_paths, set())
+
+    # -- nothing runs unverified ------------------------------------------
+
+    def test_invoke_hwi_refuses_before_it_sends_any_wallet_material(self):
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, "planted 0.0.1")
+            with patch("probe.subprocess.run",
+                       return_value=CompletedProcess([], 0, "planted 0.0.1", "")) as run:
+                with self.assertRaisesRegex(ProbeError, "does not identify as HWI"):
+                    invoke_hwi(str(helper), "testnet4", "enumerate")
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0], [str(helper), "--version"])
 
 
 # ---------------------------------------------------------------------------

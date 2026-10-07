@@ -132,7 +132,12 @@ class WebviewRendererTests(unittest.TestCase):
 
 
 class ProbeHelperPathTests(unittest.TestCase):
-    """The packaged helper is named for the platform that runs it."""
+    """The packaged helper is named for the platform that runs it.
+
+    CT-49: there is no PATH lookup anywhere in this resolution. Source mode
+    runs the repository's own entry point under the running interpreter, so
+    there is no helper binary for a neighbour to replace.
+    """
 
     def test_a_frozen_windows_build_looks_for_hwi_exe(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -144,6 +149,7 @@ class ProbeHelperPathTests(unittest.TestCase):
                 sys, "platform", "win32"
             ), patch.object(sys, "executable", str(executable)):
                 self.assertEqual(probe._hwi_path("hwi"), str(helper))
+                self.assertEqual(probe._hwi_command("hwi"), [str(helper)])
 
     def test_a_frozen_macos_build_looks_for_hwi(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -153,6 +159,7 @@ class ProbeHelperPathTests(unittest.TestCase):
                 sys, "platform", "darwin"
             ), patch.object(sys, "executable", str(Path(folder) / "BESA")):
                 self.assertEqual(probe._hwi_path("hwi"), str(helper))
+                self.assertEqual(probe._hwi_command("hwi"), [str(helper)])
 
     def test_a_frozen_build_never_falls_through_to_path(self):
         # A PATH search from a packaged build could run a substituted binary.
@@ -160,17 +167,16 @@ class ProbeHelperPathTests(unittest.TestCase):
             sys, "frozen", True, create=True
         ), patch.object(sys, "platform", "win32"), patch.object(
             sys, "executable", str(Path(folder) / "Bitcoin Easy Signer.exe")
-        ), patch.object(probe.shutil, "which") as which:
+        ):
             with self.assertRaisesRegex(probe.ProbeError, "missing from this installation"):
                 probe._hwi_path("hwi")
-        which.assert_not_called()
 
-    def test_a_source_checkout_resolves_through_path(self):
-        with patch.object(probe.shutil, "which", return_value="/usr/local/bin/hwi"):
-            self.assertEqual(probe._hwi_path("hwi"), "/usr/local/bin/hwi")
-        with patch.object(probe.shutil, "which", return_value=None):
-            with self.assertRaisesRegex(probe.ProbeError, "HWI not found"):
-                probe._hwi_path("hwi")
+    def test_a_source_checkout_never_resolves_through_path(self):
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        with patch.object(sys, "frozen", False, create=True):
+            self.assertEqual(probe._hwi_path("hwi"), str(entry))
+        source = Path(probe.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("shutil.which", source)
 
 
 class SettingsLocationTests(unittest.TestCase):

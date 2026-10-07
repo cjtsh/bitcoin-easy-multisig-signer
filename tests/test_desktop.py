@@ -27,11 +27,13 @@ class DesktopTests(unittest.TestCase):
         from subprocess import CompletedProcess
         with patch("probe.sys.platform", "win32"), patch(
             "probe.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True
-        ), patch("desktop._hwi_path", return_value="hwi.exe"), patch(
+        ), patch("desktop.verify_hwi_identity_for_command",
+                 return_value=["hwi.exe"]) as identify, patch(
             "desktop.subprocess.run",
             return_value=CompletedProcess([], 0, '{"synthetic": true}', ""),
         ) as run:
             self.assertEqual(bundled_capabilities(), {"synthetic": True})
+        identify.assert_called_once_with("hwi")
         self.assertEqual(run.call_args.kwargs["creationflags"], 0x08000000)
         self.assertTrue(run.call_args.kwargs["capture_output"])
 

@@ -45,6 +45,33 @@ entries and binds usb1 to the extracted `libusb-1.0.dylib` before HWI can use
 USB. This is a deliberate packaging change around HWI, not a change to its
 wallet or signing protocol. Recheck it whenever HWI or libusb1 changes.
 
+## Helper identity (CT-49, CT-58)
+
+The helper is identified by **bytes, not by what it says about itself**. Before
+0.6.7, `probe.py` believed `hwi --version` if the output merely contained
+`3.2.0`, so a planted binary whose whole vocabulary was `hwi-3.2.0` was
+accepted. That check is now exact-line membership, and it runs **after** a
+byte check that the helper does not get a vote in:
+
+- **Frozen builds** execute the bundled helper beside the app and require
+  `hwi.sha256` beside it to match. Each of `scripts/build-macos.sh`,
+  `build-linux.sh` and `build-windows.ps1` writes that sidecar from the
+  helper it just built and signed; `scripts/build-sbom.py` records the same
+  digest as `hwi_helper_sha256` and fails rather than publish an SBOM that
+  disagrees with the artifact.
+- **Source mode executes no helper binary at all.** It runs the repository's
+  own `scripts/hwi_entry.py` under the running interpreter, so there is
+  nothing on `PATH` for a neighbour to replace — `shutil.which` is gone from
+  `probe.py`. The remaining substitution surface is the `hwilib` that entry
+  imports, and `HWI_PAYLOAD_PINS` in `probe.py` pins `hwilib/__init__.py`
+  and `hwilib/_cli.py` by SHA-256, hashed by the anchored interpreter.
+- **An explicitly named helper** (`--hwi /path/to/hwi`) must carry its own
+  `hwi.sha256`. Without one it is refused before it is executed.
+
+**CT-58:** the identity is cached only for the current signing session.
+`verify_signer_device` calls `begin_signing_session()`, which clears the cache,
+so every signing session re-identifies the helper from its bytes.
+
 ## What this dependency decides for the project
 
 1. **The device list.** See below.
@@ -124,13 +151,19 @@ Nothing about this is a one-line change. In order:
 
 1. Bump `hwi` in `requirements-desktop.txt`.
 2. Regenerate **both** hash-locked files for **Python 3.12**.
-3. Update the Python guard in `scripts/build-macos.sh` if the supported range moved.
-4. Update the Python pin in **both** workflow jobs (`.github/workflows/build-candidate.yml`).
-5. If the Jade PIN relay or any bundled binary changed, re-verify signing on real
+3. **Recompute `HWI_PAYLOAD_PINS` in `probe.py`** from the new `hwilib/__init__.py`
+   and `hwilib/_cli.py`, and update `test_the_payload_pins_pin_the_published_hwilib_files`
+   with the new literals. This is not optional: the pins are what make a
+   substituted `hwilib` refuse to run, and a bump that leaves the old pins in
+   place fails every source-mode device command. The new digests also go in
+   `releases/PATCH-<version>.md`.
+4. Update the Python guard in `scripts/build-macos.sh` if the supported range moved.
+5. Update the Python pin in **both** workflow jobs (`.github/workflows/build-candidate.yml`).
+6. If the Jade PIN relay or any bundled binary changed, re-verify signing on real
    hardware — automated tests use fake devices and cannot cover this.
-6. Run the full suite, the Node UI tests, `bash -n`, and the packaged Apple
+7. Run the full suite, the Node UI tests, `bash -n`, and the packaged Apple
    Silicon self-checks.
-7. Publish a new version. **Never replace an existing release's assets.**
+8. Publish a new version. **Never replace an existing release's assets.**
 
 ## Checking whether a newer HWI exists
 

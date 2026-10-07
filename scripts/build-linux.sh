@@ -171,6 +171,14 @@ chmod 755 "dist/$APP_SLUG/hwi"
 "dist/$APP_SLUG/hwi" --help >/dev/null \
     || fail "the bundled hardware-wallet helper cannot start"
 
+# Record the helper's bytes beside the copies this build will ship and beside
+# the PyInstaller output the SBOM hashes. probe.py refuses a helper whose bytes
+# do not match the sidecar next to it (CT-49).
+hwi_digest="$(sha256sum "dist/$APP_SLUG/hwi" | awk '{print $1}')"
+printf '%s  %s\n' "$hwi_digest" "hwi" > "dist/$APP_SLUG/hwi.sha256"
+printf '%s  %s\n' "$hwi_digest" "hwi" > "dist/hwi/hwi.sha256"
+note "bundled hwi sha256 $hwi_digest (recorded in hwi.sha256)"
+
 # ---- the checks, against the payload this build just made ---------------
 # A double-clicked AppImage has no console, so each check writes what it
 # verified to a file. An empty file is treated as a failure: a silent pass is
