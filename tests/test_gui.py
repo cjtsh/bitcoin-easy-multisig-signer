@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
+import gui
 from embit import psbt, transaction
 from embit.script import Script
 
@@ -948,6 +949,44 @@ class RequestLogPins(LocalGuiTests):
                     self.assertEqual(response.status, 200)
         self.assertIn("GET", captured.getvalue(),
                       "the base implementation is what would have leaked")
+
+
+class RefusalDeliveryPins(unittest.TestCase):
+    """A refusal the client never receives is not a refusal it can observe.
+
+    The candidate pipeline caught this on Windows: `do_POST` answered a
+    gate refusal without consuming the request body, so the client was
+    still writing when the socket closed. POSIX delivers the 403 anyway;
+    Windows aborts the connection and `urlopen` reports
+    `ConnectionAbortedError: [WinError 10053]` instead of an HTTP error.
+    The accept/reject decision is unchanged — the body is discarded unread
+    — but the refusal has to arrive.
+    """
+
+    def test_a_refused_post_consumes_the_request_body_before_it_answers(self):
+        """The drain happens before the 403 is written, not after.
+
+        Asserted as the exact form rather than a substring search, so a
+        drain that lands after the response — or on a different refusal —
+        cannot satisfy it.
+        """
+        gui_source = Path(gui.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            'self._drain_body()\n'
+            '                    self._send(403, {"error": "Local access only."})',
+            gui_source,
+            "a gate refusal must drain the request body before it answers")
+
+    def test_the_drain_is_bounded_by_the_same_cap_the_parse_path_uses(self):
+        """Being refused must not become a way to make the app read forever."""
+        gui_source = Path(gui.__file__).read_text(encoding="utf-8")
+        self.assertIn("def _drain_body", gui_source)
+        drain = gui_source.split("def _drain_body", 1)[1]
+        drain = drain.split("\n            def ", 1)[0]
+        self.assertIn("MAX_REQUEST_BYTES", drain,
+                      "the drain must be bounded by MAX_REQUEST_BYTES")
+        self.assertIn("Content-Length", drain,
+                      "the drain must honour the declared length")
 
 
 if __name__ == "__main__":

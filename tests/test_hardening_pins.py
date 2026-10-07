@@ -699,8 +699,22 @@ class PipToolsPinTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# CT-46 — stale version strings are findings
+# CT-46 / CT-71 — stale version strings are findings
 # ---------------------------------------------------------------------------
+
+# "The latest published release is 0.6.4" is the sentence CT-71 filed. It is
+# stale the moment version.py moves. The digit is load-bearing: every live doc
+# in this tree is allowed to quote the prohibition ("... is X"), and only an
+# actual claim carries a version number. Archives and the frozen audit
+# artifacts quote the finding itself and are deliberately out of scope.
+_STALE_PUBLISHED_CLAIM = re.compile(
+    r"(?:the\s+)?(?:latest|current)\s+published\s+(?:release|version|build)"
+    r"\s+is\s+v?\d",
+    re.IGNORECASE,
+)
+_LIVE_DOCS = ("AGENTS.md", "README.md", "CURRENT-STATUS.md",
+              "PHASE-HANDOFF.md", "replit.md")
+
 
 class VersionStringPins(unittest.TestCase):
     def test_agents_names_the_tree_revision_from_version_py(self):
@@ -716,6 +730,40 @@ class VersionStringPins(unittest.TestCase):
         self.assertIn(f"| **{version}** |", history)
         notes = root / "releases" / f"RELEASE-NOTES-{version}.md"
         self.assertTrue(notes.is_file(), f"{notes} must exist when version.py moves")
+
+    def test_no_live_doc_hardcodes_a_latest_published_release(self):
+        """CT-71: the claim is the finding, not the wording around it.
+
+        Every live doc points at RELEASE-HISTORY.md and the Releases page
+        instead of restating a number. A later commit that puts the claim back
+        goes red here rather than going stale in silence.
+        """
+        root = Path(__file__).resolve().parents[1]
+        for name in _LIVE_DOCS:
+            body = (root / name).read_text(encoding="utf-8")
+            found = _STALE_PUBLISHED_CLAIM.search(body)
+            if found is not None:
+                self.fail(
+                    f"{name} hardcodes a published-release claim: "
+                    f"{found.group(0)!r}. Point at RELEASE-HISTORY.md and the "
+                    f"Releases page instead.")
+
+    def test_the_published_claim_pattern_is_not_vacuous(self):
+        """The positive half, and the half that keeps the prohibitions legal.
+
+        Without the first three assertions the pattern could match nothing and
+        the test above would pass forever. Without the fourth, someone
+        'tightening' it would force the prohibition sentences out of the docs
+        that exist to stop this coming back.
+        """
+        for claim in ("The latest published release is 0.6.6.",
+                      "Current published version is v0.6.6",
+                      "our latest published build is 0.6.4"):
+            self.assertRegex(claim, _STALE_PUBLISHED_CLAIM)
+        self.assertIsNone(_STALE_PUBLISHED_CLAIM.search(
+            'Do not state "the latest published release is X" here'))
+        self.assertIsNone(_STALE_PUBLISHED_CLAIM.search(
+            'do not restate a "current published release is X" here'))
 
 
 if __name__ == "__main__":

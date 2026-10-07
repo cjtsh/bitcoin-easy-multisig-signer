@@ -545,6 +545,25 @@ class LocalApp:
                 self._headers(status, "application/json; charset=utf-8", len(body))
                 self.wfile.write(body)
 
+            def _drain_body(self):
+                """Consume the request body before answering a refusal.
+
+                Responding and closing while the client is still writing is
+                what a refused POST looks like from the other side on Windows:
+                the 403 never arrives, and `urlopen` reports
+                ConnectionAbortedError (WinError 10053) instead of an HTTP
+                error. The refusal itself is unchanged — the body is discarded
+                unread — and the read is bounded by the same request-size cap
+                the parse path uses, so being refused cannot be made to pull an
+                unbounded stream.
+                """
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or "0")
+                except ValueError:
+                    length = 0
+                if length > 0:
+                    self.rfile.read(min(length, MAX_REQUEST_BYTES))
+
             def _trusted_host(self):
                 return self.headers.get("Host") == (
                     f"127.0.0.1:{self.server.server_address[1]}"
@@ -617,6 +636,7 @@ class LocalApp:
                     or not hmac.compare_digest(
                         self.headers.get("X-Local-Token") or "", state.token
                     )):
+                    self._drain_body()
                     self._send(403, {"error": "Local access only."})
                     return
                 try:

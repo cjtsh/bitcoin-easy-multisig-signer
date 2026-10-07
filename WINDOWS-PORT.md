@@ -31,6 +31,8 @@ future version (0.6.6, 0.7.x, 1.x, …) reuses one fix:
 | File privacy | `st_mode & 0o777 == 0o600` | `os.chmod` is not a permission on Windows and `st_mode` reports 0666. Use `tests.support.assert_private_file` → `gui.assert_private_file` (0600 on POSIX, profile-directory ACL on Windows). |
 | `bash` on PATH | Whatever `bash` resolves to | May be a WSL/Store stub that exits 1 silently. Use `tests.support.bash_executable` (prefers Git Bash). |
 | CWD vs `TemporaryDirectory` | `addCleanup(os.chdir, …)` | Windows cannot rmtree a directory that is still the CWD (`WinError 32`). Restore CWD in a `finally` **before** the temp context exits. |
+| A shebang script as an executable | `folder / "hwi"` with `#!/bin/sh` | Windows CreateProcess cannot exec a shebang (`WinError 193`). Plant `hwi.cmd` with `@echo off`. `tests/test_hardening_pins.py::_write_planted_helper` is the one writer; a test that plants the wrong shape fails on the platform difference and never reaches the control it is pinning. |
+| Refusing a POST without reading its body | `send_error`/`_send(403)` then `return` | The client is still writing when the socket closes. POSIX delivers the status anyway; Windows raises `ConnectionAbortedError: [WinError 10053]` on the client, so the refusal never arrives and a test expecting `HTTPError` sees a transport error instead. Drain `min(Content-Length, MAX_REQUEST_BYTES)` first — `gui.py`'s `_drain_body`. Pinned by `tests/test_gui.py::RefusalDeliveryPins`. |
 
 A change to `tests/support.py` that weakens these helpers is a release-gate
 regression; `tests/test_windows_portability.py` pins the helpers.

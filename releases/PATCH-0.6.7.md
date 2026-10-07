@@ -47,7 +47,7 @@ by the dated owner acceptance note. Nothing is closed by silence.
 | CT-61 | Info | Not accepted as design alone: the boundary is now stated where the operator meets it — the step-1 wallet help and `README.md`'s wallet-import bullet. A BSMS naming an attacker's key **is** the wallet definition; trusted delivery of the file is the boundary. | `tests/test_gui.py::WalletFileTrustPins` + the dated acceptance |
 | CT-62 | Info | The large-amount message no longer understates its own trigger. It said "at least 0.1 BTC" and fired at 0.04. It now names the floor it actually fires on. | `tests/test_gui.py` message pin |
 | CT-63–CT-70 | Info | Design properties, accepted. Each is a property of a product a lawyer, accountant or spouse is expected to use; "fixing" would mean redesigning it. | `releases/OWNER-ACCEPTANCE-2026-10-07.md`, with per-item tripwires naming when each reopens |
-| CT-71 | Info | Stale "latest published release is X" prose is gone as a pattern. `AGENTS.md`, `README.md` and `replit.md` point at `RELEASE-HISTORY.md` and the Releases page instead of hardcoding a number that goes stale the moment `version.py` moves. | `tests/test_hardening_pins.py::VersionStringPins` |
+| CT-71 | Info | Stale "latest published release is X" prose is gone as a pattern. `AGENTS.md`, `README.md` and `replit.md` point at `RELEASE-HISTORY.md` and the Releases page instead of hardcoding a number that goes stale the moment `version.py` moves. Pinned, not merely cleaned: the claim is a sentence with a version number in it, and the prohibition sentences in those same docs are deliberately still legal. | `tests/test_hardening_pins.py::VersionStringPins.test_no_live_doc_hardcodes_a_latest_published_release` (with `…test_the_published_claim_pattern_is_not_vacuous` as its positive half) |
 | CT-35, CT-36–42, CT-44, CT-47 | Info | Carried cycle-2 observations, accepted as design properties by dated owner acceptance (rubric ruling 2). | `releases/OWNER-ACCEPTANCE-2026-10-07.md` |
 
 ## CT-48: the branch sweep
@@ -232,6 +232,32 @@ pip-tools release across both jobs; CT-57 moved that pin into the lock,
 so the test now follows it there (exactly one release in the lock, and
 the input file naming the same one) rather than being deleted.
 
+### CT-71 — the claim, pinned (`/tmp/breakwatch_067e.py`, 2/2)
+
+The finding→fix table above once named `VersionStringPins` as CT-71's
+closure. That was an overclaim: `VersionStringPins` pins CT-46's
+version-string synchronisation and would not have noticed a
+reintroduced "the latest published release is 0.6.6". Under this
+project's rules that is itself a finding — a test that cannot fail does
+not count as a fix — so CT-71 now has a pin of its own rather than a
+borrowed one.
+
+`test_no_live_doc_hardcodes_a_latest_published_release` scans the live
+current docs (`AGENTS.md`, `README.md`, `CURRENT-STATUS.md`,
+`PHASE-HANDOFF.md`, `replit.md`) for a published-release **claim** — the
+phrase followed by a version number. The digit is load-bearing: all five
+docs are still allowed to quote the prohibition ("... is X"), and they
+do. `test_the_published_claim_pattern_is_not_vacuous` is the positive
+half, and also holds that the prohibition sentences stay legal, so
+nobody can "tighten" the pattern into forcing them out. Archives and the
+frozen audit artifacts quote the finding itself and are deliberately out
+of scope.
+
+| Break | Test that went red |
+| --- | --- |
+| `The latest published release is 0.6.6.` put back into `README.md` | `VersionStringPins.test_no_live_doc_hardcodes_a_latest_published_release` (on `README.md hardcodes a published-release claim`) |
+| the pattern made to match nothing | `VersionStringPins.test_the_published_claim_pattern_is_not_vacuous` |
+
 ## Candidate attempt 37625977035 — what the pipeline caught
 
 The first `notarize=true, publish=false` candidate was dispatched from
@@ -405,6 +431,79 @@ lookup list, and asked for "not raised" where the failure is the named
 refusal not matching. The tests themselves were right; the harness was
 checking the wrong strings.
 
+## Candidate attempt 37637171599 — the refusal that never arrived
+
+The third `notarize=true, publish=false` candidate was dispatched from
+`3f6dfe6`, the commit carrying the Windows test fix. **Four of the five
+jobs were green again** — Read version, Source archive and tests, Apple
+Silicon DMG, Linux x86_64 AppImage — and **Windows failed on one
+different test**: `test_gui.LocalGuiTests.test_import_rejects_bad_chain_and_cross_origin_post`,
+with `ConnectionAbortedError: [WinError 10053] An established connection
+was aborted by the software in your host machine`. 508 collected, 507 ok.
+
+`gui.py` and `tests/test_gui.py` had not changed between the two runs,
+and this test **passed** on Windows in run 37632918993. It is not a
+regression. It is a race the Windows socket stack resolves differently
+depending on load.
+
+### Cause
+
+`do_POST` refuses a cross-origin or unauthenticated request at the gate
+and answers `403 Local access only` **without consuming the request
+body**. The client is still writing when the connection closes. POSIX
+delivers the status line first and `urlopen` raises a clean `HTTPError
+403`; Windows can abort the socket instead, and the 403 never arrives.
+
+The test's first two POSTs are refused **after** the body is read (they
+reach `_import` and fail the chain check), so those 400s always arrived.
+Only the gate refusal — the one that leaves the body unread — was
+exposed. That is why the failure looked random: it is a race between the
+client's `send()` and the server's close, and a loaded Windows runner
+loses it.
+
+### This is not a weakening of the gate
+
+The accept/reject decision is unchanged. A cross-origin request is still
+refused; from the attacker's side a connection abort and a 403 are both
+"nothing came back". What changed is that the refusal is now
+**deliverable** — the operator's own client, and the test, can observe
+which rule fired. `_drain_body` discards the body unread and is bounded
+by `MAX_REQUEST_BYTES`, the same cap the parse path uses, so being
+refused cannot be turned into a way to make the app read an unbounded
+stream.
+
+### Fixes
+
+1. **`gui.py::_drain_body`** — before a gate refusal, consume
+   `min(Content-Length, MAX_REQUEST_BYTES)` bytes and discard them, then
+   write the 403. `do_GET`'s refusal is untouched (a GET has no body).
+2. **`tests/test_gui.py::RefusalDeliveryPins`** — asserts the exact
+   ordered form `self._drain_body()` immediately before the gate's
+   `_send(403, …)`, so a drain that lands after the response, or on a
+   different refusal, cannot satisfy it; and asserts the drain is bounded
+   by `MAX_REQUEST_BYTES` and honours `Content-Length`.
+3. **`WINDOWS-PORT.md`** — the quirk is recorded beside the others
+   (`WinError 10053` for an unread body, `WinError 193` for a shebang
+   helper) with the required approach and the pin that holds it.
+
+Scoped review, per `RELEASE-PROCESS.md` §3 ("do not change … another
+safety invariant without a scoped review and regression tests"): the
+change is confined to how a *refusal* is delivered, does not alter any
+accept/reject condition, is bounded, and carries the regression tests
+above plus the existing `test_import_rejects_bad_chain_and_cross_origin_post`
+which asserts the specific `403` (and the `400` halves).
+
+### Tripwires for the fixes (`/tmp/breakwatch_067f.py`, 2/2)
+
+| Break | Test that went red |
+| --- | --- |
+| the drain dropped from the gate refusal | `RefusalDeliveryPins.test_a_refused_post_consumes_the_request_body_before_it_answers` |
+| the drain unbounded | `RefusalDeliveryPins.test_the_drain_is_bounded_by_the_same_cap_the_parse_path_uses` |
+
+The behavioural test cannot demonstrate the race on a POSIX machine —
+that is the whole point of the quirk — so the pin is the exact-form
+assertion, which fails on every runner.
+
 ## Deferred, with the reason
 
 Both deferrals are recorded in `releases/OWNER-ACCEPTANCE-2026-10-07.md`
@@ -451,27 +550,28 @@ No wallet, signing, or broadcast policy changed. Specifically:
 
 ## Verification
 
-At this revision: full suite **515 tests OK, zero skips**, run both from
+At this revision: full suite **519 tests OK, zero skips**, run both from
 the checkout and from inside the extracted
 `dist/bitcoin-easy-multisig-signer-v0.6.7.tar.gz` — the same self-test the
 source job performs, and both runs collect the same count, so the tarball
 is complete. 10/10 `tests/ui_*.cjs` OK. `bash -n` clean on every
 `scripts/*.sh`. `node --check` clean on every test and script. The
 break-and-watch transcripts above hold 10/10 for the first candidate
-attempt and 4/4 for the second.
+attempt, 4/4 for the second, 2/2 for the CT-71 pin, and 2/2 for the
+refusal delivery.
 
-Count by platform, so a reader is not surprised: **macOS collects 515**;
-**Linux and Windows collect 508**. The difference is deliberate and
+Count by platform, so a reader is not surprised: **macOS collects 519**;
+**Linux and Windows collect 512**. The difference is deliberate and
 documented in `tests/test_notary_args.py`: seven `@macos_only` cases "are
 not collected" on other platforms rather than skipped, so the workflows'
 `skipped=[1-9]` guard stays meaningful and a missing dependency cannot
 hide behind a skip. Each platform's job runs its own full set with no
-skips. The failed Windows run above collected 506 at a revision where
-macOS collected 513 — same rule, seven fewer.
+skips. The failed Windows runs above collected 506 and 508 at revisions
+where macOS collected 513 and 515 — same rule, seven fewer.
 
 Earlier in this revision's history the suite stood at 500 tests at
-`d2e9e73`; the fifteen added since are the tripwires written for the two
-candidate attempts above.
+`d2e9e73`; the nineteen added since are the tripwires written for the
+three candidate attempts above.
 
 ## Publication
 
@@ -487,6 +587,7 @@ the device-identity path. Manual publication is prohibited.
 | --- | --- | --- | --- |
 | [37625977035](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37625977035) | `0e6f11a` | `notarize=true, publish=false` | **Superseded — failed.** Three jobs: Windows (sweep went blind on unreadable bodies), source archive (pin test opened only `.github/workflows/`), macOS (sidecar in `Contents/MacOS` broke codesign). Fixed in the next commit; see *Candidate attempt 37625977035* above. No assets were published; SHA256SUMS and Publish release were skipped. |
 | [37632918993](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37632918993) | `60f5785` | `notarize=true, publish=false` | **Superseded — failed.** Windows only: one test could not run (`WinError 193` planting a shebang helper). The other four jobs were green, including the live-remote publish-path sweep. Fixed in the next commit; see *Candidate attempt 37632918993* above. No assets were published; SHA256SUMS and Publish release were skipped. |
+| [37637171599](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37637171599) | `3f6dfe6` | `notarize=true, publish=false` | **Superseded — failed.** Windows only: one test lost a socket race (`WinError 10053`) because a gate refusal answered without reading the request body. Four jobs green. Fixed in the next commit; see *Candidate attempt 37637171599* above. No assets were published; SHA256SUMS and Publish release were skipped. |
 | _(pending)_ | _(this revision)_ | `notarize=true, publish=false` | To be recorded from the successful candidate run. |
 
 Do not claim a published version this file does not carry.
