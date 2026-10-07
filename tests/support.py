@@ -149,6 +149,23 @@ def run_bash_file(
     )
 
 
+def find_build_recipe(root: Path, name: str) -> Path | None:
+    """Locate a build recipe in the checkout or in a source archive.
+
+    A checkout keeps them under ``.github/workflows/``. ``scripts/build-source.sh``
+    ships the same three under ``ci/``, because a source tarball is a source
+    tree and has no GitHub workflow directory. Every pin that reads a recipe
+    must go through this helper: the 0.6.6 source-archive job found
+    ``PipToolsPinTests`` looking only at ``.github/workflows/``, and the 0.6.7
+    job found ``ToolchainPinTests`` making the same mistake. One resolver, one
+    place to get it right.
+    """
+    for candidate in (root / ".github" / "workflows" / name, root / "ci" / name):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def assert_private_file(test: unittest.TestCase, path: Path) -> None:
     """Assert a file the app wrote is private, using the app's own rule.
 

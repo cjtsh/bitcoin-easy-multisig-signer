@@ -54,11 +54,16 @@ accepted. That check is now exact-line membership, and it runs **after** a
 byte check that the helper does not get a vote in:
 
 - **Frozen builds** execute the bundled helper beside the app and require
-  `hwi.sha256` beside it to match. Each of `scripts/build-macos.sh`,
+  `hwi.sha256` to match it. Each of `scripts/build-macos.sh`,
   `build-linux.sh` and `build-windows.ps1` writes that sidecar from the
   helper it just built and signed; `scripts/build-sbom.py` records the same
   digest as `hwi_helper_sha256` and fails rather than publish an SBOM that
-  disagrees with the artifact.
+  disagrees with the artifact. The sidecar lives **inside the signed bundle** —
+  `Contents/Resources/hwi.sha256` on macOS, where codesign seals it (macOS
+  refuses to seal an `.app` that carries a non-code file in `Contents/MacOS`),
+  and beside the helper on Windows and Linux. `probe._hwi_sidecars` and
+  `build_sbom.helper_sidecars` list the same places; every present copy must
+  agree with the helper's bytes.
 - **Source mode executes no helper binary at all.** It runs the repository's
   own `scripts/hwi_entry.py` under the running interpreter, so there is
   nothing on `PATH` for a neighbour to replace — `shutil.which` is gone from

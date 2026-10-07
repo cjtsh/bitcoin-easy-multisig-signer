@@ -235,13 +235,21 @@ fi
 # build-time xattrs after that preflight and before sealing the outer app.
 xattr -cr "$app"
 
-# The helper's bytes are final now that it is signed. Record them beside the
-# helper, inside the bundle the outer signature is about to authenticate, so
-# probe.py can refuse a substituted binary at run time (CT-49). The same digest
-# is what BUILD-SBOM.json records for this helper.
+# The helper's bytes are final now that it is signed. Record them inside the
+# bundle the outer signature is about to authenticate, so probe.py can refuse a
+# substituted binary at run time (CT-49). The same digest is what BUILD-SBOM.json
+# records for this helper.
+#
+# In Contents/Resources, never Contents/MacOS. macOS reserves MacOS/ for
+# executables: codesign refuses to seal an .app carrying a plain data file
+# there ("code object is not signed at all / In subcomponent: .../hwi.sha256"),
+# which is what broke the 0.6.7 candidate build. Resources is also the better
+# home -- the outer signature seals it into _CodeSignature/CodeResources, so
+# editing the sidecar breaks the seal exactly like substituting the helper.
 hwi_digest="$(shasum -a 256 "$hwi_bin" | awk '{print $1}')"
-printf '%s  %s\n' "$hwi_digest" "hwi" > "$app/Contents/MacOS/hwi.sha256"
-echo "Bundled hwi sha256 $hwi_digest (recorded in hwi.sha256)."
+mkdir -p "$app/Contents/Resources"
+printf '%s  %s\n' "$hwi_digest" "hwi" > "$app/Contents/Resources/hwi.sha256"
+echo "Bundled hwi sha256 $hwi_digest (recorded in Contents/Resources/hwi.sha256)."
 
 # Seal the .app last, with no recursive signing.
 codesign "${sign_flags[@]}" --sign "$sign_identity" "$app"

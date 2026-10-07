@@ -31,8 +31,8 @@ by the dated owner acceptance note. Nothing is closed by silence.
 
 | ID | Sev | Fix | Closing evidence |
 | --- | --- | --- | --- |
-| CT-48 | High | Every publish-capable workflow file deleted from every non-main branch (13 branch commits; branches kept). `scripts/check-publish-paths.sh` enumerates the **remote's** heads and fails closed on a publish-capable workflow at any non-main ref. Every false "no second path" comment corrected. Guard steps pinned by body. | `tests/test_workflow_config.py::PublishPathSweepTests`, `GuardBodyPins`; the sweep script itself, run on every dispatch |
-| CT-49 | Med | Helper identified by bytes before it may speak: frozen builds require the `hwi.sha256` sidecar their build wrote; source mode runs `scripts/hwi_entry.py` under the running interpreter and pins `hwilib/__init__.py` + `hwilib/_cli.py` by SHA-256. `shutil.which` PATH lookup is gone. Version line is exact set membership, not a substring. Launcher comment reworded to say what is true. | `tests/test_hardening_pins.py::HwiIdentityPins`, `tests/test_platform_port.py::ProbeHelperPathTests`, `tests/test_build_sbom.py::HelperDigestPins` |
+| CT-48 | High | Every publish-capable workflow file deleted from every non-main branch (13 branch commits; branches kept). `scripts/check-publish-paths.sh` enumerates the **remote's** heads and fails closed on a publish-capable workflow at any non-main ref — including on a workflow body it **cannot read**. Every false "no second path" comment corrected. Guard steps pinned by body. | `tests/test_workflow_config.py::PublishPathSweepTests`, `SweepFailClosedPins`, `GuardBodyPins`; the sweep script itself, run on every dispatch |
+| CT-49 | Med | Helper identified by bytes before it may speak: frozen builds require the `hwi.sha256` sidecar their build wrote, held **inside the signed bundle** (`Contents/Resources` on macOS, beside the helper elsewhere) so the outer signature covers it; source mode runs `scripts/hwi_entry.py` under the running interpreter and pins `hwilib/__init__.py` + `hwilib/_cli.py` by SHA-256. `shutil.which` PATH lookup is gone. Version line is exact set membership, not a substring. Launcher comment reworded to say what is true. | `tests/test_hardening_pins.py::HwiIdentityPins`, `tests/test_platform_port.py::ProbeHelperPathTests`, `tests/test_build_sbom.py::HelperDigestPins` |
 | CT-50 | Low | `ui.html` now carries both large-amount floors and is pinned to `gui.py`. It also reads the 4,000,000-sat untrusted-quote floor, which it never did — a 0.05 BTC prepare under a lying price quote previously pressed straight into a backend refusal. | `tests/ui_large_amount.cjs`; `tests/test_gui.py` cross-file literal pin |
 | CT-51 | Low | Request-log suppression pinned by running the real server twice: once asserting nothing is printed, once with the base `log_message` restored showing the line that would have leaked. | `tests/test_gui.py` (log-silence tripwire) |
 | CT-52 | Low | Guard pins assert the guard **bodies** — `exit 1` and the specific refusal message — not the step names. A step named "Refuse…" whose body is `true` fails the build. | `tests/test_workflow_config.py::GuardBodyPins` |
@@ -40,7 +40,7 @@ by the dated owner acceptance note. Nothing is closed by silence.
 | CT-54 | Low | **Deferred** — rebuild `vendor/libusb-1.0.0.dylib` from pinned upstream source at the next dependency bump (the audit's own remedy). Hard expiry 2027-10-07. | dated deferral in `releases/OWNER-ACCEPTANCE-2026-10-07.md` |
 | CT-55 | Low | All six `python-version:` sites pin the full patch **3.12.10**. The pin is deliberately not "whatever this laptop runs" (3.12.14) or what Linux's tool cache floated to (3.12.15) — see the asset evidence below. | `tests/test_workflow_config.py::PythonInterpreterPinTests` (no PyYAML: cannot skip itself green) |
 | CT-56 | Low | `scripts/build-source.sh` ships `scripts/hwi-entitlements.plist`, `LINUX-PORT.md` and `requirements-desktop-linux.txt`. The header comment no longer claims the plist is absent. | `tests/test_build_source.py::ArchiveCompletenessTests` |
-| CT-57 | Low | `requirements-piptools.lock` is committed and installed under `--require-hashes` by both inputs workflows. `build-linux.sh`'s unpinned `pip install --upgrade pip` is gone. | `tests/test_workflow_config.py::ToolchainPinTests`, `tests/test_hardening_pins.py::PipToolsPinTests` |
+| CT-57 | Low | `requirements-piptools.lock` is committed and installed under `--require-hashes` by both inputs workflows. `build-linux.sh`'s unpinned `pip install --upgrade pip` is gone. Every recipe pin reads through `support.find_build_recipe`, so it also runs from the source archive. | `tests/test_workflow_config.py::ToolchainPinTests`, `BuildRecipeLookupTests`; `tests/test_hardening_pins.py::PipToolsPinTests`; `tests/test_windows_portability.py::HardeningPinPortabilityTests` |
 | CT-58 | Low | Folded into CT-49: `begin_signing_session()` clears the identity cache, and `verify_signer_device` starts every signing session with it. The per-path cache no longer outlives a session. | `tests/test_hardening_pins.py::HwiIdentityPins.test_the_verified_helper_is_re_identified_at_each_signing_session` |
 | CT-59 | Low | **Deferred** — a stalling explorer can make one scan slow. The scan fails closed and claims nothing about balance. A hard deadline would trade one availability limit for another. Revisited at the next full audit cycle; hard expiry 2027-10-07. | dated deferral in the acceptance note |
 | CT-60 | Low | `verify_esplora(chain, broadcaster)` now runs unconditionally in `_broadcast`, before the irreversible submit. The old gate fired for Mutinynet alone (the only chain with a checkpoint), so mainnet and Testnet4 submitted to whatever endpoint was in settings without a genesis check at use time. The check was valid everywhere and was being withheld. Negative half pinned too: a refused broadcaster means no send and nothing pending. | `tests/test_send_flow.py` (both halves) |
@@ -232,6 +232,92 @@ pip-tools release across both jobs; CT-57 moved that pin into the lock,
 so the test now follows it there (exactly one release in the lock, and
 the input file naming the same one) rather than being deleted.
 
+## Candidate attempt 37625977035 — what the pipeline caught
+
+The first `notarize=true, publish=false` candidate was dispatched from
+`0e6f11a` and **failed three jobs**. None of the three is in wallet,
+signing or broadcast code. All three are release plumbing that only a
+real three-platform run can reach, which is what the candidate stage is
+for. This run is **superseded**; its record is kept rather than erased.
+
+| Job | Failure | Cause |
+| --- | --- | --- |
+| Windows x64 bundle | 4 `PublishPathSweepTests` failures | `scripts/check-publish-paths.sh` read each workflow body with `git show ref:path 2>/dev/null \|\| true` and matched it with `grep`. On the Windows job that read returned nothing, the `\|\| true` swallowed it, and a branch that publishes was reported clean. The filename check is pure bash and passed there — which is exactly why the body checks looked fine on Mac and Linux. |
+| Source archive and tests | `FileNotFoundError` on `.github/workflows/windows-inputs.yml` | `ToolchainPinTests` opened only `.github/workflows/`. The source tarball ships the same recipes under `ci/` (`scripts/build-source.sh`). The **0.6.6** job already caught `PipToolsPinTests` making this exact mistake; the fix was local to that one test, so the next pin repeated it. |
+| Apple Silicon DMG | `codesign` refused to seal the `.app` | `hwi.sha256` was written into `Contents/MacOS/`, which macOS reserves for executables: `code object is not signed at all / In subcomponent: .../Contents/MacOS/hwi.sha256`. |
+
+The Windows job also ran **493** tests where macOS ran 500. That gap is
+deliberate and documented in `tests/test_notary_args.py`: seven
+`@macos_only` cases "are not collected" on other platforms rather than
+skipped, so the workflow's `skipped=[1-9]` guard stays meaningful. The
+Linux job and the source-archive job run the same 493. Nothing is
+silently omitted.
+
+### Fixes
+
+1. **`scripts/check-publish-paths.sh`** — the body now comes from
+   `git cat-file blob <oid>` (the object id `git ls-tree` already reports),
+   not from `git show ref:path`. An unreadable body is itself an offender
+   (`unreadable-workflow`), never a pass. Matching is `[[ ]]` under
+   `nocasematch`; there is no `grep` in the script at all, so a missing or
+   broken matcher can no longer turn a refusal into silence.
+2. **Recipe lookup** — `support.find_build_recipe` is the one resolver,
+   checking `.github/workflows/` then `ci/`. `ToolchainPinTests`,
+   `PipToolsPinTests` and `test_libusb_vendor` all use it;
+   `HardeningPinPortabilityTests` holds that none of them reopens an
+   inline lookup. This closes the loop 0.6.6 left open.
+3. **`scripts/build-macos.sh`** — the sidecar is written to
+   `Contents/Resources/hwi.sha256`, which is legal *and* better: the outer
+   signature seals it into `_CodeSignature/CodeResources`, so editing it
+   breaks the seal exactly like substituting the helper.
+   `probe._hwi_sidecars` and `build_sbom.helper_sidecars` list the same
+   places (beside the helper, then `Contents/Resources`) and every present
+   copy must agree with the helper's bytes. `HWI-DEPENDENCY.md` now says
+   where the sidecar actually lives; its old "beside it" wording would
+   have been a lie after this change.
+
+### Tripwires for the fixes (`/tmp/breakwatch_067c.py`, 10/10)
+
+| Break | Test that went red |
+| --- | --- |
+| body read swallows its failure again (`\|\| true`) | `SweepFailClosedPins.test_the_body_read_is_not_allowed_to_swallow_its_failure` |
+| `unreadable-workflow` offender dropped | `SweepFailClosedPins.test_an_unreadable_workflow_body_is_an_offender` |
+| write-permission regex never matches | `PublishPathSweepTests.test_the_sweep_refuses_a_remote_branch_carrying_a_release_job` |
+| body read back to `git show ref:path` | `SweepFailClosedPins.test_the_bodies_come_from_object_ids_not_from_rev_colon_path` |
+| bodies matched with `grep` again | `SweepFailClosedPins.test_the_sweep_matches_bodies_with_bash_and_not_with_grep` |
+| every `build-candidate.yml` flagged as retired | `PublishPathSweepTests.test_the_sweep_accepts_a_repo_whose_only_publisher_is_main` |
+| sidecar written back to `Contents/MacOS` | `HelperDigestPins.test_the_macos_sidecar_is_written_outside_contents_macos` |
+| `probe` stops looking in `Contents/Resources` | `HwiIdentityPins.test_a_frozen_macos_bundle_reads_the_sidecar_from_contents_resources` |
+| recipe lookup only `.github/workflows` again | `BuildRecipeLookupTests.test_a_recipe_shipped_only_under_ci_is_found` |
+| `build-sbom` looks beside the helper only | `HelperDigestPins.test_the_sbom_reads_the_sidecar_from_the_place_the_app_checks` |
+
+Every case: positive half green → one unique needle broken → named test
+red **for the assertion's own message** → restore → green. `__pycache__`
+is cleared before every run.
+
+Two of those ten were wrong on the first pass, and both were caught
+rather than waved through:
+
+- "drop the `unreadable-workflow` offender" went red, but on the second
+  assertion, not the first — the word still appeared in the script's
+  comment. The harness was checking for the wrong string. Re-aimed.
+- "make the write-permission regex never match" left the test **green**,
+  because that fixture carries both `contents: write` and `gh release`
+  and the other marker still refused. A real gap in the test, not in the
+  harness: the combined fixture could not tell the two markers apart.
+  `test_the_sweep_refuses_a_remote_branch_carrying_a_release_job` now
+  asserts `grants-contents-write`, the gh-release-only test asserts
+  `runs-gh-release`, and the retired-name test asserts
+  `retired-per-platform-publisher`. The break then goes red on the
+  reason named. The same lesson as CT-50–53: **assert the specific
+  refusal, not just that something refused.**
+
+The existing suite also caught the recipe-lookup refactor: moving the
+`ci/` fallback into `support.find_build_recipe` broke
+`test_piptools_pin_looks_in_ci_as_well_as_github_workflows`, which pinned
+the old inline strings. That pin now holds the shared helper instead —
+it went red on the refactor, which is what it is for.
+
 ## Deferred, with the reason
 
 Both deferrals are recorded in `releases/OWNER-ACCEPTANCE-2026-10-07.md`
@@ -278,9 +364,25 @@ No wallet, signing, or broadcast policy changed. Specifically:
 
 ## Verification
 
-Full suite **500 tests OK, zero skips** at `d2e9e73`, with 10/10
-`tests/ui_*.cjs` OK. The version bump itself is a docs-and-version
-commit; it is re-verified before the candidate is dispatched.
+At this revision: full suite **513 tests OK, zero skips**, run both from
+the checkout and from inside the extracted
+`dist/bitcoin-easy-multisig-signer-v0.6.7.tar.gz` — the same self-test the
+source job performs. 10/10 `tests/ui_*.cjs` OK. `bash -n` clean on every
+`scripts/*.sh`. `node --check` clean on every test and script. The
+break-and-watch transcripts above hold 10/10 for the candidate-failure
+fixes, and the earlier cycles' transcripts are unchanged.
+
+Count by platform, so a reader is not surprised: **macOS collects 513**;
+**Linux and Windows collect 506**. The difference is deliberate and
+documented in `tests/test_notary_args.py`: seven `@macos_only` cases "are
+not collected" on other platforms rather than skipped, so the workflows'
+`skipped=[1-9]` guard stays meaningful and a missing dependency cannot
+hide behind a skip. Each platform's job runs its own full set with no
+skips.
+
+Earlier in this revision's history the suite stood at 500 tests at
+`d2e9e73`; the thirteen added since are the tripwires written for the
+candidate failures above.
 
 ## Publication
 
@@ -292,5 +394,9 @@ the device-identity path. Manual publication is prohibited.
 
 ### Candidate history
 
-To be filled from the candidate run. Do not claim a published version
-this file does not carry.
+| Run | Commit | Dispatch | Outcome |
+| --- | --- | --- | --- |
+| [37625977035](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37625977035) | `0e6f11a` | `notarize=true, publish=false` | **Superseded — failed.** Three jobs: Windows (sweep went blind on unreadable bodies), source archive (pin test opened only `.github/workflows/`), macOS (sidecar in `Contents/MacOS` broke codesign). Fixed in the next commit; see *Candidate attempt 37625977035* above. No assets were published; SHA256SUMS and Publish release were skipped. |
+| _(pending)_ | _(this revision)_ | `notarize=true, publish=false` | To be recorded from the successful candidate run. |
+
+Do not claim a published version this file does not carry.

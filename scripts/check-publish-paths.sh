@@ -9,8 +9,8 @@
 #
 # This script enumerates the REMOTE's heads, not the checkout, so a branch
 # that was never merged can still be seen. Run it as a release gate on every
-# dispatch. It is pure bash + git (no gh, no Python) so it runs the same on
-# the Windows job and in a fixture repo on a laptop.
+# dispatch. It is pure bash + git (no gh, no Python, no grep) so it runs the
+# same on the Windows job and in a fixture repo on a laptop.
 #
 #   bash scripts/check-publish-paths.sh [remote]   # default: origin
 #
@@ -21,12 +21,32 @@
 #     actually attaches bytes).
 # Only the default branch (main) may carry one. Comments in a recipe that
 # merely name the retired files are not publishers and are not flagged.
+#
+# FAIL CLOSED. The first version of this script read each workflow body with
+# `git show ref:path 2>/dev/null || true` and matched it with `grep`. On the
+# Windows job that read returned nothing, `|| true` swallowed the failure, and
+# a branch that publishes was reported clean. Four tests went red there while
+# staying green on Mac and Linux, which is the only reason anyone noticed. So:
+#   - the body comes from `git cat-file blob <oid>`, not `git show ref:path`,
+#     because the object id is not a path and cannot be mangled;
+#   - a body that cannot be read is itself an offender (`unreadable-workflow`),
+#     never a pass;
+#   - matching is `[[ ]]` under nocasematch, with no external tool whose
+#     absence could turn a refusal into silence.
 
 set -euo pipefail
 
 REMOTE="${1:-origin}"
 ALLOWED="main"
 REFUSAL="refusing: a non-main ref carries a publish-capable workflow"
+
+# YAML permission keys and the `gh release` invocation are matched
+# case-insensitively, as the grep -i this replaced did. nocasematch only
+# affects [[ ]], which is the only matcher used below.
+shopt -s nocasematch
+
+# Matches `contents: write`, `contents: "write"`, `contents: 'write'`.
+CONTENT_WRITE_RE='contents:[[:space:]]*["'\'']?write["'\'']?'
 
 # Own namespace for the fetched heads so a caller's refs are never rewritten.
 # The namespace is emptied first: a plain fetch does not delete a head that
@@ -55,7 +75,11 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
         continue
     fi
 
-    for path in $(git ls-tree -r --name-only "$ref" -- .github/workflows 2>/dev/null); do
+    # <mode> SP <type> SP <oid> TAB <path> -- the oid lets us read the blob
+    # without spelling `ref:path`, which is the form that went blind on Windows.
+    while IFS=$'\t' read -r meta path; do
+        [ -n "$path" ] || continue
+        oid="${meta##* }"
         base="${path##*/}"
 
         # The retired per-platform publishers must not exist as workflow
@@ -65,17 +89,25 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
             continue
         fi
 
-        body="$(git show "${ref}:${path}" 2>/dev/null || true)"
+        if ! body="$(git cat-file blob "$oid" 2>/dev/null)"; then
+            # An unreadable body is not a clean body. Anything else lets a
+            # broken sweep keep reporting "ok" while a publisher sits on a
+            # branch nobody is looking at.
+            report "$branch" "$path" "unreadable-workflow"
+            printf 'git cat-file blob %s failed for %s:%s\n' \
+                "$oid" "$branch" "$path" >&2
+            continue
+        fi
 
-        if printf '%s\n' "$body" | grep -qiE 'contents:[[:space:]]*["'\'']?write["'\'']?'; then
+        if [[ "$body" =~ $CONTENT_WRITE_RE ]]; then
             report "$branch" "$path" "grants-contents-write"
             continue
         fi
-        if printf '%s\n' "$body" | grep -qF 'gh release'; then
+        if [[ "$body" == *"gh release"* ]]; then
             report "$branch" "$path" "runs-gh-release"
             continue
         fi
-    done
+    done < <(git ls-tree -r "$ref" -- .github/workflows 2>/dev/null)
 done
 
 if [ "$offenders" -gt 0 ]; then

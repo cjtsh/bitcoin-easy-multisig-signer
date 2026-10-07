@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 import unittest
 
-from support import bash_syntax_check, run_bash_file, run_bash_script
+from support import bash_syntax_check, find_build_recipe, run_bash_file, run_bash_script
 
 try:
     import yaml
@@ -458,6 +458,40 @@ class PythonInterpreterPinTests(unittest.TestCase):
 
 
 
+class BuildRecipeLookupTests(unittest.TestCase):
+    """The pin tests must read a recipe from the source archive too.
+
+    The 0.6.6 source-archive job caught PipToolsPinTests opening only
+    .github/workflows/ while the tarball ships the same recipes under ci/.
+    ToolchainPinTests then repeated the mistake and the 0.6.7 candidate caught
+    it again. Both now go through support.find_build_recipe; this pins the
+    helper so a third repeat has to break a test first.
+    """
+
+    def test_a_recipe_shipped_only_under_ci_is_found(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "ci").mkdir()
+            recipe = root / "ci" / "windows-inputs.yml"
+            recipe.write_text("name: archived\n", encoding="utf-8", newline="\n")
+            self.assertEqual(find_build_recipe(root, "windows-inputs.yml"), recipe)
+
+    def test_the_checkout_layout_still_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "ci").mkdir()
+            canonical = root / ".github" / "workflows" / "windows-inputs.yml"
+            canonical.write_text("name: checkout\n", encoding="utf-8", newline="\n")
+            (root / "ci" / "windows-inputs.yml").write_text(
+                "name: stale\n", encoding="utf-8", newline="\n")
+            self.assertEqual(find_build_recipe(root, "windows-inputs.yml"), canonical)
+
+    def test_a_recipe_in_neither_place_is_reported_missing_not_raised(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(find_build_recipe(pathlib.Path(tmp), "windows-inputs.yml"))
+
+
 class ToolchainPinTests(unittest.TestCase):
     """CT-57: the tool that writes the locks must itself be hash-locked.
 
@@ -476,7 +510,10 @@ class ToolchainPinTests(unittest.TestCase):
                         "requirements-piptools.lock is missing; pip-tools would "
                         "be installed unpinned")
         for name in ("windows-inputs.yml", "linux-inputs.yml"):
-            text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            recipe = find_build_recipe(ROOT, name)
+            self.assertIsNotNone(
+                recipe, f"{name} is missing from both .github/workflows/ and ci/")
+            text = recipe.read_text(encoding="utf-8")
             with self.subTest(workflow=name):
                 active = "\n".join(
                     line for line in text.splitlines()
@@ -645,6 +682,10 @@ class PublishPathSweepTests(unittest.TestCase):
                           out)
             self.assertIn("evil", out)
             self.assertIn("build-candidate.yml", out)
+            # The specific reason, not just the refusal. This fixture carries
+            # both markers, so without this a broken contents:write matcher
+            # hides behind the gh-release half and the test stays green.
+            self.assertIn("grants-contents-write", out)
 
     def test_the_sweep_refuses_a_branch_that_only_runs_gh_release(self):
         """Refusal half, second marker: `gh release` without contents:write.
@@ -678,6 +719,7 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted a gh-release branch:\n{out}")
             self.assertIn("refusing: a non-main ref carries a publish-capable workflow", out)
+            self.assertIn("runs-gh-release", out)
 
     def test_the_sweep_refuses_the_retired_per_platform_workflow_names(self):
         """Refusal half: the file NAME is enough, even with no markers.
@@ -702,6 +744,7 @@ class PublishPathSweepTests(unittest.TestCase):
                           out)
             self.assertIn("windows-port", out)
             self.assertIn("build-windows.yml", out)
+            self.assertIn("retired-per-platform-publisher", out)
 
     def test_the_sweep_accepts_a_repo_whose_only_publisher_is_main(self):
         """Positive half: main may publish; a clean sibling branch is fine."""
@@ -775,6 +818,114 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
                           result.stderr)
             self.assertEqual(result.returncode, 1)
+
+    def test_the_sweep_reads_a_quoted_write_permission(self):
+        """`contents: "write"` is how a template renders it."""
+        quoted = (
+            "name: quoted\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: \"write\"\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "quoted")
+            self._write(repo, "build-candidate.yml", quoted)
+            self._commit(repo, "quoted")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a quoted write grant:\n{out}")
+            self.assertIn("grants-contents-write", out)
+
+    def test_the_sweep_reads_a_body_regardless_of_case(self):
+        """The matcher is nocasematch, as the grep -i it replaced was."""
+        shouty = (
+            "name: shouty\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      CONTENTS: WRITE\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "shouty")
+            self._write(repo, "build-candidate.yml", shouty)
+            self._commit(repo, "shouty")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep missed a body it should read:\n{out}")
+            self.assertIn("grants-contents-write", out)
+
+
+class SweepFailClosedPins(unittest.TestCase):
+    """The sweep must never turn a failure to read into "ok".
+
+    That is exactly what happened on the Windows job: `git show ref:path
+    2>/dev/null || true` returned nothing, both body checks found nothing to
+    match, and a branch that publishes was reported clean. Four behavioural
+    tests went red there and stayed green on Mac and Linux. These pins hold the
+    half the behaviour cannot easily reach: an unreadable body is an offender,
+    and no external matcher is involved whose absence could go silent.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / "scripts" / "check-publish-paths.sh").read_text(
+            encoding="utf-8")
+
+    def test_an_unreadable_workflow_body_is_an_offender(self):
+        self.assertIn("unreadable-workflow", self.text,
+                      "a body the sweep cannot read must be reported, not passed")
+        self.assertIn('report "$branch" "$path" "unreadable-workflow"', self.text)
+
+    def test_the_body_read_is_not_allowed_to_swallow_its_failure(self):
+        reads = [line for line in self.text.splitlines()
+                 if "cat-file blob" in line and "body=" in line]
+        self.assertTrue(reads, "the sweep must read each workflow body with git cat-file")
+        for line in reads:
+            self.assertNotIn("|| true", line,
+                             "the body read must fail loudly: " + line)
+            self.assertIn("if !", line,
+                          "the body read must be gated on its own success: " + line)
+
+    def test_the_sweep_matches_bodies_with_bash_and_not_with_grep(self):
+        """grep is an external tool. When it is missing or broken, a pipeline
+        that ends in grep silently reports "no match" — a refusal becomes a
+        pass. Bash's own [[ ]] cannot do that."""
+        code = "\n".join(line for line in self.text.splitlines()
+                         if not line.lstrip().startswith("#"))
+        self.assertNotRegex(code, r"(^|[\s|;&])grep(\s|$)",
+                            "the sweep must not depend on grep to decide a refusal")
+        self.assertIn("nocasematch", self.text)
+        self.assertIn("CONTENT_WRITE_RE", self.text)
+
+    def test_the_bodies_come_from_object_ids_not_from_rev_colon_path(self):
+        """`git show ref:path` is the read that went blind on Windows.
+
+        An object id from ls-tree has no path syntax for anything to mangle.
+        """
+        self.assertIn("git cat-file blob", self.text)
+        self.assertIn("git ls-tree -r", self.text)
+        self.assertNotIn('git show "${ref}:${path}"', self.text)
 
 
 class GuardBodyPins(unittest.TestCase):

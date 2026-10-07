@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from embit.networks import NETWORKS
 
+from support import find_build_recipe
+
 import gui
 import probe
 from fake_explorer import three_output_wallet
@@ -145,6 +147,56 @@ class HwiIdentityPins(unittest.TestCase):
             with self.assertRaisesRegex(
                     ProbeError, "carries no digest for this app to verify"):
                 _verify_hwi_identity(str(helper))
+
+    def test_a_frozen_macos_bundle_reads_the_sidecar_from_contents_resources(self):
+        """macOS cannot keep the sidecar beside the helper.
+
+        codesign refuses to seal an .app carrying a non-code file in
+        Contents/MacOS, so the 0.6.7 build records the digest in
+        Contents/Resources. The app has to look there, or a correct build is
+        refused at run time and a substituted helper is checked against nothing.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            macos = Path(folder) / "Bitcoin Easy Signer.app" / "Contents" / "MacOS"
+            resources = macos.parent / "Resources"
+            macos.mkdir(parents=True)
+            resources.mkdir(parents=True)
+            helper = macos / "hwi"
+            helper.write_text(
+                "#!/bin/sh\n"
+                f'if [ "$1" = "--version" ]; then echo "hwi {EXPECTED_HWI_VERSION}"; exit 0; fi\n'
+                "echo '[]'\n",
+                encoding="utf-8",
+            )
+            helper.chmod(0o755)
+            digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+            (resources / "hwi.sha256").write_text(f"{digest}  hwi\n", encoding="utf-8")
+            self.assertEqual(probe._hwi_sidecars(str(helper)),
+                             [resources / "hwi.sha256"])
+            _verify_hwi_identity(str(helper))
+            probe._verified_hwi_paths.clear()
+
+    def test_two_sidecars_that_disagree_about_the_helper_are_refused(self):
+        """A stale copy beside the helper must not shadow a correct one.
+
+        Both present copies are checked. One wrong digest is a tampering signal,
+        not a choice the app gets to make by picking the friendlier file.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            macos = Path(folder) / "App.app" / "Contents" / "MacOS"
+            resources = macos.parent / "Resources"
+            macos.mkdir(parents=True)
+            resources.mkdir(parents=True)
+            bundled = macos / "hwi"
+            bundled.write_bytes(helper.read_bytes())
+            (resources / "hwi.sha256").write_text(
+                "0" * 64 + "  hwi\n", encoding="utf-8")
+            with patch("probe.subprocess.run") as run:
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    _verify_hwi_identity(str(bundled))
+            run.assert_not_called()
 
     # -- version is exact, not a substring --------------------------------
 
@@ -566,11 +618,8 @@ class PipToolsPinTests(unittest.TestCase):
 
     def test_every_lock_job_pins_the_same_piptools_release(self):
         for name in ("windows-inputs.yml", "linux-inputs.yml"):
-            # The checkout keeps recipes in .github/workflows/; the source
-            # archive ships them under ci/ (see scripts/build-source.sh).
-            recipe = next((path for path in (self.root / ".github" / "workflows" / name,
-                                             self.root / "ci" / name)
-                           if path.is_file()), None)
+            # Checkout or source archive — see support.find_build_recipe.
+            recipe = find_build_recipe(self.root, name)
             self.assertIsNotNone(
                 recipe, f"{name} is missing from both .github/workflows/ and ci/")
             text = recipe.read_text(encoding="utf-8")

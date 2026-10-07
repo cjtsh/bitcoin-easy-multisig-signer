@@ -212,8 +212,10 @@ HWI_PAYLOAD_PINS: dict[str, str] = {
     "hwilib": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
     "hwilib._cli": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
 }
-# A frozen build writes this beside its bundled helper; it is also what the
-# SBOM records for that helper. An explicitly named helper carries its own.
+# A frozen build writes this inside the signed bundle it authenticates —
+# Contents/Resources on macOS, where codesign seals it, and beside the helper on
+# Windows. An explicitly named helper carries its own, beside itself. It is also
+# what the SBOM records for the helper.
 HWI_DIGEST_SIDECAR = "hwi.sha256"
 
 _HWI_NO_DIGEST = (
@@ -346,6 +348,26 @@ def _verify_hwi_payload() -> None:
             raise ProbeError(_HWI_WRONG_DIGEST)
 
 
+def _hwi_sidecars(path: str) -> list[Path]:
+    """Every recorded digest for this helper that is actually present.
+
+    macOS refuses to seal an .app that carries a non-code file in
+    Contents/MacOS, so a frozen Mac build records the digest in
+    Contents/Resources and the outer signature covers it there. Windows has no
+    such rule and keeps the sidecar beside the helper; an explicitly named
+    helper carries its own. All present candidates must agree with the
+    helper's bytes — two sidecars that disagree are a tampering signal, not a
+    choice.
+    """
+    helper = Path(path)
+    candidates = [helper.with_name(HWI_DIGEST_SIDECAR)]
+    # .../App.app/Contents/MacOS/hwi -> .../App.app/Contents/Resources/hwi.sha256
+    resources = helper.parent.parent / "Resources" / HWI_DIGEST_SIDECAR
+    if resources != candidates[0]:
+        candidates.append(resources)
+    return [candidate for candidate in candidates if candidate.is_file()]
+
+
 def _verify_hwi_bytes(path: str) -> None:
     """Compare a standalone helper against a digest that is not its own claim.
 
@@ -354,15 +376,16 @@ def _verify_hwi_bytes(path: str) -> None:
     named helper is refused outright without one. Source mode runs no helper
     binary at all — see _verify_hwi_payload for the surface it does pin.
     """
-    sidecar = Path(path).with_name(HWI_DIGEST_SIDECAR)
-    if not sidecar.is_file():
-        raise ProbeError(_HWI_NO_DIGEST)
-    recorded = sidecar.read_text(encoding="utf-8").strip().split()
-    if not recorded:
+    sidecars = _hwi_sidecars(path)
+    if not sidecars:
         raise ProbeError(_HWI_NO_DIGEST)
     actual = sha256(Path(path).read_bytes()).hexdigest()
-    if recorded[0].lower() != actual:
-        raise ProbeError(_HWI_WRONG_DIGEST)
+    for sidecar in sidecars:
+        recorded = sidecar.read_text(encoding="utf-8").strip().split()
+        if not recorded:
+            raise ProbeError(_HWI_NO_DIGEST)
+        if recorded[0].lower() != actual:
+            raise ProbeError(_HWI_WRONG_DIGEST)
 
 
 def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:

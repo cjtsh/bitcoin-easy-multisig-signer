@@ -15,6 +15,8 @@ import tarfile
 import unittest
 from pathlib import Path
 
+from support import find_build_recipe
+
 VENDOR = Path(__file__).resolve().parents[1] / "vendor"
 
 # The upstream source both platform builds are accountable to.
@@ -89,9 +91,7 @@ class LibusbVendorTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         # The repository keeps the recipe in .github/workflows/ and the source
         # archive ships it under ci/, where this suite also runs.
-        inputs = next((path for path in (root / ".github" / "workflows" / "windows-inputs.yml",
-                                         root / "ci" / "windows-inputs.yml")
-                       if path.is_file()), None)
+        inputs = find_build_recipe(root, "windows-inputs.yml")
         if inputs is None:
             self.fail("windows-inputs.yml is missing from both .github/workflows/ and ci/")
         text = inputs.read_text(encoding="utf-8")

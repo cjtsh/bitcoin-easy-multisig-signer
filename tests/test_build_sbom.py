@@ -86,7 +86,7 @@ class HelperDigestPins(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "does not match hwi"):
                     build_sbom.helper_digest(ROOT)
 
-    def test_every_platform_build_writes_the_sidecar_next_to_the_helper(self):
+    def test_every_platform_build_writes_the_sidecar_into_the_signed_bundle(self):
         """The digest the app checks has to be produced by the build that ships.
 
         Pinned against the write, not the mention: an echo or a comment that
@@ -113,6 +113,81 @@ class HelperDigestPins(unittest.TestCase):
                     or "CT-49" in text,
                     f"{name} must say why it writes the sidecar",
                 )
+
+    def test_the_macos_sidecar_is_written_outside_contents_macos(self):
+        """macOS reserves Contents/MacOS for executables.
+
+        The 0.6.7 candidate recorded the digest beside the helper and codesign
+        refused to seal the app: "code object is not signed at all / In
+        subcomponent: .../Contents/MacOS/hwi.sha256". Contents/Resources is
+        both legal and better -- the outer signature seals it into
+        _CodeSignature/CodeResources, so editing the sidecar breaks the seal.
+        """
+        text = (ROOT / "scripts" / "build-macos.sh").read_text(encoding="utf-8")
+        self.assertIn("Contents/Resources/hwi.sha256", text,
+                      "build-macos.sh must record the helper digest in "
+                      "Contents/Resources")
+        self.assertNotIn("Contents/MacOS/hwi.sha256", text,
+                         "a non-code file in Contents/MacOS breaks codesign; "
+                         "the sidecar must not be written there")
+        writes = [
+            line for line in text.splitlines()
+            if "hwi.sha256" in line
+            and not line.lstrip().startswith("#")
+            and " > " in line
+        ]
+        self.assertTrue(writes, "build-macos.sh must still write the sidecar")
+        for line in writes:
+            self.assertIn("Contents/Resources", line,
+                          f"the sidecar write must target Contents/Resources: {line}")
+
+    def test_the_sbom_reads_the_sidecar_from_the_place_the_app_checks(self):
+        """build-sbom and probe must look in the same places.
+
+        If they disagree, the SBOM publishes a digest for a file the app never
+        reads, and a substituted helper is checked against nothing. Both accept
+        the macOS Contents/Resources layout; both accept the beside-the-helper
+        layout the other two platforms use.
+        """
+        import types
+
+        sys.path.insert(0, str(ROOT))
+        try:
+            import probe
+        finally:
+            sys.path.pop(0)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            macos = (root / "dist" / "Bitcoin Easy Signer.app" / "Contents" / "MacOS")
+            resources = macos.parent / "Resources"
+            macos.mkdir(parents=True)
+            resources.mkdir(parents=True)
+            helper = macos / "hwi"
+            helper.write_bytes(b"synthetic helper bytes\n")
+            digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+            (resources / "hwi.sha256").write_text(f"{digest}  hwi\n")
+
+            with patch.object(build_sbom, "sys",
+                              types.SimpleNamespace(platform="darwin")):
+                self.assertEqual(build_sbom.helper_digest(root), digest)
+            found = probe._hwi_sidecars(str(helper))
+            self.assertEqual(found, [resources / "hwi.sha256"])
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            windows = root / "dist" / "Bitcoin Easy Signer"
+            windows.mkdir(parents=True)
+            helper = windows / "hwi.exe"
+            helper.write_bytes(b"synthetic helper bytes\n")
+            digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+            helper.with_name("hwi.sha256").write_text(f"{digest}  hwi\n")
+
+            with patch.object(build_sbom, "sys",
+                              types.SimpleNamespace(platform="win32")):
+                self.assertEqual(build_sbom.helper_digest(root), digest)
+            self.assertEqual(probe._hwi_sidecars(str(helper)),
+                             [helper.with_name("hwi.sha256")])
 
 
 if __name__ == "__main__":

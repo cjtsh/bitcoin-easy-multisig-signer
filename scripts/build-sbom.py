@@ -86,29 +86,47 @@ def frozen_helper(root: Path) -> Path:
     return root / "dist" / "hwi" / "hwi"
 
 
+def helper_sidecars(helper: Path) -> list[Path]:
+    """Every recorded digest for this helper that is actually present.
+
+    Must agree with ``probe._hwi_sidecars``, which is the run-time half: an
+    SBOM that looked somewhere the app does not would publish a digest nobody
+    checks. macOS cannot keep the sidecar beside the helper — codesign refuses
+    to seal an .app carrying a non-code file in Contents/MacOS — so the Mac
+    build records it in Contents/Resources, where the outer signature seals it.
+    Windows and an explicitly named helper keep it beside the binary.
+    """
+    candidates = [helper.with_name("hwi.sha256")]
+    resources = helper.parent.parent / "Resources" / "hwi.sha256"
+    if resources != candidates[0]:
+        candidates.append(resources)
+    return [candidate for candidate in candidates if candidate.is_file()]
+
+
 def helper_digest(root: Path) -> str:
     """The helper's digest, with the sidecar the app will check at run time.
 
-    The build writes hwi.sha256 beside the helper; probe.py refuses to run a
-    helper whose bytes do not match that sidecar (CT-49). Recording the same
+    The build writes hwi.sha256 into the signed bundle; probe.py refuses to run
+    a helper whose bytes do not match that sidecar (CT-49). Recording the same
     digest here means a reader can compare the published SBOM against the file
     inside the artifact without trusting the app to describe itself. A missing
     or disagreeing sidecar fails the SBOM rather than publishing a weaker claim.
     """
     helper = frozen_helper(root)
-    sidecar = helper.with_name("hwi.sha256")
-    if not sidecar.is_file():
+    sidecars = helper_sidecars(helper)
+    if not sidecars:
         raise ValueError(
-            f"Missing {sidecar.name} beside {helper.name}: the build must record "
-            "the helper's digest next to the helper."
+            f"Missing hwi.sha256 for {helper.name}: the build must record the "
+            "helper's digest inside the signed bundle."
         )
     digest = sha256(helper)
-    recorded = sidecar.read_text(encoding="utf-8").strip().split()
-    if not recorded or recorded[0].lower() != digest:
-        raise ValueError(
-            f"{sidecar.name} does not match {helper.name}; refusing to publish "
-            "an SBOM that disagrees with the artifact."
-        )
+    for sidecar in sidecars:
+        recorded = sidecar.read_text(encoding="utf-8").strip().split()
+        if not recorded or recorded[0].lower() != digest:
+            raise ValueError(
+                f"{sidecar.name} does not match {helper.name}; refusing to publish "
+                "an SBOM that disagrees with the artifact."
+            )
     return digest
 
 

@@ -115,10 +115,26 @@ class HardeningPinPortabilityTests(unittest.TestCase):
         self.assertIn("hwi.cmd", text)
         self.assertIn("@echo off", text)
 
-    def test_piptools_pin_looks_in_ci_as_well_as_github_workflows(self):
-        text = (ROOT / "tests" / "test_hardening_pins.py").read_text(encoding="utf-8")
-        self.assertIn('root / "ci" / name', text)
-        self.assertIn('root / ".github" / "workflows" / name', text)
+    def test_recipe_lookups_go_through_the_shared_helper(self):
+        """One resolver, so the ci/ fallback cannot be dropped a third time.
+
+        0.6.6 caught PipToolsPinTests opening only .github/workflows/; 0.6.7
+        caught ToolchainPinTests doing the same. Both now call
+        support.find_build_recipe, and this holds that nothing reopens the
+        inline two-path lookup to drift away from it again.
+        """
+        support_text = (ROOT / "tests" / "support.py").read_text(encoding="utf-8")
+        self.assertIn('root / "ci" / name', support_text)
+        self.assertIn('root / ".github" / "workflows" / name', support_text)
+        for name in ("test_hardening_pins.py", "test_workflow_config.py",
+                     "test_libusb_vendor.py"):
+            text = (ROOT / "tests" / name).read_text(encoding="utf-8")
+            with self.subTest(module=name):
+                self.assertIn("find_build_recipe", text,
+                              f"{name} must resolve build recipes through "
+                              f"support.find_build_recipe")
+                self.assertNotIn('root / "ci" / name', text,
+                                 f"{name} must not reopen the inline lookup")
 
 
 if __name__ == "__main__":
