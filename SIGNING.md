@@ -35,9 +35,12 @@ matter.
 It is dispatch-only; a push can never publish. One run builds macOS, Windows,
 Linux and the source archive from the same commit, generates one `SHA256SUMS`,
 and — on the publish path only — signs it and attests every asset. The retired
-per-platform workflows (`build-windows.yml`, `build-linux.yml`) must not
-return: a second publish path is how unverified bytes once reached a tagged
-release (audit CT-01/CT-02).
+per-platform workflows (`build-windows.yml`, `build-linux.yml`) are deleted
+from every branch and must not return on any branch: a second publish path is
+how unverified bytes once reached a tagged release (audit CT-01/CT-02).
+`scripts/check-publish-paths.sh` enforces this as a gate on every dispatch and
+names the offending ref if one reappears. Historical tags freeze their
+commit's workflow text, so the dispatch ref is always `main` and never a tag.
 
 Release flow, unchanged from the audited macOS process, now covering all three:
 

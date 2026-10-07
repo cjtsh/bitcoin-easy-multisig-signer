@@ -8,9 +8,14 @@ name: Build all platform artifacts and release
 # macOS (signed and notarized on the release path), Windows x64 and Linux
 # x86_64 (unsigned by policy; see SIGNING.md), the source archive, one CI-
 # generated SHA256SUMS over every asset, a GPG-signed SHA256SUMS.asc on the
-# publish path, and Sigstore provenance attestations. The retired per-platform
-# workflows (build-windows.yml, build-linux.yml) no longer exist, so no second
-# path can attach bytes to a release.
+# publish path, and Sigstore provenance attestations.
+#
+# This is the repository's only publish path. The retired per-platform
+# workflows (build-windows.yml, build-linux.yml) have been deleted from every
+# branch, and scripts/check-publish-paths.sh — run as a gate on every dispatch
+# — refuses the run if any non-main ref ever carries a workflow that can
+# publish. Read it before trusting this comment: a comment that overclaims a
+# control is itself a finding, and this one used to.
 #
 # Two independent choices, because building and publishing are not the same act:
 #   notarize=true  build the artifact that would be published
@@ -42,6 +47,13 @@ jobs:
       version: ${{ steps.read.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Refuse a second publish path on any ref
+        run: |
+          set -euo pipefail
+          if ! bash scripts/check-publish-paths.sh origin; then
+            echo 'A non-main ref can publish. Delete it before any release is cut.' >&2
+            exit 1
+          fi
       - name: Refuse an unsigned public release
         if: ${{ inputs.publish && !inputs.notarize }}
         run: |

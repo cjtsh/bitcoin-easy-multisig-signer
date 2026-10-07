@@ -42,8 +42,13 @@ These rules apply to every coding agent and tool. Follow `RELEASE-PROCESS.md`
 for every candidate and public release. Build only through the checked-in script
 or manually dispatched workflow. One dispatch-only pipeline,
 `.github/workflows/build-candidate.yml`, builds macOS, Windows and Linux from
-the same commit in the same run and is the only publish path; the retired
-per-platform workflows must not return. A release uses a signed, notarized
+the same commit in the same run and is the only publish path. The retired
+per-platform workflows are deleted from every branch and must not return;
+`scripts/check-publish-paths.sh` runs as a gate on every dispatch and fails
+closed if any non-main branch carries a publish-capable workflow. Historical
+tags freeze their commit's workflow text and some pre-0.6.4 ones lack the
+default-branch guard, so always dispatch from `main` and never name a tag;
+moving or deleting a published tag is forbidden. A release uses a signed, notarized
 `publish=false` candidate, then a `publish=true` dispatch from the same commit
 with that candidate's run ID; the workflow verifies and publishes those exact
 candidate bytes for every platform, signs the CI-generated `SHA256SUMS` with the

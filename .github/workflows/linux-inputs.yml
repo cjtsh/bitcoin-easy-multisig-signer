@@ -10,15 +10,19 @@ name: Produce the reviewed Linux build inputs
 #                       ones, so `pip install --require-hashes` cannot use it
 #                       here.
 #
-# Deliberately NOT generated inside build-linux.yml. A build that resolves its
+# Deliberately NOT generated inside a release build. A build that resolves its
 # own dependencies has nothing to compare against; the point of committing the
 # lock is the review in between. Run this once, review what it prints, commit the
-# file it names, and then dispatch build-linux.yml. See LINUX-PORT.md.
+# file it names, and then build Linux through the unified pipeline
+# (build-candidate.yml, linux job). The standalone build-linux.yml is deleted
+# and must not return. See LINUX-PORT.md.
 #
-# It has a push trigger for the same first-run reason as build-linux.yml: a
-# workflow that exists only on a non-default branch is not offered in the "Run
-# workflow" list until it has run once. The path filter keeps it quiet after
+# It has a push trigger for the same first-run reason the standalone workflow
+# had: a workflow that exists only on a non-default branch is not offered in the
+# "Run workflow" list until it has run once. The path filter keeps it quiet after
 # that, so it only re-runs when the thing it produces from actually changes.
+# This recipe publishes nothing — it has no contents:write and no gh release —
+# which is why scripts/check-publish-paths.sh allows it to stay on a branch.
 on:
   push:
     branches:

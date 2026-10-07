@@ -6,9 +6,15 @@ As of 0.6.5 the Windows port is **merged onto `main`** and built by the single
 dispatch-only workflow `.github/workflows/build-candidate.yml`, together with
 macOS and Linux, from one commit in one run. The old standalone `windows-port`
 branch, its own tag scheme (`v<version>-windows-x64`), and the retired
-`build-windows.yml` workflow are historical. `SIGNING.md` is the signing and
-provenance policy; `RELEASE-PROCESS.md` is the build/promotion contract. There
-is **no second publish path**.
+`build-windows.yml` workflow are historical. `build-windows.yml` is **deleted
+from every branch** as of 0.6.7 (audit CT-48): it remained live and
+dispatchable on `windows-port` long after it was called retired. The sections
+below that teach `gh workflow run build-windows.yml` are a record of that
+past process, not instructions to run again. `SIGNING.md` is the signing and
+provenance policy; `RELEASE-PROCESS.md` is the build/promotion contract.
+Windows builds come only from `build-candidate.yml`, dispatched from `main`,
+and `scripts/check-publish-paths.sh` refuses any branch that carries a
+publish-capable workflow.
 
 ### Windows CI rules — pin these, do not rediscover them
 
@@ -129,7 +135,7 @@ Porting surface, in the order it matters:
 | `scripts/hwi_entry.py` | Bundles and verifies `libusb-1.0.dll` on Windows, `libusb-1.0.dylib` on macOS. |
 | `scripts/build-windows.ps1` | New. Same gate order as `build-macos.sh`, no signing step. |
 | `scripts/build-source.sh` | Ships the Windows scripts, the `.ico`, and the manual artwork that used to live under `docs/assets/`. |
-| `.github/workflows/build-windows.yml` | New. Candidate-then-promote, mirroring the macOS workflow. |
+| `.github/workflows/build-windows.yml` | New. Candidate-then-promote, mirroring the macOS workflow. **Deleted on every branch in 0.6.7 (audit CT-48).** |
 | `.github/workflows/windows-inputs.yml` | New. Produces the two inputs that only Windows can produce. |
 | `requirements-ci.txt` | Adds `certifi`. The desktop suites stand a real CA bundle in for the one the app ships, and Windows has no default OpenSSL verify path — without it those two tests report a skip, and both workflows refuse a suite that skips at all. Test-only: it cannot reach the bundle, which is built from `requirements-desktop-windows.lock`. |
 
@@ -188,7 +194,12 @@ libusb, and writes
 
 A local build is a development check, not a release artifact.
 
-## Releasing
+## Releasing (historical — `build-windows.yml` is deleted)
+
+> **This section is a record, not a recipe.** `build-windows.yml` was deleted
+> from every branch in 0.6.7 (audit CT-48). Do not run these commands. A
+> Windows release is built by `build-candidate.yml`, dispatched from `main`.
+> The text below is kept so the v0.6.5 publication can still be read.
 
 All of it happens on the `windows-port` branch of
 `github.com/cjtsh/bitcoin-easy-multisig-signer`, through

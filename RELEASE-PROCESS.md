@@ -11,8 +11,12 @@ notarization details, but do not replace these gates.
 One pipeline publishes everything: `.github/workflows/build-candidate.yml`
 builds macOS, Windows x64 and Linux x86_64 from the same commit in the same
 dispatch-only run and is the only publish path. The retired per-platform
-workflows must not return; a second publish path is how unverified bytes once
-reached a tagged release.
+workflows are deleted from every branch and must not return; a second publish
+path is how unverified bytes once reached a tagged release.
+`scripts/check-publish-paths.sh` runs as a gate on every dispatch and fails
+closed if any non-main branch carries a publish-capable workflow. Historical
+tags freeze their commit's workflow text, so the dispatch ref is always
+`main` and never a tag.
 
 ## 1. Prepare the release commit
 

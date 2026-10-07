@@ -6,18 +6,23 @@ cheap and run in the normal test suite.
 
 One pipeline — .github/workflows/build-candidate.yml — builds every platform from
 one commit and is the only workflow allowed to publish. The retired per-platform
-workflows (build-windows.yml, build-linux.yml) must never come back: a second
-publish path is how unverified bytes once reached a tagged release.
+workflows (build-windows.yml, build-linux.yml) must never come back on any ref:
+a second publish path is how unverified bytes once reached a tagged release.
+scripts/check-publish-paths.sh enforces that against every remote head, not
+only the local checkout — see PublishPathSweepTests below.
 
 Skipped when PyYAML is unavailable (it is deliberately NOT an application
 dependency); CI installs it for the source job so the checks do run there.
+The sweep tests do not need PyYAML: they run the script itself.
 """
 
 import pathlib
 import re
+import subprocess
+import tempfile
 import unittest
 
-from support import bash_syntax_check, run_bash_script
+from support import bash_syntax_check, run_bash_file, run_bash_script
 
 try:
     import yaml
@@ -318,7 +323,12 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertEqual(attest["with"]["subject-path"], "dist/*")
 
     def test_no_second_publish_path_exists(self):
-        """The retired per-platform workflows stay retired."""
+        """The retired per-platform workflows stay retired.
+
+        This is the LOCAL half of the check. It only sees the checkout, which
+        is exactly why build-windows.yml survived on windows-port through two
+        audit cycles — see PublishPathSweepTests for the remote half.
+        """
         self.assertFalse((ROOT / ".github/workflows/build-windows.yml").is_file(),
                          "build-windows.yml is retired; the unified pipeline builds Windows")
         self.assertFalse((ROOT / ".github/workflows/build-linux.yml").is_file(),
@@ -329,6 +339,315 @@ class WorkflowConfigTests(unittest.TestCase):
             self.assertNotIn("gh release create",
                              recipe.read_text(encoding="utf-8"),
                              f"{recipe.name} must not publish a release")
+
+        sweep = ROOT / "scripts" / "check-publish-paths.sh"
+        self.assertTrue(sweep.is_file(),
+                        "scripts/check-publish-paths.sh must exist: it is what "
+                        "stops a second publish path surviving on another ref")
+        self.assertIn("scripts/check-publish-paths.sh", self.text,
+                      "build-candidate.yml must run the publish-path sweep")
+
+
+
+class PublishPathSweepTests(unittest.TestCase):
+    """CT-48: a second publish path must not survive on any ref.
+
+    WorkflowConfigTests.test_no_second_publish_path_exists looks only at the
+    local checkout. That blind spot is the whole reason build-windows.yml
+    stayed live and dispatchable on windows-port across two audit cycles while
+    the pipeline comment claimed no second path existed. These tests drive
+    scripts/check-publish-paths.sh against a fixture remote so the sweep
+    itself is pinned to fail when a branch can publish.
+
+    Deliberately NOT gated on PyYAML: the sweep is bash + git and must run in
+    every environment, including the Windows job.
+    """
+
+    def _repo(self, folder: pathlib.Path) -> None:
+        def git(*args: str) -> None:
+            subprocess.run(["git", *args], cwd=folder, check=True,
+                           capture_output=True, text=True)
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "sweep-fixture")
+        git("config", "user.email", "sweep-fixture@example.invalid")
+        git("config", "commit.gpgsign", "false")
+
+    def _write(self, folder: pathlib.Path, name: str, body: str) -> None:
+        path = folder / ".github" / "workflows" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8", newline="\n")
+
+    def _commit(self, folder: pathlib.Path, message: str) -> None:
+        subprocess.run(["git", "add", "-A"], cwd=folder, check=True,
+                       capture_output=True, text=True)
+        subprocess.run(["git", "commit", "-q", "-m", message], cwd=folder,
+                       check=True, capture_output=True, text=True)
+
+    def _branch(self, folder: pathlib.Path, name: str) -> None:
+        subprocess.run(["git", "switch", "-q", "-c", name], cwd=folder,
+                       check=True, capture_output=True, text=True)
+
+    def _drop(self, folder: pathlib.Path, name: str) -> None:
+        subprocess.run(["git", "branch", "-q", "-D", name], cwd=folder,
+                       check=True, capture_output=True, text=True)
+
+    def _run_sweep(self, folder: pathlib.Path):
+        return run_bash_file(ROOT / "scripts" / "check-publish-paths.sh",
+                             str(folder), cwd=folder, timeout=60)
+
+    CLEAN = (
+        "name: ok\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    permissions:\n"
+        "      contents: read\n"
+        "    steps:\n"
+        "      - run: echo ok\n"
+    )
+    PUBLISHING = (
+        "name: evil\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    permissions:\n"
+        "      contents: write\n"
+        "    steps:\n"
+        "      - run: gh release create v9 \"$GITHUB_SHA\"\n"
+    )
+    SILENT_RETIRED = (
+        "name: silent\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    steps:\n"
+        "      - run: echo ok\n"
+    )
+
+    def test_the_sweep_refuses_a_remote_branch_carrying_a_release_job(self):
+        """Refusal half: contents:write + gh release on a non-main branch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "evil")
+            self._write(repo, "build-candidate.yml", self.PUBLISHING)
+            self._commit(repo, "evil")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a publishing branch:\n{out}")
+            self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+                          out)
+            self.assertIn("evil", out)
+            self.assertIn("build-candidate.yml", out)
+
+    def test_the_sweep_refuses_a_branch_that_only_runs_gh_release(self):
+        """Refusal half, second marker: `gh release` without contents:write.
+
+        The two markers are independent. A recipe that uploads through a
+        token rather than the workflow's own GITHUB_TOKEN grants no
+        contents:write and must still be refused.
+        """
+        sneaky = (
+            "name: sneaky\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps:\n"
+            "      - run: gh release upload v9 ./dist/*\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "sneaky")
+            self._write(repo, "build-candidate.yml", sneaky)
+            self._commit(repo, "sneaky")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a gh-release branch:\n{out}")
+            self.assertIn("refusing: a non-main ref carries a publish-capable workflow", out)
+
+    def test_the_sweep_refuses_the_retired_per_platform_workflow_names(self):
+        """Refusal half: the file NAME is enough, even with no markers.
+
+        A rewrite that strips the release job but keeps the file is still a
+        retired publisher and must not exist on any ref.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "windows-port")
+            self._write(repo, "build-windows.yml", self.SILENT_RETIRED)
+            self._commit(repo, "windows-port")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted build-windows.yml:\n{out}")
+            self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+                          out)
+            self.assertIn("windows-port", out)
+            self.assertIn("build-windows.yml", out)
+
+    def test_the_sweep_accepts_a_repo_whose_only_publisher_is_main(self):
+        """Positive half: main may publish; a clean sibling branch is fine."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.PUBLISHING)
+            self._commit(repo, "main")
+            self._branch(repo, "feature")
+            # The sibling inherits main's tree, so replace the publisher with a
+            # recipe that cannot publish and add the lock-only inputs recipe —
+            # the real shape of a cleaned non-main branch.
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._write(repo, "windows-inputs.yml", self.SILENT_RETIRED)
+            self._commit(repo, "feature")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused a clean repo:\n{out}")
+            self.assertNotIn("refusing:", out)
+            self.assertIn("ok: no non-main ref carries a publish-capable workflow", out)
+
+    def test_the_sweep_forgets_a_branch_that_was_deleted_on_the_remote(self):
+        """A ghost ref left over from a previous fetch is a false accusation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "evil")
+            self._write(repo, "build-candidate.yml", self.PUBLISHING)
+            self._commit(repo, "evil")
+
+            self.assertNotEqual(self._run_sweep(repo).returncode, 0)
+
+            subprocess.run(["git", "switch", "-q", "main"], cwd=repo,
+                           check=True, capture_output=True, text=True)
+            self._drop(repo, "evil")
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep still blamed a deleted branch:\n{out}")
+
+    def test_the_sweep_enumerates_remote_heads_not_only_the_checkout(self):
+        """Body pin: the blind spot was scanning the working tree.
+
+        If this script is rewritten to glob('.github/workflows') it goes green
+        on a repo whose evil lives entirely on another ref — the exact CT-48
+        failure. Both the private ref namespace and the fetch must stay.
+        """
+        text = (ROOT / "scripts" / "check-publish-paths.sh").read_text(encoding="utf-8")
+        self.assertIn("refs/heads/*", text,
+                      "the sweep must fetch every remote head, not just this checkout")
+        self.assertIn("git fetch", text)
+        self.assertIn("git for-each-ref", text)
+        self.assertIn("refs/remotes/publish-audit", text)
+        self.assertIn("git ls-tree", text)
+
+    def test_the_sweep_shouts_its_refusal_to_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "evil")
+            self._write(repo, "build-candidate.yml", self.PUBLISHING)
+            self._commit(repo, "evil")
+
+            result = self._run_sweep(repo)
+            self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+                          result.stderr)
+            self.assertEqual(result.returncode, 1)
+
+
+class GuardBodyPins(unittest.TestCase):
+    """CT-52: a guard is only a guard if its body can fail.
+
+    The old pins asserted the step NAMES existed. A step named "Refuse an
+    unsigned public release" whose body is `true` passes every one of them.
+    These assert the refusal itself is in the body.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = ACTIVE.read_text(encoding="utf-8")
+
+    def _step_body(self, name: str) -> str:
+        """The `run:` body of the step named `name`, and nothing else.
+
+        A step ends at the next `- name:` (or at the next job key). The first
+        version of this reached past the step into its neighbour, so deleting
+        one guard's `exit 1` still left one in the captured text and the pin
+        stayed green — the exact shape of a test that cannot fail.
+        """
+        lines = self.text.splitlines()
+        marker = f"- name: {name}"
+        start = None
+        indent = None
+        for index, line in enumerate(lines):
+            if line.strip() == marker:
+                start = index
+                indent = len(line) - len(line.lstrip())
+                break
+        self.assertIsNotNone(start, f"no step named {name!r} in {ACTIVE}")
+
+        body = []
+        for line in lines[start + 1:]:
+            stripped = line.strip()
+            current_indent = len(line) - len(line.lstrip())
+            if stripped.startswith("- name:") and current_indent <= indent:
+                break
+            if stripped and not line.startswith(" " * (indent + 1)):
+                # Outdented to the step's own level or above: the step is over.
+                if not stripped.startswith("- name:"):
+                    break
+            body.append(line)
+        text = "\n".join(body)
+        self.assertIn("run:", text,
+                      f"{name} has no run: block; nothing for it to refuse with")
+        return text
+
+    def test_the_publish_sweep_gate_step_fails_closed_in_its_body(self):
+        body = self._step_body("Refuse a second publish path on any ref")
+        self.assertIn("scripts/check-publish-paths.sh", body)
+        self.assertIn("exit 1", body,
+                      "the gate must exit 1 itself when the sweep fails")
+        self.assertIn(">&2", body, "the refusal must go to stderr")
+
+    def test_every_named_guard_step_contains_its_own_refusal(self):
+        for name, refusal in (
+            ("Refuse an unsigned public release",
+             "Publishing requires a signed and notarized build."),
+            ("Require the default branch for publication",
+             "Public releases must be dispatched from main."),
+            ("Refuse a second publish path on any ref",
+             "A non-main ref can publish."),
+        ):
+            body = self._step_body(name)
+            self.assertIn("exit 1", body,
+                          f"{name} must be able to fail; its body has no exit 1")
+            self.assertIn(refusal, body,
+                          f"{name} must name what it refused")
+            self.assertIn(">&2", body,
+                          f"{name} must send the refusal to stderr")
 
 
 class ReleaseNotesTests(unittest.TestCase):

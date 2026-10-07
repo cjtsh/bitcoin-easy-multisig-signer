@@ -1,5 +1,12 @@
 # The Linux port
 
+> **`build-linux.yml` is deleted from every branch as of 0.6.7 (audit
+> CT-48).** It was still live and dispatchable on `linux-port` long after it
+> was called retired, and it published an unsigned manifest. Linux is now
+> built by the single `build-candidate.yml` pipeline, dispatched from `main`.
+> The *Releasing* section below is a record of the old branch process, not a
+> recipe to run again.
+
 > **Do not merge this branch into `main`, ever.** The v0.6.4 audit judges *how*
 > the app is built -- the script, the gate order, the kept file set -- not only
 > the source it builds. Merging a second platform's build into `main` would ship
@@ -67,11 +74,15 @@ libusb 1.0.30 from the vendored source, runs PyInstaller for the app and for
 AppDir with `mksquashfs` and concatenates it onto the pinned runtime. A check
 that reports nothing is a failure: a silent pass is not a pass.
 
-`.github/workflows/linux-inputs.yml` resolves the lock on a Linux runner;
-`build-linux.yml` runs the suite (refusing skips) and builds the candidate. The
-Linux lock is resolved on Linux and is not reusable on another platform.
+`.github/workflows/linux-inputs.yml` resolves the lock on a Linux runner. The
+candidate build and its suite now run in `build-candidate.yml`'s `linux` job
+(refusing skips). The Linux lock is resolved on Linux and is not reusable on
+another platform.
 
-## Releasing
+## Releasing (historical — `build-linux.yml` is deleted)
+
+> **This section is a record, not a recipe.** Do not run these commands. A
+> Linux release is built by `build-candidate.yml`, dispatched from `main`.
 
 One version, one page, every platform. The audited macOS pipeline creates the
 `v<version>` release; this pipeline attaches to it:

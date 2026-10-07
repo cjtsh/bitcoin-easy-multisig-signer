@@ -9,16 +9,20 @@ name: Produce reviewed Windows build inputs
 #   windows-desktop-lock  requirements-desktop-windows.lock, because
 #                         requirements-desktop.lock is macOS-resolved
 #
-# Both are deliberately NOT generated inside build-windows.yml. A build that
+# Both are deliberately NOT generated inside a release build. A build that
 # resolves its own dependencies or compiles its own native library at build time
 # has nothing to compare against; the point of committing them is the review in
 # between. Run this once, review what it prints, commit the files it names, and
-# then dispatch build-windows.yml. See WINDOWS-PORT.md.
+# then build Windows through the unified pipeline (build-candidate.yml, windows
+# job). The standalone build-windows.yml is deleted and must not return. See
+# WINDOWS-PORT.md.
 #
-# It has a push trigger for the same first-run reason as build-windows.yml: a
-# workflow that exists only on a non-default branch is not offered in the "Run
-# workflow" list until it has run once. The path filter keeps it quiet after that,
-# so this only re-runs when the thing it produces from actually changes.
+# It has a push trigger for the same first-run reason the standalone workflow
+# had: a workflow that exists only on a non-default branch is not offered in the
+# "Run workflow" list until it has run once. The path filter keeps it quiet after
+# that, so this only re-runs when the thing it produces from actually changes.
+# This recipe publishes nothing — it has no contents:write and no gh release —
+# which is why scripts/check-publish-paths.sh allows it to stay on a branch.
 on:
   push:
     branches:
