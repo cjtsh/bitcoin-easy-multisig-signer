@@ -517,6 +517,94 @@ The behavioural tests cannot demonstrate the race on a POSIX machine —
 that is the whole point of the quirk — so the pin is the exact-form
 assertion, which fails on every runner.
 
+## Candidate attempt 37642017337 — the job that never started
+
+Commit `fa017d3`, dispatched `notarize=true, publish=false`, 2026-10-07
+15:04 UTC. All five build jobs succeeded:
+
+| Job | Conclusion |
+| --- | --- |
+| Read version | success |
+| Windows x64 bundle | success |
+| Linux x86_64 AppImage | success |
+| Source archive and tests | success |
+| Apple Silicon DMG | success |
+| SHA256SUMS | **never created** |
+| Publish release | skipped |
+
+The run's overall conclusion is **failure**.
+
+### Cause
+
+Not a defect in the tree. `git diff a30d6dc fa017d3 -- .github/workflows/`
+is empty — the workflow bytes are identical to commit `a30d6dc`, whose run
+(37640731184) created the `SHA256SUMS` job and completed all seven. The
+`checksums` job declares `needs: [version, source, macos, windows, linux]`
+with no job-level `if`, and every one of those five concluded `success` —
+and the job was never scheduled. It is absent from the jobs list entirely,
+neither skipped nor failed. `gh run view --log-failed` is empty because no
+step failed: there was no step.
+
+GitHub Actions failed to create the job. `run_attempt` is 1 and the event is
+`workflow_dispatch`, so this is not a retry and not a concurrency cancel.
+
+### This is not a near-miss that can be promoted
+
+A run whose build jobs are green is not a candidate. The candidate is the
+manifest: `checksums` writes `SHA256SUMS`, and the release job binds it to
+the run ID and commit in `CANDIDATE-MANIFEST.txt`. Neither exists here. The
+promotion path would have failed closed regardless — `release` downloads a
+`release-assets` artifact that only `checksums` produces, so `publish=true`
+against this run would have found nothing to publish. The control held.
+
+The narrower lesson is worth stating, because it is the same blindness the
+publish-path sweep was written to end: **an absent job looks like a success
+to anyone reading only the green build rows.** The only acceptable evidence
+that a candidate is usable is the `SHA256SUMS` job concluding `success` —
+not five builds in a row.
+
+## Three comments that disagreed with the code
+
+Found while preparing this revision's publication record. None changed a
+control; each described one inaccurately. The audit framework treats that as
+a finding in its own right — cycle 3 was blocked in part by a false "no
+second path can attach bytes to a release" comment.
+
+1. **`probe.py`, `_verify_hwi_identity`** said a standalone helper "must
+   match the digest recorded beside it". A frozen macOS bundle keeps its
+   sidecar in `Contents/Resources` — the whole reason `_hwi_sidecars` looks
+   in two places and `_verify_hwi_bytes` requires every present sidecar to
+   match. The comment described a rule weaker than the code runs, on the
+   money-adjacent helper-identity control. Reworded to name the multi-sidecar
+   rule and where a frozen bundle keeps it.
+2. **The audit plan, section 0** enumerated the tripwires
+   `(CT-48/49/…/62)` beside a reference to `releases/PATCH-0.6.7.md` — a
+   snapshot that had already drifted, since that file also carries CT-71 and
+   the refusal-delivery pins. The sentence's own rule is "every tripwire
+   listed in `releases/PATCH-0.6.7.md`"; the enumeration contradicted it.
+   Dropped, so the list lives in one file and cannot drift from the pins the
+   repository carries.
+3. **`RELEASE-PROCESS.md` §2** said "Record the successful candidate run ID"
+   as a step before promotion. Followed literally that record is a commit on
+   `main` between the candidate dispatch and the publish dispatch, which
+   breaks the same-commit promotion contract the same document states a few
+   paragraphs later. Reworded: note the ID for the publish dispatch, and
+   write it into the patch record only after publication.
+
+### Tripwires (`/tmp/breakwatch_067g.py`, 2/2)
+
+| Break | Test that went red |
+| --- | --- |
+| the stale "recorded beside it" claim reintroduced | `HwiIdentityPins.test_the_identity_docstring_names_every_sidecar_it_actually_reads` (refusal half) |
+| the multi-sidecar rule dropped from the docstring | `…test_the_identity_docstring_names_every_sidecar_it_actually_reads` (presence half) |
+
+Only the first of the three is pinned, deliberately. It is the one
+describing a money-adjacent control, so an edit that re-narrows the comment
+goes red on every runner. The other two are prose in documents the referee
+reads at the tag; the behaviour they describe is pinned by
+`tests/test_workflow_config.py` and by the promotion path's own artifact
+checks.
+
 ## Deferred, with the reason
 
 Both deferrals are recorded in `releases/OWNER-ACCEPTANCE-2026-10-07.md`
@@ -563,18 +651,18 @@ No wallet, signing, or broadcast policy changed. Specifically:
 
 ## Verification
 
-At this revision: full suite **519 tests OK, zero skips**, run both from
+At this revision: full suite **520 tests OK, zero skips**, run both from
 the checkout and from inside the extracted
 `dist/bitcoin-easy-multisig-signer-v0.6.7.tar.gz` — the same self-test the
 source job performs, and both runs collect the same count, so the tarball
 is complete. 10/10 `tests/ui_*.cjs` OK. `bash -n` clean on every
 `scripts/*.sh`. `node --check` clean on every test and script. The
 break-and-watch transcripts above hold 10/10 for the first candidate
-attempt, 4/4 for the second, 2/2 for the CT-71 pin, and 2/2 for the
-refusal delivery.
+attempt, 4/4 for the second, 2/2 for the CT-71 pin, 3/3 for the refusal
+delivery, and 2/2 for the identity docstring.
 
-Count by platform, so a reader is not surprised: **macOS collects 519**;
-**Linux and Windows collect 512**. The difference is deliberate and
+Count by platform, so a reader is not surprised: **macOS collects 520**;
+**Linux and Windows collect 513**. The difference is deliberate and
 documented in `tests/test_notary_args.py`: seven `@macos_only` cases "are
 not collected" on other platforms rather than skipped, so the workflows'
 `skipped=[1-9]` guard stays meaningful and a missing dependency cannot
@@ -583,8 +671,8 @@ skips. The failed Windows runs above collected 506 and 508 at revisions
 where macOS collected 513 and 515 — same rule, seven fewer.
 
 Earlier in this revision's history the suite stood at 500 tests at
-`d2e9e73`; the nineteen added since are the tripwires written for the
-three candidate attempts above.
+`d2e9e73`; the twenty added since are the tripwires written for the
+candidate attempts above and for the three comment corrections.
 
 ## Publication
 
@@ -601,6 +689,8 @@ the device-identity path. Manual publication is prohibited.
 | [37625977035](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37625977035) | `0e6f11a` | `notarize=true, publish=false` | **Superseded — failed.** Three jobs: Windows (sweep went blind on unreadable bodies), source archive (pin test opened only `.github/workflows/`), macOS (sidecar in `Contents/MacOS` broke codesign). Fixed in the next commit; see *Candidate attempt 37625977035* above. No assets were published; SHA256SUMS and Publish release were skipped. |
 | [37632918993](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37632918993) | `60f5785` | `notarize=true, publish=false` | **Superseded — failed.** Windows only: one test could not run (`WinError 193` planting a shebang helper). The other four jobs were green, including the live-remote publish-path sweep. Fixed in the next commit; see *Candidate attempt 37632918993* above. No assets were published; SHA256SUMS and Publish release were skipped. |
 | [37637171599](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37637171599) | `3f6dfe6` | `notarize=true, publish=false` | **Superseded — failed.** Windows only: one test lost a socket race (`WinError 10053`) because a gate refusal answered without reading the request body. Four jobs green. Fixed in the next commit; see *Candidate attempt 37637171599* above. No assets were published; SHA256SUMS and Publish release were skipped. |
+| [37640731184](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37640731184) | `a30d6dc` | `notarize=true, publish=false` | **Superseded — passed.** All seven jobs green, including SHA256SUMS and the candidate-side Publish release (manifest written, nothing published). Not walked through and not promoted: a follow-up hardening commit landed first, to drain the request body at the second refusal site too. |
+| [37642017337](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37642017337) | `fa017d3` | `notarize=true, publish=false` | **Superseded — failed.** All five build jobs green; the SHA256SUMS job was **never created** and Publish release was skipped, so the run concluded failure. Not a tree defect — the workflow is byte-identical to `a30d6dc`, whose run completed all seven. See *Candidate attempt 37642017337* above. No assets were published. |
 | _(pending)_ | _(this revision)_ | `notarize=true, publish=false` | To be recorded from the successful candidate run. |
 
 Do not claim a published version this file does not carry.

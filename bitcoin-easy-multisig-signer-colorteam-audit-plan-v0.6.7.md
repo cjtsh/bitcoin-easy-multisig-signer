@@ -82,8 +82,8 @@ without it, fresh. The repository's earlier AI audit reports remain excluded as 
 pipeline: `.github/workflows/build-candidate.yml` is the single build-and-publish
 path, so sections 4–7 name that pipeline rather than the retired per-platform
 workflows. The referee also breaks-and-watches every tripwire listed in
-`releases/PATCH-0.6.7.md` (CT-48/49/50/51/52/53/55/56/57/58/60/61/62): a pin that
-cannot fail is a finding.
+`releases/PATCH-0.6.7.md` — that file is the only list, so it cannot drift from
+the pins the repository actually carries. A pin that cannot fail is a finding.
 
 **Target revision:** tag `v0.6.7`, commit **`REPLACE-AFTER-PUBLISH`** — the commit the
 `v0.6.7` tag points to, created by the publish run of

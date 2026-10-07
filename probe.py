@@ -392,8 +392,10 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
     """Refuse a helper that is not the bytes this app expects to run.
 
     Byte identity comes first and is not something the helper gets to assert:
-    a standalone helper must match the digest recorded beside it, and source
-    mode runs the repository's own entry point and pins the hwilib it imports.
+    a standalone helper must match every digest sidecar that is present — one
+    beside it in source and loose layouts, and one in Contents/Resources when a
+    frozen macOS bundle keeps it out of Contents/MacOS — and source mode runs
+    the repository's own entry point and pins the hwilib it imports.
 
     Only then does the helper say what version it is, and it has to say it
     exactly (CT-29, CT-49).

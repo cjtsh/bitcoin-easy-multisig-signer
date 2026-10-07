@@ -66,7 +66,10 @@ tags freeze their commit's workflow text, so the dispatch ref is always
    the macOS app and DMG; validate staples, signatures, and Gatekeeper; build
    and self-check the Windows and Linux bundles; create the shipped-component
    SBOMs; and write one candidate SHA256SUMS covering every platform's assets.
-   Record the successful candidate run ID.
+   Note the successful candidate run ID for the publish dispatch in section 3,
+   but write it into the patch record only after publication: a commit that
+   lands on main between the candidate and the publish dispatch breaks the
+   same-commit promotion contract.
 4. Inspect the candidate DMG and its checksums. Request one owner practice-network
    hardware walkthrough when the release changes app behavior. Automated tests
    do not count as physical acceptance. The candidate workflow retains a
