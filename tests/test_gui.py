@@ -878,6 +878,42 @@ class LargeAmountMirrorPins(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# CT-61 — the BSMS file is the wallet's declaration; the product must say so
+# ---------------------------------------------------------------------------
+
+class WalletFileTrustPins(unittest.TestCase):
+    """CT-61: a BSMS naming an attacker's key is a valid wallet definition.
+
+    That is the definition, and the security boundary is trusted delivery of
+    the file. The acceptance note rests on that boundary being stated in the
+    product, not only in the note — so the product text is pinned here. If a
+    later edit drops the warning, this goes red and CT-61 reopens.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parent.parent
+        cls.ui = (root / "ui.html").read_text(encoding="utf-8")
+        cls.readme = (root / "README.md").read_text(encoding="utf-8")
+
+    def test_the_wallet_help_names_every_key_that_must_sign(self):
+        self.assertIn("names every key that must sign", self.ui)
+
+    def test_the_wallet_help_names_trusted_delivery(self):
+        self.assertIn("someone you trust", self.ui)
+        self.assertIn("channel you trust", self.ui)
+
+    def test_the_readme_says_the_file_declares_who_must_sign(self):
+        self.assertIn("declaration of who must sign", self.readme)
+        self.assertIn("trusted channel", self.readme)
+
+    def test_the_app_still_cannot_claim_to_know_which_key_is_yours(self):
+        """The acceptance is that it cannot tell — so it must not claim it can."""
+        self.assertIn("cannot tell which of those keys is yours", self.ui)
+        self.assertIn("cannot tell which named key", self.readme)
+
+
+# ---------------------------------------------------------------------------
 # CT-51 — request-log suppression
 # ---------------------------------------------------------------------------
 
