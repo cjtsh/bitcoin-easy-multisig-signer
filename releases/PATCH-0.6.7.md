@@ -676,11 +676,38 @@ candidate attempts above and for the three comment corrections.
 
 ## Publication
 
-Not yet published. A signed, notarized `publish=false` candidate is
-built from this revision through `.github/workflows/build-candidate.yml`.
-Promotion (`publish=true`, `candidate_run_id=…`) from the same commit
-requires the owner hardware walkthrough first, because CT-49/CT-58 touch
-the device-identity path. Manual publication is prohibited.
+**Published 2026-10-07** as tag `v0.6.7` = `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b`,
+through the unified pipeline and nothing else.
+
+- Candidate [37644267740](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37644267740)
+  — `notarize=true, publish=false` from `81f58ec`, all seven jobs green,
+  `CANDIDATE-MANIFEST.txt` written.
+- Owner hardware acceptance: the owner installed the candidate DMG from that run
+  on 2026-10-07, ran a practice-network payment with hardware signers, and
+  reported the build good. Owner-reported physical acceptance; no transaction
+  identifier, diagnostic file or wallet material is recorded anywhere in this
+  repository. CT-49/CT-58 changed the device-identity path, which is why this
+  gate stood before promotion.
+- Promotion [37655666900](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37655666900)
+  — `notarize=true, publish=true, candidate_run_id=37644267740`, dispatched from
+  the **same commit** `81f58ec`. All seven jobs green.
+
+### Post-publication verification (RELEASE-PROCESS.md §3)
+
+Checked independently after the publish run, against the public release page:
+
+| Check | Result |
+| --- | --- |
+| Tag points to the commit named by the publishing run | `v0.6.7` → `81f58ec…`, equal to the publish run's `head_sha` and to the candidate run's `head_sha` — same-commit promotion holds |
+| Every public asset downloaded for all three platforms | 10 assets: source tarball, macOS DMG, Windows zip, Linux AppImage + Linux tar.gz, three `BUILD-SBOM.json`, `SHA256SUMS`, `SHA256SUMS.asc` |
+| Published `SHA256SUMS` verified | `shasum -a 256 -c SHA256SUMS` — 8/8 **OK** |
+| `SHA256SUMS.asc` verified against the committed `signing-key.asc` | **Good signature** from `Bitseeker LLC <release@bitseeker.llc>`, RSA key `ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7` |
+| Sigstore attestation on an asset | `gh attestation verify` on the macOS DMG — **2 attestations**, both bound to `build-candidate.yml@refs/heads/main` |
+| Release is neither draft nor prerelease | `draft=false prerelease=false`, published 2026-10-07T17:10:37Z |
+
+No tag or asset was moved, replaced, or deleted. The candidate and the published
+DMG are the same bytes — the owner tested `0f9043c8…a015`, which is the digest
+`SHA256SUMS` records.
 
 ### Candidate history
 
@@ -691,6 +718,9 @@ the device-identity path. Manual publication is prohibited.
 | [37637171599](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37637171599) | `3f6dfe6` | `notarize=true, publish=false` | **Superseded — failed.** Windows only: one test lost a socket race (`WinError 10053`) because a gate refusal answered without reading the request body. Four jobs green. Fixed in the next commit; see *Candidate attempt 37637171599* above. No assets were published; SHA256SUMS and Publish release were skipped. |
 | [37640731184](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37640731184) | `a30d6dc` | `notarize=true, publish=false` | **Superseded — passed.** All seven jobs green, including SHA256SUMS and the candidate-side Publish release (manifest written, nothing published). Not walked through and not promoted: a follow-up hardening commit landed first, to drain the request body at the second refusal site too. |
 | [37642017337](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37642017337) | `fa017d3` | `notarize=true, publish=false` | **Superseded — failed.** All five build jobs green; the SHA256SUMS job was **never created** and Publish release was skipped, so the run concluded failure. Not a tree defect — the workflow is byte-identical to `a30d6dc`, whose run completed all seven. See *Candidate attempt 37642017337* above. No assets were published. |
-| _(pending)_ | _(this revision)_ | `notarize=true, publish=false` | To be recorded from the successful candidate run. |
+| [37644267740](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37644267740) | `81f58ec` | `notarize=true, publish=false` | **The candidate.** All seven jobs green; `SHA256SUMS` job present and successful; `CANDIDATE-MANIFEST.txt` written. Owner installed this run's DMG and accepted it on hardware. |
+| [37655666900](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37655666900) | `81f58ec` | `notarize=true, publish=true, candidate_run_id=37644267740` | **Published — `v0.6.7`.** All seven jobs green. Tag created at the same commit as the candidate; every asset verified, `SHA256SUMS.asc` signed by the release key, Sigstore attestation attached to every asset. |
+
+Do not claim a published version this file does not carry.
 
 Do not claim a published version this file does not carry.
