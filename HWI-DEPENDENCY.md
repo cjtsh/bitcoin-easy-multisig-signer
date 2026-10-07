@@ -158,7 +158,13 @@ Nothing about this is a one-line change. In order:
    place fails every source-mode device command. The new digests also go in
    `releases/PATCH-<version>.md`.
 4. Update the Python guard in `scripts/build-macos.sh` if the supported range moved.
-5. Update the Python pin in **both** workflow jobs (`.github/workflows/build-candidate.yml`).
+5. Update the Python pin at **every** `python-version:` site — four in
+   `.github/workflows/build-candidate.yml` plus one each in `windows-inputs.yml`
+   and `linux-inputs.yml`. They are pinned to the full patch **3.12.10**, which
+   is the newest 3.12 that `actions/python-versions` still ships for linux-x64,
+   win32-x64 and darwin-arm64; 3.12.11 and later are Linux-only assets and will
+   not install on the Windows or macOS jobs. `tests/test_workflow_config.py`
+   (`PythonInterpreterPinTests`) fails the build if any site floats or disagrees.
 6. If the Jade PIN relay or any bundled binary changed, re-verify signing on real
    hardware — automated tests use fake devices and cannot cover this.
 7. Run the full suite, the Node UI tests, `bash -n`, and the packaged Apple

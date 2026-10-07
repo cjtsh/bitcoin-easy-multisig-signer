@@ -348,6 +348,115 @@ class WorkflowConfigTests(unittest.TestCase):
                       "build-candidate.yml must run the publish-path sweep")
 
 
+class PythonInterpreterPinTests(unittest.TestCase):
+    """CT-55: the interpreter must be one full patch, and the same one everywhere.
+
+    `python-version: "3.12"` is not a pin. setup-python resolves a bare minor to
+    whatever that runner's tool cache already holds, so the 2026-10-06 candidate
+    run (37486264639) built ONE commit on three different interpreters from one
+    `python-version: "3.12"`:
+
+        Windows x64 bundle      CPython 3.12.10
+        Apple Silicon DMG       CPython 3.12.10
+        Source archive and tests CPython 3.12.14
+        Linux x86_64 AppImage   CPython 3.12.15
+
+    That is CT-17's floating-runner-image problem one layer down, and it is the
+    audit's "3.12.10 vs 3.12.14" example made literal.
+
+    The pinned value is 3.12.10 because it is the newest CPython 3.12 that
+    actions/python-versions still ships for linux-x64, win32-x64 AND
+    darwin-arm64. From 3.12.11 onward those releases carry Linux assets only,
+    so pinning a newer patch would not install on the Windows or macOS jobs at
+    all — the 2026-10-06 run proves those two runners resolve a bare minor to
+    3.12.10 from their tool cache and have no newer build available to them.
+
+    This class deliberately does not import PyYAML. A release-path pin that
+    goes green by being skipped is not a pin.
+    """
+
+    PINNED = "3.12.10"
+
+    @staticmethod
+    def _sites() -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        for recipe in all_workflows():
+            text = recipe.read_text(encoding="utf-8")
+            values = re.findall(r'python-version:\s*["\']?([^"\'\s#]+)', text)
+            if values:
+                found[recipe.name] = values
+        return found
+
+    def test_every_interpreter_site_names_one_full_patch(self):
+        """Every site is `x.y.z`. A bare minor, or `3.x`, is the float itself."""
+        sites = self._sites()
+        self.assertTrue(sites, "no python-version site found at all; the pin is gone")
+        for name, values in sites.items():
+            for value in values:
+                with self.subTest(workflow=name, value=value):
+                    self.assertRegex(
+                        value, r"^\d+\.\d+\.\d+$",
+                        f"{name}: python-version {value!r} is not a full x.y.z "
+                        f"pin; setup-python would float it to the runner's tool "
+                        f"cache",
+                    )
+
+    def test_every_interpreter_site_is_the_same_pin(self):
+        """One interpreter for every job. Drift between jobs is the finding."""
+        sites = self._sites()
+        self.assertTrue(sites, "no python-version site found at all; the pin is gone")
+        for name, values in sites.items():
+            for value in values:
+                with self.subTest(workflow=name, value=value):
+                    self.assertEqual(
+                        value, self.PINNED,
+                        f"{name}: python-version {value!r} is not the pinned "
+                        f"{self.PINNED}; every site must agree so one commit "
+                        f"builds on one interpreter",
+                    )
+
+    def test_the_pin_is_one_that_every_runner_can_install(self):
+        """The pin is 3.12.10 on purpose, not by accident of a local venv.
+
+        3.12.11 and later actions/python-versions releases carry Linux assets
+        only, so a pin chosen from "whatever my laptop runs" would break the
+        Windows and macOS jobs. This asserts the value so changing it is a
+        deliberate edit to this constant, with the reason above to argue with.
+        """
+        self.assertEqual(self.PINNED, "3.12.10",
+                         "the pinned interpreter moved; re-check that "
+                         "actions/python-versions still ships it for linux-x64, "
+                         "win32-x64 and darwin-arm64 before accepting the change")
+        self.assertTrue(self._sites(), "no python-version site found at all")
+
+    def test_the_docs_and_build_scripts_name_the_exact_patch(self):
+        """The next agent reads AGENTS.md and the build scripts, not the YAML.
+
+        A pin nobody is told about gets "helpfully" bumped. These are the three
+        places that currently tell an editor what the workflow does; if they
+        name a bare minor or a different patch they are lying, which is itself
+        a finding under the project's own rule.
+        """
+        guide = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn(f"**{self.PINNED}**", guide,
+                      "AGENTS.md must name the exact pinned patch; "
+                      "'both workflow jobs pin 3.12' both miscounted and "
+                      "left the patch floating")
+        for script in ("build-macos.sh", "build-windows.ps1"):
+            text = (ROOT / "scripts" / script).read_text(encoding="utf-8")
+            with self.subTest(script=script):
+                self.assertRegex(
+                    text,
+                    rf"pins {re.escape(self.PINNED)} already",
+                    f"{script} must tell an operator which patch the workflow "
+                    f"pins, not just '3.12'",
+                )
+        dependency = (ROOT / "HWI-DEPENDENCY.md").read_text(encoding="utf-8")
+        self.assertIn(self.PINNED, dependency,
+                      "HWI-DEPENDENCY.md is the canonical Python record and "
+                      "must name the pinned patch")
+
+
 
 class PublishPathSweepTests(unittest.TestCase):
     """CT-48: a second publish path must not survive on any ref.

@@ -65,7 +65,7 @@ case "$python_minor" in
     echo "Name a supported interpreter explicitly:" >&2
     echo "  PYTHON=python3.12 bash scripts/build-macos.sh $version" >&2
     echo "Homebrew's kegs provide python3.12 but deliberately no python3, so adding" >&2
-    echo "them to PATH does not help. The GitHub Actions workflow pins 3.12 already." >&2
+    echo "them to PATH does not help. The GitHub Actions workflow pins 3.12.10 already." >&2
     exit 1
     ;;
 esac

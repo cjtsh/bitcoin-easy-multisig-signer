@@ -88,7 +88,7 @@ This build needs Python 3.10-3.12; $pythonExe is Python $pythonMinor.
 The bundled HWI requires <3.13 and embit requires >=3.10.
 Name a supported interpreter explicitly:
   `$env:PYTHON = 'C:\Python312\python.exe'; scripts\build-windows.ps1 $Version
-The GitHub Actions workflow pins 3.12 already.
+The GitHub Actions workflow pins 3.12.10 already.
 "@
 }
 

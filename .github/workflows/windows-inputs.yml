@@ -45,7 +45,11 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           # HWI 3.2.0 (the bundled hardware-wallet dependency) requires <3.13.
-          python-version: "3.12"
+          # Full patch, not the bare minor: 3.12.10 is the newest 3.12 with
+          # win32 assets in actions/python-versions (3.12.11+ are Linux-only),
+          # and a bare "3.12" floats to this runner's tool cache. Keep this in
+          # agreement with every python-version site in build-candidate.yml.
+          python-version: "3.12.10"
       - name: Compile a Windows-resolved desktop lock
         shell: pwsh
         run: |
