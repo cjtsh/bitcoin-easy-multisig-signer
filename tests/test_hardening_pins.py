@@ -47,6 +47,35 @@ from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout
 # CT-29 / CT-49 / CT-58 — HWI helper identity
 # ---------------------------------------------------------------------------
 
+def _write_planted_helper(folder: Path, version_line: str) -> Path:
+    """Write into `folder` a helper this platform can actually execute.
+
+    Windows CreateProcess cannot exec a shebang script (WinError 193), so the
+    planted helper must be a real .cmd there and a shell script elsewhere. The
+    identity gate runs [path, "--version"] either way, so both spellings have
+    to answer it — a test that plants the wrong one fails on the platform
+    difference and never reaches the control it is meant to pin. Returns the
+    path written.
+    """
+    helper = Path(folder) / ("hwi.cmd" if sys.platform == "win32" else "hwi")
+    if sys.platform == "win32":
+        helper.write_text(
+            "@echo off\r\n"
+            f'if "%1"=="--version" (\r\n  echo {version_line}\r\n  exit /b 0\r\n)\r\n'
+            "echo []\r\n",
+            encoding="utf-8",
+        )
+    else:
+        helper.write_text(
+            "#!/bin/sh\n"
+            f'if [ "$1" = "--version" ]; then echo "{version_line}"; exit 0; fi\n'
+            "echo '[]'\n",
+            encoding="utf-8",
+        )
+        helper.chmod(0o755)
+    return helper
+
+
 class HwiIdentityPins(unittest.TestCase):
     """The helper is pinned by bytes, not by what it says about itself.
 
@@ -61,30 +90,40 @@ class HwiIdentityPins(unittest.TestCase):
 
     def _planted_helper(self, folder: Path, version_line: str,
                         with_digest: bool = True) -> Path:
-        # Windows CreateProcess cannot exec a shebang script (WinError 193),
-        # so the planted helper must be a real .cmd there and a shell script
-        # elsewhere. The identity gate runs [path, "--version"] either way.
-        if sys.platform == "win32":
-            helper = Path(folder) / "hwi.cmd"
-            helper.write_text(
-                "@echo off\r\n"
-                f'if "%1"=="--version" (\r\n  echo {version_line}\r\n  exit /b 0\r\n)\r\n'
-                "echo []\r\n",
-                encoding="utf-8",
-            )
-        else:
-            helper = Path(folder) / "hwi"
-            helper.write_text(
-                "#!/bin/sh\n"
-                f'if [ "$1" = "--version" ]; then echo "{version_line}"; exit 0; fi\n'
-                "echo '[]'\n",
-                encoding="utf-8",
-            )
-            helper.chmod(0o755)
+        helper = _write_planted_helper(Path(folder), version_line)
         if with_digest:
             digest = hashlib.sha256(helper.read_bytes()).hexdigest()
             helper.with_name("hwi.sha256").write_text(f"{digest}  hwi\n", encoding="utf-8")
         return helper
+
+    # -- the plant itself must be executable here --------------------------
+
+    def test_the_planted_helper_is_whatever_this_platform_can_execute(self):
+        """A shebang script is not a valid Win32 application.
+
+        This is the mistake the 0.6.7 candidate caught in its own tests: a
+        helper planted as an unconditional shell script makes CreateProcess
+        raise WinError 193 on Windows, so the test fails on the platform
+        difference and never reaches the control it is pinning. The plant has
+        to change shape with the platform, and this asserts that it does on
+        every runner — a Windows machine is not required to notice it stopped.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(sys, "platform", "win32"):
+                helper = _write_planted_helper(Path(folder),
+                                               f"hwi {EXPECTED_HWI_VERSION}")
+            self.assertEqual(helper.name, "hwi.cmd")
+            body = helper.read_text(encoding="utf-8")
+            self.assertIn("@echo off", body)
+            self.assertNotIn("#!/", body)
+
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(sys, "platform", "darwin"):
+                helper = _write_planted_helper(Path(folder),
+                                               f"hwi {EXPECTED_HWI_VERSION}")
+            self.assertEqual(helper.name, "hwi")
+            self.assertTrue(
+                helper.read_text(encoding="utf-8").startswith("#!/bin/sh\n"))
 
     # -- the named CT-49 test ----------------------------------------------
 
@@ -161,14 +200,7 @@ class HwiIdentityPins(unittest.TestCase):
             resources = macos.parent / "Resources"
             macos.mkdir(parents=True)
             resources.mkdir(parents=True)
-            helper = macos / "hwi"
-            helper.write_text(
-                "#!/bin/sh\n"
-                f'if [ "$1" = "--version" ]; then echo "hwi {EXPECTED_HWI_VERSION}"; exit 0; fi\n'
-                "echo '[]'\n",
-                encoding="utf-8",
-            )
-            helper.chmod(0o755)
+            helper = _write_planted_helper(macos, f"hwi {EXPECTED_HWI_VERSION}")
             digest = hashlib.sha256(helper.read_bytes()).hexdigest()
             (resources / "hwi.sha256").write_text(f"{digest}  hwi\n", encoding="utf-8")
             self.assertEqual(probe._hwi_sidecars(str(helper)),
@@ -180,23 +212,48 @@ class HwiIdentityPins(unittest.TestCase):
         """A stale copy beside the helper must not shadow a correct one.
 
         Both present copies are checked. One wrong digest is a tampering signal,
-        not a choice the app gets to make by picking the friendlier file.
+        not a choice the app gets to make by picking the friendlier file. The
+        correct copy is placed first in the lookup order on purpose, so a gate
+        that stops at the first match, or that accepts any single match, is
+        refused here rather than slipping through.
         """
         with tempfile.TemporaryDirectory() as folder:
-            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
             macos = Path(folder) / "App.app" / "Contents" / "MacOS"
             resources = macos.parent / "Resources"
             macos.mkdir(parents=True)
             resources.mkdir(parents=True)
-            bundled = macos / "hwi"
-            bundled.write_bytes(helper.read_bytes())
+            bundled = _write_planted_helper(macos, f"hwi {EXPECTED_HWI_VERSION}")
+            digest = hashlib.sha256(bundled.read_bytes()).hexdigest()
+            bundled.with_name("hwi.sha256").write_text(
+                f"{digest}  hwi\n", encoding="utf-8")
             (resources / "hwi.sha256").write_text(
                 "0" * 64 + "  hwi\n", encoding="utf-8")
+            self.assertEqual(len(probe._hwi_sidecars(str(bundled))), 2)
             with patch("probe.subprocess.run") as run:
                 with self.assertRaisesRegex(
                         ProbeError, "does not match its recorded digest"):
                     _verify_hwi_identity(str(bundled))
             run.assert_not_called()
+
+    def test_two_sidecars_that_agree_about_the_helper_are_both_believed(self):
+        """The positive half of the disagreement rule.
+
+        Agreement across the two locations is not itself a refusal; only a
+        digest that does not match is. Without this, a gate that refuses any
+        helper with two records would pass the test above.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            macos = Path(folder) / "App.app" / "Contents" / "MacOS"
+            resources = macos.parent / "Resources"
+            macos.mkdir(parents=True)
+            resources.mkdir(parents=True)
+            bundled = _write_planted_helper(macos, f"hwi {EXPECTED_HWI_VERSION}")
+            record = f"{hashlib.sha256(bundled.read_bytes()).hexdigest()}  hwi\n"
+            bundled.with_name("hwi.sha256").write_text(record, encoding="utf-8")
+            (resources / "hwi.sha256").write_text(record, encoding="utf-8")
+            self.assertEqual(len(probe._hwi_sidecars(str(bundled))), 2)
+            _verify_hwi_identity(str(bundled))
+            probe._verified_hwi_paths.clear()
 
     # -- version is exact, not a substring --------------------------------
 

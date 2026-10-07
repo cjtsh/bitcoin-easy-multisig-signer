@@ -318,6 +318,93 @@ The existing suite also caught the recipe-lookup refactor: moving the
 the old inline strings. That pin now holds the shared helper instead —
 it went red on the refactor, which is what it is for.
 
+## Candidate attempt 37632918993 — one test that could not run
+
+The second `notarize=true, publish=false` candidate was dispatched from
+`60f5785`, the commit that carries the three fixes above. **Four of the
+five jobs were green**: Read version (whose publish-path sweep ran
+against the live remote and reported clean), Source archive and tests,
+Apple Silicon DMG, and Linux x86_64 AppImage. SHA256SUMS and Publish
+release were skipped, so nothing was published.
+
+Only **Windows x64 bundle** failed, on exactly one test — and it was a
+test written for the previous fix, not a control.
+
+| Job | Outcome | Detail |
+| --- | --- | --- |
+| Read version | success | `check-publish-paths.sh` ran against `origin` and found no publish-capable workflow on any non-main ref |
+| Source archive and tests | success | the `ci/` recipe lookup fix held; the suite ran from inside the tarball |
+| Apple Silicon DMG | success | the `Contents/Resources` sidecar sealed under codesign |
+| Linux x86_64 AppImage | success | — |
+| Windows x64 bundle | **failed (errors=1)** | 506 collected, 505 ok. `HwiIdentityPins.test_a_frozen_macos_bundle_reads_the_sidecar_from_contents_resources` raised `OSError: [WinError 193] %1 is not a valid Win32 application` |
+
+### Cause
+
+The test planted a helper as an unconditional `#!/bin/sh` script and then
+called `_verify_hwi_identity`, which runs `[path, "--version"]`. Windows
+CreateProcess cannot exec a shebang script — WinError 193 — so the test
+failed on the platform difference and never reached the sidecar-lookup
+control it exists to pin. The same file's `_planted_helper` already
+solved this ("Windows CreateProcess cannot exec a shebang script
+(WinError 193), so the planted helper must be a real `.cmd` there and a
+shell script elsewhere"); the new test did not use it.
+
+This is a **defect in the test, not in the control**. The controls it
+pins — the `Contents/Resources` sidecar lookup, and the rule that every
+present sidecar must agree with the helper's bytes — were exercised and
+passed on macOS and Linux and in the source-archive run. Every
+publish-path sweep test passed on Windows. The suite did its job: it
+refused to call a green run green.
+
+### Fixes
+
+1. **One platform-aware writer.** `_write_planted_helper` is now the only
+   place that decides what a planted helper looks like: `hwi.cmd` with
+   `@echo off` on `win32`, `#!/bin/sh` elsewhere. `_planted_helper` and
+   both bundle-layout tests call it. A test can no longer plant a helper
+   this platform cannot execute by copying the wrong shape by hand.
+2. **A pin on the plant itself.**
+   `test_the_planted_helper_is_whatever_this_platform_can_execute`
+   patches `sys.platform` to each of `win32` and `darwin` and asserts the
+   name, the body, and the absence of a shebang in the Windows shape.
+   This is the test that would have caught the mistake before dispatch,
+   and it runs on **every** runner — a Windows machine is not required to
+   notice that the plant stopped changing shape.
+3. **An overclaiming test, corrected.**
+   `test_two_sidecars_that_disagree_about_the_helper_are_refused` said
+   "both present copies are checked" but never presented two: it copied
+   the helper bytes into a fake `Contents/MacOS` and wrote the wrong
+   digest only in `Resources`, so nothing sat beside the helper and the
+   gate saw a single record. It now writes a **correct** sidecar beside
+   the helper and a **wrong** one in `Contents/Resources`, asserts both
+   are found, and leaves the correct copy first in the lookup order on
+   purpose — so a gate that stops at the first match, or that accepts any
+   single match, goes red here rather than slipping through. The positive
+   half is new: `test_two_sidecars_that_agree_about_the_helper_are_both_believed`
+   proves agreement across the two locations is not itself a refusal.
+
+   This is the same lesson as CT-50–53 and as the write-permission regex
+   above: **a test whose fixture does not exercise what its docstring
+   claims is a finding**, not a green.
+
+### Tripwires for the fixes (`/tmp/breakwatch_067d.py`, 4/4)
+
+| Break | Test that went red |
+| --- | --- |
+| `probe._hwi_sidecars` stops looking in `Contents/Resources` | `HwiIdentityPins.test_a_frozen_macos_bundle_reads_the_sidecar_from_contents_resources` (on the list comparison: `[] != [.../Resources/hwi.sha256]`) |
+| `_verify_hwi_bytes` accepts the first sidecar that matches | `HwiIdentityPins.test_two_sidecars_that_disagree_about_the_helper_are_refused` (on the named digest refusal) |
+| `_verify_hwi_bytes` refuses every helper with two records | `HwiIdentityPins.test_two_sidecars_that_agree_about_the_helper_are_both_believed` (on the named digest refusal) |
+| the plant writes a shell script whatever the platform says | `HwiIdentityPins.test_the_planted_helper_is_whatever_this_platform_can_execute` (on `hwi.cmd` vs `hwi`) |
+
+Same rule as before: positive half green → one unique needle broken →
+named test red **for the assertion's own message** → restore → green.
+`__pycache__` cleared before every run. Two of the four were wrong on the
+first pass and were corrected rather than waved through: the harness
+asked for the `ProbeError` text where the test actually fails on the
+lookup list, and asked for "not raised" where the failure is the named
+refusal not matching. The tests themselves were right; the harness was
+checking the wrong strings.
+
 ## Deferred, with the reason
 
 Both deferrals are recorded in `releases/OWNER-ACCEPTANCE-2026-10-07.md`
@@ -364,25 +451,27 @@ No wallet, signing, or broadcast policy changed. Specifically:
 
 ## Verification
 
-At this revision: full suite **513 tests OK, zero skips**, run both from
+At this revision: full suite **515 tests OK, zero skips**, run both from
 the checkout and from inside the extracted
 `dist/bitcoin-easy-multisig-signer-v0.6.7.tar.gz` — the same self-test the
-source job performs. 10/10 `tests/ui_*.cjs` OK. `bash -n` clean on every
+source job performs, and both runs collect the same count, so the tarball
+is complete. 10/10 `tests/ui_*.cjs` OK. `bash -n` clean on every
 `scripts/*.sh`. `node --check` clean on every test and script. The
-break-and-watch transcripts above hold 10/10 for the candidate-failure
-fixes, and the earlier cycles' transcripts are unchanged.
+break-and-watch transcripts above hold 10/10 for the first candidate
+attempt and 4/4 for the second.
 
-Count by platform, so a reader is not surprised: **macOS collects 513**;
-**Linux and Windows collect 506**. The difference is deliberate and
+Count by platform, so a reader is not surprised: **macOS collects 515**;
+**Linux and Windows collect 508**. The difference is deliberate and
 documented in `tests/test_notary_args.py`: seven `@macos_only` cases "are
 not collected" on other platforms rather than skipped, so the workflows'
 `skipped=[1-9]` guard stays meaningful and a missing dependency cannot
 hide behind a skip. Each platform's job runs its own full set with no
-skips.
+skips. The failed Windows run above collected 506 at a revision where
+macOS collected 513 — same rule, seven fewer.
 
 Earlier in this revision's history the suite stood at 500 tests at
-`d2e9e73`; the thirteen added since are the tripwires written for the
-candidate failures above.
+`d2e9e73`; the fifteen added since are the tripwires written for the two
+candidate attempts above.
 
 ## Publication
 
@@ -397,6 +486,7 @@ the device-identity path. Manual publication is prohibited.
 | Run | Commit | Dispatch | Outcome |
 | --- | --- | --- | --- |
 | [37625977035](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37625977035) | `0e6f11a` | `notarize=true, publish=false` | **Superseded — failed.** Three jobs: Windows (sweep went blind on unreadable bodies), source archive (pin test opened only `.github/workflows/`), macOS (sidecar in `Contents/MacOS` broke codesign). Fixed in the next commit; see *Candidate attempt 37625977035* above. No assets were published; SHA256SUMS and Publish release were skipped. |
+| [37632918993](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37632918993) | `60f5785` | `notarize=true, publish=false` | **Superseded — failed.** Windows only: one test could not run (`WinError 193` planting a shebang helper). The other four jobs were green, including the live-remote publish-path sweep. Fixed in the next commit; see *Candidate attempt 37632918993* above. No assets were published; SHA256SUMS and Publish release were skipped. |
 | _(pending)_ | _(this revision)_ | `notarize=true, publish=false` | To be recorded from the successful candidate run. |
 
 Do not claim a published version this file does not carry.
