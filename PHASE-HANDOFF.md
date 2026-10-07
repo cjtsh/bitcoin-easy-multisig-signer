@@ -1,19 +1,37 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Source revision 0.6.6 is the Color Team cycle-2 remediation.** The
-out-of-gate `v0.6.5-windows-x64` release was deleted (CT-27). Owner-reported
-acceptance of that Windows console fix and of the Linux AppImage remains in
-this file's history and in `releases/`; those port builds are superseded by
-the unified pipeline.
+**Source revision 0.6.7 is the Color Team cycle-3 build-process
+remediation.** The out-of-gate `v0.6.5-windows-x64` release was deleted
+(CT-27), and cycle 3 then found the root cause of it: the per-platform
+publish workflows were never deleted (CT-48). They are now gone from
+every branch. Owner-reported acceptance of the Windows console fix and
+of the Linux AppImage remains in this file's history and in `releases/`;
+those port builds are superseded by the unified pipeline.
 
-## Current stop point — 0.6.6 published; cycle-3 Color Team panel rerun pending
+## Current stop point — 0.6.7 candidate pending owner hardware walkthrough
 
-The latest published version is [v0.6.6](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6), published 2026-10-06 as tag `v0.6.6` on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` by successful candidate run [37482475884](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37482475884) and promote run [37486264639](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37486264639). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.6 is safety hardening only (BIP-143 vectors, money-path pins, HWI identity, BIP-62 low-S, key-proof before PSBT, large-amount prompt hardening, broadcast lock scope, pinned runners). Owner practice-network hardware walkthrough passed on candidate 37474707538 (Trezor Safe 3 and Ledger Nano signed; broadcast accepted). The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+The **published set** is whatever the
+[Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
+and `RELEASE-HISTORY.md` carry; read one of those rather than trusting a
+hardcoded number here. As of 2026-10-07 that is [v0.6.6](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6), published 2026-10-06 as tag `v0.6.6` on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` by successful candidate run [37482475884](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37482475884) and promote run [37486264639](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37486264639). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.6 is safety hardening only (BIP-143 vectors, money-path pins, HWI identity, BIP-62 low-S, key-proof before PSBT, large-amount prompt hardening, broadcast lock scope, pinned runners). Owner practice-network hardware walkthrough passed on candidate 37474707538 (Trezor Safe 3 and Ledger Nano signed; broadcast accepted). The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
 
-**Next for 0.6.6:** signed cycle-3 audit plan is in
-`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.6.md` (target tag
-`v0.6.6`, commit `93cf67a…`). Panel rerun toward CLEARED is the next gate.
-See `releases/PATCH-0.6.6.md` and `RELEASE-PROCESS.md`.
+**The cycle-3 panel rerun already ran and graded ⛔ BLOCKED** on the
+`v0.6.6` tree — not on the app. Red found no breach; Orange recorded its
+first LOGIC PROVEN (21/21); Amber verified the supply chain end to end.
+The grade was set by **CT-48 (High)** on the build process: the retired
+per-platform publish workflows were still live on `windows-port` and
+`linux-port` and one had published an unsigned manifest, while
+`build-candidate.yml`'s header claimed no second path existed. Report,
+plan, lock and index are in this repository's root.
+
+**Next for 0.6.7:** the cycle-3 findings are answered in code and in the
+dated acceptance note (`releases/PATCH-0.6.7.md` is the evidence record).
+A signed, notarized `publish=false` candidate is built from this
+revision; **the owner hardware walkthrough is the next gate**, because
+CT-49/CT-58 touch the device-identity path. Only then does
+`publish=true` promote the same candidate bytes. The cycle-4 plan is the
+cycle-3 plan carried verbatim with the target revision moved to
+`v0.6.7`. See `releases/PATCH-0.6.7.md` and `RELEASE-PROCESS.md`.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 
@@ -27,7 +45,26 @@ The owner's 0.4.0 Jade attempt was rejected twice after transaction preparation.
 
 ## Status and version policy
 
-The latest published build is [v0.6.6](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6), published through the automated workflow from the exact successful signed candidate. The AI-generated Z.ai v0.6.4 report assigns Green under its published rubric; the historical v0.6.3 Yellow grade is documented in its own report. Neither report is a certification, and no independent human end-to-end review is recorded. Version 0.6.6 is safety hardening only. Version 0.5.0 was the unpublished mainnet-broadcast candidate whose engine 0.5.1 published. The app supports multisig quorums with at most three keys. The full published version-by-version record — including the 0.2.0 hardware-signing failure ("do not use"), the 0.2.1 field-order correction, the 0.3.x Mutinynet and one-file BSMS work, the 0.4.1 physical payment, and later interface and notarization work — lives in `RELEASE-HISTORY.md`. Mainnet broadcast requires explicit final-screen consent plus a backend opt-in; one earlier mainnet transaction by this app has been confirmed on chain.
+The published set is whatever the
+[Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
+and `RELEASE-HISTORY.md` carry — **do not restate a "latest published
+build is X" here**, because that sentence is exactly what CT-71 filed and
+it goes stale the moment `version.py` moves again. As of 2026-10-07 the
+newest published tag is `v0.6.6`, promoted through the automated workflow
+from the exact successful signed candidate. The AI-generated Z.ai v0.6.4
+report assigns Green under its published rubric; the historical v0.6.3
+Yellow grade is documented in its own report. Neither report is a
+certification, and no independent human end-to-end review is recorded.
+Version 0.6.7 is build-process remediation and adds no payment
+capability. Version 0.5.0 was the unpublished mainnet-broadcast candidate
+whose engine 0.5.1 published. The app supports multisig quorums with at
+most three keys. The full published version-by-version record — including
+the 0.2.0 hardware-signing failure ("do not use"), the 0.2.1 field-order
+correction, the 0.3.x Mutinynet and one-file BSMS work, the 0.4.1
+physical payment, and later interface and notarization work — lives in
+`RELEASE-HISTORY.md`. Mainnet broadcast requires explicit final-screen
+consent plus a backend opt-in; one earlier mainnet transaction by this
+app has been confirmed on chain.
 
 Use a new patch version for any correction to a published build. The owner prefers milestone-based Mac installs after extensive automation rather than repeated installs for small revisions. The installed 0.2.1 app showed a new unsigned review above the previous payment's signing/final screen; **never broadcast from such a mixed screen — close the old app before installing a newer release.** The UI regression tests cover that reset. Since 0.6.1 the app **opens on Bitcoin mainnet**, and Mutinynet and Testnet4 are reached only through the "Enter Developer Mode" gate on the opening screen; the gate's panel offers those two practice networks alone, live Bitcoin being what its own "Return to Bitcoin" button goes back to. Mutinynet is the default practice network once the gate is open, and Testnet4 remains available for an existing practice wallet. The selected network stays in memory for the session, so a practice network cannot outlive a restart.
 

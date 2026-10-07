@@ -1,20 +1,36 @@
 # Current status — Bitcoin Easy Signer
 
-**0.6.6 is published: Color Team cycle-2 remediation.** The cycle-2
-five-lane Color Team audit of the 0.6.5 tree (report, plan, lock and index in
-this repository's root) graded CONDITIONAL. The four Mediums were release-channel
-findings (CT-01/CT-02 manual assets on the v0.6.4 page, CT-27 a second live
-0.6.5 Windows set) and an unpinned BIP-143 digest (CT-26). The Lows were
-unpinned money-path controls and two deferred design items (CT-13 broadcast
-lock scope, CT-14 counterfeit echo). Version 0.6.6 answers all of them in
-code: channel cleanup, published BIP-143 vectors, money-path and HWI-identity
-pins, BIP-62 low-S, a key-proof before any PSBT is sent, a large-amount prompt
-a lying price cannot suppress, broadcast pre-checks outside the session lock,
-pinned runners and lock tooling. Every fix is held by a test demonstrated able
-to fail. `releases/PATCH-0.6.6.md` is the evidence record. Published as tag
-`v0.6.6` on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` through the
-unified pipeline (candidate run 37482475884, promote run 37486264639). The
-cycle-3 audit plan is signed to that tag; the panel rerun is pending.
+**Source revision 0.6.7 is the Color Team cycle-3 build-process
+remediation.** The cycle-3 five-lane Color Team audit of the `v0.6.6`
+tree (report, plan, lock and index in this repository's root) graded
+**⛔ BLOCKED** — not on the app. Red found no breach, Orange recorded its
+first LOGIC PROVEN (21/21 invariants), Amber verified the supply chain
+end to end. The grade was set by one High finding on the build process,
+**CT-48**: the per-platform publish workflows "retired" when Windows and
+Linux were added were never deleted, and one had published an unsigned
+manifest, while `build-candidate.yml`'s header claimed no second path
+existed. Version 0.6.7 answers the ledger in code and in one dated
+owner acceptance: the retired workflows are deleted from every branch and
+a remote-level sweep gate refuses to start a release if one reappears;
+the HWI helper is identified by bytes rather than by what it says about
+itself; the interpreter is pinned to one exact patch; the lock-writer is
+hash-locked; the source tarball can rebuild a signed Mac app; and the
+broadcaster is verified at use on every network. Every fix is held by a
+test demonstrated able to fail. `releases/PATCH-0.6.7.md` is the
+evidence record; `releases/OWNER-ACCEPTANCE-2026-10-07.md` closes the
+by-design observations. **0.6.7 is not published yet**: a signed,
+notarized `publish=false` candidate is built from this revision and the
+owner hardware walkthrough is the gate before promotion.
+
+The prior release, **0.6.6**, is published as tag
+[`v0.6.6`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6)
+on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` through the unified
+pipeline (candidate run 37482475884, promote run 37486264639). It was the
+Color Team cycle-2 remediation: channel cleanup, published BIP-143
+vectors, money-path and HWI-identity pins, BIP-62 low-S, a key-proof
+before any PSBT is sent, a large-amount prompt a lying price cannot
+suppress, broadcast pre-checks outside the session lock, pinned runners
+and lock tooling. `releases/PATCH-0.6.6.md` is its evidence record.
 
 The out-of-gate `v0.6.5-windows-x64` release and tag, and the manually
 uploaded Windows/Linux assets on the v0.6.4 page, were deleted (CT-01, CT-02,
@@ -31,7 +47,29 @@ transaction details were not recorded. Ubuntu first-launch instructions now
 explain how to allow the AppImage to run as a program and then double-click it.
 See [`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
 
-**Latest published version: 0.6.6.** [Download the signed Apple Silicon release](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6). Published 2026-10-06 as tag `v0.6.6` on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` by successful candidate run [37482475884](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37482475884) and promote run [37486264639](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37486264639) (`publish=true`, `candidate_run_id=37482475884`). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease. Version 0.6.6 is safety hardening only: no new payment capability. Owner practice-network hardware walkthrough passed on candidate 37474707538 (Trezor Safe 3 and Ledger Nano signed; broadcast accepted). The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after verifying the automated publication path. This is evidence about that revision and stated coverage, not a certification or guarantee; no independent human end-to-end review is recorded.
+**Download the signed Apple Silicon release:**
+[all releases](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases).
+**Do not restate a "latest published version is X" here** — that is the
+CT-46/CT-71 defect class and it goes stale the moment `version.py` moves.
+The published set is whatever that page and [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)
+carry. As of 2026-10-07 that is
+[v0.6.6](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6),
+published 2026-10-06 as tag `v0.6.6` on commit
+`93cf67af63a15aac0912a6fbc270f7e5485e2fc1` by successful candidate run
+[37482475884](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37482475884)
+and promote run
+[37486264639](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37486264639)
+(`publish=true`, `candidate_run_id=37482475884`). The release page
+carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
+`SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
+Version 0.6.6 is safety hardening only: no new payment capability. Owner
+practice-network hardware walkthrough passed on candidate 37474707538
+(Trezor Safe 3 and Ledger Nano signed; broadcast accepted). The dated
+AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns
+Green under its rubric after verifying the automated publication path.
+This is evidence about that revision and stated coverage, not a
+certification or guarantee; no independent human end-to-end review is
+recorded.
 
 **0.6.1 is published** as tag [`v0.6.1`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.1) (2026-10-02), built from commit `2977930` by workflow run 36957927251 on the `dev-mode-0.6.0` branch. The change is where the network choice lives; the transaction and signing engine is unchanged from 0.5.1. The owner opened the first 0.6.0 candidate and required live Bitcoin to be removed from the panel, so 0.6.0 was never published. The published build has not been exercised in a hardware walkthrough. It moves the network choice off the opening screen: the app opens on Bitcoin mainnet and Mutinynet/Testnet4 are reached through an "Enter Developer Mode" gate, whose panel offers those two practice networks only — live Bitcoin is what the gate's own "Return to Bitcoin" button returns to, not one of its cards, and the gate refuses to move the network while a payment is prepared. The transaction and signing engine is unchanged from 0.5.1, so 0.6.1 adds no sending capability. Its record, including what was verified and what was deliberately left out, is [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md). A signed and notarized candidate build of 0.6.0 was made and is superseded before publication — workflow run [36954844052](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/36954844052) from commit `f147141` — and a 0.6.1 candidate was built the same way. **0.6.2 is published** as tag [`v0.6.2`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.2) (2026-10-02), built from commit `7b4db85` by workflow run 36959242210. It retires the network of a finished review together with the review itself: the mainnet opt-in that a broadcast sends can no longer be inherited from an earlier payment. No user-visible behaviour changed. A signed and notarized candidate was built first from commit `8712dca` by run 36958728418 with a non-publishing dispatch. It retires the network together with the rest of a finished review, so the mainnet opt-in a broadcast sends can never be inherited from an earlier payment. The transaction and signing engine is unchanged from 0.5.1. Its record is [`releases/PATCH-0.6.2.md`](releases/PATCH-0.6.2.md).
 
