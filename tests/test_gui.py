@@ -964,11 +964,11 @@ class RefusalDeliveryPins(unittest.TestCase):
     """
 
     def test_a_refused_post_consumes_the_request_body_before_it_answers(self):
-        """The drain happens before the 403 is written, not after.
+        """Every early refusal drains before it answers, not after.
 
-        Asserted as the exact form rather than a substring search, so a
-        drain that lands after the response — or on a different refusal —
-        cannot satisfy it.
+        Asserted as exact ordered forms rather than a substring search, so a
+        drain that lands after the response — or on only one of the two
+        refusals — cannot satisfy it.
         """
         gui_source = Path(gui.__file__).read_text(encoding="utf-8")
         self.assertIn(
@@ -976,8 +976,14 @@ class RefusalDeliveryPins(unittest.TestCase):
             '                    self._send(403, {"error": "Local access only."})',
             gui_source,
             "a gate refusal must drain the request body before it answers")
+        self.assertIn(
+            'self._drain_body()\n'
+            '                        raise WalletError('
+            '"Wallet request is too large or malformed.")',
+            gui_source,
+            "the size-and-type refusal must drain the request body too")
 
-    def test_the_drain_is_bounded_by_the_same_cap_the_parse_path_uses(self):
+    def test_the_drain_is_bounded_so_being_refused_cannot_read_forever(self):
         """Being refused must not become a way to make the app read forever."""
         gui_source = Path(gui.__file__).read_text(encoding="utf-8")
         self.assertIn("def _drain_body", gui_source)

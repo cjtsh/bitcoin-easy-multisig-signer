@@ -548,21 +548,23 @@ class LocalApp:
             def _drain_body(self):
                 """Consume the request body before answering a refusal.
 
-                Responding and closing while the client is still writing is
-                what a refused POST looks like from the other side on Windows:
-                the 403 never arrives, and `urlopen` reports
-                ConnectionAbortedError (WinError 10053) instead of an HTTP
-                error. The refusal itself is unchanged — the body is discarded
-                unread — and the read is bounded by the same request-size cap
-                the parse path uses, so being refused cannot be made to pull an
-                unbounded stream.
+                Closing a socket that still has unread data sends a reset, and
+                a reset discards the response the server just wrote. POSIX
+                usually delivers the status line first anyway; Windows does
+                not, so a refused POST surfaces as `ConnectionAbortedError`
+                (WinError 10053) and the refusal never arrives. The rejection
+                itself is unchanged — the body is discarded unread — and the
+                discard is bounded at twice the request cap: a declaration that
+                runs far past the cap is hostile, and a refusal is allowed to
+                leave that client with a transport error rather than spend the
+                app's time reading it.
                 """
                 try:
                     length = int(self.headers.get("Content-Length", "0") or "0")
                 except ValueError:
                     length = 0
-                if length > 0:
-                    self.rfile.read(min(length, MAX_REQUEST_BYTES))
+                if 0 < length <= MAX_REQUEST_BYTES * 2:
+                    self.rfile.read(length)
 
             def _trusted_host(self):
                 return self.headers.get("Host") == (
@@ -644,6 +646,7 @@ class LocalApp:
                     if (self.headers.get("Content-Type", "").split(";")[0]
                         != "application/json"
                         or length < 2 or length > MAX_REQUEST_BYTES):
+                        self._drain_body()
                         raise WalletError("Wallet request is too large or malformed.")
                     request = json.loads(self.rfile.read(length))
                     if not isinstance(request, dict):

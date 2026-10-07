@@ -448,18 +448,27 @@ depending on load.
 
 ### Cause
 
-`do_POST` refuses a cross-origin or unauthenticated request at the gate
-and answers `403 Local access only` **without consuming the request
-body**. The client is still writing when the connection closes. POSIX
-delivers the status line first and `urlopen` raises a clean `HTTPError
-403`; Windows can abort the socket instead, and the 403 never arrives.
+`do_POST` answers a refusal **without consuming the request body**. The
+client is still writing when the connection closes. Closing a socket that
+still has unread data sends a reset, and a reset discards the response
+the server just wrote: POSIX usually delivers the status line first and
+`urlopen` raises a clean `HTTPError`; Windows aborts the socket and the
+refusal never arrives.
+
+Two refusals were exposed, both raised before `self.rfile.read`:
+
+1. the gate (`403 Local access only`) for a cross-origin or untokened
+   POST — the one that failed;
+2. the size-and-type check (`400 Wallet request is too large or
+   malformed`), which `test_oversized_requests_are_refused_before_parsing`
+   exercises.
 
 The test's first two POSTs are refused **after** the body is read (they
 reach `_import` and fail the chain check), so those 400s always arrived.
-Only the gate refusal — the one that leaves the body unread — was
-exposed. That is why the failure looked random: it is a race between the
-client's `send()` and the server's close, and a loaded Windows runner
-loses it.
+That is why the failure looked random: it is a race between the client's
+`send()` and the server's close, and a loaded Windows runner loses it.
+`gui.py` had not changed between the two Windows runs, and this test
+**passed** in the earlier one.
 
 ### This is not a weakening of the gate
 
@@ -467,22 +476,24 @@ The accept/reject decision is unchanged. A cross-origin request is still
 refused; from the attacker's side a connection abort and a 403 are both
 "nothing came back". What changed is that the refusal is now
 **deliverable** — the operator's own client, and the test, can observe
-which rule fired. `_drain_body` discards the body unread and is bounded
-by `MAX_REQUEST_BYTES`, the same cap the parse path uses, so being
-refused cannot be turned into a way to make the app read an unbounded
-stream.
+which rule fired. `_drain_body` discards the body unread, so nothing it
+reads is parsed.
 
 ### Fixes
 
-1. **`gui.py::_drain_body`** — before a gate refusal, consume
-   `min(Content-Length, MAX_REQUEST_BYTES)` bytes and discard them, then
-   write the 403. `do_GET`'s refusal is untouched (a GET has no body).
-2. **`tests/test_gui.py::RefusalDeliveryPins`** — asserts the exact
-   ordered form `self._drain_body()` immediately before the gate's
-   `_send(403, …)`, so a drain that lands after the response, or on a
-   different refusal, cannot satisfy it; and asserts the drain is bounded
-   by `MAX_REQUEST_BYTES` and honours `Content-Length`.
-3. **`WINDOWS-PORT.md`** — the quirk is recorded beside the others
+1. **`gui.py::_drain_body`** — discard the request body before answering
+   a refusal. Bounded at twice the request cap: a declaration that runs
+   far past the cap is hostile, and a refusal is allowed to leave that
+   client with a transport error rather than spend the app's time reading
+   it. `do_GET`'s refusal is untouched (a GET has no body).
+2. **Both refusal sites drain** — the gate's `403` and the size-and-type
+   `400`.
+3. **`tests/test_gui.py::RefusalDeliveryPins`** — asserts the exact
+   ordered form `self._drain_body()` immediately before *each* refusal,
+   so a drain that lands after the response, or on only one of the two,
+   cannot satisfy it; and asserts the drain is bounded and honours
+   `Content-Length`.
+4. **`WINDOWS-PORT.md`** — the quirk is recorded beside the others
    (`WinError 10053` for an unread body, `WinError 193` for a shebang
    helper) with the required approach and the pin that holds it.
 
@@ -491,16 +502,18 @@ safety invariant without a scoped review and regression tests"): the
 change is confined to how a *refusal* is delivered, does not alter any
 accept/reject condition, is bounded, and carries the regression tests
 above plus the existing `test_import_rejects_bad_chain_and_cross_origin_post`
-which asserts the specific `403` (and the `400` halves).
+and `test_oversized_requests_are_refused_before_parsing`, each of which
+asserts its specific status code and error text.
 
-### Tripwires for the fixes (`/tmp/breakwatch_067f.py`, 2/2)
+### Tripwires for the fixes (`/tmp/breakwatch_067f.py`, 3/3)
 
 | Break | Test that went red |
 | --- | --- |
-| the drain dropped from the gate refusal | `RefusalDeliveryPins.test_a_refused_post_consumes_the_request_body_before_it_answers` |
-| the drain unbounded | `RefusalDeliveryPins.test_the_drain_is_bounded_by_the_same_cap_the_parse_path_uses` |
+| the drain dropped from the gate refusal | `RefusalDeliveryPins.test_a_refused_post_consumes_the_request_body_before_it_answers` (gate form) |
+| the drain unbounded | `RefusalDeliveryPins.test_the_drain_is_bounded_so_being_refused_cannot_read_forever` |
+| the drain dropped from the size-and-type refusal | `RefusalDeliveryPins.test_a_refused_post_consumes_the_request_body_before_it_answers` (size-and-type form) |
 
-The behavioural test cannot demonstrate the race on a POSIX machine —
+The behavioural tests cannot demonstrate the race on a POSIX machine —
 that is the whole point of the quirk — so the pin is the exact-form
 assertion, which fails on every runner.
 
