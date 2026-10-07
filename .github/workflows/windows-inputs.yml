@@ -54,7 +54,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install --disable-pip-version-check pip-tools==7.6.1
+          python -m pip install --disable-pip-version-check --require-hashes -r requirements-piptools.lock
           # Same flags as the macOS lock, so the two files can be read side by side.
           python -m piptools compile --allow-unsafe --generate-hashes `
             --output-file requirements-desktop-windows.lock requirements-desktop.txt

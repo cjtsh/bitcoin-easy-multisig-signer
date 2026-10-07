@@ -1,5 +1,6 @@
 """Keep source archives limited to the project's explicit document allowlist."""
 
+import re
 import unittest
 from pathlib import Path
 
@@ -32,6 +33,110 @@ class BuildSourceTests(unittest.TestCase):
             "for recipe in build-candidate.yml windows-inputs.yml linux-inputs.yml",
             script, "the archive must ship the unified pipeline and both inputs recipes")
         self.assertIn('cp "$workflow" "$stage/$root/ci/$recipe"', script)
+
+
+class ArchiveCompletenessTests(unittest.TestCase):
+    """CT-56: a tarball that cannot rebuild the app is not a source tarball.
+
+    Every assertion here targets the COPY, not the mention. A file named in a
+    comment is still missing from the archive — the same defect the hwi.sha256
+    pin had to be taught, where a test matched an echo while the write had been
+    renamed away. Comments are dropped before anything is matched.
+    """
+
+    def setUp(self):
+        self.script = (ROOT / "scripts" / "build-source.sh").read_text(encoding="utf-8")
+        self.active = "\n".join(
+            line for line in self.script.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    def _root_docs(self) -> set[str]:
+        match = re.search(r"root_docs=\((.*?)\)", self.script, re.DOTALL)
+        self.assertIsNotNone(match, "build-source.sh has no root_docs=(...) allowlist")
+        return set(match.group(1).split())
+
+    def test_the_macos_entitlements_plist_reaches_the_archive(self):
+        """build-macos.sh codesigns the HWI helper with it; without it a signed
+        Mac build from the tarball fails at the codesign step."""
+        self.assertTrue(
+            (ROOT / "scripts" / "hwi-entitlements.plist").is_file(),
+            "the plist this archive must ship does not exist in the tree")
+        copies = [
+            line for line in self.active.splitlines()
+            if 'scripts/' in line and "$stage/$root/scripts/" in line
+        ]
+        self.assertTrue(copies, "build-source.sh copies nothing into scripts/")
+        self.assertTrue(
+            any("plist" in line for line in copies),
+            "the scripts/ copy must carry *.plist; build-macos.sh passes "
+            "scripts/hwi-entitlements.plist to codesign and a source archive "
+            "without it cannot reproduce a signed Mac build",
+        )
+        self.assertIn(
+            "hwi-entitlements.plist",
+            (ROOT / "scripts" / "build-macos.sh").read_text(encoding="utf-8"),
+            "build-macos.sh no longer uses the plist; revisit what the archive ships",
+        )
+
+    def test_the_linux_port_inputs_reach_the_archive(self):
+        """LINUX-PORT.md and the Linux lock input are build records, not debris.
+
+        The lock was already shipped; its input file and the port document were
+        not, so an archive reader could not regenerate the lock or read the
+        rules it was generated under.
+        """
+        docs = self._root_docs()
+        for name in ("LINUX-PORT.md", "requirements-desktop-linux.txt"):
+            with self.subTest(name=name):
+                self.assertIn(name, docs,
+                              f"{name} must be in root_docs so the archive ships "
+                              f"it and the completeness loop checks it")
+                self.assertTrue((ROOT / name).is_file(),
+                                f"{name} is named in root_docs but missing from "
+                                f"the working tree")
+
+    def test_the_header_comment_does_not_claim_the_plist_is_absent(self):
+        """A comment that overclaims — or understates — a control is a finding.
+
+        This header used to say the port "has neither" docs/ nor scripts/*.plist.
+        The tree has carried the plist since the HWI hardened-runtime fix, so
+        the comment was describing a decision the script had already reversed.
+
+        The negative half is matched case-insensitively and against more than
+        one phrasing on purpose: a first version looked for the exact sentence
+        "the port has neither", and a break that capitalized the T sailed
+        straight through it. Pin the claim, not one spelling of it.
+        """
+        lowered = self.script.lower()
+        for phrase in ("has neither", "those lines are gone", "the port has not"):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(
+                    phrase, lowered,
+                    f"build-source.sh's header claims scripts/*.plist is absent "
+                    f"({phrase!r}); it is present and required for a signed Mac build")
+        self.assertIn("hwi-entitlements.plist", self.script,
+                      "the header must name the plist it now ships and why")
+        self.assertRegex(
+            self.script,
+            r"(?is)does\s+not\s+(?:#\s*)?exclude\s+scripts/\*\.plist",
+            "the header must state affirmatively that the plist ships, not "
+            "merely avoid the false claim",
+        )
+
+    def test_the_completeness_loop_covers_the_new_inputs(self):
+        """The existing missing_docs loop must actually check what we just added.
+
+        Adding a file to root_docs is only half the fix: the loop that reports a
+        missing document reads the same array, and pinning that relationship is
+        what stops the two drifting apart.
+        """
+        self.assertRegex(
+            self.active,
+            r'for file in "\$\{root_docs\[@\]\}"',
+            "the completeness loop no longer iterates root_docs",
+        )
+        self.assertIn("missing_docs", self.script)
 
 
 if __name__ == "__main__":

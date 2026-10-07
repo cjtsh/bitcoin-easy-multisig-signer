@@ -107,7 +107,11 @@ else
     note "Preparing $venv from $lock"
     rm -rf "$venv"
     "$python_bin" -m venv "$venv"
-    "$venv/bin/python" -m pip install --disable-pip-version-check --quiet --upgrade pip
+    # No `pip install --upgrade pip` here (CT-57). It was the one unpinned fetch
+    # on the build path: whatever PyPI served as "current pip" became the
+    # installer for a hash-locked tree, and neither build-macos.sh nor
+    # build-windows.ps1 ever did it. The interpreter's own pip installs
+    # --require-hashes just fine.
     "$venv/bin/python" -m pip install --disable-pip-version-check --require-hashes -r "$lock"
     sha256sum "$lock" | awk '{print $1}' > "$stamp"
 fi

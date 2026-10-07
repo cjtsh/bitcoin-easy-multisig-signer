@@ -552,23 +552,44 @@ class LargeAmountPins(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class PipToolsPinTests(unittest.TestCase):
+    """Both lock jobs must resolve one pip-tools release, and agree on it.
+
+    CT-57 moved the version pin out of the workflow text and into
+    requirements-piptools.lock, so the workflows no longer spell `pip-tools==`.
+    The control did not move: one release, used by both jobs, and the lock's
+    input file must name that same release. This follows the pin rather than
+    deleting the assertion that used to live here.
+    """
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+
     def test_every_lock_job_pins_the_same_piptools_release(self):
-        root = Path(__file__).resolve().parents[1]
-        versions = set()
         for name in ("windows-inputs.yml", "linux-inputs.yml"):
             # The checkout keeps recipes in .github/workflows/; the source
             # archive ships them under ci/ (see scripts/build-source.sh).
-            recipe = next((path for path in (root / ".github" / "workflows" / name,
-                                             root / "ci" / name)
+            recipe = next((path for path in (self.root / ".github" / "workflows" / name,
+                                             self.root / "ci" / name)
                            if path.is_file()), None)
             self.assertIsNotNone(
                 recipe, f"{name} is missing from both .github/workflows/ and ci/")
             text = recipe.read_text(encoding="utf-8")
-            found = re.findall(r"pip-tools==([0-9.]+)", text)
-            self.assertTrue(found, f"{name} must pin pip-tools==…")
-            versions.update(found)
+            active = "\n".join(
+                line for line in text.splitlines()
+                if not line.lstrip().startswith("#"))
+            self.assertIn("requirements-piptools.lock", active,
+                          f"{name} must install pip-tools from the committed lock")
             self.assertNotIn("pip install --disable-pip-version-check pip-tools\n", text)
-        self.assertEqual(len(versions), 1, f"lock jobs disagree on pip-tools: {versions}")
+
+        lock = (self.root / "requirements-piptools.lock").read_text(encoding="utf-8")
+        releases = set(re.findall(r"^pip-tools==([0-9.a-z+]+)", lock, re.MULTILINE))
+        self.assertEqual(len(releases), 1,
+                         f"the lock must pin exactly one pip-tools release: {releases}")
+        pinned = releases.pop()
+        source = (self.root / "requirements-piptools.txt").read_text(encoding="utf-8")
+        self.assertIn(f"pip-tools=={pinned}", source,
+                      "the lock's input file must name the same release the lock "
+                      "resolved, or the two disagree about what to regenerate")
 
 
 # ---------------------------------------------------------------------------

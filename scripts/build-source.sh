@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Curated source tarball: no private wallet files, caches, environments or builds.
 #
-# This is the Windows port's archive. The macOS script it was derived from also
-# copied docs/ (the GitHub Pages website) and scripts/*.plist; the port has neither,
-# so those lines are gone rather than left to fail. The remaining completeness
-# checks are kept verbatim in spirit: they caught a real defect each, and a
+# This is the Windows port's archive, and it deliberately excludes docs/ — the
+# GitHub Pages website is a published site, not a build input. It does NOT
+# exclude scripts/*.plist any more: build-macos.sh codesigns the bundled HWI
+# helper with scripts/hwi-entitlements.plist, so a tarball that left the plist
+# out could not reproduce a signed Mac build from itself. The remaining
+# completeness checks are kept in spirit: they caught a real defect each, and a
 # rewritten copy step is exactly when they stop matching reality.
 set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
@@ -27,7 +29,8 @@ root_docs=(
   README.md CURRENT-STATUS.md DISCLAIMER.md PRIVACY.md SECURITY.md
   CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md
   PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md RELEASE-HISTORY.md
-  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md SIGNING.md
+  PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md LINUX-PORT.md
+  SIGNING.md requirements-desktop-linux.txt
 )
 # requirements-desktop-windows.lock is the only lock that can be installed on
 # Windows. requirements-desktop.lock is macOS-resolved and is deliberately still
@@ -37,7 +40,8 @@ root_docs=(
 cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md "Start Easy Multisig.command" \
   requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
   requirements-desktop-windows.lock requirements-desktop-linux.lock \
-  requirements-ci.txt requirements-ci.lock version.py \
+  requirements-ci.txt requirements-ci.lock \
+  requirements-piptools.txt requirements-piptools.lock version.py \
   gui.py desktop.py network_config.py network_settings.py probe.py safe_http.py \
   signing.py wallet_service.py ui.html "$stage/$root/"
 
@@ -138,8 +142,10 @@ cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
   vendor/appimage-runtime-x86_64 \
   vendor/libusb-COPYING "$stage/$root/vendor/"
 # Glob, not a list: build-windows.ps1 calls the other scripts, and an archive missing
-# a script it invokes would build nothing while looking complete.
-cp scripts/*.sh scripts/*.py scripts/*.ps1 "$stage/$root/scripts/"
+# a script it invokes would build nothing while looking complete. The plist is not
+# optional either — build-macos.sh passes it to codesign for the bundled HWI helper,
+# and a signed Mac build from this tarball fails without it (CT-56).
+cp scripts/*.sh scripts/*.py scripts/*.ps1 scripts/*.plist "$stage/$root/scripts/"
 # The build recipes, under ci/ rather than .github/workflows/, because the archive
 # is a source tree and the workflow contract tests read them from wherever they
 # land. One pipeline builds and publishes every platform; the two input producers

@@ -1,0 +1,11 @@
+# The lock-generating tool, pinned and hash-locked like every other build input.
+#
+# pip-tools is what produces requirements*.lock. Installing it unpinned meant the
+# tool that decides what the build installs was itself the one unverified fetch on
+# the path — CT-57. Both inputs workflows (windows-inputs.yml, linux-inputs.yml)
+# now install it with --require-hashes from requirements-piptools.lock, so a
+# substituted or compromised pip-tools cannot rewrite what the release builds on.
+#
+# To bump: edit the pin below, then regenerate the lock with pip-compile
+# --allow-unsafe --generate-hashes from THIS file, and commit both together.
+pip-tools==7.6.1

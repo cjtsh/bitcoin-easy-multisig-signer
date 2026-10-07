@@ -458,6 +458,96 @@ class PythonInterpreterPinTests(unittest.TestCase):
 
 
 
+class ToolchainPinTests(unittest.TestCase):
+    """CT-57: the tool that writes the locks must itself be hash-locked.
+
+    pip-tools decides what every released build installs. It was fetched with a
+    bare `pip install pip-tools==7.6.1` — a version pin with no artifact pin —
+    and build-linux.sh separately ran `pip install --upgrade pip`, which is an
+    unpinned fetch of the installer itself. Neither macOS nor Windows did that.
+    """
+
+    def setUp(self):
+        self.lock = ROOT / "requirements-piptools.lock"
+        self.lock_text = self.lock.read_text(encoding="utf-8") if self.lock.is_file() else ""
+
+    def test_the_inputs_workflows_install_piptools_from_a_hash_lock(self):
+        self.assertTrue(self.lock.is_file(),
+                        "requirements-piptools.lock is missing; pip-tools would "
+                        "be installed unpinned")
+        for name in ("windows-inputs.yml", "linux-inputs.yml"):
+            text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            with self.subTest(workflow=name):
+                active = "\n".join(
+                    line for line in text.splitlines()
+                    if not line.lstrip().startswith("#"))
+                self.assertIn("--require-hashes", active,
+                              f"{name} must install pip-tools under --require-hashes")
+                self.assertIn("requirements-piptools.lock", active,
+                              f"{name} must install pip-tools from the committed lock")
+                self.assertNotRegex(
+                    active, r"pip install[^\n]*pip-tools==",
+                    f"{name} installs pip-tools by version alone, with no "
+                    f"artifact hash — the one unverified fetch that decides "
+                    f"what the release builds on",
+                )
+
+    def test_the_piptools_lock_pins_the_tool_by_hash(self):
+        """Every pinned package carries a digest, not merely the headline one.
+
+        The first version of this test asserted one hash for pip-tools and left
+        it at that. A break-and-watch that deleted one of pip-tools' two wheel
+        hashes stayed green — correctly, because one hash is still a pin — but
+        the same shape of break against build, click or pyproject-hooks would
+        have sailed through entirely. Every name==version line must be followed
+        by at least one --hash=sha256: before the next one.
+        """
+        self.assertIn("pip-tools==7.6.1", self.lock_text)
+        entries = re.split(r"\n(?=[A-Za-z0-9_.-]+==)", self.lock_text)
+        pinned = [entry for entry in entries if re.match(r"[A-Za-z0-9_.-]+==", entry)]
+        self.assertGreaterEqual(len(pinned), 4,
+                                "the lock resolved almost nothing; it is not "
+                                "a lock of pip-tools' dependency set")
+        for entry in pinned:
+            name = re.match(r"([A-Za-z0-9_.-]+==[^\s\\]+)", entry).group(1)
+            with self.subTest(package=name):
+                self.assertRegex(
+                    entry, r"--hash=sha256:[0-9a-f]{64}",
+                    f"{name} is pinned by version alone; --require-hashes would "
+                    f"reject the file, and a hand-edited one must not weaken it",
+                )
+        for package in ("build==", "click==", "pyproject-hooks=="):
+            self.assertIn(package, self.lock_text,
+                          f"the lock is missing transitive dependency {package}")
+
+    def test_no_build_script_upgrades_pip_unpinned(self):
+        """`pip install --upgrade pip` is an unverified fetch of the installer.
+
+        It lived only in build-linux.sh, so the three platforms disagreed about
+        what installed their hash-locked trees.
+        """
+        for script in ("build-macos.sh", "build-linux.sh", "build-windows.ps1"):
+            text = (ROOT / "scripts" / script).read_text(encoding="utf-8")
+            active = "\n".join(
+                line for line in text.splitlines()
+                if not line.lstrip().startswith("#"))
+            with self.subTest(script=script):
+                self.assertNotRegex(
+                    active, r"pip install[^\n]*--upgrade[^\n]*\bpip\b",
+                    f"{script} upgrades pip from PyPI with no pin",
+                )
+
+    def test_the_source_archive_ships_the_piptools_lock(self):
+        """The inputs recipes run from a checkout, but the archive must be able
+        to reproduce them; a lock the tarball omits is a lock a reader cannot
+        verify the recipes against."""
+        script = (ROOT / "scripts" / "build-source.sh").read_text(encoding="utf-8")
+        self.assertIn("requirements-piptools.lock", script,
+                      "the source archive must ship requirements-piptools.lock")
+        self.assertIn("requirements-piptools.txt", script,
+                      "the source archive must ship the lock's input file")
+
+
 class PublishPathSweepTests(unittest.TestCase):
     """CT-48: a second publish path must not survive on any ref.
 

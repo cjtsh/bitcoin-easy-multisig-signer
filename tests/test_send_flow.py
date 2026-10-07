@@ -31,6 +31,7 @@ from urllib.request import Request  # noqa: E402
 
 from fake_explorer import three_output_wallet  # noqa: E402
 from gui import LocalApp, PreparedPayment  # noqa: E402
+from network_settings import SettingsError  # noqa: E402
 from probe import ProbeError, parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
 from test_wallet_service import mainnet_record, mainnet_roots  # noqa: E402
@@ -249,6 +250,74 @@ class SendFlowTests(unittest.TestCase):
         verify.assert_called_once_with("mutinynet", "https://mutinynet.com/api")
         self.assertEqual(send.call_args.args[1], "mutinynet")
         self.assertIn("mutinynet.com", sent["explorer"])
+
+    def test_the_broadcaster_is_verified_on_networks_without_a_checkpoint(self):
+        """CT-60: the use-time broadcaster check is not a Mutinynet feature.
+
+        `verify_esplora` always checks height 0 against the chain's genesis hash
+        and only ADDS a checkpoint when one exists. The old call site gated it on
+        `checkpoint_height is not None`, which is true for Mutinynet alone, so
+        mainnet and Testnet4 submitted to whatever endpoint settings held without
+        any genesis check at use time. Both of those chains declare no checkpoint;
+        both must still be verified before the irreversible submit.
+        """
+        for chain, mainnet, broadcaster in (
+            ("testnet4", False, "https://mempool.space/testnet4/api"),
+            ("main", True, "https://mempool.space/api"),
+        ):
+            with self.subTest(chain=chain):
+                result, keys = self.prepare_a_reviewed_transaction(
+                    chain=chain, mainnet=mainnet)
+                for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                                    ("trezor", "webusb:1"))):
+                    with patch("gui.sign_psbt_with_device",
+                               side_effect=self.signing_device(key)):
+                        self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                                "device_type": kind,
+                                                "device_path": path})
+                self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+                body = {"preparation_id": "reviewed-1", "confirm": True,
+                        "confirmed_txid": result["txid"]}
+                if chain == "main":
+                    # The mainnet consent gate is separate from this check and
+                    # must not be bypassed just to observe the verify call.
+                    body["mainnet_opt_in"] = True
+                with patch("gui.verify_esplora") as verify, patch(
+                    "gui.broadcast_transaction", return_value=result["txid"]
+                ) as send:
+                    self.post("/api/broadcast", body)
+                verify.assert_called_once_with(chain, broadcaster)
+                self.assertEqual(send.call_args.args[1], chain,
+                                 "the check must run BEFORE the submit, not after")
+
+    def test_a_wrong_network_broadcaster_is_refused_before_any_submit(self):
+        """The negative half of CT-60: a refused broadcaster must mean no send.
+
+        verify_esplora raises when the endpoint answers with another network's
+        genesis. If that refusal did not stop the submit, the check would be
+        decoration — which is the whole point of the finding.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        refusal = ("Explorer is on the wrong Bitcoin network; "
+                   "settings were not changed.")
+        with patch("gui.verify_esplora", side_effect=SettingsError(refusal)), \
+                patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": result["txid"]})
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("wrong Bitcoin network", err.exception.read().decode())
+        send.assert_not_called()
+        self.assertIsNone(self.app.pending_broadcast_txid,
+                          "a refused broadcaster is not an unknown outcome; "
+                          "nothing was sent and nothing is pending")
 
     def test_broadcast_prechecks_do_not_hold_the_session_lock(self):
         """CT-13: explorer I/O before submit must not stall every other operation.

@@ -993,8 +993,14 @@ class LocalApp:
                 # A scan can become stale while the owner reviews devices.
                 # Recheck the exact chosen coins before submitting anything.
                 verify_selected_outpoints(packet, chain, primary)
-                if CHAIN_CONFIGS[chain].checkpoint_height is not None:
-                    verify_esplora(chain, broadcaster)
+                # CT-60: the broadcaster is verified at use, on every network.
+                # This used to run only when the chain declared a checkpoint, so
+                # it fired for Mutinynet alone and mainnet/Testnet4 submitted to
+                # whatever endpoint was in settings without a genesis check here.
+                # verify_esplora always checks height 0 against the chain's
+                # genesis hash and ADDS a checkpoint when one exists, so the
+                # gate was withholding a check that is valid everywhere.
+                verify_esplora(chain, broadcaster)
                 with state.lock:
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The payment changed before broadcast.")
