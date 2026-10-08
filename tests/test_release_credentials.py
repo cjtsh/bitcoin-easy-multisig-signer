@@ -19,6 +19,7 @@ import json
 import os
 import pathlib
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -199,6 +200,134 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         reason (gh missing, not the defect)."""
         self.assertTrue(shutil.which("bash"), "these tests need bash")
         self.assertTrue(SCRIPT.is_file(), "the check script must exist")
+
+
+PROVISION = ROOT / "scripts" / "provision-release-credentials.sh"
+
+
+class ProvisionReleaseCredentialsTests(unittest.TestCase):
+    """The recovery script that rebuilds the credentials from this machine.
+
+    GitHub never returns a secret's value, so the only way back from a lost
+    environment secret is to re-derive it from the master copy on this machine.
+    That script now sits on the release path, so it is pinned here: it must be
+    able to arm every name, and it must never be the thing that leaks one — no
+    shell tracing and no value in argv, which `ps` can see.
+    """
+
+    def test_the_provision_script_exists_and_is_executable(self):
+        self.assertTrue(PROVISION.is_file(), "scripts/provision-release-credentials.sh must exist")
+        self.assertTrue(os.access(PROVISION, os.X_OK), "the provisioning script must be executable")
+
+    def test_the_provision_script_is_syntactically_valid_and_prints_usage(self):
+        result = subprocess.run(
+            ["bash", str(PROVISION), "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--dry-run", result.stdout)
+        self.assertIn("--prune", result.stdout)
+
+    def test_the_provision_script_never_passes_a_value_in_argv(self):
+        text = PROVISION.read_text(encoding="utf-8")
+        self.assertNotIn("set -x", text, "shell tracing would print a value")
+        self.assertNotIn("--body", text, "argv is visible to ps; values must arrive on stdin")
+        self.assertEqual(
+            text.count("gh secret set"),
+            1,
+            "every write must go through the single stdin helper",
+        )
+
+    def test_the_provision_script_is_pinned_to_the_documented_material(self):
+        text = PROVISION.read_text(encoding="utf-8")
+        for needle in (
+            "ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7",
+            "02624AD5998203927864C7167C461DE0E6D19707",
+            "release-signing",
+            "apple-signing",
+            "unused-the-release-key-carries-no-passphrase",
+            "check-release-credentials.sh",
+            "--prune",
+        ):
+            self.assertIn(needle, text, f"the provisioning script must stay pinned to: {needle}")
+
+    def test_a_dry_run_touches_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            log = folder / "calls"
+            for tool in ("gh", "gpg", "security", "base64", "python3"):
+                fake = folder / tool
+                fake.write_text(
+                    "#!/bin/sh\n" f'echo "{tool} $*" >> "{log}"\n' "exit 99\n",
+                    encoding="utf-8",
+                )
+                fake.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(PROVISION), "--dry-run"],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(ROOT),
+                env=dict(os.environ, PATH=f"{folder}:/usr/bin:/bin"),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertFalse(log.exists(), "a dry run must not invoke any tool")
+            for name in RELEASE_SECRETS + APPLE_SECRETS:
+                self.assertIn(name, result.stdout, "a dry run must name every secret it would set")
+
+    def test_the_owner_path_carries_the_value_on_stdin_only(self):
+        """The one credential only the owner can create arrives through
+        `--app-password-prompt`/`--app-password-file`. This runs that exact
+        path against a fake `gh` and proves the value reaches GitHub on stdin
+        and never in argv (which `ps` can see) or on stdout (which a log keeps).
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            value = "abcd-efgh-ijkl-mnop"
+            secret_file = folder / "app-password"
+            secret_file.write_text(value, encoding="utf-8")
+            argv_log = folder / "argv"
+            stdin_log = folder / "stdin"
+            for tool in ("gpg", "security", "base64", "python3"):
+                fake = folder / tool
+                fake.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+                fake.chmod(0o755)
+            fake_gh = folder / "gh"
+            fake_gh.write_text(
+                "#!/bin/sh\n"
+                f'printf "%s\\n" "$*" >> "{argv_log}"\n'
+                f'cat >> "{stdin_log}"\n'
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(PROVISION),
+                    "--repo",
+                    REPO,
+                    "--only",
+                    "MAC_APP_SPECIFIC_PASSWORD",
+                    "--app-password-file",
+                    str(secret_file),
+                    "--no-verify",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(ROOT),
+                env=dict(os.environ, PATH=f"{folder}:/usr/bin:/bin"),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            argv = argv_log.read_text(encoding="utf-8")
+            self.assertIn("secret set MAC_APP_SPECIFIC_PASSWORD --env apple-signing", argv)
+            self.assertNotIn(value, argv, "the value must never appear in argv")
+            self.assertNotIn(value, result.stdout, "the value must never be printed")
+            self.assertNotIn(value, result.stderr, "the value must never be printed")
+            self.assertEqual(stdin_log.read_text(encoding="utf-8"), value)
 
 
 if __name__ == "__main__":
