@@ -3,6 +3,7 @@
 CT-29 — source-mode HWI must identify as the pinned release
 CT-34 — imported signatures must be BIP-62 low-S
 CT-43 — a saved PSBT that carries signatures is not "unsigned"
+CT-84 — the key-proof message digest must match published, external vectors
 
 (CT-20's genesis-always pin lives in test_gui_integration.py next to the
 scan harness. CT-17's runner pins live in test_workflow_config.py.)
@@ -13,6 +14,7 @@ weakened it. Break-and-watch: remove the gate, watch this file go red.
 """
 
 import hashlib
+import os
 import re
 import sys
 import tempfile
@@ -25,6 +27,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from embit import ec
 from embit.networks import NETWORKS
 
 from support import find_build_recipe
@@ -34,8 +37,9 @@ import probe
 from fake_explorer import three_output_wallet
 from probe import (
     EXPECTED_HWI_VERSION, HWI_PAYLOAD_PINS, ProbeError, _bitcoin_message_digest,
-    _hwi_command, _hwi_path, _verify_hwi_identity, begin_signing_session,
-    invoke_hwi, parse_bsms, prove_signer_holds_key, verify_signer_device,
+    _hwi_command, _hwi_path, _verify_hwi_identity, _verify_message_signature,
+    begin_signing_session, invoke_hwi, parse_bsms, prove_signer_holds_key,
+    verify_signer_device,
 )
 from signing import SECP256K1_HALF_ORDER, SigningError, _is_low_s, verified_input_signatures
 from test_money_path_pins import prepared
@@ -87,6 +91,7 @@ class HwiIdentityPins(unittest.TestCase):
 
     def setUp(self):
         probe._verified_hwi_paths.clear()
+        probe._verified_hwi_files.clear()
 
     def _planted_helper(self, folder: Path, version_line: str,
                         with_digest: bool = True) -> Path:
@@ -300,7 +305,9 @@ class HwiIdentityPins(unittest.TestCase):
                         "scripts/hwi_entry.py must exist for source mode to run")
         with patch.object(sys, "frozen", False, create=True), \
                 patch.object(sys, "executable", "/nowhere/python3"):
-            self.assertEqual(_hwi_command("hwi"), ["/nowhere/python3", str(entry)])
+            self.assertEqual(
+                _hwi_command("hwi"),
+                ["/nowhere/python3", "-I", "-P", str(entry)])
 
     def test_the_path_lookup_fallback_is_gone(self):
         """CT-49: probe.py must not be able to resolve a helper from PATH.
@@ -341,7 +348,9 @@ class HwiIdentityPins(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             helper = Path(folder) / "hwi_entry.py"
             helper.write_bytes(entry.read_bytes())
-            seen = "\n".join(f"{name} {'0' * 64}" for name in HWI_PAYLOAD_PINS)
+            seen = "\n".join(
+                f"{name} /nowhere/{name.replace('.', '_')}.py {'0' * 64}"
+                for name in HWI_PAYLOAD_PINS)
             with patch("probe.subprocess.run",
                        return_value=CompletedProcess([], 0, seen, "")) as run:
                 with self.assertRaisesRegex(
@@ -349,7 +358,10 @@ class HwiIdentityPins(unittest.TestCase):
                     _verify_hwi_identity(str(helper), [sys.executable, str(helper)])
         # The payload check ran before any --version question was asked.
         self.assertEqual(run.call_count, 1)
-        self.assertIn("hwilib", run.call_args.args[0][2])
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[:3], [sys.executable, "-I", "-P"])
+        self.assertIn("hwilib", argv[-1])
+        self.assertNotIn("import_module", argv[-1])
 
     def test_the_payload_checker_accepts_the_anchored_interpreter(self):
         entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
@@ -357,7 +369,8 @@ class HwiIdentityPins(unittest.TestCase):
             helper = Path(folder) / "hwi_entry.py"
             helper.write_bytes(entry.read_bytes())
             seen = "\n".join(
-                f"{name} {digest}" for name, digest in HWI_PAYLOAD_PINS.items())
+                f"{name} /nowhere/{name.replace('.', '_')}.py {digest}"
+                for name, digest in HWI_PAYLOAD_PINS.items())
             version = f"hwi_entry.py {EXPECTED_HWI_VERSION}"
 
             def fake_run(argv, **kwargs):
@@ -368,6 +381,94 @@ class HwiIdentityPins(unittest.TestCase):
             with patch("probe.subprocess.run", side_effect=fake_run):
                 _verify_hwi_identity(str(helper), [sys.executable, str(helper)])
             self.assertIn(str(helper), probe._verified_hwi_paths)
+
+    def test_the_check_and_the_helper_import_the_same_package(self):
+        """CT-90: one interpreter, one rule, or the hashed path is not the run path.
+
+        `-I` (isolated) implies `-E`, `-s` and `-P`: PYTHONPATH, the user site
+        directory and the script's own directory are all ignored. The payload
+        check and the helper are handed the same flags, so a directory the
+        check cannot see is a directory the helper cannot import from either.
+        """
+        flags = ["-I", "-P"]
+        self.assertEqual(list(probe._HWI_ISOLATION_FLAGS), flags)
+        with patch.object(sys, "frozen", False, create=True), \
+                patch.object(sys, "executable", "/nowhere/python3"):
+            self.assertEqual(
+                _hwi_command("hwi")[:3], ["/nowhere/python3", *flags])
+            check = probe._hwi_payload_check_command("pass")
+            self.assertEqual(check[:3], ["/nowhere/python3", *flags])
+            self.assertEqual(check[-2:], ["-c", "pass"])
+
+    def test_a_hwilib_that_lies_about_its_files_is_refused_without_running_it(self):
+        """CT-90's exact attack, reproduced over a real subprocess.
+
+        The poisoned package is reachable here -- PYTHONPATH points straight at
+        it and the isolation flags are dropped for this one test -- which is the
+        strongest form of the question. The old check learned its paths with
+        ``importlib.import_module``, so it ran the attacker's ``__init__.py``:
+        the marker appeared, the planted ``__file__`` and
+        ``sys.modules['hwilib._cli']`` pointed the digests at the genuine decoy
+        files, and the pin passed. ``PathFinder.find_spec`` answers without
+        executing anything, so the digest is the attacker's own bytes.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            marker = root / "the-fake-ran.txt"
+            decoy = root / "decoy" / "hwilib"
+            decoy.mkdir(parents=True)
+            (decoy / "__init__.py").write_text("# genuine\n", encoding="utf-8")
+            (decoy / "_cli.py").write_text("# genuine cli\n", encoding="utf-8")
+            fake = root / "site" / "hwilib"
+            fake.mkdir(parents=True)
+            (fake / "_cli.py").write_text("# fake cli\n", encoding="utf-8")
+            (fake / "__init__.py").write_text(
+                "import pathlib, sys, types\n"
+                f"pathlib.Path({str(marker)!r}).write_text('ran')\n"
+                f"__file__ = {str(decoy / '__init__.py')!r}\n"
+                "sys.modules[__name__].__file__ = __file__\n"
+                "sys.modules['hwilib._cli'] = types.ModuleType('hwilib._cli')\n"
+                "sys.modules['hwilib._cli'].__file__ = "
+                f"{str(decoy / '_cli.py')!r}\n",
+                encoding="utf-8")
+            pins = {
+                "hwilib": hashlib.sha256(
+                    (decoy / "__init__.py").read_bytes()).hexdigest(),
+                "hwilib._cli": hashlib.sha256(
+                    (decoy / "_cli.py").read_bytes()).hexdigest(),
+            }
+            with patch.dict(probe.HWI_PAYLOAD_PINS, pins, clear=True), \
+                    patch.dict(os.environ, {"PYTHONPATH": str(root / "site")}), \
+                    patch.object(probe, "_hwi_payload_check_command",
+                                 lambda script: [sys.executable, "-c", script]):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload()
+            self.assertFalse(
+                marker.exists(),
+                "the payload check imported the package it was inspecting")
+
+    def test_the_payload_check_accepts_a_package_whose_bytes_are_recorded(self):
+        """The other half of the pin: matching bytes pass, with no import."""
+        with tempfile.TemporaryDirectory() as folder:
+            package = Path(folder) / "site" / "hwilib"
+            package.mkdir(parents=True)
+            (package / "__init__.py").write_text(
+                "# pinned init\n", encoding="utf-8")
+            (package / "_cli.py").write_text(
+                "# pinned cli\n", encoding="utf-8")
+            pins = {
+                "hwilib": hashlib.sha256(
+                    (package / "__init__.py").read_bytes()).hexdigest(),
+                "hwilib._cli": hashlib.sha256(
+                    (package / "_cli.py").read_bytes()).hexdigest(),
+            }
+            with patch.dict(probe.HWI_PAYLOAD_PINS, pins, clear=True), \
+                    patch.dict(os.environ,
+                               {"PYTHONPATH": str(package.parent)}), \
+                    patch.object(probe, "_hwi_payload_check_command",
+                                 lambda script: [sys.executable, "-c", script]):
+                probe._verify_hwi_payload()
 
     # -- CT-58: re-identify at every signing session ----------------------
 
@@ -392,8 +493,43 @@ class HwiIdentityPins(unittest.TestCase):
     def test_begin_signing_session_clears_every_cached_identity(self):
         probe._verified_hwi_paths.add("/one")
         probe._verified_hwi_paths.add("/two")
+        probe._verified_hwi_files["/one"] = (("/one", "0" * 64),)
         begin_signing_session()
         self.assertEqual(probe._verified_hwi_paths, set())
+        self.assertEqual(probe._verified_hwi_files, {})
+
+    # -- CT-91: a cached verdict is a memory of bytes ----------------------
+
+    def test_a_helper_swapped_inside_one_session_does_not_inherit_the_verdict(self):
+        """CT-91: the cache remembers bytes, not permission.
+
+        Between two calls in one signing session the file on disk can change.
+        A cache keyed on the path alone returns early the second time and the
+        swapped helper runs; this re-reads what was hashed and puts the new
+        bytes back through the same digest gate.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            _verify_hwi_identity(str(helper))
+            self.assertIn(str(helper), probe._verified_hwi_paths)
+            helper.write_text(helper.read_text() + "\n# swapped after the check\n")
+            with self.assertRaisesRegex(
+                    ProbeError, "does not match its recorded digest"):
+                _verify_hwi_identity(str(helper))
+            self.assertNotIn(str(helper), probe._verified_hwi_paths,
+                             "a stale verdict must not survive the swap")
+
+    def test_an_unchanged_helper_is_still_checked_only_once(self):
+        """The re-read must not cost a second --version run on the fast path."""
+        with tempfile.TemporaryDirectory() as folder:
+            helper = self._planted_helper(folder, f"hwi {EXPECTED_HWI_VERSION}")
+            _verify_hwi_identity(str(helper))
+            with patch("probe.subprocess.run",
+                       return_value=CompletedProcess(
+                           [], 0, f"hwi {EXPECTED_HWI_VERSION}", "")) as run:
+                _verify_hwi_identity(str(helper))
+            self.assertEqual(run.call_count, 0,
+                             "unchanged bytes must not pay the identity check again")
 
     # -- nothing runs unverified ------------------------------------------
 
@@ -654,6 +790,76 @@ class DeviceProofPins(unittest.TestCase):
         with patch("probe.invoke_hwi", side_effect=fake_hwi):
             with self.assertRaisesRegex(ProbeError, "did not prove it holds the wallet key"):
                 verify_signer_device(self.wallet, "hwi", "test", "jade", "/dev/x", 1)
+
+
+# ---------------------------------------------------------------------------
+# CT-84 — the key-proof digest is pinned to vectors from outside this repo
+# ---------------------------------------------------------------------------
+
+class MessageDigestVectorPins(unittest.TestCase):
+    """CT-84: `_bitcoin_message_digest` must match published, external vectors.
+
+    Every other test of this function recomputes its expectation with the
+    function itself, so a drifted envelope prefix, length byte or hash order
+    would stay green here while every device key-proof in the field failed
+    closed. The vectors below come from outside this repository:
+    bitcoinjs-message's published `test/fixtures.json`, which records the
+    envelope prefix byte for byte and the digest it computes for a message.
+
+        https://github.com/bitcoinjs/bitcoinjs-message/blob/master/test/fixtures.json
+
+    `valid.magicHash` holds the digest of a message; `valid.sign[0]` holds a
+    complete triple — the declared private key `d = 1`, the message, and the
+    compact signature that implementation produced over it.
+    """
+
+    # fixtures.json -> networks.bitcoin, quoted byte for byte.
+    PUBLISHED_PREFIX = b"\x18Bitcoin Signed Message:\n"
+
+    # fixtures.json -> valid.magicHash
+    PUBLISHED_DIGESTS = (
+        ("", "80e795d4a4caadd7047af389d9f7f220562feb6196032e2131e10563352c4bcc"),
+        ("Vires is Numeris",
+         "f8a5affbef4a3241b19067aa694562f64f513310817297089a8929a930f4f933"),
+    )
+
+    # fixtures.json -> valid.sign[0]: d = 1, message "vires is numeris".
+    SIGNED_MESSAGE = b"vires is numeris"
+    SIGNED_SIGNATURE = (
+        "IF8nHqFr3K2UKYahhX3soVeoW8W1ECNbr0wfck7lzyXjCS5Q16Ek45zyBuy1Fiy9sTPKVgsqqOuPvbycuVSSVl8="
+    )
+    # The public key for the private key 1 is the secp256k1 generator itself.
+    GENERATOR_SEC = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
+    def test_the_envelope_is_the_published_prefix_and_variable_length(self):
+        """Reassemble the published envelope here, without the function."""
+        for message in (b"", b"ab", b"x" * 300):
+            length = (bytes([len(message)]) if len(message) < 253 else
+                      bytes([253, len(message) & 0xFF, (len(message) >> 8) & 0xFF]))
+            payload = self.PUBLISHED_PREFIX + length + message
+            self.assertEqual(
+                hashlib.sha256(hashlib.sha256(payload).digest()).digest(),
+                _bitcoin_message_digest(message),
+                f"envelope digest differs for a {len(message)}-byte message",
+            )
+
+    def test_the_published_message_digests_are_reproduced(self):
+        for message, expected in self.PUBLISHED_DIGESTS:
+            with self.subTest(message=message):
+                self.assertEqual(
+                    _bitcoin_message_digest(message.encode("utf-8")).hex(), expected)
+
+    def test_a_published_signature_verifies_against_the_published_key(self):
+        """The whole proof path, against a signature this repository did not make."""
+        key = ec.PrivateKey(bytes.fromhex("00" * 31 + "01"))
+        self.assertEqual(key.get_public_key().sec().hex(), self.GENERATOR_SEC)
+        self.assertTrue(_verify_message_signature(
+            key.get_public_key().sec(), self.SIGNED_MESSAGE, self.SIGNED_SIGNATURE))
+
+    def test_the_published_signature_is_refused_for_a_changed_message(self):
+        key = ec.PrivateKey(bytes.fromhex("00" * 31 + "01"))
+        self.assertFalse(_verify_message_signature(
+            key.get_public_key().sec(), b"Vires is numeris", self.SIGNED_SIGNATURE))
 
 
 # ---------------------------------------------------------------------------

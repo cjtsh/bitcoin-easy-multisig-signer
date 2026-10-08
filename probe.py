@@ -169,6 +169,16 @@ def parse_bsms(text: str) -> WalletRecord:
             raise ProbeError("BSMS receive and change descriptors do not use the same multisig keys.")
     if len({key.fingerprint for key in keys}) != len(keys):
         raise ProbeError("Duplicate signer fingerprints are ambiguous in this proof.")
+    # CT-72: two origin fingerprints can label the SAME xpub. The receive list
+    # then reads as an honest m-of-n with two cosigner cards while one device
+    # approval finalizes it, so the screen would show a quorum that does not
+    # exist. A fingerprint is the signer's label; the key bytes are the signer,
+    # so only the bytes can answer "how many keys must approve this payment".
+    if len({key.key.to_base58() for key in keys}) != len(keys):
+        raise ProbeError(
+            "The same signer key is listed more than once in this wallet file. "
+            "A multisig proof must name each cosigner key exactly once."
+        )
     if network in ("test", "main"):
         config = for_record_network(network)
         if any(key.derivation[:2] != [0x80000030, config.bip48_coin_type]
@@ -236,6 +246,29 @@ _HWI_NOT_THE_RELEASE = (
 )
 
 _verified_hwi_paths: set[str] = set()
+# What was hashed when each path was verified, so a reuse can re-read it
+# instead of trusting a remembered verdict (CT-91).
+_verified_hwi_files: dict[str, tuple[tuple[str, str], ...]] = {}
+
+
+def _cached_identity_holds(path: str) -> bool:
+    """True only while every file behind a cached verdict still has its bytes.
+
+    A path is not an identity. A helper can be replaced on disk between two
+    calls in the same session — behind the app's back, in the window CT-91
+    names — so a cached entry is re-hashed before it is believed. Anything
+    unreadable now is not trusted either.
+    """
+    recorded = _verified_hwi_files.get(path)
+    if recorded is None:
+        return False
+    for file_path, expected in recorded:
+        try:
+            if sha256(Path(file_path).read_bytes()).hexdigest() != expected:
+                return False
+        except OSError:
+            return False
+    return True
 
 
 def begin_signing_session() -> None:
@@ -244,9 +277,11 @@ def begin_signing_session() -> None:
     CT-58: the cache used to live for the whole process, so a helper swapped on
     disk after the first check would run unverified for the rest of the session.
     A signing session is the unit the owner experiences, so it is the unit this
-    trust decision is bounded by.
+    trust decision is bounded by. CT-91: even inside one session the cached
+    entry is re-read, never merely trusted.
     """
     _verified_hwi_paths.clear()
+    _verified_hwi_files.clear()
 
 
 def _in_tree_hwi_entry() -> Path:
@@ -291,13 +326,28 @@ def _hwi_path(executable: str) -> str:
     return str(entry)
 
 
+# CT-90: the check child and the helper must be the same interpreter, or the
+# path that was hashed is not the path that runs. `-I` is Python's isolated
+# mode -- it implies `-E`, `-s` and `-P`, so PYTHONPATH, the user site
+# directory and the working directory are all ignored -- and `-P` is named
+# explicitly because that is the flag keeping a directory next to the script
+# off sys.path. What the check can see, the helper imports, and the reverse.
+_HWI_ISOLATION_FLAGS = ("-I", "-P")
+
+
+def _hwi_payload_check_command(script: str) -> list[str]:
+    """The argv that runs the payload check under those same rules."""
+    return [sys.executable, *_HWI_ISOLATION_FLAGS, "-c", script]
+
+
 def _hwi_command(executable: str) -> list[str]:
     """The argv prefix that actually runs the helper.
 
     Source mode does not execute a helper binary at all: it runs the
-    repository's entry point under the interpreter this app is already using.
-    That is the same trust model as the frozen bundle's own copy, without a
-    binary on disk for a neighbour to replace.
+    repository's entry point under the interpreter this app is already using,
+    with the same isolation as the payload check (CT-90). That is the same
+    trust model as the frozen bundle's own copy, without a binary on disk for a
+    neighbour to replace.
     """
     path = _hwi_path(executable)
     if getattr(sys, "frozen", False):
@@ -305,26 +355,52 @@ def _hwi_command(executable: str) -> list[str]:
     candidate = Path(executable)
     if candidate.is_absolute() or candidate.parent != Path("."):
         return [path]
-    return [sys.executable, path]
+    return [sys.executable, *_HWI_ISOLATION_FLAGS, path]
 
 
-def _verify_hwi_payload() -> None:
+def _hwi_payload_check_script() -> str:
+    """The child that hashes the package without executing any of it.
+
+    ``importlib.import_module`` is what made the old check porous (CT-90): it
+    runs ``hwilib/__init__.py`` before a byte is hashed, so attacker code sat
+    inside its own inspection -- it wrote a marker, repointed ``__file__`` and
+    planted ``sys.modules['hwilib._cli']`` at the genuine files, and the pin
+    passed. ``PathFinder.find_spec`` answers only "which file would be
+    imported" and executes nothing; the submodule is found from the parent's
+    recorded search locations for the same reason.
+    """
+    return (
+        "import hashlib, importlib.machinery, pathlib\n"
+        "def digest(path):\n"
+        "    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()\n"
+        "spec = importlib.machinery.PathFinder.find_spec('hwilib')\n"
+        "if spec is None or not spec.origin:\n"
+        "    raise SystemExit(1)\n"
+        "print('hwilib ' + spec.origin + ' ' + digest(spec.origin))\n"
+        "sub = importlib.machinery.PathFinder.find_spec(\n"
+        "    'hwilib._cli', list(spec.submodule_search_locations or []))\n"
+        "if sub is None or not sub.origin:\n"
+        "    raise SystemExit(1)\n"
+        "print('hwilib._cli ' + sub.origin + ' ' + digest(sub.origin))\n"
+    )
+
+
+def _verify_hwi_payload() -> tuple[tuple[str, str], ...]:
     """Refuse a substituted hwilib before it can see an xpub or a PSBT.
 
     The in-tree entry point is repository source; the code that can be swapped
     out from under a running interpreter is the third-party package it imports.
-    The two files behind the pinned HWI release are hashed here by the anchored
-    interpreter, so a poisoned site-packages is refused rather than believed.
+    The two files behind the pinned HWI release are located by path search and
+    hashed without a line of them running, under the same isolated interpreter
+    that runs the helper -- so a poisoned site-packages is refused rather than
+    believed, and the file that was hashed is the file that runs (CT-90).
+
+    It returns the files it hashed, so a later call can re-read those bytes
+    instead of trusting a remembered verdict (CT-91).
     """
-    script = (
-        "import hashlib, importlib, pathlib\n"
-        "for name in ('hwilib', 'hwilib._cli'):\n"
-        "    path = pathlib.Path(importlib.import_module(name).__file__)\n"
-        "    print(name + ' ' + hashlib.sha256(path.read_bytes()).hexdigest())\n"
-    )
     try:
         result = subprocess.run(
-            [sys.executable, "-c", script],
+            _hwi_payload_check_command(_hwi_payload_check_script()),
             capture_output=True,
             text=True,
             timeout=30,
@@ -338,14 +414,20 @@ def _verify_hwi_payload() -> None:
             "The pinned hardware-wallet library is not installed in this "
             "environment. Install hwi " + EXPECTED_HWI_VERSION + " to use devices."
         )
-    seen: dict[str, str] = {}
+    seen: dict[str, tuple[str, str]] = {}
     for line in (result.stdout or "").splitlines():
-        parts = line.split(" ", 1)
-        if len(parts) == 2:
-            seen[parts[0]] = parts[1].strip()
+        # "<module> <path> <sha256>", split from the right so that a path with
+        # spaces in it survives.
+        parts = line.split(" ")
+        if len(parts) >= 3:
+            seen[parts[0]] = (" ".join(parts[1:-1]), parts[-1].strip())
+    verified: list[tuple[str, str]] = []
     for name, expected in HWI_PAYLOAD_PINS.items():
-        if seen.get(name) != expected:
+        found = seen.get(name)
+        if found is None or found[1] != expected:
             raise ProbeError(_HWI_WRONG_DIGEST)
+        verified.append(found)
+    return tuple(verified)
 
 
 def _hwi_sidecars(path: str) -> list[Path]:
@@ -368,13 +450,16 @@ def _hwi_sidecars(path: str) -> list[Path]:
     return [candidate for candidate in candidates if candidate.is_file()]
 
 
-def _verify_hwi_bytes(path: str) -> None:
+def _verify_hwi_bytes(path: str) -> tuple[tuple[str, str], ...]:
     """Compare a standalone helper against a digest that is not its own claim.
 
     A frozen build's sidecar sits inside the signed bundle it authenticates, so
     replacing the helper means breaking that signature first. An explicitly
     named helper is refused outright without one. Source mode runs no helper
     binary at all — see _verify_hwi_payload for the surface it does pin.
+
+    It returns the file it hashed, for the reason _verify_hwi_payload does: a
+    later call re-reads those bytes instead of trusting a verdict (CT-91).
     """
     sidecars = _hwi_sidecars(path)
     if not sidecars:
@@ -386,6 +471,7 @@ def _verify_hwi_bytes(path: str) -> None:
             raise ProbeError(_HWI_NO_DIGEST)
         if recorded[0].lower() != actual:
             raise ProbeError(_HWI_WRONG_DIGEST)
+    return ((str(path), actual),)
 
 
 def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
@@ -399,17 +485,24 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
 
     Only then does the helper say what version it is, and it has to say it
     exactly (CT-29, CT-49).
+
+    The cache remembers bytes, not permission: a path verified earlier is
+    re-read here, and anything that changed since is put back through the whole
+    check instead of inheriting the earlier verdict (CT-91).
     """
     if path in _verified_hwi_paths:
-        return
+        if _cached_identity_holds(path):
+            return
+        _verified_hwi_paths.discard(path)
+        _verified_hwi_files.pop(path, None)
     argv = list(command) if command is not None else [path]
     # A two-element prefix is [interpreter, entry]: the in-tree source-mode
     # helper, whose substitution surface is the package it imports. Anything
     # else is a standalone binary whose own bytes are what we pin.
     if len(argv) >= 2:
-        _verify_hwi_payload()
+        verified = _verify_hwi_payload()
     else:
-        _verify_hwi_bytes(path)
+        verified = _verify_hwi_bytes(path)
     try:
         result = subprocess.run(
             [*argv, "--version"],
@@ -425,6 +518,7 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
     first_line = output.strip().splitlines()[0].strip() if output.strip() else ""
     if result.returncode != 0 or first_line not in _HWI_VERSION_LINES:
         raise ProbeError(_HWI_NOT_THE_RELEASE)
+    _verified_hwi_files[path] = verified
     _verified_hwi_paths.add(path)
 
 

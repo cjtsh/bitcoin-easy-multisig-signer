@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -188,6 +189,58 @@ class HelperDigestPins(unittest.TestCase):
                 self.assertEqual(build_sbom.helper_digest(root), digest)
             self.assertEqual(probe._hwi_sidecars(str(helper)),
                              [helper.with_name("hwi.sha256")])
+
+
+class ToolchainDisclosurePins(unittest.TestCase):
+    """CT-100: the toolchain a build used is recorded, not assumed.
+
+    A hosted runner's image floats inside its pinned label (apt, MSVC, the
+    Docker base, the tool cache), so no rebuild is bit-reproducible from this
+    repository. The remedy that IS available here is disclosure: the SBOM that
+    ships with, and is attested alongside, the assets must name the toolchain
+    this build actually resolved, so a rebuild on a different one differs in a
+    named field instead of in silence.
+    """
+
+    def _inventory(self):
+        embedded = {name: "b" * 64 for name in build_sbom.native_library_names()}
+        return build_sbom.build("a" * 64, ROOT, set(), embedded, helper_sha="c" * 64)
+
+    def test_the_inventory_records_every_named_probe(self):
+        with patch.object(build_sbom, "probe_toolchain",
+                          side_effect=lambda argv: "banner of " + argv[0]):
+            result = self._inventory()
+        properties = {entry["name"]: entry["value"]
+                      for entry in result["metadata"]["properties"]}
+        self.assertTrue(build_sbom.TOOLCHAIN_PROBES)
+        for name, argv in build_sbom.TOOLCHAIN_PROBES:
+            self.assertEqual(properties[name], "banner of " + argv[0], name)
+
+    def test_a_tool_that_is_not_installed_is_recorded_and_not_omitted(self):
+        with patch.object(build_sbom.subprocess, "run",
+                          side_effect=FileNotFoundError("no msbuild")):
+            self.assertEqual(build_sbom.probe_toolchain(("msbuild", "-version")),
+                             "not found")
+
+    def test_a_tool_that_refuses_to_answer_is_recorded(self):
+        refused = subprocess.CompletedProcess(["cc", "--version"], 1, "", "")
+        with patch.object(build_sbom.subprocess, "run", return_value=refused):
+            self.assertEqual(build_sbom.probe_toolchain(("cc", "--version")),
+                             "not found")
+
+    def test_a_banner_written_to_stderr_is_still_read(self):
+        banner = subprocess.CompletedProcess(
+            ["clang", "--version"], 0, "", "clang version 18.1.3\nTarget: arm64\n")
+        with patch.object(build_sbom.subprocess, "run", return_value=banner):
+            self.assertEqual(build_sbom.probe_toolchain(("clang", "--version")),
+                             "clang version 18.1.3")
+
+    def test_the_platform_probe_answers_on_this_interpreter(self):
+        # The one probe that must work wherever the module runs: the build
+        # interpreter naming the platform it is building on.
+        value = build_sbom.probe_toolchain(build_sbom.TOOLCHAIN_PROBES[0][1])
+        self.assertNotEqual(value, "not found")
+        self.assertTrue(value.strip())
 
 
 if __name__ == "__main__":

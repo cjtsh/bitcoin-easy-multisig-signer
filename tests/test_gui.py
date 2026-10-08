@@ -75,6 +75,12 @@ class LocalGuiTests(unittest.TestCase):
         with urlopen(self.base, timeout=3) as response:
             return response.read().decode()
 
+    def get(self, route, token=None):
+        headers = {"X-Local-Token": self.app.token if token is None else token}
+        request = Request(self.base + route, headers=headers)
+        with urlopen(request, timeout=3) as response:
+            return json.load(response)
+
     def test_file_picker_page_imports_synthetic_public_wallet(self):
         page = self.get_page()
         self.assertIn('type="file"', page)
@@ -466,6 +472,23 @@ class LocalGuiTests(unittest.TestCase):
                       token="wrong-token")
         self.assertEqual(err.exception.code, 403)
 
+    def test_a_non_ascii_token_header_reaches_the_403_and_not_a_crash(self):
+        """CT-74: bytes above 0x7F in the token header must be refused.
+
+        An HTTP header arrives latin-1 decoded, and hmac.compare_digest
+        refuses two non-ASCII str arguments. One 0x80 byte in X-Local-Token
+        therefore raised TypeError out of do_POST before the refusal: the
+        socket was dropped with a traceback per request instead of answering
+        "Local access only." The decision is unchanged — this is not a bypass
+        — but it has to arrive as a 403.
+        """
+        text, _ = test_record()
+        with self.assertRaises(HTTPError) as err:
+            self.post("/api/import", {"chain": "testnet4", "text": text},
+                      token="\x80\x81\x82\xff")
+        self.assertEqual(err.exception.code, 403)
+        self.assertIn("Local access only", json.load(err.exception)["error"])
+
     def test_oversized_requests_are_refused_before_parsing(self):
         """The request-size bound holds at the HTTP boundary (CT-08)."""
         from gui import MAX_REQUEST_BYTES
@@ -630,14 +653,13 @@ class LocalGuiTests(unittest.TestCase):
             "chain": "main", "action": "read",
         })["explorer_url"], "https://mempool.space/api")
 
-    def test_mainnet_fee_reference_is_public_and_cached(self):
+    def test_mainnet_fee_reference_is_token_gated_and_cached(self):
         quote = {"network": "main", "fastest": 4, "standard": 3, "hour": 2,
                  "economy": 1, "minimum": 1, "checked_at": "2026-09-28T00:00:00+00:00",
                  "source": "mempool.space mainnet"}
         with patch("gui.fetch_fee_rates", return_value=quote) as fetch:
             for _ in range(2):
-                with urlopen(self.base + "/api/fees", timeout=3) as response:
-                    self.assertEqual(json.load(response), quote)
+                self.assertEqual(self.get("/api/fees"), quote)
         fetch.assert_called_once_with()
         with patch("gui.urlopen", return_value=io.BytesIO(json.dumps({
             "fastestFee": 4, "halfHourFee": 3, "hourFee": 2,
@@ -778,14 +800,12 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIsNone(builder.call_args.args[3])
         self.assertTrue(builder.call_args.kwargs["send_all"])
 
-    def test_public_price_endpoint_is_cached_and_independent_of_wallet(self):
+    def test_price_endpoint_is_token_gated_cached_and_independent_of_wallet(self):
         quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",
                  "source": "mempool.space BTC/USD spot"}
         with patch("gui.fetch_btc_usd", return_value=quote) as fetch:
-            with urlopen(self.base + "/api/price", timeout=3) as response:
-                self.assertEqual(json.load(response), quote)
-            with urlopen(self.base + "/api/price", timeout=3) as response:
-                self.assertEqual(json.load(response), quote)
+            self.assertEqual(self.get("/api/price"), quote)
+            self.assertEqual(self.get("/api/price"), quote)
         fetch.assert_called_once_with()
         self.assertIsNone(self.app.record)
         request = Request(self.base + "/api/price", headers={"Host": "not-local.example"})
@@ -793,10 +813,33 @@ class LocalGuiTests(unittest.TestCase):
             urlopen(request, timeout=3)
         self.assertEqual(err.exception.code, 403)
 
+    def test_the_feeds_refuse_a_caller_without_the_token(self):
+        """CT-75: the feeds are Host-checked but were open to any local caller.
+
+        The upstream fetchers are patched so that a gate that stopped refusing
+        would answer 200 from this test instead of reaching the network: the
+        refusal is the whole claim.
+        """
+        quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",
+                 "source": "mempool.space BTC/USD spot"}
+        fees = {"network": "main", "fastest": 4, "standard": 3, "hour": 2,
+                "economy": 1, "minimum": 1, "checked_at": "2026-09-28T00:00:00+00:00",
+                "source": "mempool.space mainnet"}
+        with patch("gui.fetch_btc_usd", return_value=quote), \
+             patch("gui.fetch_fee_rates", return_value=fees):
+            for route in ("/api/price", "/api/fees"):
+                with self.subTest(route=route):
+                    with self.assertRaises(HTTPError) as err:
+                        self.get(route, token="")
+                    self.assertEqual(err.exception.code, 403)
+        # The page itself still arrives without a token: it is the response
+        # that carries the fragment with the token in it.
+        self.assertIn("Bitcoin Easy Signer", self.get_page())
+
     def test_bad_price_does_not_claim_a_zero_wallet_balance(self):
         with patch("gui.fetch_btc_usd", side_effect=WalletError("Rate unavailable")):
             with self.assertRaises(HTTPError) as err:
-                urlopen(self.base + "/api/price", timeout=3)
+                self.get("/api/price")
         self.assertEqual(err.exception.code, 503)
         self.assertIsNone(self.app.scan)
 
@@ -866,16 +909,45 @@ class LargeAmountMirrorPins(unittest.TestCase):
         self.assertRegex(self.ui, r"sats >= LARGE_AMOUNT_SATS_FLOOR")
         self.assertRegex(self.ui, r"sats >= LARGE_AMOUNT_SATS_UNTRUSTED_QUOTE")
 
+    def _prepare_refusal(self) -> str:
+        """The large-amount refusal as the code raises it, and nothing else.
+
+        CT-103: this pin used to search all of gui.py for its trigger words,
+        and the gui.py:59 comment carries "$10,000" and "0.04 BTC". Reverting
+        the live message to the old CT-62 wording left those substrings in the
+        comment and the pin stayed green — a test that could not fail for the
+        regression it names. This slices the raise itself: from the trigger
+        test that guards it to the `)` that closes its argument list.
+        """
+        lines = self.backend.splitlines()
+        anchor = next((index for index, line in enumerate(lines)
+                       if "requested_amount >= LARGE_AMOUNT_SATS_FLOOR" in line),
+                      None)
+        self.assertIsNotNone(anchor,
+                             "the large-amount trigger is gone from gui.py")
+        start = next((index for index in range(anchor, len(lines))
+                      if "raise WalletError(" in lines[index]), None)
+        self.assertIsNotNone(start,
+                             "the trigger no longer raises a refusal")
+        for index in range(start + 1, len(lines)):
+            if lines[index].strip() == ")":
+                return "\n".join(lines[start:index + 1])
+        self.fail("the large-amount refusal's argument list is never closed")
+
     def test_the_prepare_refusal_names_every_trigger(self):
         """CT-62: the message said "at least 0.1 BTC" and fired at 0.04.
 
         A message that understates its own trigger is how an owner learns not
-        to trust the warning.
+        to trust the warning. The triggers are read off the live refusal, not
+        off the file the comment explaining them lives in (CT-103).
         """
-        self.assertIn("0.04 BTC", self.backend)
-        self.assertIn("$10,000", self.backend)
-        self.assertIn("dollar equivalent", self.backend)
-        self.assertIn("conservative floor", self.backend)
+        refusal = self._prepare_refusal()
+        self.assertIn("0.04 BTC", refusal)
+        self.assertIn("$10,000", refusal)
+        self.assertIn("dollar equivalent", refusal)
+        self.assertIn("conservative floor", refusal)
+        self.assertNotIn("at least 0.1 BTC", refusal,
+                         "the message must not understate its own trigger")
 
 
 # ---------------------------------------------------------------------------

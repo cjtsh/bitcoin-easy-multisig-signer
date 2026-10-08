@@ -1044,6 +1044,14 @@
       }
       return result;
     }
+    async function get(path) {
+      // CT-75: the feeds are token-gated like every other data route. A GET
+      // without the token is refused, so the header travels here too.
+      const response = await fetch(path, {headers:{"X-Local-Token":token}, cache:"no-store"});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Request failed.");
+      return result;
+    }
     async function loadServerSettings() {
       const chain = selectedChain();
       try {
@@ -1301,9 +1309,7 @@
     async function loadPrice() {
       const requestId = ++priceRequestId;
       try {
-        const response = await fetch("/api/price", {cache:"no-store"});
-        if (!response.ok) throw new Error("Price feed unavailable");
-        const quote = await response.json();
+        const quote = await get("/api/price");
         if (requestId === priceRequestId) rate = quote;
       } catch (_) { if (requestId === priceRequestId) rate = null; }
       renderPrice();
@@ -1404,10 +1410,8 @@
       const requestId = ++feeRequestId;
       const chain = selectedChain();
       try {
-        const response = await fetch(chain === "mutinynet" ?
-          "/api/fees?chain=mutinynet" : "/api/fees", {cache:"no-store"});
-        if (!response.ok) throw new Error("Fee feed unavailable");
-        const quote = await response.json();
+        const quote = await get(chain === "mutinynet" ?
+          "/api/fees?chain=mutinynet" : "/api/fees");
         if (requestId === feeRequestId && chain === selectedChain()) {
           feeQuote = quote;
           if (!feeRateCustomized) {

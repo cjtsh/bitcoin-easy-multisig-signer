@@ -62,6 +62,27 @@ def sparrow_record() -> tuple[str, list[bip32.HDKey]]:
     return "\n".join([lines[0], descriptor, "/0/*,/1/*", lines[3], ""]), roots
 
 
+def duplicate_key_record(distinct_fingerprints: bool = True) -> str:
+    """CT-72: one signer key, listed twice under two different key origins.
+
+    The record reads as an honest 2-of-2 -- two cosigner entries carrying two
+    different fingerprints -- while both entries are the same signer key, so one
+    device approval would satisfy the quorum the screen shows. Synthetic keys
+    only. ``distinct_fingerprints=False`` is the honest-mistake shape: the same
+    key pasted twice with its own origin, which the parser already refused.
+    """
+    root = bip32.HDKey.from_seed(bytes([1]) * 32)
+    label = (bip32.HDKey.from_seed(bytes([2]) * 32).my_fingerprint.hex()
+             if distinct_fingerprints else root.my_fingerprint.hex())
+    xpub = root.derive("m/48h/1h/0h/2h").to_public().to_base58()
+    keys = [f"[{fingerprint}/48h/1h/0h/2h]{xpub}/0/*"
+            for fingerprint in (root.my_fingerprint.hex(), label)]
+    descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
+    reference = Descriptor.from_string(descriptor).derive(0).address(NETWORKS["test"])
+    return (f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\n"
+            f"No path restrictions\n{reference}\n")
+
+
 class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -92,6 +113,18 @@ class ProbeTests(unittest.TestCase):
         text, _ = test_record(key_count=4)
         with self.assertRaisesRegex(ProbeError, "two or three keys"):
             self.write(text)
+
+    def test_one_key_listed_twice_under_two_origins_is_refused(self):
+        # CT-72: a fingerprint is a label the file carries; the key bytes are
+        # the signer. Two origins on one key would display a quorum that a
+        # single device approval satisfies, so the file is refused outright and
+        # never becomes a wallet that could be finalized from one signature.
+        with self.assertRaisesRegex(ProbeError, "listed more than once"):
+            self.write(duplicate_key_record())
+
+    def test_the_same_key_pasted_twice_keeps_its_fingerprint_refusal(self):
+        with self.assertRaisesRegex(ProbeError, "Duplicate signer fingerprints"):
+            self.write(duplicate_key_record(distinct_fingerprints=False))
 
     def test_sparrow_style_record_without_a_checksum_is_accepted(self):
         text, _ = sparrow_record()

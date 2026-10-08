@@ -1,40 +1,53 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Source revision 0.6.7 is the Color Team cycle-3 build-process
-remediation.** The out-of-gate `v0.6.5-windows-x64` release was deleted
-(CT-27), and cycle 3 then found the root cause of it: the per-platform
-publish workflows were never deleted (CT-48). They are now gone from
-every branch. Owner-reported acceptance of the Windows console fix and
-of the Linux AppImage remains in this file's history and in `releases/`;
-those port builds are superseded by the unified pipeline.
+**Source revision 0.6.8 is the Color Team cycle-4 audit
+remediation.** Cycle 3 closed the process root cause of the deleted
+out-of-gate `v0.6.5-windows-x64` release (CT-27 → CT-48), and cycle 4
+then graded the `v0.6.7` tree ⛔ BLOCKED on two independent grounds:
+Copper proved its own failure state — the source-mode hardware-helper
+payload check could be made to *pass* while substituted code ran inside it
+(**CT-90**) — and Red found a wallet file that displays as an honest
+2-of-2 while one device approval finalizes it (**CT-72**, High). Version
+0.6.8 answers the whole ledger in code; see
+`bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.7.md` and
+`releases/PATCH-0.6.8.md`. Owner-reported acceptance of the Windows
+console fix and of the Linux AppImage remains in this file's history and
+in `releases/`; those port builds are superseded by the unified pipeline.
 
-## Current stop point — 0.6.7 published; the cycle-4 plan is signed and ready for the auditor
+## Current stop point — 0.6.8 answers cycle 4; the cycle-5 plan is next and unsigned
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
 and `RELEASE-HISTORY.md` carry; read one of those rather than trusting a
 hardcoded number here. As of 2026-10-07 that is [v0.6.7](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.7), published 2026-10-07 as tag `v0.6.7` on commit `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` by successful candidate run [37644267740](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37644267740) and promote run [37655666900](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37655666900). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
 
-**The cycle-3 panel rerun already ran and graded ⛔ BLOCKED** on the
-`v0.6.6` tree — not on the app. Red found no breach; Orange recorded its
-first LOGIC PROVEN (21/21); Amber verified the supply chain end to end.
-The grade was set by **CT-48 (High)** on the build process: the retired
-per-platform publish workflows were still live on `windows-port` and
-`linux-port` and one had published an unsigned manifest, while
-`build-candidate.yml`'s header claimed no second path existed. Report,
-plan, lock and index are in this repository's root.
+**The cycle-4 panel graded ⛔ BLOCKED** on the `v0.6.7` tree. Amber found
+no broken chain link — 5 actions SHA-pinned and tag-verified, 17/17 sampled
+lock hashes equal to their PyPI digests, 7/7 vendored-input pins matched,
+the promotion byte-verified end to end — and honestly recorded the hosted
+runner and toolchain as trusted infrastructure it cannot inspect from this
+repository (CT-100). White re-derived 18 claim groups (17 CONFIRMED, 1
+CORRECTED, grade-neutral) and re-broke 53 named tripwires, finding one
+comment-satisfiable pin class (CT-103). Red found no breach of the money
+path. Orange recorded 14/17 invariants proven, 0 wrong. The grade was set
+by two things, not by a count: Copper proved its own failure state
+(**CT-90**) and Red's High (**CT-72**) stood. Report, plan, lock and index
+are in this repository's root.
 
-**0.6.7 is done and published.** The cycle-3 findings are answered in
-code and in the dated acceptance note (`releases/PATCH-0.6.7.md` is the
-evidence record). The owner installed the candidate DMG and accepted a
-practice-network payment on hardware; `publish=true` then promoted the
-same candidate bytes from the same commit. The cycle-4 plan is the
-cycle-3 plan carried verbatim with the target revision moved to tag
-`v0.6.7`, its section 0 commit hash filled from the tag and its
-section 9 signed Bitseeker LLC on 2026-10-07 —
-`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md`. That plan
-is what the auditor is handed next; the auditor writes the lock and the
-index row, not us.
+**0.6.8 is committed and is not published.** Cycle 4's findings are
+answered in code and in the round-trip ledger
+(`releases/PATCH-0.6.8.md` is the evidence record; every ID the cycle-4
+report carried is accounted for). The cycle-5 plan is
+`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
+cycle-4 plan carried verbatim with the target revision moved to this
+0.6.8 commit, its section 0 commit hash left as `REPLACE-AT-FREEZE` until
+the freeze, and its section 9 left **unsigned** for the owner — no
+acceptance and no signature is invented for it. The auditor writes the
+lock and the index row for cycle 5, not this repository's authors. One item remains an owner decision, **CT-97**: historical tags
+still dispatch workflows frozen at those tags with today's repository
+secret names, gated only by the release already existing. It cannot be
+fixed from this revision without moving a published tag, which this
+project forbids.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 
@@ -53,8 +66,10 @@ The published set is whatever the
 and `RELEASE-HISTORY.md` carry — **do not restate a "latest published
 build is X" here**, because that sentence is exactly what CT-71 filed and
 it goes stale the moment `version.py` moves again. As of 2026-10-07 the
-newest published tag is `v0.6.6`, promoted through the automated workflow
-from the exact successful signed candidate. The AI-generated Z.ai v0.6.4
+newest published tag is `v0.6.7`, promoted through the automated workflow
+from the exact successful signed candidate, after the owner installed that
+candidate's DMG and accepted a practice-network payment on hardware. The
+AI-generated Z.ai v0.6.4
 report assigns Green under its published rubric; the historical v0.6.3
 Yellow grade is documented in its own report. Neither report is a
 certification, and no independent human end-to-end review is recorded.

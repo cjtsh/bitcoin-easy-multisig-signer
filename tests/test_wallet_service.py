@@ -4,6 +4,7 @@ import io
 import ssl
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from unittest.mock import patch
@@ -422,6 +423,30 @@ class WalletServiceTests(unittest.TestCase):
         lines[3] = self.change
         with self.assertRaisesRegex(WalletError, "Reference address"):
             wallet_layout(parse_bsms("\n".join(lines) + "\n"))
+
+    def test_a_reference_address_that_is_not_receive_zero_is_refused(self):
+        """CT-86: the stored reference address must still name receive/0.
+
+        `parse_bsms` records the file's reference address and the status it
+        derived at parse time; `wallet_layout` re-derives receive/0 from the
+        receive path it just chose and refuses a record whose stored reference
+        address is any other address. The parse-level check above catches a
+        changed reference line in the file; this re-derivation is the only thing
+        standing between a record whose fields disagree and a layout that treats
+        the wrong address as the wallet's anchor. Delete it and a record
+        carrying another address still yields a trusted layout.
+        """
+        record = parse_bsms(test_record(bsms_template=True)[0])
+        other = wallet_layout(record).receive.derive(5).address(NETWORKS["test"])
+        self.assertNotEqual(other, record.reference_address)
+        forged = replace(record, reference_address=other)
+        # The parse-level status still says the file was consistent, so only the
+        # re-derivation can refuse this record.
+        self.assertNotEqual(forged.reference_status, "mismatch")
+        with self.assertRaisesRegex(
+                WalletError,
+                "Reference address does not match the chosen receive path"):
+            wallet_layout(forged)
 
     def test_standard_bip48_export_uses_change_on_both_wildcard_shapes(self):
         """The one-file standard flow is shared by Testnet4 and Mutinynet."""

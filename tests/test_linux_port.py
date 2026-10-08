@@ -229,6 +229,14 @@ class LinuxWorkflowTests(unittest.TestCase):
         self.assertIn("p_type == 3", step)
         self.assertIn("--device /dev/fuse", step)
         self.assertIn("ubuntu:24.04", step)
+        # CT-99: a tag is a moving name, so the proof image is pinned to the
+        # digest it resolved to. Without the digest the same workflow can prove
+        # a different Ubuntu than the one this promise was verified against.
+        self.assertIn(
+            "ubuntu:24.04@sha256:"
+            "534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55",
+            step,
+        )
         self.assertIn("--dsh-check-bundle", step)
 
     def test_the_files_say_which_platform_they_are(self):

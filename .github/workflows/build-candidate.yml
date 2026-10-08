@@ -61,12 +61,19 @@ jobs:
           exit 1
       - name: Require the default branch for publication
         if: ${{ inputs.publish }}
+        env:
+          # CT-98: a workflow_dispatch input is attacker-shaped text. Interpolated
+          # as ${{ }} it is spliced into this script BEFORE bash parses it, so a
+          # value like `1; something` runs here, in the release gate. It travels
+          # through the environment instead, where the numeric test below can
+          # judge it as data. The checksums job already passes it this way.
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo 'Public releases must be dispatched from main.' >&2
             exit 1
           fi
-          if [[ ! "${{ inputs.candidate_run_id }}" =~ ^[0-9]+$ ]]; then
+          if [[ ! "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]; then
             echo 'Publishing requires the run ID of a successful notarized candidate.' >&2
             exit 1
           fi
@@ -666,11 +673,16 @@ jobs:
           DSH_LINUX_CHECK_LOG=/work/container.log "$appimage" --dsh-check-bundle
           test -s /work/container.log
           SH
+          # CT-99: a tag is a moving name; the proof image is pinned to the
+          # multi-arch digest it resolved to when this pin was written. Refresh
+          # with:
+          #   docker buildx imagetools inspect ubuntu:24.04 --format '{{.Manifest.Digest}}'
           docker run --rm \
             --device /dev/fuse --cap-add SYS_ADMIN \
             --security-opt apparmor=unconfined \
             -v "$PWD/dist:/dist:ro" -v "$PWD/build:/work" \
-            ubuntu:24.04 bash -lc 'bash /work/container-proof.sh'
+            ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 \
+            bash -lc 'bash /work/container-proof.sh'
           cat build/container.log
       - name: Name the SBOM for one shared release page
         run: mv dist/BUILD-SBOM.json dist/BUILD-SBOM-linux-x86_64.json

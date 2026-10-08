@@ -124,6 +124,17 @@ class ArchiveCompletenessTests(unittest.TestCase):
             "merely avoid the false claim",
         )
 
+    def test_the_signing_key_reaches_the_archive(self):
+        """CT-101: SIGNING.md and RELEASE-PROCESS.md tell a verifier to run
+        `gpg --import signing-key.asc`, so an archive that omits the key cannot
+        be verified from itself by the only reader who needs it."""
+        self.assertIn("signing-key.asc", self._root_docs(),
+                      "signing-key.asc must be in root_docs so the archive "
+                      "ships it and the completeness loop checks it")
+        self.assertTrue((ROOT / "signing-key.asc").is_file(),
+                        "signing-key.asc is named in root_docs but missing "
+                        "from the working tree")
+
     def test_the_completeness_loop_covers_the_new_inputs(self):
         """The existing missing_docs loop must actually check what we just added.
 

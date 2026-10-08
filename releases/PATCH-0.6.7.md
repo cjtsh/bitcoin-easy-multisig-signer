@@ -629,10 +629,12 @@ trigger.
 `releases/OWNER-ACCEPTANCE-2026-10-07.md`, signed Bitseeker LLC, dated
 2026-10-07, closes by rubric ruling 2 the carried cycle-2 Infos (CT-35,
 CT-36–42, CT-44, CT-47) and the cycle-3 design-property Infos
-(CT-61, CT-63–70). It records the CT-54 and CT-59 deferrals above. It
-carries per-item tripwires naming the code property each acceptance
-rests on, so a later edit reopens the finding instead of quietly erasing
-it. It is not used to close anything that was fixed in code.
+(CT-61, CT-63–70). It records the CT-54 and CT-59 deferrals above. For the
+acceptances where a later code change could silently erase the rationale it
+names an explicit reopening tripwire, and for the rest it states the design
+property the acceptance rests on; the note itself says a future note should
+carry its own tripwires in that section (CT-104). It is not used to close
+anything that was fixed in code.
 
 ## What did not change
 

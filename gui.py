@@ -571,6 +571,26 @@ class LocalApp:
                     f"127.0.0.1:{self.server.server_address[1]}"
                 )
 
+            def _token_matches(self, supplied):
+                """The constant-time token check, total for every header value.
+
+                CT-74: `hmac.compare_digest` refuses two `str` arguments that
+                hold non-ASCII characters, and an HTTP header arrives decoded
+                as latin-1. A single 0x80 byte in `X-Local-Token` therefore
+                raised TypeError out of do_POST instead of reaching the 403
+                below: the socket was dropped and a traceback was logged for
+                every request. Comparing bytes has no such exception — the
+                token is `token_urlsafe`, so anything that is not it is simply
+                not equal.
+                """
+                supplied = supplied or ""
+                if not isinstance(supplied, str):
+                    return False
+                return hmac.compare_digest(
+                    supplied.encode("utf-8", "surrogateescape"),
+                    state.token.encode("ascii"),
+                )
+
             def do_GET(self):
                 if not self._trusted_host():
                     self._send(403, {"error": "Local access only."})
@@ -589,6 +609,14 @@ class LocalApp:
                     self._headers(200, "text/html; charset=utf-8", len(body),
                                   script_nonce=script_nonce)
                     self.wfile.write(body)
+                elif not self._token_matches(self.headers.get("X-Local-Token")):
+                    # CT-75: the price and fee feeds used to answer any caller
+                    # that guessed the loopback port. They are the only GET
+                    # responses that carry data, so they now need the same
+                    # token as every POST. "/" stays reachable without it on
+                    # purpose: the token travels in the fragment of the launch
+                    # URL, so the browser only has it after this page loads.
+                    self._send(403, {"error": "Local access only."})
                 elif self.path == "/api/price":
                     with state.lock:
                         cached = (state.price if state.price is not None
@@ -635,9 +663,7 @@ class LocalApp:
                 expected = f"http://127.0.0.1:{self.server.server_address[1]}"
                 if (not self._trusted_host()
                     or (origin is not None and origin != expected)
-                    or not hmac.compare_digest(
-                        self.headers.get("X-Local-Token") or "", state.token
-                    )):
+                    or not self._token_matches(self.headers.get("X-Local-Token"))):
                     self._drain_body()
                     self._send(403, {"error": "Local access only."})
                     return

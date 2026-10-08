@@ -15,6 +15,7 @@ import json
 import os
 import platform
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -153,6 +154,40 @@ def embedded_libusb(root: Path) -> dict[str, str]:
     return result
 
 
+# CT-100: a hosted runner's image floats inside its pinned label (apt, MSVC,
+# the Docker base image, the tool cache), so a build is not bit-reproducible
+# from this repository. What the repository CAN do is stop that being
+# invisible: the SBOM ships with, and is attested alongside, the assets, so
+# the toolchain this build actually resolved belongs inside it. A rebuild on a
+# different toolchain then differs in a named field instead of in silence.
+TOOLCHAIN_PROBES = (
+    ("toolchain_platform",
+     (sys.executable, "-c", "import platform; print(platform.platform())")),
+    ("toolchain_python", (sys.executable, "--version")),
+    ("toolchain_cc", ("cc", "--version")),
+    ("toolchain_clang", ("clang", "--version")),
+    ("toolchain_msbuild", ("msbuild", "-version")),
+    ("toolchain_docker", ("docker", "--version")),
+)
+
+
+def probe_toolchain(argv: tuple[str, ...]) -> str:
+    """The first line of a tool's banner, or "not found" if it will not say.
+
+    Absence is a fact to record, not a reason to fail: the SBOM is written on
+    every platform, and a tool this platform does not use must still be named.
+    """
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True,
+                                   timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return "not found"
+    if completed.returncode != 0:
+        return "not found"
+    banner = (completed.stdout or completed.stderr).strip().splitlines()
+    return banner[0].strip() if banner else "not found"
+
+
 def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str],
           helper_sha: str | None = None) -> dict:
     # Normalise before validating. CI passes the repository variable through
@@ -224,6 +259,9 @@ def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str]
                 # hwi.sha256 beside it holds to. CT-49.
                 {"name": "hwi_helper_sha256",
                  "value": helper_sha if helper_sha is not None else helper_digest(root)},
+                # CT-100: what this build ran on, recorded rather than assumed.
+                *({"name": name, "value": probe_toolchain(argv)}
+                  for name, argv in TOOLCHAIN_PROBES),
             ],
         },
         "components": components,

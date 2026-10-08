@@ -206,7 +206,14 @@ class WorkflowConfigTests(unittest.TestCase):
                      if step.get("name") == "Require the default branch for publication")
         self.assertEqual(guard["if"], "${{ inputs.publish }}")
         self.assertIn('refs/heads/main', guard["run"])
-        self.assertIn("candidate_run_id", guard["run"])
+        self.assertIn("CANDIDATE_RUN_ID", guard["run"])
+        self.assertEqual(guard["env"]["CANDIDATE_RUN_ID"],
+                         "${{ inputs.candidate_run_id }}")
+        # CT-98: a dispatch input is attacker-shaped text. Interpolated with
+        # ${{ }} it is spliced into the script before bash parses it; one `;`
+        # and the release gate runs the caller's command. It must arrive as
+        # environment data, so no expression belongs in this run block at all.
+        self.assertNotIn("${{", guard["run"])
 
     def test_versioned_release_notes_are_included_when_present(self):
         self.assertIn('release_notes="releases/RELEASE-NOTES-${VERSION}.md"', self.text)
@@ -656,6 +663,11 @@ class PublishPathSweepTests(unittest.TestCase):
     SILENT_RETIRED = (
         "name: silent\n"
         "on: workflow_dispatch\n"
+        # The real lock-only recipes on windows-port/linux-port declare the
+        # read-only grant. CT-73 makes an undeclared grant an offender, so a
+        # fixture that omits it is no longer the shape of a clean branch.
+        "permissions:\n"
+        "  contents: read\n"
         "jobs:\n"
         "  build:\n"
         "    runs-on: ubuntu-24.04\n"
@@ -875,6 +887,161 @@ class PublishPathSweepTests(unittest.TestCase):
                                 f"the sweep missed a body it should read:\n{out}")
             self.assertIn("grants-contents-write", out)
 
+    # -- CT-73: the matchers the cycle-4 audit walked past. -------------------
+    #
+    # The audit evaded `contents: write` and `gh release` with `gh api`, a REST
+    # upload to uploads.github.com and `softprops/action-gh-release`, each on a
+    # fixture where the old sweep reported "ok". Every fixture below declares
+    # the read-only grant, so the reason it reports is the publisher — not the
+    # CT-73 read-only requirement that would otherwise cover it.
+
+    def _run_one_branch(self, branch: str, body: str,
+                        filename: str = "build-candidate.yml"):
+        """Drive the sweep over a fixture whose only non-main ref is `branch`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, branch)
+            self._write(repo, filename, body)
+            self._commit(repo, branch)
+            return self._run_sweep(repo)
+
+    def _assert_reason(self, result, reason: str, branch: str = "evil") -> None:
+        out = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0,
+                            f"the sweep accepted {reason}:\n{out}")
+        self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+                      out)
+        self.assertIn(branch, out)
+        self.assertIn(reason, out)
+
+    @staticmethod
+    def _recipe(name: str, step: str,
+                permissions: str = "  contents: read\n") -> str:
+        return (
+            f"name: {name}\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            f"{permissions}"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            f"      - {step}\n"
+        )
+
+    def test_the_sweep_refuses_a_branch_that_publishes_through_gh_api(self):
+        """`gh api` writes as readily as `gh release`."""
+        body = self._recipe("api", "run: gh api --method POST /repos/o/r/releases")
+        self._assert_reason(self._run_one_branch("evil", body), "runs-gh-api")
+
+    def test_the_sweep_refuses_a_branch_that_uploads_by_rest(self):
+        """The REST upload host, which only ever receives release assets."""
+        body = self._recipe(
+            "rest",
+            "run: curl --fail -X POST "
+            "\"https://uploads.github.com/repos/o/r/releases/1/assets?name=x\" -d @x")
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "uploads-release-asset-by-rest")
+
+    def test_the_sweep_refuses_a_branch_that_talks_to_the_rest_api(self):
+        """api.github.com with a token is a publisher until proven a GET."""
+        body = self._recipe(
+            "restapi",
+            "run: curl --fail https://api.github.com/repos/o/r/releases/latest")
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "talks-to-the-rest-api")
+
+    def test_the_sweep_refuses_a_third_party_release_action(self):
+        """softprops/action-gh-release was the audit's third evasion."""
+        body = self._recipe("action", "uses: softprops/action-gh-release@v2")
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "runs-release-action")
+
+    def test_the_sweep_refuses_a_write_all_grant(self):
+        body = self._recipe("writeall", "run: echo ok", permissions="  write-all\n")
+        self._assert_reason(self._run_one_branch("evil", body), "grants-write-all")
+
+    def test_the_sweep_refuses_a_branch_that_does_not_show_its_token_is_read_only(self):
+        """An omitted `permissions:` block inherits the repository default.
+
+        No ref can disclose that default, so a non-main workflow that does not
+        show a read-only grant fails closed. This is the CT-73 half a word list
+        cannot cover: the next publisher shape is the one nobody listed.
+        """
+        body = (
+            "name: inherit\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "no-read-only-token-permissions")
+
+    def test_the_sweep_accepts_read_all_as_a_read_only_grant(self):
+        body = self._recipe("readall", "run: echo ok", permissions="  read-all\n")
+        result = self._run_one_branch("feature", body)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep refused a read-only branch:\n{out}")
+        self.assertNotIn("refusing:", out)
+
+    def test_the_sweep_leaves_no_private_refs_in_the_callers_repository(self):
+        """CT-76: a clean run may not leave fifteen branches behind.
+
+        The sweep fetches every remote head into refs/remotes/publish-audit/*.
+        It emptied that namespace on the way in but not on the way out, so a
+        caller's `git for-each-ref` reported refs for branches that do not
+        exist. The trap on EXIT is what this pins.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "feature")
+            self._write(repo, "windows-inputs.yml", self.SILENT_RETIRED)
+            self._commit(repo, "feature")
+
+            result = self._run_sweep(repo)
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused a clean repo:\n{result.stderr}")
+            left = subprocess.run(
+                ["git", "for-each-ref", "--format=%(refname)",
+                 "refs/remotes/publish-audit"],
+                cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(left, "",
+                             f"the sweep left private refs behind:\n{left}")
+
+    def test_the_recipe_comments_do_not_spell_out_their_own_matchers(self):
+        """CT-102: the two input recipes explain that they publish nothing.
+
+        The explanation used to be written as "no contents:write and no gh
+        release", which is exactly the text the sweep matches on. The comment
+        was therefore a publisher to the sweep: a false positive for any branch
+        that carried the recipe. The files are on non-main branches by design,
+        so a wording that trips the matchers is a real gate failure waiting for
+        its first run, not a cosmetic one.
+        """
+        script = (ROOT / "scripts" / "check-publish-paths.sh").read_text(encoding="utf-8")
+        self.assertIn("contents", script, "the sweep no longer mentions contents")
+        phrases = ("contents:write", "contents: write", "write-all", "gh release",
+                   "gh api", "api.github.com", "uploads.github.com",
+                   "action-gh-release", "release-action")
+        for name in ("linux-inputs.yml", "windows-inputs.yml"):
+            body = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            for phrase in phrases:
+                with self.subTest(recipe=name, phrase=phrase):
+                    self.assertNotIn(
+                        phrase, body,
+                        f"{name} spells out {phrase!r}, one of the sweep's own "
+                        f"matcher patterns; the comment reads as a publisher")
+
 
 class SweepFailClosedPins(unittest.TestCase):
     """The sweep must never turn a failure to read into "ok".
@@ -922,10 +1089,20 @@ class SweepFailClosedPins(unittest.TestCase):
         """`git show ref:path` is the read that went blind on Windows.
 
         An object id from ls-tree has no path syntax for anything to mangle.
+
+        CT-103: the first version of this pin searched the whole file for
+        `git cat-file blob`, and the header comment at the top of the script
+        carries that phrase — so the pin stayed green for a regression that
+        rewrote the read to `git show ref:path`. It now asserts the executable
+        line, with the comment lines removed first.
         """
-        self.assertIn("git cat-file blob", self.text)
-        self.assertIn("git ls-tree -r", self.text)
-        self.assertNotIn('git show "${ref}:${path}"', self.text)
+        code = "\n".join(line for line in self.text.splitlines()
+                         if not line.lstrip().startswith("#"))
+        self.assertIn('if ! body="$(git cat-file blob "$oid"', code,
+                      "the body read must be the executable git cat-file line, "
+                      "not a phrase a comment can carry")
+        self.assertIn("git ls-tree -r", code)
+        self.assertNotIn('git show "${ref}:${path}"', code)
 
 
 class GuardBodyPins(unittest.TestCase):
@@ -998,6 +1175,64 @@ class GuardBodyPins(unittest.TestCase):
                           f"{name} must name what it refused")
             self.assertIn(">&2", body,
                           f"{name} must send the refusal to stderr")
+
+
+class PublishGuardBranchPins(unittest.TestCase):
+    """CT-77…CT-81: four publish-path exits share a step body, so a step pin is blind to one of them.
+
+    CT-52 pinned whole step bodies. CT-81 is that pin's blind spot: the candidate
+    refusal, the unsigned/unnotarized refusal, the tag-exists refusal and the
+    tag-state-unclear refusal live inside ordinary `if` branches, and the GPG
+    fail-closed refusal sits inside a step three others never touch. Deleting one
+    `exit` leaves the other refusals in the captured text, so the step-level pin
+    stayed green — a guard nobody could watch fail.
+
+    These slice each guard from the line that prints its own refusal to the `fi`
+    that closes that branch, and require the exit to be the last thing the branch
+    does. A later statement is exactly what absorbs a failure.
+    """
+
+    # (a line only this guard prints, the exit it must reach, the finding it closes)
+    GUARDS = (
+        ("Candidate build: v${VERSION} was built and NOT published.",
+         "exit 0", "CT-77"),
+        ("GPG_PRIVATE_KEY is not set; a release cannot ship an unsigned",
+         "exit 1", "CT-79"),
+        ("The tag $tag already exists.", "exit 1", "CT-78"),
+        ("Could not verify remote tag state; refusing publication.",
+         "exit 1", "CT-80"),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = ACTIVE.read_text(encoding="utf-8")
+
+    def _branch(self, anchor: str) -> list[str]:
+        """The lines from the guard's own refusal through its closing `fi`."""
+        lines = self.text.splitlines()
+        start = next((index for index, line in enumerate(lines) if anchor in line), None)
+        self.assertIsNotNone(start, f"no guard in {ACTIVE} prints {anchor!r}")
+        for index in range(start, len(lines)):
+            if lines[index].strip() == "fi":
+                return lines[start:index + 1]
+        self.fail(f"{anchor!r} is printed but never closed by a `fi`")
+
+    @staticmethod
+    def _statements(branch: list[str]) -> list[str]:
+        """The branch's executable lines: no blanks, comments, or the closing `fi`."""
+        return [line.strip() for line in branch
+                if line.strip() and not line.strip().startswith("#")
+                and line.strip() != "fi"]
+
+    def test_every_publish_guard_ends_at_its_own_exit(self):
+        for anchor, exit_line, finding in self.GUARDS:
+            with self.subTest(finding=finding, guard=anchor):
+                statements = self._statements(self._branch(anchor))
+                self.assertIn(exit_line, statements,
+                              f"{finding}: {anchor!r} does not refuse with {exit_line!r}")
+                self.assertEqual(statements[-1], exit_line,
+                                 f"{finding}: {anchor!r} does not end at {exit_line!r}; "
+                                 "a statement after the exit absorbs the refusal")
 
 
 class ReleaseNotesTests(unittest.TestCase):

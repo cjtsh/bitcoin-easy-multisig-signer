@@ -1,34 +1,52 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.6.7 is the Color Team cycle-3 build-process
-remediation.** The cycle-3 five-lane Color Team audit of the `v0.6.6`
-tree (report, plan, lock and index in this repository's root) graded
-**⛔ BLOCKED** — not on the app. Red found no breach, Orange recorded its
-first LOGIC PROVEN (21/21 invariants), Amber verified the supply chain
-end to end. The grade was set by one High finding on the build process,
-**CT-48**: the per-platform publish workflows "retired" when Windows and
-Linux were added were never deleted, and one had published an unsigned
-manifest, while `build-candidate.yml`'s header claimed no second path
-existed. Version 0.6.7 answers the ledger in code and in one dated
-owner acceptance: the retired workflows are deleted from every branch and
-a remote-level sweep gate refuses to start a release if one reappears;
-the HWI helper is identified by bytes rather than by what it says about
-itself; the interpreter is pinned to one exact patch; the lock-writer is
-hash-locked; the source tarball can rebuild a signed Mac app; and the
-broadcaster is verified at use on every network. Every fix is held by a
-test demonstrated able to fail. `releases/PATCH-0.6.7.md` is the
-evidence record; `releases/OWNER-ACCEPTANCE-2026-10-07.md` closes the
-by-design observations. **0.6.7 is published** as tag
-[`v0.6.7`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.7)
-on commit `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` through the unified
-pipeline (candidate run 37644267740, promote run 37655666900), after the
-owner installed that candidate's DMG and accepted a practice-network
-payment on hardware. Post-publication verification — tag binding, every
-asset against `SHA256SUMS`, `SHA256SUMS.asc` against the committed
-release key, and a Sigstore attestation — is recorded in
-`releases/PATCH-0.6.7.md`.
+**Source revision 0.6.8 is the Color Team cycle-4 audit
+remediation.** The cycle-4 five-lane Color Team audit of the `v0.6.7`
+tree (`bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.7.md`,
+with the plan, lock and index in this repository's root) graded
+**⛔ BLOCKED** on two independent grounds. Copper proved its own failure
+state: the source-mode hardware-helper payload check could be made to
+*pass* while substituted code executed inside the check itself (**CT-90**).
+Red found a wallet file that displays as an honest 2-of-2 while one device
+approval finalizes it (**CT-72**, the cycle's one High). Version 0.6.8
+answers the ledger in code: a BSMS record that lists the same signer key
+twice under two origin fingerprints is refused at parse; the payload check
+locates the pinned library files and hashes them without executing them,
+under the same scrubbed interpreter as the helper; a cached helper identity
+is re-hashed before it is believed; the two public reference feeds require
+the session token and the token comparison is total for every header value;
+the publish-path sweep recognizes REST and third-party publishers, requires
+a read-only token from any non-main ref carrying a workflow, and leaves no
+private refs behind; each publish refusal is pinned to its own branch and
+its own exit; the dispatcher's run id reaches its check through the
+environment rather than through shell text; the container proof image is
+digest-pinned; every SBOM records the toolchain that built it; and the
+source archive ships `signing-key.asc`. Every fix is held by a test
+demonstrated able to fail, and `releases/PATCH-0.6.8.md` is the evidence
+record and the round trip of every finding the cycle-4 report carried.
+**0.6.8 is not published.** The cycle-5 audit runs on this revision first,
+against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
+cycle-4 plan carried verbatim with the target revision moved to this commit
+and section 9 left unsigned for the owner; then a signed, notarized
+`publish=false` candidate and the owner hardware walkthrough gate promotion. One item is left to the owner — **CT-97**:
+historical tags still dispatch workflows frozen at those tags with today's
+repository secret names, held back only by the release already existing. It
+cannot be fixed from this revision without moving a published tag, which
+this project forbids, and no acceptance is invented for it;
+`releases/PATCH-0.6.8.md` states the options.
 
-The prior release, **0.6.6**, is published as tag
+The prior release, **0.6.7**, is the Color Team cycle-3 build-process
+remediation: the retired per-platform workflows are deleted from every
+branch and a remote-level sweep gate refuses to start a release if one
+reappears; the HWI helper is identified by bytes rather than by what it
+says about itself; the interpreter is pinned to one exact patch; the
+lock-writer is hash-locked; the source tarball can rebuild a signed Mac
+app; and the broadcaster is verified at use on every network.
+`releases/PATCH-0.6.7.md` is its evidence record;
+`releases/OWNER-ACCEPTANCE-2026-10-07.md` closes its by-design
+observations.
+
+The release before that, **0.6.6**, is published as tag
 [`v0.6.6`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6)
 on commit `93cf67af63a15aac0912a6fbc270f7e5485e2fc1` through the unified
 pipeline (candidate run 37482475884, promote run 37486264639). It was the
@@ -59,18 +77,21 @@ See [`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
 CT-46/CT-71 defect class and it goes stale the moment `version.py` moves.
 The published set is whatever that page and [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)
 carry. As of 2026-10-07 that is
-[v0.6.6](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.6),
-published 2026-10-06 as tag `v0.6.6` on commit
-`93cf67af63a15aac0912a6fbc270f7e5485e2fc1` by successful candidate run
-[37482475884](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37482475884)
+[v0.6.7](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.7),
+published 2026-10-07 as tag `v0.6.7` on commit
+`81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` by successful candidate run
+[37644267740](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37644267740)
 and promote run
-[37486264639](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37486264639)
-(`publish=true`, `candidate_run_id=37482475884`). The release page
-carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
-`SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
-Version 0.6.6 is safety hardening only: no new payment capability. Owner
-practice-network hardware walkthrough passed on candidate 37474707538
-(Trezor Safe 3 and Ledger Nano signed; broadcast accepted). The dated
+[37655666900](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37655666900)
+(`publish=true`, `candidate_run_id=37644267740`), after the owner installed
+that candidate's DMG and accepted a practice-network payment on hardware.
+Post-publication verification — tag binding, every asset against
+`SHA256SUMS`, `SHA256SUMS.asc` against the committed release key, and a
+Sigstore attestation on the DMG — is recorded in `releases/PATCH-0.6.7.md`.
+The release page carries macOS, Windows, Linux, the source archive, one
+`SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft,
+not a prerelease. Version 0.6.7 is build-process and helper-identity
+hardening only: no new payment capability. The dated
 AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns
 Green under its rubric after verifying the automated publication path.
 This is evidence about that revision and stated coverage, not a

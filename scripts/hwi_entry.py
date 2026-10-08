@@ -19,6 +19,13 @@ if getattr(sys, "frozen", False):
     bundled = [Path(sys._MEIPASS) / name for name in _usb_names]
     if not all(path.is_file() for path in bundled):
         raise RuntimeError("The bundled USB library is missing; the signer helper cannot start.")
+    # CT-92: the extraction directory is writable by this user, so a link
+    # planted at the bundled name would satisfy a path comparison while
+    # loading bytes this build never shipped. A link is not the library, no
+    # matter where it points, so only a real file is loaded.
+    if any(path.is_symlink() for path in bundled):
+        raise RuntimeError(
+            "The bundled USB library is not a regular file in this app.")
     # usb1 exposes an explicit loader. Bind its first load to the verified
     # bundle path; preloading a differently named library does not stop usb1
     # from finding a second copy installed on the machine later.
@@ -92,8 +99,10 @@ def _check_libusb() -> int:
         list(context.getDeviceList(skip_on_error=True))
     if getattr(sys, "frozen", False):
         loaded = Path(usb1.libusb1.libusb._name).resolve()
-        expected = (Path(sys._MEIPASS) / _usb_names[-1]).resolve()
-        if loaded != expected:
+        expected_path = Path(sys._MEIPASS) / _usb_names[-1]
+        # CT-92: resolve() follows a link, so a linked file at the expected
+        # name would compare equal to itself. The link itself is refused.
+        if expected_path.is_symlink() or loaded != expected_path.resolve():
             raise RuntimeError("The USB stack loaded a library outside this app.")
         print(f"Bundled libusb: {loaded}")
     return 0

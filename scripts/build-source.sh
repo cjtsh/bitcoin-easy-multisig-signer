@@ -30,8 +30,12 @@ root_docs=(
   CONTRIBUTING.md USER-MANUAL.md replit.md AGENTS.md RELEASE-PROCESS.md
   PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md RELEASE-HISTORY.md
   PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md LINUX-PORT.md
-  SIGNING.md requirements-desktop-linux.txt
+  SIGNING.md requirements-desktop-linux.txt signing-key.asc
 )
+# signing-key.asc is here because SIGNING.md and RELEASE-PROCESS.md tell a
+# verifier to import it before checking a signature on an archive they already
+# have. A tarball-only verifier could read the instruction and not follow it
+# (CT-101), so the public key travels in the archive that the instruction is in.
 # requirements-desktop-windows.lock is the only lock that can be installed on
 # Windows. requirements-desktop.lock is macOS-resolved and is deliberately still
 # shipped: it is the record of what the audited macOS build installs, and dropping

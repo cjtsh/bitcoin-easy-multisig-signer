@@ -1,8 +1,9 @@
-"""Pin the money-path gates cycle 2 found holding but unguarded (CT-28/31/32).
+"""Pin the money-path gates an audit found holding but unguarded.
 
-Each test here exists because the corresponding control is correct today and
-nothing in the suite would notice if a future edit weakened it. Cycle 3's
-referee will break-and-watch every one: weaken the gate, watch this file go red,
+Cycle 2 named CT-28/31/32; cycle 4 added CT-83, the build-time fee-consistency
+comparison. Each test here exists because the corresponding control is correct
+today and nothing in the suite would notice if a future edit weakened it. The
+referee break-and-watches every one: weaken the gate, watch this file go red,
 restore. A test that cannot fail does not count as a fix.
 """
 
@@ -26,6 +27,7 @@ from signing import (
     finalize_multisig,
 )
 from test_probe import test_record
+import wallet_service
 from wallet_service import WalletError, broadcast_transaction, build_unsigned_psbt, scan_wallet, wallet_layout
 
 
@@ -332,6 +334,108 @@ class BuildTimePrevoutPins(unittest.TestCase):
         self.assertIsNotNone(packet.inputs[0].non_witness_utxo)
         self.assertIsNotNone(packet.inputs[0].witness_utxo)
         self.assertIsNotNone(packet.inputs[0].witness_script)
+
+
+# ---------------------------------------------------------------------------
+# CT-83 — the fee the selector quotes must be the fee the packet pays
+# ---------------------------------------------------------------------------
+
+class BuildTimeFeeConsistencyPins(unittest.TestCase):
+    """CT-83: the fee a selector quotes is the fee the packet pays.
+
+    The fee the selector returns is what sizes the change output, so an honest
+    selector cannot disagree with the transaction it builds: the change absorbs
+    exactly the quoted fee, and the review screen's `fee_sats` is what the
+    packet pays. The build-time comparison at `wallet_service.py:868` is the
+    assertion that the selector's own totals and the inputs it hands the builder
+    describe the same transaction. Delete it and a selector whose reported input
+    total disagrees with the inputs it returns silently builds a packet whose
+    real fee is not the fee the owner was shown. This test supplies exactly that
+    disagreement — one satoshi on the reported total.
+    """
+
+    def setUp(self):
+        self.text, self.roots = test_record(bsms_template=True)
+        self.record = parse_bsms(self.text)
+        self.layout = wallet_layout(self.record)
+        self.explorer = three_output_wallet(self.layout, NETWORKS["test"])
+        self.scan = scan_wallet(self.record, self.explorer)
+        self.recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
+
+    def test_a_selector_whose_reported_total_disagrees_with_its_inputs_is_refused(self):
+        real = wallet_service._select_inputs
+
+        def misreporting(*args, **kwargs):
+            chosen, total, fee = real(*args, **kwargs)
+            # The selector names inputs worth `total` but hands the builder a
+            # total one satoshi larger, so the change output absorbs a fee the
+            # packet does not pay. Only the build-time comparison catches it.
+            return chosen, total + 1, fee
+
+        with patch.object(wallet_service, "_select_inputs", misreporting):
+            with self.assertRaisesRegex(
+                    WalletError, "Transaction fee check failed"):
+                build_unsigned_psbt(self.record, self.scan, self.recipient,
+                                    10_000, 5, self.explorer)
+
+    def test_the_honest_selector_still_builds_and_the_fee_matches(self):
+        result = build_unsigned_psbt(self.record, self.scan, self.recipient,
+                                     10_000, 5, self.explorer)
+        packet = E.PSBT.parse(base64.b64decode(result["psbt_base64"]))
+        self.assertEqual(packet.fee(), result["fee_sats"])
+
+
+# ---------------------------------------------------------------------------
+# CT-85 — the address named on screen must be the address the packet pays
+# ---------------------------------------------------------------------------
+
+class RecipientRoundTripPins(unittest.TestCase):
+    """CT-85: the owner's string must survive a decode/re-encode round trip.
+
+    `script.address_to_scriptpubkey` returns whichever script the decoder read
+    out of the string. The app-level prefix gate alone cannot tell whether the
+    decoder's answer is the address named on screen: the vendored raw decoder is
+    deliberately lenient (CT-89 records it accepting unknown-HRP bech32), so a
+    decoder that hands back a different address's script must be refused rather
+    than paid. `wallet_service.py:766-768` re-encodes the decoded script under
+    the wallet's own network and refuses any string that does not come back
+    identical. This test supplies exactly that disagreement: the decoder returns
+    the wallet's own change script while the owner's string names a receive
+    address. Delete the round-trip comparison and the build pays the change
+    script while the screen still shows the receive address.
+    """
+
+    def setUp(self):
+        self.text, self.roots = test_record(bsms_template=True)
+        self.record = parse_bsms(self.text)
+        self.layout = wallet_layout(self.record)
+        self.explorer = three_output_wallet(self.layout, NETWORKS["test"])
+        self.scan = scan_wallet(self.record, self.explorer)
+        self.recipient = self.layout.receive.derive(5).address(NETWORKS["test"])
+
+    def test_a_decoder_that_returns_a_different_addresses_script_is_refused(self):
+        foreign = self.layout.change.derive(0).script_pubkey()
+        self.assertNotEqual(
+            foreign.address(NETWORKS["test"]), self.recipient,
+            "the fixture must decode to an address other than the one named")
+
+        def lying_decoder(_address):
+            return foreign
+
+        with patch.object(wallet_service.script, "address_to_scriptpubkey",
+                          lying_decoder):
+            with self.assertRaisesRegex(
+                    WalletError, "Destination address is invalid"):
+                build_unsigned_psbt(self.record, self.scan, self.recipient,
+                                    10_000, 5, self.explorer)
+
+    def test_the_honest_decoder_still_builds_the_named_address(self):
+        result = build_unsigned_psbt(self.record, self.scan, self.recipient,
+                                     10_000, 5, self.explorer)
+        packet = E.PSBT.parse(base64.b64decode(result["psbt_base64"]))
+        paid = [output.script_pubkey.address(NETWORKS["test"])
+                for output in packet.tx.vout]
+        self.assertIn(self.recipient, paid)
 
 
 if __name__ == "__main__":
