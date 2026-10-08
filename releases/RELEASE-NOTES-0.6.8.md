@@ -41,8 +41,9 @@ payment capability is added.
 ## One item the owner had to decide
 
 Historical release tags can still be dispatched, and a workflow frozen at such a
-tag reads whatever secrets the repository holds today. All 66 tags from
-`v0.1.0` on carry a dispatchable publisher and the pre-0.6.4 ones lack the
+tag reads whatever secrets the repository holds today. All 58 tags from
+`v0.1.0` on carry a dispatchable publisher (the other 7 of the repository's 65
+tags predate `v0.1.0`) and the pre-0.6.4 ones lack the
 default-branch guard, and those tags cannot be edited without moving published
 tags, which this project forbids. The owner directed the fix on 2026-10-07: the
 signing credentials are scoped to two protected GitHub environments —

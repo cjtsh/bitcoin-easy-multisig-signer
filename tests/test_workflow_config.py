@@ -871,6 +871,166 @@ class PublishPathSweepTests(unittest.TestCase):
                                 f"the sweep accepted a continued publisher:\n{out}")
             self.assertIn("runs-gh-release", out)
 
+    def test_the_sweep_refuses_a_read_only_token_on_only_some_jobs(self):
+        """A read-only mapping on ONE job does not cover the jobs that declare
+        none.
+
+        Those jobs inherit the repository default, which no ref can disclose,
+        so a partly-declared file has the same hole as an undeclared one. The
+        first cycle-6 revision counted any job-level read-only mapping as a
+        read-only token and would have called this branch clean.
+        """
+        workflow = (
+            "name: partial\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+            "  other:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: ./ship-it.sh\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "sneaky")
+            self._write(repo, "build-candidate.yml", workflow)
+            self._commit(repo, "sneaky")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a partly-declared token:\n{out}")
+            self.assertIn("partial-token-permissions", out)
+
+    def test_the_sweep_accepts_a_read_only_token_declared_on_every_job(self):
+        """Positive half: a token on every job covers the file, so a non-main
+        branch carrying it is clean.
+
+        This is the shape the coverage rule must not over-refuse: no top-level
+        `permissions:`, but no job left inheriting the repository default.
+        """
+        workflow = (
+            "name: covered\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+            "  other:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions: read-all\n"
+            "    steps:\n"
+            "      - run: ./ship-it.sh\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "covered")
+            self._write(repo, "build-candidate.yml", workflow)
+            self._commit(repo, "covered")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused a fully covered branch:\n{out}")
+
+    def test_the_sweep_refuses_a_publisher_folded_across_yaml_lines(self):
+        """YAML folds `>` and plain multi-line scalars into one line of
+        space-separated words, so `gh` and `release create v1` on separate
+        source lines are one command to the runner and two to a substring
+        match. The cycle-6 referee showed the pre-fix sweep returning `ok` for
+        all three folded spellings.
+        """
+        folded = {
+            "folded": (
+                "      - run: >\n"
+                "          gh\n"
+                "          release create v1\n"
+            ),
+            "folded-strip": (
+                "      - run: >-\n"
+                "          gh\n"
+                "          release create v1\n"
+            ),
+            "plain-continuation": (
+                "      - run: gh\n"
+                "        release create v1\n"
+            ),
+        }
+        for label, step in folded.items():
+            with self.subTest(spelling=label):
+                workflow = (
+                    "name: folded\n"
+                    "on: workflow_dispatch\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    permissions:\n"
+                    "      contents: read\n"
+                    "    steps:\n"
+                    + step
+                )
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._repo(repo)
+                    self._write(repo, "build-candidate.yml", self.CLEAN)
+                    self._commit(repo, "main")
+                    self._branch(repo, "sneaky")
+                    self._write(repo, "build-candidate.yml", workflow)
+                    self._commit(repo, "sneaky")
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertNotEqual(
+                        result.returncode, 0,
+                        f"the sweep accepted a {label} publisher:\n{out}")
+                    self.assertIn("runs-gh-release", out)
+
+    def test_the_sweep_does_not_fold_a_literal_block(self):
+        """A `|` block keeps its newlines: `gh` on one line and
+        `release create v1` on the next are two separate commands, not a
+        publisher. Folding them would be a false refusal of an honest file.
+        """
+        workflow = (
+            "name: literal\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps:\n"
+            "      - run: |\n"
+            "          gh\n"
+            "          release create v1\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "literal")
+            self._write(repo, "build-candidate.yml", workflow)
+            self._commit(repo, "literal")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep folded a literal block:\n{out}")
+
     def test_the_sweep_refuses_the_retired_per_platform_workflow_names(self):
         """Refusal half: the file NAME is enough, even with no markers.
 
@@ -951,7 +1111,7 @@ class PublishPathSweepTests(unittest.TestCase):
                       "the sweep must fetch every remote head, not just this checkout")
         self.assertIn("git fetch", text)
         self.assertIn("git for-each-ref", text)
-        self.assertIn("refs/remotes/publish-audit", text)
+        self.assertIn("refs/publish-audit", text)
         self.assertIn("git ls-tree", text)
 
     def test_the_sweep_shouts_its_refusal_to_stderr(self):
@@ -1207,6 +1367,79 @@ class PublishPathSweepTests(unittest.TestCase):
         self._assert_reason(self._run_one_branch("evil", body),
                             "calls-a-release-workflow")
 
+    def test_the_sweep_refuses_a_quoted_permission_key(self):
+        """`"permissions":` is the same key as `permissions:`.
+
+        Cycle-6 referee E put the quoted spelling on one job of an otherwise
+        read-only file and the bare-key pattern never saw it, so a
+        `write-all` grant passed the sweep that guards every dispatch.
+        """
+        body = (
+            "name: quoted\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            '    "permissions": write-all\n'
+            "    steps:\n"
+            "      - run: gh --repo owner/repo release create v1\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body), "grants-write-all")
+
+    def test_the_sweep_refuses_a_publisher_written_with_the_repo_flag(self):
+        """`gh --repo owner/repo release create` is `gh release create`.
+
+        The target flag sits between the program and its subcommand, so the
+        contiguous `gh release` substring missed it.
+        """
+        for step in ("run: gh --repo owner/repo release create v1",
+                     "run: gh -R owner/repo release create v1"):
+            with self.subTest(step=step):
+                body = self._recipe("repo-flag", step)
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "runs-gh-release")
+
+    def test_the_sweep_refuses_a_uses_the_reader_cannot_resolve(self):
+        """An alias is a `uses:` this reader cannot follow, so it is refused."""
+        body = (
+            "name: alias\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "x-w: &w other-org/ci/.github/workflows/publish.yml@main\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - uses: *w\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "calls-a-release-workflow")
+
+    def test_the_sweep_refuses_a_folded_uses_callee(self):
+        """A `>-` callee is the same callee once the scalar is folded.
+
+        fold_block_scalars joins the folded text onto the indicator line, so
+        the reader must skip the `>-` token rather than read it as the value;
+        otherwise `uses: >-` passed while the one-line spelling was refused.
+        """
+        body = (
+            "name: folded-uses\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - uses: >-\n"
+            "          other-org/ci/.github/workflows/publish.yml@main\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "calls-a-release-workflow")
+
     def test_the_sweep_refuses_a_remote_reusable_workflow_under_any_name(self):
         """The callee's name proves nothing: the sweep cannot read it.
 
@@ -1221,6 +1454,8 @@ class PublishPathSweepTests(unittest.TestCase):
             "other-org/ci/.github/workflows/publish-package.yml@main",
             "other-org/ci/.github/workflows/release.yml@main",
             "someone/personal/.github/workflows/anything.yml@v1",
+            "other-org/ci/.github/workflows/publish.yml",
+            "other-org/ci/pipelines/publish.yml@main",
         ):
             with self.subTest(callee=callee):
                 body = self._recipe("reuse", f"uses: {callee}")
@@ -1236,6 +1471,28 @@ class PublishPathSweepTests(unittest.TestCase):
         """
         for step in ("uses: actions/checkout@v4",
                      "uses: ./.github/workflows/helper.yml@main"):
+            with self.subTest(step=step):
+                body = self._recipe("not-a-callee", step)
+                result = self._run_one_branch("clean", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, out)
+
+    def test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee(self):
+        """An action vendored under a path is not a reusable-workflow callee.
+
+        The rule refuses a remote callee of the GitHub-documented shape
+        `{owner}/{repo}/.github/workflows/{file}@{ref}`. A first revision keyed
+        on "two or more slashes before an `@`" instead, which also caught
+        ordinary actions that live in a subdirectory —
+        `github/codeql-action/init@v3` is the common one — so it would have
+        refused a dispatch that had nothing to do with publishing. Only the
+        workflow shape is a callee; every reference here must pass.
+        """
+        for step in ("uses: github/codeql-action/init@v3",
+                     "uses: github/codeql-action/analyze@v3",
+                     "uses: hashicorp/setup-terraform@v2",
+                     "uses: docker/build-push-action@v5",
+                     "uses: docker://alpine:3.8"):
             with self.subTest(step=step):
                 body = self._recipe("not-a-callee", step)
                 result = self._run_one_branch("clean", body)
@@ -1332,7 +1589,8 @@ class PublishPathSweepTests(unittest.TestCase):
     def test_the_sweep_leaves_no_private_refs_in_the_callers_repository(self):
         """CT-76: a clean run may not leave fifteen branches behind.
 
-        The sweep fetches every remote head into refs/remotes/publish-audit/*.
+        The sweep fetches every remote head into refs/publish-audit/*,
+        a namespace no remote can own.
         It emptied that namespace on the way in but not on the way out, so a
         caller's `git for-each-ref` reported refs for branches that do not
         exist. The trap on EXIT is what this pins.
@@ -1351,7 +1609,38 @@ class PublishPathSweepTests(unittest.TestCase):
                              f"the sweep refused a clean repo:\n{result.stderr}")
             left = subprocess.run(
                 ["git", "for-each-ref", "--format=%(refname)",
-                 "refs/remotes/publish-audit"],
+                 "refs/publish-audit"],
+                cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(left, "",
+                             f"the sweep left private refs behind:\n{left}")
+
+    def test_the_sweep_does_not_reap_another_remotes_tracking_refs(self):
+        """The private namespace must not be a remote's namespace.
+
+        `refs/remotes/<remote>/*` is where git keeps tracking refs, so a real
+        remote named `publish-audit` owns refs/remotes/publish-audit/*. The
+        sweep emptied and reaped that namespace, which silently deleted those
+        tracking refs; refs/publish-audit/* belongs to nothing else.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            subprocess.run(["git", "update-ref", "refs/remotes/publish-audit/main",
+                            "HEAD"], cwd=repo, capture_output=True, text=True,
+                           check=True)
+            result = self._run_sweep(repo)
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused a clean repo:\n{result.stderr}")
+            survivor = subprocess.run(
+                ["git", "rev-parse", "--verify", "refs/remotes/publish-audit/main"],
+                cwd=repo, capture_output=True, text=True).stdout.strip()
+            self.assertNotEqual(survivor, "",
+                                "the sweep reaped another remote's tracking ref")
+            left = subprocess.run(
+                ["git", "for-each-ref", "--format=%(refname)",
+                 "refs/publish-audit"],
                 cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
             self.assertEqual(left, "",
                              f"the sweep left private refs behind:\n{left}")

@@ -577,7 +577,7 @@ class HwiIdentityPins(unittest.TestCase):
                 + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
             )
             attackers = marshal.dumps(
-                compile(b"# attacker bytecode\n", "commands.py", "exec"))
+                compile(b"MARKER = 'attacker'\n", "commands.py", "exec"))
             cache = root / "hwilib" / "__pycache__"
             cache.mkdir()
             (cache / "commands.cpython-312.pyc").write_bytes(header + attackers)
@@ -585,6 +585,123 @@ class HwiIdentityPins(unittest.TestCase):
                 with self.assertRaisesRegex(
                         ProbeError, "does not match its recorded digest"):
                     probe._verify_hwi_payload([str(root)])
+
+    def test_a_bytecode_file_with_a_wrong_magic_is_refused(self):
+        """The magic guard refuses even when the body is the genuine compile.
+
+        Cycle-6 referee E found the magic and flag guards unexercised: the
+        planted-bytecode test forged a valid header, so only the body
+        comparison could refuse. This plants the genuine body and breaks only
+        the magic, so the magic check is what has to fire.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            stat = source.stat()
+            header = (
+                b"\x00\x00\x00\x00"
+                + bytes(4)
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
+            )
+            body = marshal.dumps(
+                compile(source.read_bytes(), str(source), "exec"))
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(header + body)
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_a_bytecode_file_with_nonzero_flags_is_refused(self):
+        """A hash-based (PEP 552) pyc is a body the pin never recorded."""
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            stat = source.stat()
+            header = (
+                importlib.util.MAGIC_NUMBER
+                + (1).to_bytes(4, "little")
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
+            )
+            body = marshal.dumps(
+                compile(source.read_bytes(), str(source), "exec"))
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(header + body)
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_bytecode_compiled_at_another_path_is_accepted(self):
+        """A pip install compiles from a staging dir; the path is not the code.
+
+        Refusing a genuine 115-file tree because the compiler recorded the
+        directory pip unpacked it in is a false refusal (cycle-6 referee E),
+        so the comparison ignores `co_filename` and keeps every other field.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            py_compile.compile(
+                str(root / "hwilib" / "commands.py"),
+                cfile=str(cache / "commands.cpython-312.pyc"),
+                dfile="/staging/dir/hwilib/commands.py", doraise=True)
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                verified = probe._verify_hwi_payload([str(root)])
+            self.assertEqual(len(verified), 3)
+
+    def test_a_symlinked_bytecode_directory_is_refused(self):
+        """`rglob` does not descend a symlinked directory, so the walk must.
+
+        Cycle-6 referee B planted `hwilib/__pycache__` as a symlink to a hidden
+        cache: the file was never enumerated, never rule-checked, and the
+        helper could import the attacker's module. A symlink is not a regular
+        file this walk will read, so it is refused rather than followed.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            hidden = Path(folder) / "hidden-cache"
+            hidden.mkdir()
+            source = root / "hwilib" / "commands.py"
+            stat = source.stat()
+            header = (
+                importlib.util.MAGIC_NUMBER
+                + bytes(4)
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
+            )
+            (hidden / "commands.cpython-312.pyc").write_bytes(
+                header + marshal.dumps(
+                    compile(b"MARKER = 'attacker'\n", "commands.py", "exec")))
+            os.symlink(hidden, root / "hwilib" / "__pycache__")
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_every_root_is_reverified_before_the_spawn(self):
+        """Two roots means two sets of bytes to re-read (cycle-6 referee B).
+
+        Only the last root's paths were returned, so a swap of an earlier root
+        between the check and the spawn was never re-read.
+        """
+        with tempfile.TemporaryDirectory() as first, \
+                tempfile.TemporaryDirectory() as second:
+            root_a, manifest = _written_package(first)
+            root_b, _ = _written_package(second)
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                verified = probe._verify_hwi_payload([str(root_a), str(root_b)])
+                self.assertEqual(len(verified), 6)
+                (root_a / "hwilib" / "commands.py").write_text(
+                    "# swapped after the check\n", encoding="utf-8")
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._require_unchanged(verified)
 
     def test_the_interpreters_own_bytecode_is_accepted(self):
         """The other half: bytecode the interpreter itself wrote is not an attack.

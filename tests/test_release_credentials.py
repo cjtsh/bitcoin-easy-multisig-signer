@@ -77,7 +77,17 @@ if [[ "${1:-}" != "api" ]]; then
   echo "fake gh: unsupported invocation: $*" >&2
   exit 64
 fi
-path="${2:-}"
+# Record the invocation so a test can pin that the check asks for every page
+# rather than reading the first one and calling it the whole answer.
+printf '%s\n' "$*" >> "__FIXTURES__/calls.log"
+shift
+path=""
+for argument in "$@"; do
+  case "$argument" in
+    --paginate) ;;
+    *) path="$argument" ;;
+  esac
+done
 slug="$(printf '%s' "$path" | tr '/' '_')"
 fixture="__FIXTURES__/$slug.json"
 if [[ ! -f "$fixture" ]]; then
@@ -101,6 +111,10 @@ class CredentialWorld:
         # Endpoints whose fixture is withheld, so `gh api` fails for them and
         # the check's own read-error arm is exercised rather than assumed.
         self.missing_fixtures = set()
+        # Fixture text written verbatim instead of json.dumps(payload), so a
+        # test can serve several concatenated documents as `gh --paginate`
+        # does. Keyed by the same API path as `missing_fixtures`.
+        self.raw_fixtures = {}
         # Human gates that would stop a release starting on its own. The honest
         # configuration has none: the owner asked for a path any agent team can
         # run, so the check refuses a required reviewer or a wait timer.
@@ -138,7 +152,7 @@ class CredentialWorld:
                 # how a real API read failure reaches the check.
                 continue
             (folder / f"{path.replace('/', '_')}.json").write_text(
-                json.dumps(payload), encoding="utf-8"
+                self.raw_fixtures.get(path, json.dumps(payload)), encoding="utf-8"
             )
 
 
@@ -159,7 +173,13 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
             env = dict(os.environ)
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
             args = (REPO,) if workflows is None else (REPO, str(workflows))
-            return run_bash_file(SCRIPT, *args, env=env, cwd=ROOT)
+            result = run_bash_file(SCRIPT, *args, env=env, cwd=ROOT)
+            # The fake `gh` appends every invocation beside the fixtures, which
+            # the temporary directory takes with it, so read it out here and
+            # hang it on the result for tests that pin the flags.
+            log = fixtures / "calls.log"
+            result.gh_calls = log.read_text(encoding="utf-8") if log.exists() else ""
+            return result
 
     def test_the_check_passes_when_the_credentials_are_environment_scoped(self):
         """The positive half: the honest configuration is accepted."""
@@ -467,25 +487,37 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         self.assertIn("RELEASE_PAT", result.stderr)
         self.assertIn("hostile_env.yml names the release credential RELEASE_PAT", result.stderr)
 
-    def test_a_quoted_job_key_is_refused(self):
-        """A spelling this parser cannot read must fail closed, not vanish."""
+    def test_a_quoted_job_key_is_read_as_its_own_job(self):
+        """A quoted key is read, not merged into the job above it.
+
+        Cycle-6 referee E showed `  "leak":` failing the two-space bare-key
+        pattern, so its body was appended to the previous job and the secret it
+        named was attributed to THAT job environment — the leak read as scoped.
+        The quoted spelling is now a job of its own, and a job that declares no
+        environment is a refusal.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             workflows = pathlib.Path(temporary)
             (workflows / "quoted.yml").write_text(
                 "name: quoted\n"
                 "on: workflow_dispatch\n"
                 "jobs:\n"
-                '  "publish":\n'
+                "  build:\n"
                 "    runs-on: ubuntu-24.04\n"
-                "    environment: release-signing\n"
+                "    environment: apple-signing\n"
                 "    steps:\n"
-                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                '      - run: echo "${{ secrets.APPLE_SIGNING_KEY }}"\n'
+                '  "leak":\n'
+                "    runs-on: ubuntu-24.04\n"
+                "    steps:\n"
+                '      - run: echo "${{ secrets.GPG_PRIVATE_KEY }}"\n',
                 encoding="utf-8",
             )
             result = self.run_check(CredentialWorld(), workflows)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("cannot attribute to a job", result.stderr)
-        self.assertIn("GPG_PRIVATE_KEY", result.stderr)
+        self.assertIn("quoted.yml:leak names the release credential "
+                      "GPG_PRIVATE_KEY in a job that declares no environment",
+                      result.stderr)
 
     def test_a_four_space_indented_job_is_refused(self):
         """Same rule for an indent the two-space job parser does not accept."""
@@ -506,6 +538,163 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("cannot attribute to a job", result.stderr)
         self.assertIn("GPG_PRIVATE_KEY", result.stderr)
+
+    def test_a_workflow_level_env_cannot_hide_behind_a_scoped_job(self):
+        """Cycle-6 referee E: `live_references` skipped any name the walk had
+        attributed ANYWHERE, so naming the same credential at workflow level
+        (live on every ref, no environment) was masked by one scoped mention.
+        Every occurrence is now compared, not every distinct name.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "masked.yml").write_text(
+                "name: masked\n"
+                "on: workflow_dispatch\n"
+                "env:\n"
+                "  PAT: ${{ secrets.GPG_PRIVATE_KEY }}\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                '      - run: echo "${{ secrets.GPG_PRIVATE_KEY }}"\n',
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("masked.yml names the release credential GPG_PRIVATE_KEY "
+                      "somewhere this check cannot attribute to a job",
+                      result.stderr)
+
+    def test_a_bracket_expression_secret_is_derived(self):
+        """A name spelled through `secrets[format(...)]` is a name.
+
+        The two literal forms both missed it, so the credential was watched by
+        nothing; quoted literals inside a bracket index are now names, and a
+        bracket with no literal is reported as unreadable.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "expr.yml").write_text(
+                "name: expr\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets[format('{0}', "
+                "'GPG_PRIVATE_KEY')] }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.repository_secrets = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("still has a REPOSITORY-level secret named GPG_PRIVATE_KEY",
+                      result.stderr)
+
+    def test_a_list_shaped_secret_answer_is_a_refusal_with_a_reason(self):
+        """A JSON list is not a collection this reader can read.
+
+        Before the guard it raised AttributeError, so the operator saw a host
+        Python traceback and no statement of what the check failed to learn.
+        """
+        world = CredentialWorld()
+        world.raw_fixtures[f"repos/{REPO}/actions/secrets"] = "[]"
+        result = self.run_check(world)
+        out = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, out)
+        self.assertIn("could not read the repository secret names", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_a_list_shaped_environment_answer_is_a_refusal_with_a_reason(self):
+        """The protection-rules reader is the one that was not guarded."""
+        world = CredentialWorld()
+        world.raw_fixtures[f"repos/{REPO}/environments/apple-signing"] = "[]"
+        result = self.run_check(world)
+        out = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, out)
+        self.assertIn(
+            "could not read the protection rules of the apple-signing environment",
+            out)
+        self.assertNotIn("Traceback", out)
+
+    def test_an_apostrophe_does_not_turn_a_comment_into_a_reference(self):
+        """A quote opens a scalar only where a token can begin.
+
+        `Don` + apostrophe + `t` inside a plain value opened a quoted scalar
+        that never closed, so the `#` did not end the line and the name in the
+        comment was watched. That refused an honest file whenever the commented
+        name happened to exist at repository level.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "honest.yml").write_text(
+                "name: honest\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: apple-signing\n"
+                "    steps:\n"
+                "      - name: Don't notarize this # see ${{ secrets.GPG_PRIVATE_KEY }}\n"
+                '        run: echo "${{ secrets.APPLE_SIGNING_KEY }}"\n',
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.secrets = dict(world.secrets)
+            world.secrets["apple-signing"] = ["APPLE_SIGNING_KEY"]
+            world.repository_secrets = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertNotIn("GPG_PRIVATE_KEY", out)
+
+    def test_a_repository_secret_on_a_later_page_is_refused(self):
+        """Cycle-6 referee C3: the repository half read one page and called it
+        the whole answer, so a copy of a watched credential that sat on page 2
+        (the 31st secret) passed the sweep while every ref kept receiving it.
+
+        `gh api --paginate` prints one JSON document per page back to back, so
+        the readers must decode a stream, not a single document.
+        """
+        world = CredentialWorld()
+        world.repository_secrets = []
+        world.raw_fixtures[f"repos/{REPO}/actions/secrets"] = (
+            json.dumps(
+                {
+                    "total_count": 31,
+                    "secrets": [{"name": f"DECOY_{index}"} for index in range(30)],
+                }
+            )
+            + json.dumps(
+                {"total_count": 31, "secrets": [{"name": "GPG_PRIVATE_KEY"}]}
+            )
+        )
+        result = self.run_check(world)
+        out = result.stdout + result.stderr
+        self.assertNotEqual(
+            result.returncode, 0,
+            f"the check accepted a repository secret on page 2:\n{out}")
+        self.assertIn(
+            "still has a REPOSITORY-level secret named GPG_PRIVATE_KEY", out)
+
+    def test_the_repository_read_asks_for_every_page(self):
+        """The parser merging pages only helps if `gh` is asked for them.
+
+        A one-page read is what let the 31st secret go unseen; this pins the
+        flag itself so a future edit cannot quietly drop it while the merge
+        test above still passes on a fixture that hands over both pages.
+        """
+        result = self.run_check(CredentialWorld())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"--paginate repos/{REPO}/actions/secrets", result.gh_calls)
+        for environment in sorted(DERIVED):
+            self.assertIn(
+                f"--paginate repos/{REPO}/environments/{environment}/secrets",
+                result.gh_calls,
+            )
 
     def test_the_check_changes_nothing(self):
         """It is a read-only verifier; a check that mutates the platform would

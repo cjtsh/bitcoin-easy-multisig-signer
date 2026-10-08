@@ -60,7 +60,7 @@ the workflow text (CT-97, which is how `MAC_NOTARY_KEY_P8_BASE64` was missed);
 the Windows helper's identity is documented as self-asserted rather than claimed
 to sit inside a signature (CT-105); and a hard link is refused as well as a
 symlink (CT-92). `releases/PATCH-0.6.8.md` carries the round and its
-break-and-watch evidence; the 622-test suite, `bash -n`, the workflow YAML parse
+break-and-watch evidence; the 666-test suite, `bash -n`, the workflow YAML parse
 and the ten `node` UI suites are green on this tree. Two items remain owner
 decisions, not agent calls: whether the Windows helper gets an Authenticode
 signature or its sidecar moves out of the writable directory (CT-105), and

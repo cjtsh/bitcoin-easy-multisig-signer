@@ -99,13 +99,26 @@ REFUSAL="refusing: the release credentials are not environment-scoped"
 credential_scope() {
   python3 -c '
 import os, re, sys
+from collections import Counter
 
 APOS, QUOTE = chr(39), chr(34)
 directory = sys.argv[1]
 SECRET = re.compile(r"secrets\s*\.\s*([A-Za-z0-9_-]+)"
                     r"|secrets\s*\[\s*[" + QUOTE + APOS + r"]([A-Za-z0-9_-]+)"
                     r"[" + QUOTE + APOS + r"]\s*\]")
-JOB = re.compile(r"^  ([A-Za-z0-9_.-]+):[ \t]*$")
+# FAIL CLOSED (cycle-6 adversarial pass): `secrets[format(...)]` matched the
+# dot form of nothing and the quoted form of nothing, so a name spelled through
+# an expression was watched by neither path. Any bracket index is now read:
+# quoted literals inside it are names, and an index with no literal at all is
+# reported as a name this check cannot read, which the caller refuses rather
+# than ignores.
+BRACKET = re.compile(r"secrets\s*\[\s*([^\]\n]+?)\s*\]")
+LITERAL = re.compile(r"[" + QUOTE + APOS + r"]([A-Za-z0-9_-]+)[" + QUOTE + APOS + r"]")
+PLAIN = re.compile(r"^[" + QUOTE + APOS + r"]([A-Za-z0-9_-]+)[" + QUOTE + APOS + r"]$")
+# A job key may be quoted. The pre-cycle-6 pattern required the bare spelling,
+# so `  "leak":` was appended to the body of the previous job and its reference
+# was attributed to the environment of that job, not read as unscoped.
+JOB = re.compile(r"^  [" + QUOTE + APOS + r"]?([A-Za-z0-9_.-]+)[" + QUOTE + APOS + r"]?:[ \t]*$")
 KEY = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]+):(.*)$")
 
 
@@ -117,7 +130,12 @@ def strip_comment(line):
             if ch == quote:
                 quote = ""
         elif ch in (QUOTE, APOS):
-            quote = ch
+            # A quote opens a scalar only where a token can begin. `Don` + APOS
+            # + `t` has one inside a word, and treating it as an opener would
+            # swallow the `#` that ends the line, watching a name PyYAML sees
+            # as a comment.
+            if not out or out[-1].isspace() or out[-1] in ":,[{-":
+                quote = ch
             out.append(ch)
         elif ch == "#":
             break
@@ -168,17 +186,41 @@ def environment(body):
     return ""
 
 
+def names_on(line):
+    """Every release-credential name this line names, best effort.
+
+    `secrets.NAME` and `secrets["NAME"]` are read directly. Inside a bracket
+    index that is an expression, every quoted literal is a candidate name; an
+    index with no quoted literal at all becomes the literal text of the index,
+    which is a name no environment can hold, so the caller refuses it instead
+    of treating an unreadable spelling as absent.
+    """
+    clean = strip_comment(line)
+    found = []
+    for match in SECRET.finditer(clean):
+        found.append(match.group(1) or match.group(2))
+    for match in BRACKET.finditer(clean):
+        inner = match.group(1)
+        if PLAIN.match(inner):
+            continue
+        literals = LITERAL.findall(inner)
+        found.extend(literals if literals else [inner])
+    return found
+
+
 def live_references(text):
     """Every `secrets.…` occurrence that survives comment stripping.
 
     The structured walk only reads lines it can place under a job in the
     `jobs:` block. This is the whole-file safety net: a reference the walk
-    cannot attribute is still live, and is reported with no environment.
+    cannot attribute is still live, and is reported with no environment. It
+    returns one entry per occurrence, because a name that appears both inside
+    a scoped job and again somewhere the walk cannot place (a workflow-level
+    `env:` block) is live in both places and only one of them is scoped.
     """
     found = []
     for line in text.splitlines():
-        for match in SECRET.finditer(strip_comment(line)):
-            found.append(match.group(1) or match.group(2))
+        found.extend(names_on(line))
     return found
 
 
@@ -189,13 +231,12 @@ if os.path.isdir(directory):
             continue
         with open(os.path.join(directory, entry), encoding="utf-8") as handle:
             text = handle.read()
-        attributed = set()
+        attributed = Counter()
         for job, body in jobs(text):
             where = environment(body) or "-"
             for line in body:
-                for found in SECRET.finditer(line):
-                    name = found.group(1) or found.group(2)
-                    attributed.add(name)
+                for name in names_on(line):
+                    attributed[name] += 1
                     rows.append((name, where, entry + ":" + job))
         # FAIL CLOSED (cycle-5 adversarial pass): every live reference that the
         # walk above did NOT place in a job is reported with no environment,
@@ -204,8 +245,9 @@ if os.path.isdir(directory):
         # read, and showed that a quoted job key or an unusual `jobs:` indent
         # was invisible the same way. A name this check cannot attribute is now
         # an unscoped name, not silence.
-        for name in live_references(text):
-            if name not in attributed:
+        live = Counter(live_references(text))
+        for name, count in sorted(live.items()):
+            for _ in range(max(0, count - attributed.get(name, 0))):
                 rows.append((name, "-", entry + ":<unattributed>"))
 for name, where, source in sorted(set(rows)):
     print(name + "\t" + where + "\t" + source)
@@ -243,25 +285,64 @@ report() {
 # configuration into a refusal. Command substitution strips a trailing newline
 # and not a carriage return, so the strip has to be explicit. `pipefail` (set
 # above) keeps a Python failure visible through the pipe.
+# `--paginate` makes gh print one JSON document per page back to back, so every
+# reader below decodes a stream of documents rather than one. A single document
+# still works, and an unreadable stream is still an error: the cycle-6 referee
+# showed that reading only the first page let a repository-level copy sitting on
+# page 2 (the 31st secret) pass the sweep.
 names_from() {
   python3 -c 'import json, sys
+def documents(text):
+    decoder = json.JSONDecoder()
+    index = 0
+    while True:
+        while index < len(text) and text[index] in " \t\r\n":
+            index += 1
+        if index >= len(text):
+            return
+        value, index = decoder.raw_decode(text, index)
+        yield value
 try:
-    payload = json.load(sys.stdin)
+    payloads = list(documents(sys.stdin.read()))
 except ValueError:
     sys.exit(1)
-rows = payload.get(sys.argv[1]) or []
-print("\n".join(sorted(row.get("name", "") for row in rows)))' "$1" | tr -d '\r'
+names = []
+for payload in payloads:
+    if not isinstance(payload, dict):
+        sys.exit(1)
+    for row in payload.get(sys.argv[1]) or []:
+        if not isinstance(row, dict):
+            sys.exit(1)
+        names.append(row.get("name", ""))
+print("\n".join(sorted(set(names))))' "$1" | tr -d '\r'
 }
 
 # Print "<name> <type>" for each deployment branch policy on stdin.
 policy_lines() {
   python3 -c 'import json, sys
+def documents(text):
+    decoder = json.JSONDecoder()
+    index = 0
+    while True:
+        while index < len(text) and text[index] in " \t\r\n":
+            index += 1
+        if index >= len(text):
+            return
+        value, index = decoder.raw_decode(text, index)
+        yield value
 try:
-    payload = json.load(sys.stdin)
+    payloads = list(documents(sys.stdin.read()))
 except ValueError:
     sys.exit(1)
-rows = payload.get("branch_policies") or []
-print("\n".join(sorted("%s %s" % (row.get("name"), row.get("type")) for row in rows)))' | tr -d '\r'
+lines = []
+for payload in payloads:
+    if not isinstance(payload, dict):
+        sys.exit(1)
+    for row in payload.get("branch_policies") or []:
+        if not isinstance(row, dict):
+            sys.exit(1)
+        lines.append("%s %s" % (row.get("name"), row.get("type")))
+print("\n".join(sorted(set(lines))))' | tr -d '\r'
 }
 
 # Print any human gate declared on an environment on stdin: a required reviewer
@@ -269,19 +350,33 @@ print("\n".join(sorted("%s %s" % (row.get("name"), row.get("type")) for row in r
 # release cannot start on its own, so either one is an offender here.
 gate_lines() {
   python3 -c 'import json, sys
+def documents(text):
+    decoder = json.JSONDecoder()
+    index = 0
+    while True:
+        while index < len(text) and text[index] in " \t\r\n":
+            index += 1
+        if index >= len(text):
+            return
+        value, index = decoder.raw_decode(text, index)
+        yield value
 try:
-    payload = json.load(sys.stdin)
+    payloads = list(documents(sys.stdin.read()))
 except ValueError:
     sys.exit(1)
-rules = payload.get("protection_rules") or []
 gates = []
-for rule in rules:
-    kind = rule.get("type")
-    if kind == "required_reviewers" and (rule.get("reviewers") or []):
-        gates.append("required_reviewers(%d)" % len(rule["reviewers"]))
-    elif kind == "wait_timer" and (rule.get("wait_timer") or 0):
-        gates.append("wait_timer(%s)" % rule.get("wait_timer"))
-print("\n".join(sorted(gates)))' | tr -d '\r'
+for payload in payloads:
+    if not isinstance(payload, dict):
+        sys.exit(1)
+    for rule in payload.get("protection_rules") or []:
+        if not isinstance(rule, dict):
+            sys.exit(1)
+        kind = rule.get("type")
+        if kind == "required_reviewers" and (rule.get("reviewers") or []):
+            gates.append("required_reviewers(%d)" % len(rule["reviewers"]))
+        elif kind == "wait_timer" and (rule.get("wait_timer") or 0):
+            gates.append("wait_timer(%s)" % rule.get("wait_timer"))
+print("\n".join(sorted(set(gates))))' | tr -d '\r'
 }
 
 # Every watched name, deduplicated.
@@ -329,7 +424,7 @@ while IFS=$'\t' read -r name environment source; do
 done <<< "$scope"
 
 # 1b. No repository-level copy of a watched credential may exist.
-if ! repo_names="$(gh api "repos/$REPO/actions/secrets" | names_from secrets)"; then
+if ! repo_names="$(gh api --paginate "repos/$REPO/actions/secrets" | names_from secrets)"; then
   report "could not read the repository secret names of $REPO (is gh authenticated with access to it?)"
   repo_names=""
 fi
@@ -358,14 +453,14 @@ for env in $(declared_environments); do
     report "$REPO has no environment named $env, so the credentials its jobs name have nowhere environment-scoped to live"
     continue
   fi
-  if ! policies="$(gh api "repos/$REPO/environments/$env/deployment-branch-policies" 2>/dev/null | policy_lines)"; then
+  if ! policies="$(gh api --paginate "repos/$REPO/environments/$env/deployment-branch-policies" 2>/dev/null | policy_lines)"; then
     report "could not read the deployment branch policies of the $env environment"
     policies=""
   fi
   if [[ "$policies" != "main branch" ]]; then
     report "the $env environment does not allow deployments from the main branch alone (found: ${policies:-none}); a tag must never be able to deploy into it"
   fi
-  if ! actual="$(gh api "repos/$REPO/environments/$env/secrets" 2>/dev/null | names_from secrets)"; then
+  if ! actual="$(gh api --paginate "repos/$REPO/environments/$env/secrets" 2>/dev/null | names_from secrets)"; then
     report "could not read the secret names of the $env environment"
     actual=""
   fi
@@ -381,7 +476,10 @@ for env in $(declared_environments); do
   if [[ -n "$missing" ]]; then
     echo "note: the $env environment does not hold [$(printf '%s' "$missing" | tr '\n' ' ')]; allowed only because the workflow reads each of those as optional and fails closed when one is required" >&2
   fi
-  gates="$(printf '%s' "$env_json" | gate_lines)"
+  if ! gates="$(printf '%s' "$env_json" | gate_lines)"; then
+    report "could not read the protection rules of the $env environment"
+    gates=""
+  fi
   if [[ -n "$gates" ]]; then
     report "the $env environment declares a human gate ($(printf '%s' "$gates" | tr '\n' ' ')); publishing must start on its own, so remove it"
   fi

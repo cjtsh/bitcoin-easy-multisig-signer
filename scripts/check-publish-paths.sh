@@ -40,7 +40,8 @@
 #     `actions/github-script`, a camelCase REST release call such as
 #     `createRelease`, a third-party release action such as
 #     `action-gh-release`, or a `uses:` of a workflow in ANOTHER repository
-#     (any name — the callee cannot be read from this checkout).
+#     (any name — the callee cannot be read from this checkout; a subdirectory
+#     ACTION such as `github/codeql-action/init@v3` is not a callee and passes).
 # Only the default branch (main) may carry one. Comments in a recipe that
 # merely name the retired files are not publishers and are not flagged.
 #
@@ -58,7 +59,10 @@
 # a non-main ref must SHOW that its token is read-only. An omitted
 # `permissions:` block inherits the repository default, which no ref can
 # disclose, so silence is an offender (`no-read-only-token-permissions`)
-# rather than an assumption.
+# rather than an assumption. Cycle 6 found the same hole one level down: a
+# read-only `permissions:` on ONE JOB does not cover the jobs that declare
+# none, so a partly-declared file is refused (`partial-token-permissions`)
+# rather than letting one read-only job vouch for the rest.
 #
 # CT-73 + CT-102, cycle 5: the word list was not the only way past this sweep.
 # The token arm was a REGEX OVER THE FILE TEXT, so the audit moved it in two
@@ -188,6 +192,99 @@ squash_continuations() {
     return 0
 }
 
+# Cycle-6 adversarial pass (referee C1): YAML folds a `>` block scalar and a
+# plain multi-line scalar into ONE line of space-separated words, so
+#
+#     - run: >
+#         gh
+#         release create v1
+#
+# is the single command `gh release create v1` to the runner and three lines to
+# a substring match. The previous revision only joined backslash
+# continuations, so that workflow passed the sweep. A literal `|` block keeps
+# its newlines — each line is a separate command to the shell — so its body is
+# copied through untouched rather than folded.
+#
+# Pure bash for the same reason as everything else here: a missing external
+# tool must not be able to turn a refusal into silence.
+fold_block_scalars() {
+    FOLD=()
+    local line text trimmed body n joined base
+    # Patterns live in variables because /bin/bash 3.2 refuses a `>` or `|`
+    # inside a `[[ =~ ]]` pattern written inline ("unexpected token").
+    local pat_literal="^[[:space:]]*(-[[:space:]]+)?[A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*[|][-+]?[[:space:]]*$"
+    local pat_folded="^[[:space:]]*(-[[:space:]]+)?[A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*[>][-+]?[[:space:]]*$"
+    local pat_plain="^[[:space:]]*(-[[:space:]]+)?[A-Za-z_][A-Za-z0-9_.-]*:[[:space:]]*[^[:space:]].*$"
+    while IFS= read -r line; do
+        FOLD+=("${line%$'\r'}")
+    done
+    local i=0
+    while [ "$i" -lt "${#FOLD[@]}" ]; do
+        line="${FOLD[i]}"
+        trimmed="${line%%[![:space:]]*}"
+        base=${#trimmed}
+        # A literal block: copy the indicator line and its body verbatim.
+        if [[ "$line" =~ $pat_literal ]]; then
+            printf '%s\n' "$line"
+            i=$((i + 1))
+            while [ "$i" -lt "${#FOLD[@]}" ]; do
+                text="${FOLD[i]}"
+                if [ -z "${text//[[:space:]]/}" ]; then
+                    printf '%s\n' "$text"
+                    i=$((i + 1))
+                    continue
+                fi
+                trimmed="${text%%[![:space:]]*}"
+                [ "${#trimmed}" -gt "$base" ] || break
+                printf '%s\n' "$text"
+                i=$((i + 1))
+            done
+            continue
+        fi
+        # A folded `>` scalar: join every deeper line onto the indicator line.
+        if [[ "$line" =~ $pat_folded ]]; then
+            joined=""
+            n=$((i + 1))
+            while [ "$n" -lt "${#FOLD[@]}" ]; do
+                text="${FOLD[n]}"
+                [ -n "${text//[[:space:]]/}" ] || break
+                trimmed="${text%%[![:space:]]*}"
+                [ "${#trimmed}" -gt "$base" ] || break
+                joined="$joined ${text#"${text%%[![:space:]]*}"}"
+                n=$((n + 1))
+            done
+            printf '%s%s\n' "$line" "$joined"
+            i=$n
+            continue
+        fi
+        # A plain scalar with a value on this line may continue on the next
+        # deeper lines, provided the next line is text and not a nested key or
+        # a sequence item (those are structure, not part of the value).
+        if [[ "$line" =~ $pat_plain ]]; then
+            joined=""
+            n=$((i + 1))
+            while [ "$n" -lt "${#FOLD[@]}" ]; do
+                text="${FOLD[n]}"
+                [ -n "${text//[[:space:]]/}" ] || break
+                trimmed="${text%%[![:space:]]*}"
+                [ "${#trimmed}" -gt "$base" ] || break
+                body="${text#"${text%%[![:space:]]*}"}"
+                [[ "$body" =~ ^(-[[:space:]]+)?[A-Za-z_][A-Za-z0-9_.-]*:[[:space:]] ]] && break
+                [ "$body" = "-" ] && break
+                joined="$joined $body"
+                n=$((n + 1))
+            done
+            if [ -n "$joined" ]; then
+                printf '%s%s\n' "$line" "$joined"
+                i=$n
+                continue
+            fi
+        fi
+        printf '%s\n' "$line"
+        i=$((i + 1))
+    done
+}
+
 # Cycle-5 adversarial pass (attacker finding 4): bash collapses runs of
 # whitespace and concatenates quoted with unquoted text, so `gh  release`,
 # `gh "release"` and `gh 're'lease` are all the same invocation as
@@ -227,17 +324,27 @@ normalize_command_text() {
 # stdout is one of: write-all | contents-write | unrecognized | read-only |
 # absent
 permissions_verdict() {
-    local -a lines=()
+    PERM_LINES=()
     local line
     while IFS= read -r line; do
-        lines+=("${line%$'\r'}")
+        PERM_LINES+=("${line%$'\r'}")
     done
 
-    local saw_readonly=0 unrecognized=0 i n child child_indent child_trim
+    local saw_readonly=0 top_level_readonly=0 unrecognized=0 i n child child_indent child_trim
     local indent value key
-    for (( i=0; i<${#lines[@]}; i++ )); do
-        line="${lines[i]}"
-        if [[ "$line" =~ ^([[:space:]]*)permissions[[:space:]]*:(.*)$ ]]; then
+    # `"permissions":` and `'permissions':` are the same key as the bare
+    # spelling. Anything non-alphanumeric before the word is accepted, so a
+    # key like `x-permissions` still does not match.
+    local pat_perm='^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$'
+    for (( i=0; i<${#PERM_LINES[@]}; i++ )); do
+        line="${PERM_LINES[i]}"
+        # A quoted key is the same key to YAML. The cycle-6 referee put
+        # `"permissions": write-all` on one job of an otherwise read-only file
+        # and the bare-key pattern never saw it, so the file passed.
+        # The pattern lives in a variable: /bin/bash 3.2 misparses a quote
+        # character written inline in a `[[ =~ ]]` pattern, and this one has to
+        # accept a quoted key.
+        if [[ "$line" =~ $pat_perm ]]; then
             indent="${BASH_REMATCH[1]}"
             value="${BASH_REMATCH[2]}"
             # Trim surrounding whitespace, then surrounding quotes.
@@ -251,8 +358,8 @@ permissions_verdict() {
             case "$value" in
                 "")
                     # Block mapping: the scopes are the deeper-indented lines.
-                    for (( n=i+1; n<${#lines[@]}; n++ )); do
-                        child="${lines[n]}"
+                    for (( n=i+1; n<${#PERM_LINES[@]}; n++ )); do
+                        child="${PERM_LINES[n]}"
                         [ -n "${child//[[:space:]]/}" ] || continue
                         child_indent="${child%%[![:space:]]*}"
                         if (( ${#child_indent} <= ${#indent} )); then
@@ -261,7 +368,13 @@ permissions_verdict() {
                         if [[ "$child" =~ ^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*:[[:space:]]*[\"\']?([A-Za-z0-9_-]+) ]]; then
                             key="${BASH_REMATCH[1]}"
                             value="${BASH_REMATCH[2]}"
+                            # INDENT MATTERS: a read-only mapping on ONE job does
+                            # not cover the jobs that declare none. Those inherit
+                            # the repository default, which no ref can disclose,
+                            # so a partly-declared file has the same hole as an
+                            # undeclared one and is refused the same way.
                             saw_readonly=1
+                            if [ -z "$indent" ]; then top_level_readonly=1; fi
                             case "$value" in
                                 "write-all") printf 'write-all\n'; return 0 ;;
                             esac
@@ -290,6 +403,7 @@ permissions_verdict() {
                                 ;;
                             "read-all"|"read"|"none"|"{}")
                                 saw_readonly=1
+                                if [ -z "$indent" ]; then top_level_readonly=1; fi
                                 ;;
                             *)
                                 # `<<: *w`, `contents: *w`, a nested mapping, or
@@ -306,9 +420,11 @@ permissions_verdict() {
                     ;;
                 "{}")
                     saw_readonly=1
+                    if [ -z "$indent" ]; then top_level_readonly=1; fi
                     ;;
                 "read-all"|"read"|"none")
                     saw_readonly=1
+                    if [ -z "$indent" ]; then top_level_readonly=1; fi
                     ;;
                 "{"*)
                     # Flow mapping, e.g. `{contents: write, issues: read}`.
@@ -324,6 +440,7 @@ permissions_verdict() {
                         unrecognized=1
                     elif [[ "$value" =~ [A-Za-z0-9_.-]+[[:space:]]*: ]]; then
                         saw_readonly=1
+                        if [ -z "$indent" ]; then top_level_readonly=1; fi
                     else
                         # `permissions: {…}` that is not a mapping at all.
                         unrecognized=1
@@ -345,10 +462,75 @@ permissions_verdict() {
     if [ "$unrecognized" -eq 1 ]; then
         printf 'unrecognized\n'
     elif [ "$saw_readonly" -eq 1 ]; then
-        printf 'read-only\n'
+        # A top-level read-only token covers every job. With job-level tokens
+        # only, the coverage is as good as the least-declared job: a job that
+        # declares nothing inherits the repository default, which no ref can
+        # disclose, so the file is `partial` and refused like an undeclared one.
+        if [ "$top_level_readonly" -eq 1 ] || _jobs_all_declare_permissions; then
+            printf 'read-only\n'
+        else
+            printf 'partial\n'
+        fi
     else
         printf 'absent\n'
     fi
+}
+
+# Every job under the top-level `jobs:` declares its own `permissions:`?
+# Returns 0 (covered) only when there is at least one job and each job's block
+# carries a `permissions:` key. Unreadable shapes (no `jobs:` line, a jobs block
+# with no indent) return 1, because "cannot read it" must not become "covered".
+_jobs_all_declare_permissions() {
+    local i n k line indent inner inner_indent count=0 declared=0 job_indent=-1
+    i=-1
+    for (( n=0; n<${#PERM_LINES[@]}; n++ )); do
+        if [[ "${PERM_LINES[n]}" =~ ^jobs[[:space:]]*:[[:space:]]*$ ]]; then
+            i=$n
+            break
+        fi
+    done
+    [ "$i" -ge 0 ] || return 1
+    for (( n=i+1; n<${#PERM_LINES[@]}; n++ )); do
+        line="${PERM_LINES[n]}"
+        [ -n "${line//[[:space:]]/}" ] || continue
+        if [ "${line#"${line%%[![:space:]]*}"}" = "$line" ]; then
+            break
+        fi
+        indent="${line%%[![:space:]]*}"
+        if [ "$job_indent" -lt 0 ] || [ "${#indent}" -lt "$job_indent" ]; then
+            job_indent=${#indent}
+        fi
+    done
+    [ "$job_indent" -gt 0 ] || return 1
+    for (( n=i+1; n<${#PERM_LINES[@]}; n++ )); do
+        line="${PERM_LINES[n]}"
+        [ -n "${line//[[:space:]]/}" ] || continue
+        indent="${line%%[![:space:]]*}"
+        if [ "${#indent}" -lt "$job_indent" ]; then
+            break
+        fi
+        [ "${#indent}" -eq "$job_indent" ] || continue
+        # Every key at the job indent is a job (a quoted key `"publish":` has
+        # the same indent, and an anchor line is counted too — refusing more
+        # than it should is the safe direction for a coverage proof). Only the
+        # `permissions:` key itself is not a job.
+        [[ "$line" =~ ^[[:space:]]*permissions[[:space:]]*: ]] && continue
+        count=$((count + 1))
+        for (( k=n+1; k<${#PERM_LINES[@]}; k++ )); do
+            inner="${PERM_LINES[k]}"
+            [ -n "${inner//[[:space:]]/}" ] || continue
+            inner_indent="${inner%%[![:space:]]*}"
+            if [ "${#inner_indent}" -le "${#indent}" ]; then
+                break
+            fi
+            if [[ "$inner" =~ ^[[:space:]]*permissions[[:space:]]*: ]]; then
+                declared=$((declared + 1))
+                break
+            fi
+        done
+    done
+    [ "$count" -gt 0 ] || return 1
+    [ "$declared" -eq "$count" ]
 }
 
 # CT-102: a reusable workflow hides its publisher behind `uses:`, and the sweep
@@ -360,36 +542,75 @@ permissions_verdict() {
 # at a workflow in ANOTHER repository is unreadable from this checkout, so it is
 # refused whatever it is called, rather than assumed harmless.
 #
-# Remote reusable-workflow form: `owner/repo/path/to/workflow.yml@ref` — two or
-# more slashes before the `@`. `actions/checkout@v4` (one slash, an action) and
-# `docker://…` (no `@`) do not match. A local `./.github/workflows/x.yml@ref`
-# is fine: the sweep reads every workflow file on the ref, so the callee is in
-# scope already.
+# The refused shapes are the shapes GitHub accepts for a remote reusable
+# workflow: `{owner}/{repo}/.github/workflows/{file}@{ref}`. GitHub will not run
+# any other path as a workflow callee, so keying on that path refuses every
+# remote callee without over-refusing the two classes the cycle-6 narrowing
+# deliberately accepts: an action vendored under a path in another repository
+# (`github/codeql-action/analyze@v3`) and a container reference however it is
+# pinned (`docker://alpine:3.8`, `docker://ghcr.io/o/i@sha256:<digest>`) — a
+# container image is not a workflow callee. That distinction matters — the first
+# revision of this rule refused any `uses:` with two or more slashes before an
+# `@`, which would have blocked a real dispatch that used a subdirectory action;
+# `tests/test_workflow_config.py:1480`
+# (`test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee`) pins the
+# accept. A value with two or more slashes whose last element is a YAML file is
+# not a valid callee either, but it is not something this gate will bet a release
+# on, so it is refused too. `actions/checkout@v4` (one slash, an action) does not
+# match. A local `./.github/workflows/x.yml@ref` is fine: the sweep reads every
+# workflow file on the ref, so the callee is in scope already.
 #
 # Matched one line at a time. `.` matches a newline in bash's ERE, so a
 # whole-body `uses:.*@` pairs an unrelated `uses: actions/upload-artifact@…`
 # line with a `uses:` further down the file.
 calls_a_remote_reusable_workflow() {
-    local line value
+    local line value path rest
+    local pat_uses='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*(.*)$'
     while IFS= read -r line; do
-        if [[ "$line" =~ ^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*([^[:space:]#]+) ]]; then
-            value="${BASH_REMATCH[2]}"
+        if [[ "$line" =~ $pat_uses ]]; then
+            rest="${BASH_REMATCH[2]}"
+            # A folded `>-` scalar was joined onto this line by
+            # fold_block_scalars, so the first token is the indicator and the
+            # callee is the token after it. Reading the indicator as the value
+            # is how `uses: >-` passed the sweep while the same callee on one
+            # line was refused.
+            case "$rest" in
+                ">"*|"|"*)
+                    rest="${rest#?}"
+                    case "$rest" in [-+]*) rest="${rest#?}" ;; esac
+                    rest="${rest#"${rest%%[![:space:]]*}"}"
+                    ;;
+            esac
+            value="${rest%%[[:space:]#]*}"
             case "$value" in
                 ./*) continue ;;
             esac
-            if [[ "$value" == */*/*@* ]]; then
-                return 0
-            fi
+            # An alias or merge key resolves to something this reader cannot
+            # see. Refusing what cannot be read is the rule everywhere else in
+            # this script, so it is the rule here: `uses: *w` is an offender.
+            case "$value" in
+                \**|'<<'*) return 0 ;;
+            esac
+            case "$value" in
+                */.github/workflows/*) return 0 ;;
+            esac
+            path="${value%@*}"
+            case "$path" in
+                */*/*.yml|*/*/*.yaml) return 0 ;;
+            esac
         fi
     done
     return 1
 }
 
-# Own namespace for the fetched heads so a caller's refs are never rewritten.
+# Own namespace for the fetched heads so a caller's refs are never
+# rewritten. It is NOT under refs/remotes/: a remote literally named
+# `publish-audit` would own that namespace, and the emptying below
+# would delete its tracking refs.
 # The namespace is emptied first: a plain fetch does not delete a head that
 # vanished on the remote, and a stale leftover would name a branch that is
 # no longer there. A sweep that reports a ghost is as bad as one that misses.
-AUDIT_REMOTE_REFS="refs/remotes/publish-audit"
+AUDIT_REMOTE_REFS="refs/publish-audit"
 
 for stale in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}" 2>/dev/null); do
     git update-ref -d "$stale"
@@ -469,15 +690,30 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
                 report "$branch" "$path" "unreadable-token-permissions"
                 continue
                 ;;
+            partial)
+                # Only SOME jobs declare a read-only token. The rest inherit the
+                # repository default, which no ref can disclose, so the file
+                # grants a token it cannot prove read-only for every job. This
+                # is the same hole as an undeclared file and is refused the same
+                # way, rather than letting one read-only job vouch for the rest.
+                report "$branch" "$path" "partial-token-permissions"
+                continue
+                ;;
         esac
 
         # CT-73 follow-up: the publisher patterns below are substring matches,
         # and `gh \` + newline + `release` is the same command split across two
-        # lines. Reassign `clean` to the continuation-joined form now that the
-        # permissions parse (which needs the real line shape) has run.
-        clean="$(printf '%s\n' "$clean" | squash_continuations | normalize_command_text)"
+        # lines, as is a YAML-folded `>` scalar. Reassign `clean` to the joined
+        # form now that the permissions parse (which needs the real line shape)
+        # has run.
+        clean="$(printf '%s\n' "$clean" | fold_block_scalars | squash_continuations | normalize_command_text)"
 
-        if [[ "$clean" == *"gh release"* ]]; then
+        # `gh --repo owner/repo release create` and `gh -R owner/repo release
+        # create` are the same invocation with the target in front of the
+        # subcommand, so the contiguous `gh release` substring misses them.
+        if [[ "$clean" == *"gh release"* \
+              || "$clean" == *"gh --repo"*" release "* \
+              || "$clean" == *"gh -R"*" release "* ]]; then
             report "$branch" "$path" "runs-gh-release"
             continue
         fi
@@ -511,7 +747,8 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
             continue
         fi
         for call in "createRelease" "updateRelease" "uploadReleaseAsset" \
-                    "createReleaseAsset"; do
+                    "createReleaseAsset" \
+                    "create_release" "update_release" "upload_release_asset"; do
             if [[ "$clean" == *"$call"* ]]; then
                 report "$branch" "$path" "calls-the-rest-release-api"
                 continue 2

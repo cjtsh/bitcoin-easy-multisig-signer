@@ -11,8 +11,10 @@ Red found a wallet file that displays as an honest 2-of-2 while one device
 approval finalizes it (**CT-72**, the cycle's one High). Version 0.6.8
 answers the ledger in code: a BSMS record that lists the same signer key
 twice under two origin fingerprints is refused at parse; the payload check
-locates the pinned library files and hashes them without executing them,
-under the same scrubbed interpreter as the helper; a cached helper identity
+locates the pinned library files and hashes them without executing them, in a
+check child that runs `-I -S -P` (no site-packages, no `.pth` hooks, no user
+site) while the helper itself runs `-I -P`, keeping site-packages so the pinned
+`hwilib` imports; a cached helper identity
 is re-hashed before it is believed; the two public reference feeds require
 the session token and the token comparison is total for every header value;
 the publish-path sweep recognizes REST and third-party publishers, requires

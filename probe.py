@@ -602,11 +602,34 @@ def _hwi_payload_check_script() -> str:
     CPython ignores it and recompiles the verified source.
     """
     return (
-        "import hashlib, importlib.util, marshal, pathlib, sys\n"
+        "import hashlib, importlib.util, marshal, os, pathlib, sys\n"
         f"manifest = {HWI_PAYLOAD_MANIFEST!r}\n"
         "LOADABLE = ('.py', '.pyc', '.pyo', '.so', '.pyd', '.dll', '.dylib')\n"
         "def digest(path):\n"
         "    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()\n"
+        "def walk(root_path):\n"
+        "    files = []\n"
+        "    def visit(directory):\n"
+        "        with os.scandir(directory) as entries:\n"
+        "            for entry in entries:\n"
+        "                if entry.is_dir(follow_symlinks=False):\n"
+        "                    visit(entry.path)\n"
+        "                elif entry.is_file(follow_symlinks=False):\n"
+        "                    files.append(pathlib.Path(entry.path))\n"
+        "                else:\n"
+        "                    # A symlink is neither: `is_dir`/`is_file` with"
+        " follow_symlinks=False\n"
+        "                    # answer False for it, so a symlinked cache dir"
+        " cannot be\n"
+        "                    # walked past (cycle-6 referee B: rglob never"
+        " descended it).\n"
+        "                    raise SystemExit(2)\n"
+        "    visit(root_path)\n"
+        "    return files\n"
+        "def scrub(code):\n"
+        "    consts = tuple(scrub(item) if hasattr(item, 'co_code') else item\n"
+        "                   for item in code.co_consts)\n"
+        "    return code.replace(co_filename='', co_consts=consts)\n"
         "def bytecode_is_the_recorded_source(rel, path, root):\n"
         "    parent = pathlib.PurePosixPath(rel).parent\n"
         "    if parent.name != '__pycache__':\n"
@@ -625,14 +648,26 @@ def _hwi_payload_check_script() -> str:
         "    if (int.from_bytes(data[8:12], 'little') != int(stat.st_mtime) & 0xffffffff\n"
         "            or int.from_bytes(data[12:16], 'little') != stat.st_size & 0xffffffff):\n"
         "        return True\n"
+        "    # Compare the code, not the recorded filename: pip installs a"
+        " wheel\n"
+        "    # from a staging directory and the compiler writes THAT path into"
+        " the\n"
+        "    # pyc, so a byte-exact comparison refuses a genuine tree (cycle-6\n"
+        "    # referee E). The bytes are unmarshalled, never executed, and a\n"
+        "    # stream this interpreter cannot read is a refusal.\n"
+        "    try:\n"
+        "        recorded = marshal.loads(data[16:])\n"
+        "    except Exception:\n"
+        "        return False\n"
         "    code = compile(source.read_bytes(), str(source), 'exec', dont_inherit=True)\n"
-        "    return marshal.dumps(code) == data[16:]\n"
+        "    return marshal.dumps(scrub(recorded)) == marshal.dumps(scrub(code))\n"
         "roots = sys.argv[1:]\n"
         "if not roots:\n"
         "    raise SystemExit(3)\n"
+        "manifested = {}\n"
         "for root in roots:\n"
         "    root_path = pathlib.Path(root)\n"
-        "    files = [path for path in root_path.rglob('*') if path.is_file()]\n"
+        "    files = walk(root_path)\n"
         "    found = {path.relative_to(root_path).as_posix(): path for path in files\n"
         "             if path.relative_to(root_path).as_posix() in manifest}\n"
         "    if set(found) != set(manifest):\n"
@@ -649,8 +684,13 @@ def _hwi_payload_check_script() -> str:
         "                raise SystemExit(2)\n"
         "        elif path.suffix.lower() in LOADABLE:\n"
         "            raise SystemExit(2)\n"
-        "for name, path in sorted(found.items()):\n"
-        "    print(name + ' ' + str(path) + ' ' + manifest[name])\n"
+        "    # Every root prints its own files: a swap of an earlier root\n"
+        "    # between the check and the spawn is otherwise never re-read\n"
+        "    # (cycle-6 referee B).\n"
+        "    for name, path in sorted(found.items()):\n"
+        "        manifested[(name, str(path))] = manifest[name]\n"
+        "for (name, path), recorded in sorted(manifested.items()):\n"
+        "    print(name + ' ' + path + ' ' + recorded)\n"
     )
 
 
@@ -694,19 +734,26 @@ def _verify_hwi_payload(
             "The pinned hardware-wallet library is not installed in this "
             "environment. Install hwi " + EXPECTED_HWI_VERSION + " to use devices."
         )
-    seen: dict[str, tuple[str, str]] = {}
+    seen: dict[str, list[tuple[str, str]]] = {}
     for line in (result.stdout or "").splitlines():
         # "<relative path> <path> <sha256>", split from the right so that a
         # path with spaces in it survives.
         parts = line.split(" ")
         if len(parts) >= 3:
-            seen[parts[0]] = (" ".join(parts[1:-1]), parts[-1].strip())
+            seen.setdefault(parts[0], []).append(
+                (" ".join(parts[1:-1]), parts[-1].strip()))
     verified: list[tuple[str, str]] = []
     for name in sorted(HWI_PAYLOAD_MANIFEST):
         found = seen.get(name)
-        if found is None or found[1] != HWI_PAYLOAD_MANIFEST[name]:
+        if not found:
             raise ProbeError(_HWI_WRONG_DIGEST)
-        verified.append(found)
+        # EVERY root's copy is recorded, not the last one to print: with more
+        # than one package root the earlier roots were never re-read at the
+        # spawn (cycle-6 referee B).
+        for path, digest in found:
+            if digest != HWI_PAYLOAD_MANIFEST[name]:
+                raise ProbeError(_HWI_WRONG_DIGEST)
+            verified.append((path, digest))
     return tuple(verified)
 
 
