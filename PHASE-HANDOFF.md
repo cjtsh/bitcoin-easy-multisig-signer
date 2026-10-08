@@ -40,12 +40,13 @@ answered in code and in the round-trip ledger
 report carried is accounted for). The cycle-5 plan is
 `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
 cycle-4 plan carried verbatim with the target revision moved to the
-0.6.8 remediation commit `bc92f054822008510249e743a60033009dc4995a`, and its section 9 left **unsigned**
-for the owner. The owner's 07 OCT 2026 signature covered the previous freeze
-(`45076d7106811f10e4651fbdb8b4eedcccf26e49`); adding
+0.6.8 remediation commit `bc92f054822008510249e743a60033009dc4995a`, and section 9 re-signed by the
+owner on 08 OCT 2026 for that revision. The owner's earlier 07 OCT 2026 signature covered the previous
+freeze
+(`45076d7106811f10e4651fbdb8b4eedcccf26e49`) and remains in commit `10df296`; adding
 `scripts/provision-release-credentials.sh`, then the gate-free and Windows-portability
 fix and the source-archive recipe fix, moved the freeze, so that signature
-is void and the plan is re-signed. No acceptance and no signature is invented for it. The auditor writes the
+was void under the plan's own rule and the plan was re-signed. No acceptance and no signature is invented for it. The auditor writes the
 lock and the index row for cycle 5, not this repository's authors. The last
 open item, **CT-97**, is fixed at the repository level by the owner's
 2026-10-07 direction: the release credentials live in the `release-signing` and

@@ -432,11 +432,18 @@ confirm the CT-97 decision above (option B, dated 2026-10-07), then sign the two
 below. The signature ratifies the scope and the revision together; if either moves,
 this section is void and the plan is re-signed.*
 
-- **Signed:** ______________________
-- **Date:** ______________________
+- **Signed:** Bitseeker LLC
+- **Date:** 08 OCT 2026
 
-*The owner signed this section on 07 OCT 2026 (Bitseeker LLC) for the revision then named in
-section 0, `45076d7106811f10e4651fbdb8b4eedcccf26e49`; commit `10df296` recorded that signature. Adding
-`scripts/provision-release-credentials.sh` moved the freeze to `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, making the release path start on its own and keeping the Windows leg green moved it to `a98ebc9f5c6b884ad35db21103f2d19374c55f28`, and reading the build recipes through the shared resolver in the archive moved it again to `bc92f054822008510249e743a60033009dc4995a`, so under the rule above
-that signature is void and this section is re-signed. The 07 OCT 2026 signature stays in
-`10df296` and is not deleted from the record.*
+*The owner first signed this section on 07 OCT 2026 (Bitseeker LLC) for the revision then named
+in section 0, `45076d7106811f10e4651fbdb8b4eedcccf26e49`; [commit `10df296` recorded that
+signature](https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/10df296/bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md#L426-L427),
+and that signed revision is not deleted from the record. Adding
+`scripts/provision-release-credentials.sh` moved the freeze to
+`383623a9ae4e64383e12ef2d9d69248db2f3f39a`; making the release path start on its own and keeping
+the Windows leg green moved it to `a98ebc9f5c6b884ad35db21103f2d19374c55f28`; and reading the
+build recipes through the shared resolver in the archive moved it again to
+`bc92f054822008510249e743a60033009dc4995a`. Under the rule above the 07 OCT signature went void,
+so the **owner re-signed on 08 OCT 2026 against `bc92f054822008510249e743a60033009dc4995a`**, the
+revision section 0 now names. The re-signature changed only this section — section 0's scope, the
+asset ranking and every pin are unchanged.*
