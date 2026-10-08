@@ -112,14 +112,19 @@ SECRET = re.compile(r"secrets\s*\.\s*([A-Za-z0-9_-]+)"
 # quoted literals inside it are names, and an index with no literal at all is
 # reported as a name this check cannot read, which the caller refuses rather
 # than ignores.
-BRACKET = re.compile(r"secrets\s*\[\s*([^\]\n]+?)\s*\]")
-LITERAL = re.compile(r"[" + QUOTE + APOS + r"]([A-Za-z0-9_-]+)[" + QUOTE + APOS + r"]")
+BRACKET = re.compile(r"secrets\s*\[\s*([^\]]*?)\s*\]")
 PLAIN = re.compile(r"^[" + QUOTE + APOS + r"]([A-Za-z0-9_-]+)[" + QUOTE + APOS + r"]$")
-# A job key may be quoted. The pre-cycle-6 pattern required the bare spelling,
-# so `  "leak":` was appended to the body of the previous job and its reference
-# was attributed to the environment of that job, not read as unscoped.
-JOB = re.compile(r"^  [" + QUOTE + APOS + r"]?([A-Za-z0-9_.-]+)[" + QUOTE + APOS + r"]?:[ \t]*$")
-KEY = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]+):(.*)$")
+# A name this reader cannot resolve to a single spelling. The caller refuses it;
+# `?` cannot begin a GitHub secret name, so it cannot collide with one.
+UNREADABLE = "?unreadable"
+# A job key may be quoted, may have a space before its colon, and may carry a
+# YAML anchor (`build: &b`). The pre-cycle-6 pattern required the bare spelling
+# with exactly two leading spaces and no space before the colon, so `  "leak":`,
+# `  leak :` and `build: &b` were appended to the body of the previous job and
+# their references were attributed to the previous job
+# environment instead of being read (cycle-6 attacker). The indent is computed in jobs() now, not baked in.
+JOB = re.compile(r"^[ \t]*[" + QUOTE + APOS + r"]?([A-Za-z0-9_.-]+)[" + QUOTE + APOS + r"]?[ \t]*:[ \t]*(?:[&*][A-Za-z0-9_.-]+)?[ \t]*$")
+KEY = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]+)[ \t]*:(.*)$")
 
 
 def strip_comment(line):
@@ -137,7 +142,12 @@ def strip_comment(line):
             if not out or out[-1].isspace() or out[-1] in ":,[{-":
                 quote = ch
             out.append(ch)
-        elif ch == "#":
+        elif ch == "#" and (not out or out[-1].isspace()):
+            # A `#` begins a comment only at the start of a line or after
+            # whitespace. GitHub keeps `echo x#${{ secrets.NAME }}` live (the
+            # `#` sits inside a word), so ending the line at any `#` hid a real
+            # reference from the walk; the cycle-6 attacker put a repository-level
+            # copy behind exactly that spelling.
             break
         else:
             out.append(ch)
@@ -145,25 +155,85 @@ def strip_comment(line):
 
 
 def jobs(text):
+    """(job name, body lines) pairs, with the job indent measured, not assumed.
+
+    The job indent is the smallest indent inside the `jobs:` block, so a
+    four-space file and a quoted or anchored job key are read the same as the
+    two-space spelling. A `jobs:` line this walk cannot find yields nothing, and
+    an empty walk turns every reference into an unattributed one, which the
+    caller refuses.
+    """
     lines, index = text.splitlines(), 0
-    while index < len(lines) and lines[index].rstrip() != "jobs:":
+    while index < len(lines) and strip_comment(lines[index]).strip() != "jobs:":
         index += 1
-    name, body = None, []
+    if index >= len(lines):
+        return
+    body = []
     for line in lines[index + 1:]:
         clean = strip_comment(line)
         if not clean.strip():
             continue
         if not clean[0].isspace():
             break
+        body.append(clean)
+    indent = -1
+    for clean in body:
+        width = len(clean) - len(clean.lstrip())
+        if indent < 0 or width < indent:
+            indent = width
+    if indent < 0:
+        return
+    name, chunk = None, []
+    for clean in body:
         match = JOB.match(clean)
-        if match:
+        if match and len(clean) - len(clean.lstrip()) == indent:
             if name is not None:
-                yield name, body
-            name, body = match.group(1), []
+                yield name, chunk
+            name, chunk = match.group(1), []
         elif name is not None:
-            body.append(clean)
+            chunk.append(clean)
     if name is not None:
-        yield name, body
+        yield name, chunk
+
+
+def flow_name(value):
+    # (cycle-5 fix) `environment: {name: release-signing}` is a legal flow
+    # mapping, and PyYAML resolves it to a dict with a `name` key. Reading the
+    # whole brace text as the name made an honest workflow unreadable, and
+    # because the caller used to word-split on whitespace it also invented two
+    # environments that do not exist (`{name:` and `release-signing}`). Only a
+    # top-level `name:` key is read here. A mapping with no such key is left
+    # as its own text on purpose: it is not a name, and the caller refuses it.
+    text = value[1:-1] if value.endswith("}") else value[1:]
+    parts, depth, quote, current = [], 0, "", []
+    for ch in text:
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in (QUOTE, APOS):
+            quote = ch
+            current.append(ch)
+        elif ch in "{[(":
+            depth += 1
+            current.append(ch)
+        elif ch in "}])":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    parts.append("".join(current))
+    for part in parts:
+        key, colon, rest = part.partition(":")
+        if not colon:
+            continue
+        if key.strip().strip(QUOTE + APOS) == "name":
+            return rest.strip().strip(QUOTE + APOS)
+    return value
 
 
 def environment(body):
@@ -175,6 +245,12 @@ def environment(body):
         if indent < 4:
             continue
         if value:
+            # `environment: &env release-signing` names the environment and puts
+            # an anchor on it; the anchor is not part of the name, and keeping it
+            # made an honest workflow unreadable (cycle-6 attacker).
+            value = re.sub(r"^[&*][A-Za-z0-9_.-]+[ \t]+", "", value)
+            if value.startswith("{"):
+                return flow_name(value)
             return value.strip(QUOTE + APOS)
         for follow in body[position + 1:]:
             deeper = KEY.match(follow)
@@ -186,26 +262,35 @@ def environment(body):
     return ""
 
 
-def names_on(line):
-    """Every release-credential name this line names, best effort.
+def references(clean):
+    """Every `secrets.…` / `secrets[…]` in already comment-stripped text.
 
-    `secrets.NAME` and `secrets["NAME"]` are read directly. Inside a bracket
-    index that is an expression, every quoted literal is a candidate name; an
-    index with no quoted literal at all becomes the literal text of the index,
-    which is a name no environment can hold, so the caller refuses it instead
-    of treating an unreadable spelling as absent.
+    Secret names are matched case-insensitively (GitHub treats them that way),
+    so a lowercase spelling is watched as the name the API would return.
+    A reference that cannot be resolved to one name becomes UNREADABLE: the
+    cycle-6 attacker forwarded the real name through `secrets[format(...)]`,
+    which the old "every quoted literal is a candidate" rule read as the
+    harmless `GPG_PRIVATE`, and spelled `secrets.GP\u0047_PRIVATE_KEY`, which
+    stopped at `GP`. Both names were watched by nobody.
     """
-    clean = strip_comment(line)
     found = []
     for match in SECRET.finditer(clean):
-        found.append(match.group(1) or match.group(2))
+        name = match.group(1) or match.group(2)
+        tail = clean[match.end():match.end() + 1]
+        if tail in ("\\", "$"):
+            found.append(UNREADABLE)
+        else:
+            found.append(name.upper())
     for match in BRACKET.finditer(clean):
         inner = match.group(1)
         if PLAIN.match(inner):
             continue
-        literals = LITERAL.findall(inner)
-        found.extend(literals if literals else [inner])
+        found.append(UNREADABLE)
     return found
+
+
+def names_on(line):
+    return references(strip_comment(line))
 
 
 def live_references(text):
@@ -218,10 +303,7 @@ def live_references(text):
     a scoped job and again somewhere the walk cannot place (a workflow-level
     `env:` block) is live in both places and only one of them is scoped.
     """
-    found = []
-    for line in text.splitlines():
-        found.extend(names_on(line))
-    return found
+    return references("\n".join(strip_comment(line) for line in text.splitlines()))
 
 
 rows = []
@@ -291,7 +373,7 @@ report() {
 # showed that reading only the first page let a repository-level copy sitting on
 # page 2 (the 31st secret) pass the sweep.
 names_from() {
-  python3 -c 'import json, sys
+  python3 -c 'import json, sys, urllib.parse
 def documents(text):
     decoder = json.JSONDecoder()
     index = 0
@@ -313,8 +395,20 @@ for payload in payloads:
     for row in payload.get(sys.argv[1]) or []:
         if not isinstance(row, dict):
             sys.exit(1)
-        names.append(row.get("name", ""))
-print("\n".join(sorted(set(names))))' "$1" | tr -d '\r'
+        name = row.get("name", "")
+        if len(sys.argv) > 2 and sys.argv[2] == "decode":
+            name = urllib.parse.unquote(name)
+        names.append(name)
+print("\n".join(sorted(set(names))))' "$1" "${2:-}" | tr -d '\r'
+}
+
+# Percent-encode one environment name for use as a single URL path segment. The
+# platform names an environment with its decoded spelling (`*`) and the request
+# path must carry the encoded one (`%2A`), or `gh` looks for a path that does
+# not exist. The report always names the decoded spelling a human recognises.
+encoded_env() {
+  python3 -c 'import sys, urllib.parse
+print(urllib.parse.quote(sys.argv[1], safe=""))' "$1" | tr -d '\r'
 }
 
 # Print "<name> <type>" for each deployment branch policy on stdin.
@@ -411,6 +505,14 @@ if [[ -z "$scope" ]]; then
   report "no workflow under $WORKFLOWS_DIR names a release credential; with nothing to watch this check proves nothing, so it refuses"
 fi
 
+# 1a-pre. A reference the reader could not resolve to a single name is a
+# credential this check cannot scope, and refusing is the only safe answer.
+while IFS=$'\t' read -r name environment source; do
+  if [[ "$name" == "?unreadable" ]]; then
+    report "$source spells a secret reference this check cannot read as a single name (a bracket index that is an expression, an escape inside a dot form, or a name that runs into an interpolation); a credential it cannot read is a credential it cannot scope"
+  fi
+done <<< "$scope"
+
 # 1a. A credential named by a job with no environment is reachable on every ref.
 while IFS=$'\t' read -r name environment source; do
   [[ -n "$name" ]] || continue
@@ -448,19 +550,28 @@ done
 #
 # CT-97 is the repository-level sweep above, and it covers every derived name
 # including the optional ones: that is the half that was missing.
-for env in $(declared_environments); do
-  if ! env_json="$(gh api "repos/$REPO/environments/$env" 2>/dev/null)"; then
+
+# The environments the audited text names, once. Read as a stream so a hostile
+# name with whitespace in it cannot split into two phantom environments.
+declared="$(declared_environments)"
+
+while IFS= read -r env; do
+  if [[ -z "$env" ]]; then
+    continue
+  fi
+  encoded="$(encoded_env "$env")"
+  if ! env_json="$(gh api "repos/$REPO/environments/$encoded" 2>/dev/null)"; then
     report "$REPO has no environment named $env, so the credentials its jobs name have nowhere environment-scoped to live"
     continue
   fi
-  if ! policies="$(gh api --paginate "repos/$REPO/environments/$env/deployment-branch-policies" 2>/dev/null | policy_lines)"; then
+  if ! policies="$(gh api --paginate "repos/$REPO/environments/$encoded/deployment-branch-policies" 2>/dev/null | policy_lines)"; then
     report "could not read the deployment branch policies of the $env environment"
     policies=""
   fi
   if [[ "$policies" != "main branch" ]]; then
     report "the $env environment does not allow deployments from the main branch alone (found: ${policies:-none}); a tag must never be able to deploy into it"
   fi
-  if ! actual="$(gh api --paginate "repos/$REPO/environments/$env/secrets" 2>/dev/null | names_from secrets)"; then
+  if ! actual="$(gh api --paginate "repos/$REPO/environments/$encoded/secrets" 2>/dev/null | names_from secrets)"; then
     report "could not read the secret names of the $env environment"
     actual=""
   fi
@@ -483,7 +594,66 @@ for env in $(declared_environments); do
   if [[ -n "$gates" ]]; then
     report "the $env environment declares a human gate ($(printf '%s' "$gates" | tr '\n' ' ')); publishing must start on its own, so remove it"
   fi
-done
+done <<< "$declared"
+
+# 3. (cycle-5 fix) The API is the authority on which environments exist, not the
+# audited text. `declared` only knows the names in this directory, and a tag
+# dispatch runs the tag's own frozen workflow text, which this directory cannot
+# see. An environment that holds a watched credential and is never named here
+# was therefore never audited at all: an environment named `*` with no branch
+# policy and the release key in it read as `ok` / `unreachable from any tag`.
+# Every environment the platform reports is walked now. One that holds none of
+# the watched names (the `github-pages` environment, for one) is not on the
+# release path and is left alone; one that does hold a watched name is held to
+# the declared-environment rules: `main` alone, no human gate, no wait timer.
+if ! api_environments="$(gh api --paginate "repos/$REPO/environments" | names_from environments decode)"; then
+  report "could not read the environments of $REPO (is gh authenticated with access to it?)"
+  api_environments=""
+fi
+
+watched_names="$(all_names)"
+
+while IFS= read -r env; do
+  if [[ -z "$env" ]]; then
+    continue
+  fi
+  if printf '%s\n' "$declared" | grep -Fxq -- "$env"; then
+    continue
+  fi
+  encoded="$(encoded_env "$env")"
+  if ! actual="$(gh api --paginate "repos/$REPO/environments/$encoded/secrets" 2>/dev/null | names_from secrets)"; then
+    report "could not read the secret names of the $env environment"
+    actual=""
+  fi
+  held="$(comm -12 <(printf '%s\n' "$actual" | sort -u) <(printf '%s\n' "$watched_names" | sort -u) | sed '/^$/d')"
+  if [[ -z "$held" ]]; then
+    continue
+  fi
+  if ! policies="$(gh api --paginate "repos/$REPO/environments/$encoded/deployment-branch-policies" 2>/dev/null | policy_lines)"; then
+    report "could not read the deployment branch policies of the $env environment"
+    policies=""
+  fi
+  if ! env_json="$(gh api "repos/$REPO/environments/$encoded" 2>/dev/null)"; then
+    report "could not read the protection rules of the $env environment"
+    gates=""
+  elif ! gates="$(printf '%s' "$env_json" | gate_lines)"; then
+    report "could not read the protection rules of the $env environment"
+    gates=""
+  fi
+  why=""
+  if [[ "$policies" != "main branch" ]]; then
+    why="does not allow deployments from the main branch alone (found: ${policies:-none})"
+  fi
+  if [[ -n "$gates" ]]; then
+    if [[ -n "$why" ]]; then
+      why="$why and "
+    fi
+    why="${why}declares a human gate ($(printf '%s' "$gates" | tr '\n' ' '))"
+  fi
+  if [[ -n "$why" ]]; then
+    report "the $env environment is not named by any workflow in $WORKFLOWS_DIR and holds the watched credential name(s) [$(printf '%s' "$held" | tr '\n' ' ')], but it $why; a tag dispatch could still name it, so it is refused rather than left unaudited"
+  fi
+done <<< "$api_environments"
 
 if (( offenders > 0 )); then
   echo "$REFUSAL" >&2

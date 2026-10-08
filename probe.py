@@ -9,6 +9,7 @@ import re
 import secrets
 import subprocess
 import sys
+import sysconfig
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -429,17 +430,31 @@ def _require_unchanged(verified: tuple[tuple[str, str], ...]) -> None:
             raise ProbeError(_HWI_WRONG_DIGEST) from exc
 
 
-def _cached_identity_holds(path: str) -> bool:
-    """True only while every file behind a cached verdict still has its bytes.
+def _cached_identity_holds(path: str, payload: bool = False) -> bool:
+    """True only while the whole fact a cached verdict stands for still holds.
 
     A path is not an identity. A helper can be replaced on disk between two
     calls in the same session — behind the app's back, in the window CT-91
     names — so a cached entry is re-hashed before it is believed. Anything
     unreadable now is not trusted either.
+
+    A source-mode verdict is not a set of files: it is the whole-tree claim the
+    payload walk made, so ``payload`` re-establishes it by re-running that walk
+    and comparing the result to what was recorded. Re-hashing the recorded pairs
+    alone cannot see a file *added* after the walk, and a forged
+    ``__pycache__/<module>.cpython-312.pyc`` with a header copied from the
+    genuine source is exactly such a file: CPython trusts that header, so a warm
+    verdict used to load code a cold walk refuses (CT-102).
     """
     recorded = _verified_hwi_files.get(path)
     if recorded is None:
         return False
+    if payload:
+        try:
+            if _verify_hwi_payload() != recorded:
+                return False
+        except ProbeError:
+            return False
     for file_path, expected in recorded:
         try:
             if sha256(Path(file_path).read_bytes()).hexdigest() != expected:
@@ -510,19 +525,25 @@ def _hwi_path(executable: str) -> str:
 # directory and the working directory are all ignored -- and `-P` is named
 # explicitly because that is the flag keeping a directory next to the script
 # off sys.path. What the check can see, the helper imports, and the reverse.
-_HWI_ISOLATION_FLAGS = ("-I", "-P")
-
+#
 # CT-90 (site hooks): `-I` does NOT stop `site` from running, so a `.pth` file
 # in the environment's site directory executes arbitrary code at interpreter
-# start-up -- before the first line of the check child -- and can describe a
-# different `hwilib` than the one on disk while standing inside the inspection
-# meant to catch it. The check child therefore adds `-S`, which skips site
-# processing entirely. `-S` also drops site-packages from its own `sys.path`,
-# which is why the package roots are handed to it as arguments instead of being
-# resolved by a meta-path search the child should not trust: it hashes the
-# directories this interpreter imports from, and nothing in the import
-# machinery can redirect it there.
+# start-up -- before the first line of a child -- and can describe a different
+# `hwilib` than the one on disk while standing inside the inspection meant to
+# catch it, or put a decoy ahead of the pinned tree after the check child has
+# already passed. Both children therefore add `-S`, which skips site
+# processing entirely. `-S` also drops site-packages from a child's own
+# `sys.path`, which is why each child's search path is handed over explicitly:
+# the check child receives the package roots as arguments, and the helper
+# receives a `-c` bootstrap that inserts the verified roots first and this
+# interpreter's own site-packages after them (see `_helper_command`).
 _HWI_CHECK_FLAGS = ("-I", "-S", "-P")
+
+# The helper runs under that same strict isolation: what the check child hashed
+# is what the helper imports. It is a second literal rather than an alias on
+# purpose -- these are two separate trust decisions, and an edit that weakens
+# one must not silently weaken the other.
+_HWI_ISOLATION_FLAGS = ("-I", "-S", "-P")
 
 
 def _hwi_package_roots(search_path: list[str] | None = None) -> list[str]:
@@ -554,6 +575,62 @@ def _hwi_payload_check_command(script: str, roots: list[str]) -> list[str]:
     return [sys.executable, *_HWI_CHECK_FLAGS, "-c", script, *roots]
 
 
+# The `-c` program the helper runs under. It is a single fixed string, and
+# every value that varies -- the entry script, the search directories and the
+# helper's own arguments -- arrives as a real argv element, never interpolated
+# into this text, so a path containing quotes or spaces cannot change what
+# runs. argv layout: [entry, directory count, *directories, *helper args].
+_HWI_HELPER_BOOTSTRAP = (
+    "import runpy, sys\n"
+    "entry = sys.argv[1]\n"
+    "directories = int(sys.argv[2])\n"
+    "sys.path[:0] = sys.argv[3:3 + directories]\n"
+    "sys.argv = [entry, *sys.argv[3 + directories:]]\n"
+    "runpy.run_path(entry, run_name='__main__')\n"
+)
+
+
+def _hwi_helper_search_dirs(roots: list[str]) -> list[str]:
+    """The helper's ``sys.path``: verified roots first, site-packages after.
+
+    Each root is a ``hwilib`` package directory, so the entry that has to lead
+    the helper's search path is its parent. This interpreter's own
+    site-packages directories follow, because ``-S`` removed them from the
+    child and the helper still needs every dependency that is not part of the
+    pinned tree. A directory that is not on the verified list can therefore
+    never precede the pinned tree.
+    """
+    directories: list[str] = []
+    for root in roots:
+        parent = str(Path(root).parent)
+        if parent not in directories:
+            directories.append(parent)
+    paths = sysconfig.get_paths()
+    for key in ("purelib", "platlib"):
+        directory = paths.get(key)
+        if directory and directory not in directories:
+            directories.append(directory)
+    return directories
+
+
+def _helper_command(entry: str, search_dirs: list[str]) -> list[str]:
+    """The argv that runs the in-tree helper with an explicit ``sys.path``.
+
+    The helper runs under the same strict isolation as the payload check
+    (``-I -S -P``), so ``site`` never starts and no ``.pth`` file can slip a
+    directory ahead of the pinned tree after the check has passed. ``-S`` also
+    means the child has no site-packages of its own, so the bootstrap inserts
+    the search path explicitly -- verified roots first, then this
+    interpreter's site-packages -- and hands the entry point the argv it would
+    have seen as a script. Every path and argument travels as a real argv
+    value, never string-interpolated into the ``-c`` program.
+    """
+    return [
+        sys.executable, *_HWI_ISOLATION_FLAGS, "-c", _HWI_HELPER_BOOTSTRAP,
+        entry, str(len(search_dirs)), *search_dirs,
+    ]
+
+
 def _hwi_command(executable: str) -> list[str]:
     """The argv prefix that actually runs the helper.
 
@@ -569,7 +646,7 @@ def _hwi_command(executable: str) -> list[str]:
     candidate = Path(executable)
     if candidate.is_absolute() or candidate.parent != Path("."):
         return [path]
-    return [sys.executable, *_HWI_ISOLATION_FLAGS, path]
+    return _helper_command(path, _hwi_helper_search_dirs(_hwi_package_roots()))
 
 
 def _hwi_payload_check_script() -> str:
@@ -626,10 +703,29 @@ def _hwi_payload_check_script() -> str:
         "                    raise SystemExit(2)\n"
         "    visit(root_path)\n"
         "    return files\n"
-        "def scrub(code):\n"
-        "    consts = tuple(scrub(item) if hasattr(item, 'co_code') else item\n"
-        "                   for item in code.co_consts)\n"
-        "    return code.replace(co_filename='', co_consts=consts)\n"
+        "def fingerprint(item):\n"
+        "    # A code object reduces to its fields; a tuple or frozenset recurses\n"
+        "    # so a nested code object cannot hide behind identity comparison;\n"
+        "    # every other constant is compared by value AND by type. Value alone\n"
+        "    # is not enough: `code.replace(co_consts=...)` keeps co_code and the\n"
+        "    # line table identical while swapping 1 for 1.0 or True, and\n"
+        "    # `1.0 == True == 1`, so a pyc that is not the compiled source passed.\n"
+        "    if hasattr(item, 'co_code'):\n"
+        "        return ('code',\n"
+        "                item.co_argcount, item.co_posonlyargcount,\n"
+        "                item.co_kwonlyargcount, item.co_nlocals,\n"
+        "                item.co_stacksize, item.co_flags,\n"
+        "                item.co_code, tuple(item.co_names),\n"
+        "                tuple(item.co_varnames), tuple(item.co_freevars),\n"
+        "                tuple(item.co_cellvars),\n"
+        "                tuple(fingerprint(const) for const in item.co_consts),\n"
+        "                item.co_name, item.co_qualname, item.co_firstlineno,\n"
+        "                item.co_linetable, item.co_exceptiontable)\n"
+        "    if isinstance(item, tuple):\n"
+        "        return tuple(fingerprint(const) for const in item)\n"
+        "    if isinstance(item, frozenset):\n"
+        "        return frozenset(fingerprint(const) for const in item)\n"
+        "    return (type(item).__name__, item)\n"
         "def bytecode_is_the_recorded_source(rel, path, root):\n"
         "    parent = pathlib.PurePosixPath(rel).parent\n"
         "    if parent.name != '__pycache__':\n"
@@ -648,19 +744,20 @@ def _hwi_payload_check_script() -> str:
         "    if (int.from_bytes(data[8:12], 'little') != int(stat.st_mtime) & 0xffffffff\n"
         "            or int.from_bytes(data[12:16], 'little') != stat.st_size & 0xffffffff):\n"
         "        return True\n"
-        "    # Compare the code, not the recorded filename: pip installs a"
-        " wheel\n"
-        "    # from a staging directory and the compiler writes THAT path into"
-        " the\n"
-        "    # pyc, so a byte-exact comparison refuses a genuine tree (cycle-6\n"
-        "    # referee E). The bytes are unmarshalled, never executed, and a\n"
-        "    # stream this interpreter cannot read is a refusal.\n"
+        "    # Compare the code by value, not the recorded filename and not the\n"
+        "    # marshal bytes: pip installs a wheel from a staging directory and\n"
+        "    # the compiler writes THAT path into the pyc (cycle-6 referee E),\n"
+        "    # and marshal encodes string-interning/ref-flag state, so two code\n"
+        "    # objects with equal constants can dump to different bytes -- a\n"
+        "    # genuine `compileall` tree was refused for exactly that reason.\n"
+        "    # The unmarshalled body is never executed, and a stream this\n"
+        "    # interpreter cannot read is a refusal.\n"
         "    try:\n"
         "        recorded = marshal.loads(data[16:])\n"
         "    except Exception:\n"
         "        return False\n"
         "    code = compile(source.read_bytes(), str(source), 'exec', dont_inherit=True)\n"
-        "    return marshal.dumps(scrub(recorded)) == marshal.dumps(scrub(code))\n"
+        "    return fingerprint(recorded) == fingerprint(code)\n"
         "roots = sys.argv[1:]\n"
         "if not roots:\n"
         "    raise SystemExit(3)\n"
@@ -821,18 +918,22 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
 
     The cache remembers bytes, not permission: a path verified earlier is
     re-read here, and anything that changed since is put back through the whole
-    check instead of inheriting the earlier verdict (CT-91).
+    check instead of inheriting the earlier verdict (CT-91). In source mode the
+    cached verdict is the whole-tree claim, so it is re-established by the
+    payload walk rather than by the files that walk once happened to record
+    (CT-102).
     """
-    if path in _verified_hwi_paths:
-        if _cached_identity_holds(path):
-            return
-        _verified_hwi_paths.discard(path)
-        _verified_hwi_files.pop(path, None)
     argv = list(command) if command is not None else [path]
     # A two-element prefix is [interpreter, entry]: the in-tree source-mode
     # helper, whose substitution surface is the package it imports. Anything
     # else is a standalone binary whose own bytes are what we pin.
-    if len(argv) >= 2:
+    source_mode = len(argv) >= 2
+    if path in _verified_hwi_paths:
+        if _cached_identity_holds(path, source_mode):
+            return
+        _verified_hwi_paths.discard(path)
+        _verified_hwi_files.pop(path, None)
+    if source_mode:
         verified = _verify_hwi_payload()
         # Re-walk the package immediately before the exec below. Re-reading the
         # recorded files catches a rewrite of any of them; only a second walk

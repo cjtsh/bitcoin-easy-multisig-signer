@@ -740,7 +740,7 @@ class PublishPathSweepTests(unittest.TestCase):
             out = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted a publishing branch:\n{out}")
-            self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+            self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
                           out)
             self.assertIn("evil", out)
             self.assertIn("build-candidate.yml", out)
@@ -780,7 +780,7 @@ class PublishPathSweepTests(unittest.TestCase):
             out = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted a gh-release branch:\n{out}")
-            self.assertIn("refusing: a non-main ref carries a publish-capable workflow", out)
+            self.assertIn("refusing: a non-main branch carries a publish-capable workflow", out)
             self.assertIn("runs-gh-release", out)
 
     def test_the_sweep_refuses_a_permission_it_cannot_read(self):
@@ -832,7 +832,7 @@ class PublishPathSweepTests(unittest.TestCase):
                         f"the sweep accepted a {label} permission block:\n{out}")
                     self.assertIn("unreadable-token-permissions", out)
                     self.assertIn(
-                        "refusing: a non-main ref carries a publish-capable "
+                        "refusing: a non-main branch carries a publish-capable "
                         "workflow", out)
 
     def test_the_sweep_refuses_a_publisher_split_across_a_continuation(self):
@@ -1050,7 +1050,7 @@ class PublishPathSweepTests(unittest.TestCase):
             out = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted build-windows.yml:\n{out}")
-            self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+            self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
                           out)
             self.assertIn("windows-port", out)
             self.assertIn("build-windows.yml", out)
@@ -1076,7 +1076,7 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0,
                              f"the sweep refused a clean repo:\n{out}")
             self.assertNotIn("refusing:", out)
-            self.assertIn("ok: no non-main ref carries a publish-capable workflow", out)
+            self.assertIn("ok: no non-main branch carries a publish-capable workflow", out)
 
     def test_the_sweep_forgets_a_branch_that_was_deleted_on_the_remote(self):
         """A ghost ref left over from a previous fetch is a false accusation."""
@@ -1125,7 +1125,7 @@ class PublishPathSweepTests(unittest.TestCase):
             self._commit(repo, "evil")
 
             result = self._run_sweep(repo)
-            self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+            self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
                           result.stderr)
             self.assertEqual(result.returncode, 1)
 
@@ -1210,7 +1210,7 @@ class PublishPathSweepTests(unittest.TestCase):
         out = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0,
                             f"the sweep accepted {reason}:\n{out}")
-        self.assertIn("refusing: a non-main ref carries a publish-capable workflow",
+        self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
                       out)
         self.assertIn(branch, out)
         self.assertIn(reason, out)
@@ -1440,6 +1440,280 @@ class PublishPathSweepTests(unittest.TestCase):
         self._assert_reason(self._run_one_branch("evil", body),
                             "calls-a-release-workflow")
 
+    def test_the_sweep_refuses_a_flow_permission_mapping_split_across_lines(self):
+        """A flow mapping continued on the next line is one mapping.
+
+        Cycle-6 attacker: `permissions: {issues: read,` with `contents: write}`
+        on the following line is valid YAML that grants a write token, but the
+        reader saw only the first scope and called the rest absent. A `{` this
+        parse cannot close is an unreadable token, which the sweep refuses.
+        """
+        body = (
+            "name: split-flow\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions: {issues: read,\n"
+            "      contents: write}\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "unreadable-token-permissions")
+
+    def test_the_sweep_refuses_a_flow_style_job_that_grants_write(self):
+        """A flow-style job puts the token mid-line.
+
+        Cycle-6 attacker: `publish: {runs-on: ..., permissions: {contents:
+        write}, ...}` grants contents:write while the top level reads
+        `contents: read`, and the key-anchored pattern never saw the key.
+        """
+        body = (
+            "name: flow-job\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  publish: {runs-on: ubuntu-24.04, permissions: {contents: write},"
+            " steps: [{run: echo ok}]}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-contents-write")
+
+    def test_the_sweep_accepts_a_read_only_token_in_a_flow_style_job(self):
+        """Positive half: a flow-style job that declares its own read token.
+
+        Cycle-7 finding: `jobs: {build: {runs-on: …, permissions: {contents:
+        read}, steps: [{run: echo ok}]}}` carries an explicit read-only
+        allowlist — PyYAML resolves `jobs.build.permissions.contents == "read"`
+        — but the coverage proof counted only job-key LINES, saw zero declared
+        jobs and refused the branch as `partial-token-permissions`. The proof
+        now reads the flow mapping in each shape: the whole `jobs` mapping in
+        flow, the mapping beginning on the next line, and one job whose value is
+        a flow mapping. Failing closed is preserved: a `permissions:` nested
+        inside a flow `env:` mapping is still not the job's own token, so that
+        shape is refused (`partial-token-permissions`), exactly as the block
+        decoy is in `test_a_deeper_permissions_key_does_not_cover_a_job`.
+        """
+        for label, body in (
+            ("whole-jobs-flow",
+             "name: flow\n"
+             "on: workflow_dispatch\n"
+             "jobs: {build: {runs-on: ubuntu-24.04,"
+             " permissions: {contents: read}, steps: [{run: echo ok}]}}\n"),
+            ("flow-on-next-line",
+             "name: flow\n"
+             "on: workflow_dispatch\n"
+             "jobs:\n"
+             "  {build: {runs-on: ubuntu-24.04,"
+             " permissions: {contents: read}, steps: [{run: echo ok}]}}\n"),
+            ("job-value-flow",
+             "name: flow\n"
+             "on: workflow_dispatch\n"
+             "jobs:\n"
+             "  build: {runs-on: ubuntu-24.04,"
+             " permissions: {contents: read}, steps: [{run: echo ok}]}\n"),
+        ):
+            with self.subTest(shape=label):
+                result = self._run_one_branch("clean", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(
+                    result.returncode, 0,
+                    f"the sweep refused a read-only flow job ({label}):\n{out}")
+        deeper = (
+            "name: deep\n"
+            "on: workflow_dispatch\n"
+            "jobs: {build: {runs-on: ubuntu-24.04,"
+            " env: {permissions: read}, steps: [{run: echo ok}]}}\n"
+        )
+        with self.subTest(shape="deeper-flow-permissions"):
+            self._assert_reason(self._run_one_branch("evil", deeper),
+                                "partial-token-permissions")
+
+    def test_the_sweep_refuses_every_flow_spelling_of_a_write_token(self):
+        """A flow mapping can begin in more than one way.
+
+        Found by attacking my own first fix for the test above: a quoted job
+        key, a flow mapping on the line after the key, and a tagged flow map
+        (`!!map {…}`) each still carried `permissions: {contents: write}`
+        mid-line past a gate that required a bare key before the brace. The gate
+        now accepts an opening brace at the start of the line or after space or
+        comma, which is where a flow mapping can begin.
+
+        The same hunt then spelled the KEY itself around the reader: a
+        double-quoted YAML key with an escape (`"permiss\\u0069ons"` resolves to
+        `permissions`) and the explicit-key form (`? permissions` with
+        `: write-all` on the next line) both granted write-all while the
+        colon-keyed reader saw nothing. Neither is a spelling this reader can
+        resolve, so both fail closed as an unreadable token.
+        """
+        for spelling, reason in (
+            ('  "publish": {runs-on: ubuntu-24.04, permissions: {contents: write},'
+             ' steps: [{run: echo ok}]}\n', "grants-contents-write"),
+            ("  publish:\n"
+             "    {runs-on: ubuntu-24.04, permissions: {contents: write},"
+             " steps: [{run: echo ok}]}\n", "grants-contents-write"),
+            ("  publish: !!map {runs-on: ubuntu-24.04,"
+             " permissions: {contents: write}, steps: [{run: echo ok}]}\n",
+             "grants-contents-write"),
+            ('  "permiss\\u0069ons": write-all\n'
+             "    steps:\n      - run: echo ok\n",
+             "unreadable-token-permissions"),
+            ("  ? permissions\n"
+             "  : write-all\n"
+             "    steps:\n      - run: echo ok\n",
+             "unreadable-token-permissions"),
+        ):
+            with self.subTest(spelling=spelling):
+                body = (
+                    "name: flow-spelling\n"
+                    "on: workflow_dispatch\n"
+                    "permissions:\n"
+                    "  contents: read\n"
+                    "jobs:\n"
+                    + spelling
+                )
+                self._assert_reason(self._run_one_branch("evil", body), reason)
+
+    def test_prose_that_names_a_permission_is_not_a_grant(self):
+        """The widened flow gate must not read a `run:` string as YAML.
+
+        A step body that echoes the words `{permissions: write}` is text, and a
+        Python snippet that holds a `"\\x7f"` literal is text: the escaped-key
+        rule has to key on the quote being in a key position. The same holds for
+        a key that merely ENDS in `permissions` — `with: {x-permissions:
+        {contents: write}}` is an action input, not the workflow token, and the
+        workflow's own token here is the read-only `contents: read` block. If
+        the sweep treated any of these as a token it would refuse a clean
+        workflow (the repository's own build workflow contains the `\\x7f` line,
+        and `x-permissions` is an ordinary action-input name), and an
+        over-refusing gate gets switched off.
+        """
+        for step in (
+            '      - run: echo "{permissions: write}"\n',
+            "      - run: |\n"
+            '          if raw[:4] != b"\\x7fELF":\n'
+            "              pass\n",
+            "      - uses: some/action@v1\n"
+            "        with:\n"
+            "          x-permissions: {contents: write}\n",
+        ):
+            with self.subTest(step=step):
+                body = (
+                    "name: prose\n"
+                    "on: workflow_dispatch\n"
+                    "permissions:\n"
+                    "  contents: read\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    steps:\n"
+                    + step
+                )
+                result = self._run_one_branch("evil", body)
+                self.assertEqual(result.returncode, 0,
+                                 result.stdout + result.stderr)
+
+    def test_the_sweep_refuses_a_callee_inside_a_flow_mapping(self):
+        """A flow mapping or flow step carries `uses:` mid-line.
+
+        Found by attacking my own first fix for the block-scalar test below:
+        `call: {uses: …}` and `steps: [{uses: …}]` put the key after a brace,
+        which the line-anchored pattern never matched, so a remote release
+        workflow passed. The key is now read anywhere a key can begin. The same
+        flow style with a local `./` callee or a subdirectory action still
+        passes — the rule is the callee's shape, not the flow style.
+        """
+        prefix = (
+            "name: flow-uses\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+        )
+        for step in (
+            "  call: {uses: other-org/ci/.github/workflows/publish.yml@main}\n",
+            '  call: {"uses": other-org/ci/.github/workflows/publish.yml@main}\n',
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps: [{uses: other-org/ci/.github/workflows/publish.yml@main}]\n",
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - ? uses\n"
+            "        : other-org/ci/.github/workflows/publish.yml@main\n",
+        ):
+            with self.subTest(step=step):
+                self._assert_reason(self._run_one_branch("evil", prefix + step),
+                                    "calls-a-release-workflow")
+        for step in (
+            "  call: {uses: ./.github/workflows/other.yml}\n",
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps: [{uses: github/codeql-action/analyze@v3}]\n",
+        ):
+            with self.subTest(step=step):
+                result = self._run_one_branch("clean", prefix + step)
+                self.assertEqual(result.returncode, 0,
+                                 result.stdout + result.stderr)
+
+    def test_a_deeper_permissions_key_does_not_cover_a_job(self):
+        """A `permissions:` under `env:` is a variable name, not a token.
+
+        Cycle-6 attacker: the coverage proof counted any deeper `permissions:`
+        line as the job declaring its own token, so a job with no token plus a
+        decoy variable named `permissions` made the whole file read-only. The
+        job's own key is the one at the job's child indent.
+        """
+        body = (
+            "name: decoy\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+            "  probe:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    env:\n"
+            "      NAME: value\n"
+            "      permissions: read\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "partial-token-permissions")
+
+    def test_the_sweep_refuses_a_block_scalar_uses_that_hides_its_callee(self):
+        """`uses: |` keeps the callee on a line the reader never scans.
+
+        Cycle-6 referee: the explicit-indentation forms `|`, `|2-` and `>2-`
+        put the callee on the following line, and the sign-only strip read the
+        value `2-` and let the call through. A `uses:` whose value is a block
+        indicator is refused rather than read past.
+        """
+        for indicator in ("|", "|2-", ">2-"):
+            with self.subTest(indicator=indicator):
+                body = (
+                    "name: literal-uses\n"
+                    "on: workflow_dispatch\n"
+                    "permissions:\n"
+                    "  contents: read\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    steps:\n"
+                    f"      - uses: {indicator}\n"
+                    "          other-org/ci/.github/workflows/publish.yml@main\n"
+                )
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "calls-a-release-workflow")
+
     def test_the_sweep_refuses_a_remote_reusable_workflow_under_any_name(self):
         """The callee's name proves nothing: the sweep cannot read it.
 
@@ -1499,6 +1773,47 @@ class PublishPathSweepTests(unittest.TestCase):
                 out = result.stdout + result.stderr
                 self.assertEqual(result.returncode, 0, out)
 
+    def test_the_sweep_refuses_a_local_action_it_does_not_read(self):
+        """Negative half: a local `./` target outside `.github/workflows`.
+
+        Cycle-7 attacker: `uses: ./.github/actions/publish` reached a composite
+        action whose body holds the publisher, but the main loop enumerates only
+        `.github/workflows`, so the action body was never read and the sweep
+        printed ok. The `./` pass is kept only for a value that IS a workflow
+        file this sweep reads; every other local target is an unread body and
+        fails closed with its own reason. The positive half rides along: a
+        legitimate local reusable workflow still passes, block and flow spelled.
+        """
+        for callee in ("./.github/actions/publish",
+                       "./tools/publish",
+                       "./.github/actions/publish@main"):
+            with self.subTest(callee=callee):
+                self._assert_reason(
+                    self._run_one_branch("evil",
+                                         self._recipe("local", f"uses: {callee}")),
+                    "calls-a-local-action")
+        flow = (
+            "name: local-wf\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  call: {uses: ./.github/workflows/other.yml}\n"
+        )
+        for label, body in (
+            ("block", self._recipe("local-wf",
+                                   "uses: ./.github/workflows/other.yml")),
+            ("block-ref", self._recipe("local-wf",
+                                       "uses: ./.github/workflows/other.yml@main")),
+            ("flow", flow),
+        ):
+            with self.subTest(callee=label):
+                result = self._run_one_branch("clean", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(
+                    result.returncode, 0,
+                    f"the sweep refused a local workflow callee ({label}):\n{out}")
+
     def test_the_sweep_refuses_the_rest_api_through_the_api_url_context(self):
         """`${{ github.api_url }}` is the documented REST-API URL.
 
@@ -1544,7 +1859,7 @@ class PublishPathSweepTests(unittest.TestCase):
         out = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0,
                          f"the sweep blamed a comment:\n{out}")
-        self.assertIn("ok: no non-main ref carries a publish-capable workflow",
+        self.assertIn("ok: no non-main branch carries a publish-capable workflow",
                       out)
 
     def test_a_comment_that_names_a_publisher_is_not_an_offender(self):
@@ -1564,7 +1879,7 @@ class PublishPathSweepTests(unittest.TestCase):
         out = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0,
                          f"the sweep read a command out of a comment:\n{out}")
-        self.assertIn("ok: no non-main ref carries a publish-capable workflow",
+        self.assertIn("ok: no non-main branch carries a publish-capable workflow",
                       out)
 
     def test_a_uses_line_that_only_mentions_release_is_not_a_callee(self):

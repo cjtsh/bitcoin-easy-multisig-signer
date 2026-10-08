@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Refuse a second publish path on any remote BRANCH.
+# Refuse a second publish path on any remote non-main BRANCH.
 #
-# Scope (cycle-5 adversarial pass). The sweep enumerates branch refs only
-# (`+refs/heads/*`), which is what the header claimed before the attacker read
-# it as "any ref" and showed a tag-only `contents: write` + `gh release`
-# workflow returning "ok". Tags are deliberately out of scope, and the reason is
-# not that a tag's workflow cannot run: it is that
-#   - a tag can only be created by someone who can already push a workflow, and
-#   - every historical tag carries the publisher text that shipped with it, so
-#     including tags would refuse this repository's own v0.6.x tags.
-# The control for a tag ref is CT-97's environment scope, not this sweep: every
-# release credential lives in an environment whose deployment branch policy
-# allows `main` only (`scripts/check-release-credentials.sh`), so a job that
-# declares one cannot start on a tag and a tag run has no signing key. The
-# default-token path (`contents: write` with no secret) is the residual, and it
-# is disclosed in `releases/PATCH-0.6.8.md` rather than silently assumed away.
+# Scope (cycle-5 adversarial pass; claim narrowed in cycle 7). The sweep
+# enumerates branch refs only (`+refs/heads/*`) and fetches with `--no-tags`,
+# so it never reads a tag ref. That is by design, and the ok/refusal wording
+# below says "branch" rather than "ref" because of it:
+#   - a released tag's tree IS the released code, so every published tag
+#     necessarily contains the release workflow that produced it; fetching tags
+#     would refuse this repository's own v0.6.x tags, not a second publish path;
+#   - a tag can only be created by someone who can already push a workflow.
+# The control for tag-triggered publication is the environment branch policy in
+# `scripts/check-release-credentials.sh`, not this sweep: every release
+# credential lives in an environment whose deployment branch policy allows
+# `main` only, so a job that names one cannot start on a tag and a tag run has
+# no signing key. The default-token path (`contents: write` with no secret) is
+# the residual, and it is disclosed in `releases/PATCH-0.6.8.md` rather than
+# silently assumed away.
 #
 # Why this exists: the cycle-3 audit graded the repository BLOCKED because
 # .github/workflows/build-windows.yml and build-linux.yml were still live on
@@ -113,7 +114,7 @@ set -euo pipefail
 
 REMOTE="${1:-origin}"
 ALLOWED="main"
-REFUSAL="refusing: a non-main ref carries a publish-capable workflow"
+REFUSAL="refusing: a non-main branch carries a publish-capable workflow"
 
 # YAML permission keys and the `gh release` invocation are matched
 # case-insensitively, as the grep -i this replaced did. nocasematch only
@@ -338,6 +339,22 @@ permissions_verdict() {
     local pat_perm='^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$'
     for (( i=0; i<${#PERM_LINES[@]}; i++ )); do
         line="${PERM_LINES[i]}"
+        # A double-quoted YAML key can spell another key with an escape:
+        # `"permiss\u0069ons": write-all` IS `permissions: write-all` after
+        # parsing. The explicit-key spelling is the same class of problem:
+        # `? permissions` puts the key on one line and `: write-all` on the
+        # next, so a colon-keyed reader never sees the token. Both were found
+        # by attacking the first fix for the quoted-key case; both are key
+        # spellings this reader cannot resolve, so both fail closed.
+        # The escape pattern requires the quote in a KEY position (start of the
+        # line, after `- `, or after `{`/`,`) so a Python snippet inside a
+        # `run:` block that happens to hold a `"\x7f"` literal — which the
+        # repository's own build workflow does — is not read as a key.
+        local pat_escaped_key='(^[[:space:]]*(-[[:space:]]+)?|[{,][[:space:]]*)["][^"]*\\[uUxX][0-9A-Fa-f]+[^"]*["][[:space:]]*:'
+        local pat_explicit_key='^[[:space:]]*\?[[:space:]]*["]?permissions'
+        if [[ "$line" =~ $pat_escaped_key ]] || [[ "$line" =~ $pat_explicit_key ]]; then
+            unrecognized=1
+        fi
         # A quoted key is the same key to YAML. The cycle-6 referee put
         # `"permissions": write-all` on one job of an otherwise read-only file
         # and the bare-key pattern never saw it, so the file passed.
@@ -428,6 +445,14 @@ permissions_verdict() {
                     ;;
                 "{"*)
                     # Flow mapping, e.g. `{contents: write, issues: read}`.
+                    # A mapping the fold did not complete — `permissions: {issues:
+                    # read,` with `contents: write}` on the next line — is a
+                    # mapping this parse cannot read. Fail closed rather than
+                    # reading the first scope and calling the rest absent.
+                    case "$value" in
+                        *"}"*) ;;
+                        *) unrecognized=1; continue ;;
+                    esac
                     if [[ "$value" =~ contents[[:space:]]*:[[:space:]]*[\"\']?write ]]; then
                         printf 'contents-write\n'; return 0
                     fi
@@ -455,6 +480,57 @@ permissions_verdict() {
                     ;;
             esac
         fi
+        # A flow mapping puts `permissions:` mid-line:
+        #     publish: {runs-on: …, permissions: {contents: write}, …}
+        #     "publish": {…}
+        #     publish: !!map {…}
+        #     publish:
+        #       {runs-on: …, permissions: {contents: write}, …}
+        # The anchored pattern above cannot see any of those, so a job could grant
+        # itself a write token while the top level (or another job) showed a
+        # read-only one. Read it the same way and refuse the same values; a
+        # mid-line spelling this parse cannot read fails closed too.
+        # The gate is an opening brace at the start of the line or after
+        # space/comma — the positions a flow mapping can begin in — so prose in a
+        # `run:` string (`echo "{permissions: write}"`) is not read as a grant.
+        if [[ ! "$line" =~ $pat_perm ]]; then
+            local pat_flowopen='(^|[[:space:],])[\{]'
+            if [[ "$line" =~ $pat_flowopen ]]; then
+                # Cycle-7: the key needs a left boundary. Without one, an
+                # unrelated flow key whose name merely ENDS in `permissions`
+                # (`with: {x-permissions: {contents: write}}` on a `read-all`
+                # workflow) was read as the token and refused as
+                # `grants-contents-write`, while the real token was `read-all`.
+                # A key spelled exactly `permissions` begins at the start of the
+                # line or after space, `{` or `,` — the positions a flow mapping
+                # key can begin in.
+                local pat_inline='(^|[[:space:]{,])permissions[^[:alnum:]_]*:(.*)$'
+                if [[ "$line" =~ $pat_inline ]]; then
+                    value="${BASH_REMATCH[2]}"
+                    value="${value#"${value%%[![:space:]]*}"}"
+                    case "$value" in
+                        "write-all"*) printf 'write-all\n'; return 0 ;;
+                        "write"*) printf 'write-all\n'; return 0 ;;
+                        "read-all"*|"read"*|"none"*|"{}"*) saw_readonly=1 ;;
+                        *"{"*)
+                            if [[ "$value" =~ contents[[:space:]]*:[[:space:]]*[\"\']?write ]]; then
+                                printf 'contents-write\n'; return 0
+                            fi
+                            if [[ "$value" =~ (^|[[:space:]{,])write-all([[:space:]},]|$) ]]; then
+                                printf 'write-all\n'; return 0
+                            fi
+                            if [[ "$value" == *"*"* || "$value" == *"<<"* ]]; then
+                                unrecognized=1
+                            else
+                                saw_readonly=1
+                            fi
+                            ;;
+                        *"*"*|*"<<"*) unrecognized=1 ;;
+                        *) unrecognized=1 ;;
+                    esac
+                fi
+            fi
+        fi
     done
 
     # An unreadable construct outranks a read-only one: a file that says both
@@ -476,20 +552,233 @@ permissions_verdict() {
     fi
 }
 
+# Cycle-7 flow readers, for the `jobs:` coverage proof below. A workflow may
+# spell its jobs as a flow mapping instead of indented blocks, and the
+# line-and-indent proof cannot see a job key that sits inside braces. These
+# readers resolve only the shapes they can close completely; anything they
+# cannot read returns 1, because "cannot read it" must not become "covered".
+
+# The top-level members of one balanced flow mapping. $1 must be a single
+# `{...}` mapping; sets FLOW_MEMBERS to its comma-separated members and returns
+# 1 for an unclosed mapping, a trailing token or a nested-bracket mismatch.
+_flow_members() {
+    FLOW_MEMBERS=()
+    local s="$1" i ch depth=0 in_quote="" member="" closed=0
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    [ "${s:0:1}" = "{" ] || return 1
+    for (( i=0; i<${#s}; i++ )); do
+        ch="${s:i:1}"
+        if [ -n "$in_quote" ]; then
+            member+="$ch"
+            if [ "$ch" = "$in_quote" ]; then in_quote=""; fi
+            continue
+        fi
+        case "$ch" in
+            '"'|"'") in_quote="$ch"; member+="$ch" ;;
+            '{'|'[')
+                depth=$((depth + 1))
+                if [ "$depth" -ge 2 ]; then member+="$ch"; fi
+                ;;
+            '}'|']')
+                if [ "$depth" -eq 1 ] && [ "$ch" = "}" ]; then
+                    local after="${s:i+1}"
+                    [ -z "${after//[[:space:]]/}" ] || return 1
+                    depth=0
+                    closed=1
+                    break
+                fi
+                [ "$depth" -gt 0 ] || return 1
+                depth=$((depth - 1))
+                member+="$ch"
+                ;;
+            ',')
+                if [ "$depth" -eq 1 ]; then
+                    if [ -n "${member//[[:space:]]/}" ]; then
+                        FLOW_MEMBERS+=("$member")
+                    fi
+                    member=""
+                else
+                    member+="$ch"
+                fi
+                ;;
+            *)
+                if [ "$depth" -ge 1 ]; then member+="$ch"; fi
+                ;;
+        esac
+    done
+    [ "$closed" -eq 1 ] || return 1
+    [ -z "$in_quote" ] || return 1
+    if [ -n "${member//[[:space:]]/}" ]; then
+        FLOW_MEMBERS+=("$member")
+    fi
+    return 0
+}
+
+# Split one flow member at its first top-level colon. Sets FLOW_KEY (trimmed,
+# surrounding quotes stripped) and FLOW_VALUE (trimmed); returns 1 for a member
+# with no top-level colon (an explicit key or an alias).
+_flow_key_value() {
+    local s="$1" i ch depth=0 in_quote="" key=""
+    FLOW_KEY=""
+    FLOW_VALUE=""
+    for (( i=0; i<${#s}; i++ )); do
+        ch="${s:i:1}"
+        if [ -n "$in_quote" ]; then
+            key+="$ch"
+            if [ "$ch" = "$in_quote" ]; then in_quote=""; fi
+            continue
+        fi
+        case "$ch" in
+            '"'|"'") in_quote="$ch"; key+="$ch" ;;
+            '{'|'[') depth=$((depth + 1)); key+="$ch" ;;
+            '}'|']') depth=$((depth - 1)); key+="$ch" ;;
+            ':')
+                if [ "$depth" -eq 0 ]; then
+                    FLOW_KEY="$key"
+                    FLOW_VALUE="${s:i+1}"
+                    FLOW_KEY="${FLOW_KEY#"${FLOW_KEY%%[![:space:]]*}"}"
+                    FLOW_KEY="${FLOW_KEY%"${FLOW_KEY##*[![:space:]]}"}"
+                    FLOW_KEY="${FLOW_KEY#\"}"; FLOW_KEY="${FLOW_KEY%\"}"
+                    FLOW_KEY="${FLOW_KEY#\'}"; FLOW_KEY="${FLOW_KEY%\'}"
+                    FLOW_VALUE="${FLOW_VALUE#"${FLOW_VALUE%%[![:space:]]*}"}"
+                    FLOW_VALUE="${FLOW_VALUE%"${FLOW_VALUE##*[![:space:]]}"}"
+                    return 0
+                fi
+                key+="$ch"
+                ;;
+            *) key+="$ch" ;;
+        esac
+    done
+    return 1
+}
+
+# Does one flow job member (`build: {…}`) carry a `permissions:` key at the job
+# mapping's OWN depth? A `permissions:` nested deeper (inside an `env:` or
+# `strategy:` flow mapping) is a variable, not the job's token, exactly as in
+# the block form the cycle-6 fix hardened.
+_flow_job_declares_permissions() {
+    local member="$1" m k
+    _flow_key_value "$member" || return 1
+    [ -n "$FLOW_KEY" ] || return 1
+    [ "${FLOW_VALUE:0:1}" = "{" ] || return 1
+    _flow_members "$FLOW_VALUE" || return 1
+    for m in "${FLOW_MEMBERS[@]}"; do
+        _flow_key_value "$m" || continue
+        k="$FLOW_KEY"
+        if [ "$k" = "permissions" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Every job in a flow-style `jobs` mapping declares its own `permissions:`.
+# Returns 0 only when the mapping has at least one job and every job carries the
+# token at its own depth.
+_flow_jobs_mapping_covers() {
+    local m k count=0 declared=0
+    _flow_members "$1" || return 1
+    [ "${#FLOW_MEMBERS[@]}" -gt 0 ] || return 1
+    for m in "${FLOW_MEMBERS[@]}"; do
+        _flow_key_value "$m" || return 1
+        k="$FLOW_KEY"
+        [ -n "$k" ] || return 1
+        count=$((count + 1))
+        if _flow_job_declares_permissions "$m"; then
+            declared=$((declared + 1))
+        fi
+    done
+    [ "$count" -gt 0 ] || return 1
+    [ "$declared" -eq "$count" ]
+}
+
+# Collect the one balanced flow mapping that begins with `{` on
+# PERM_LINES[$1]. A mapping spread over several lines is joined with spaces; an
+# unterminated one sets nothing and returns 1.
+_collect_flow() {
+    local start="$1" i n ch line depth=0 in_quote="" seen=0
+    FLOW_TEXT=""
+    for (( n=start; n<${#PERM_LINES[@]}; n++ )); do
+        line="${PERM_LINES[n]}"
+        for (( i=0; i<${#line}; i++ )); do
+            ch="${line:i:1}"
+            if [ "$seen" -eq 0 ]; then
+                if [ "$ch" != "{" ]; then
+                    continue
+                fi
+                seen=1
+            fi
+            if [ -n "$in_quote" ]; then
+                FLOW_TEXT+="$ch"
+                if [ "$ch" = "$in_quote" ]; then in_quote=""; fi
+                continue
+            fi
+            case "$ch" in
+                '"'|"'") in_quote="$ch"; FLOW_TEXT+="$ch" ;;
+                '{'|'[') depth=$((depth + 1)); FLOW_TEXT+="$ch" ;;
+                '}'|']')
+                    depth=$((depth - 1))
+                    FLOW_TEXT+="$ch"
+                    if [ "$depth" -eq 0 ]; then
+                        return 0
+                    fi
+                    ;;
+                *) FLOW_TEXT+="$ch" ;;
+            esac
+        done
+        if [ "$seen" -eq 1 ]; then
+            FLOW_TEXT+=" "
+        fi
+    done
+    FLOW_TEXT=""
+    return 1
+}
+
 # Every job under the top-level `jobs:` declares its own `permissions:`?
 # Returns 0 (covered) only when there is at least one job and each job's block
 # carries a `permissions:` key. Unreadable shapes (no `jobs:` line, a jobs block
 # with no indent) return 1, because "cannot read it" must not become "covered".
+# Cycle-7: a flow-style `jobs` mapping (`jobs: {build: {…}}` on one line, or a
+# bare `jobs:` whose flow mapping begins on the next line) declares its jobs
+# with braces. The block proof below counts job-key LINES and sees zero jobs for
+# that shape, so a read-only flow job was refused as `partial-token-permissions`
+# while PyYAML resolved `jobs.build.permissions.contents == "read"`. The flow
+# shape is now read by its own proof; anything that cannot be closed returns 1.
 _jobs_all_declare_permissions() {
-    local i n k line indent inner inner_indent count=0 declared=0 job_indent=-1
+    local i n k line indent inner inner_indent count=0 declared=0 job_indent=-1 child_min
+    local tail="" flow_start=-1
     i=-1
     for (( n=0; n<${#PERM_LINES[@]}; n++ )); do
-        if [[ "${PERM_LINES[n]}" =~ ^jobs[[:space:]]*:[[:space:]]*$ ]]; then
+        if [[ "${PERM_LINES[n]}" =~ ^jobs[[:space:]]*:[[:space:]]*(.*)$ ]]; then
             i=$n
+            tail="${BASH_REMATCH[1]}"
             break
         fi
     done
     [ "$i" -ge 0 ] || return 1
+    tail="${tail#"${tail%%[![:space:]]*}"}"
+    if [ -n "$tail" ]; then
+        if [ "${tail:0:1}" = "{" ]; then
+            flow_start=$i
+        fi
+    else
+        for (( n=i+1; n<${#PERM_LINES[@]}; n++ )); do
+            line="${PERM_LINES[n]}"
+            [ -n "${line//[[:space:]]/}" ] || continue
+            line="${line#"${line%%[![:space:]]*}"}"
+            if [ "${line:0:1}" = "{" ]; then
+                flow_start=$n
+            fi
+            break
+        done
+    fi
+    if [ "$flow_start" -ge 0 ]; then
+        if _collect_flow "$flow_start" && _flow_jobs_mapping_covers "$FLOW_TEXT"; then
+            return 0
+        fi
+        return 1
+    fi
     for (( n=i+1; n<${#PERM_LINES[@]}; n++ )); do
         line="${PERM_LINES[n]}"
         [ -n "${line//[[:space:]]/}" ] || continue
@@ -516,6 +805,22 @@ _jobs_all_declare_permissions() {
         # `permissions:` key itself is not a job.
         [[ "$line" =~ ^[[:space:]]*permissions[[:space:]]*: ]] && continue
         count=$((count + 1))
+        # Cycle-7: a job whose value is a flow mapping on the job's own line
+        # (`build: {runs-on: …, permissions: {contents: read}}`) declares its
+        # token in the braces, not on a child line. Only the job value being a
+        # `{...}` mapping counts; every other shape falls through to the block
+        # proof, so a deeper `permissions:` under `env:` still does not cover.
+        if _flow_key_value "$line" && [ "${FLOW_VALUE:0:1}" = "{" ] \
+           && _flow_job_declares_permissions "$line"; then
+            declared=$((declared + 1))
+            continue
+        fi
+        # The job's own `permissions:` is a DIRECT child: it sits at the smallest
+        # indent inside the job block. A deeper `permissions:` (under `env:` or
+        # `strategy:`, say) is not the job's token. The cycle-6 attacker put
+        # `env:` + `permissions: read` in a job that declares none, and counting
+        # any deeper key as declared made the coverage proof pass.
+        child_min=-1
         for (( k=n+1; k<${#PERM_LINES[@]}; k++ )); do
             inner="${PERM_LINES[k]}"
             [ -n "${inner//[[:space:]]/}" ] || continue
@@ -523,7 +828,21 @@ _jobs_all_declare_permissions() {
             if [ "${#inner_indent}" -le "${#indent}" ]; then
                 break
             fi
-            if [[ "$inner" =~ ^[[:space:]]*permissions[[:space:]]*: ]]; then
+            if [ "$child_min" -lt 0 ] || [ "${#inner_indent}" -lt "$child_min" ]; then
+                child_min=${#inner_indent}
+            fi
+        done
+        if [ "$child_min" -lt 0 ]; then
+            continue
+        fi
+        for (( k=n+1; k<${#PERM_LINES[@]}; k++ )); do
+            inner="${PERM_LINES[k]}"
+            [ -n "${inner//[[:space:]]/}" ] || continue
+            inner_indent="${inner%%[![:space:]]*}"
+            if [ "${#inner_indent}" -le "${#indent}" ]; then
+                break
+            fi
+            if [ "${#inner_indent}" -eq "$child_min" ] && [[ "$inner" =~ ^[[:space:]]*permissions[[:space:]]*: ]]; then
                 declared=$((declared + 1))
                 break
             fi
@@ -557,16 +876,38 @@ _jobs_all_declare_permissions() {
 # accept. A value with two or more slashes whose last element is a YAML file is
 # not a valid callee either, but it is not something this gate will bet a release
 # on, so it is refused too. `actions/checkout@v4` (one slash, an action) does not
-# match. A local `./.github/workflows/x.yml@ref` is fine: the sweep reads every
-# workflow file on the ref, so the callee is in scope already.
+# match. A local `./.github/workflows/x.yml@ref` is fine: the main loop reads
+# every workflow file under `.github/workflows` on the ref, so that callee is in
+# scope already. Any OTHER `./` value is a local ACTION, not a workflow: the
+# loop never looks outside `.github/workflows`, so `.github/actions/publish`
+# (a composite action holding `run: gh release create`) and `./tools/publish`
+# are bodies this sweep does not read. Cycle 7 showed
+# `uses: ./.github/actions/publish` returning "ok" while the action published, so
+# the check now keeps the pass ONLY for a local value that is itself a workflow
+# file it reads and refuses every other local target, printing the distinct
+# reason `calls-a-local-action`.
 #
 # Matched one line at a time. `.` matches a newline in bash's ERE, so a
 # whole-body `uses:.*@` pairs an unrelated `uses: actions/upload-artifact@…`
 # line with a `uses:` further down the file.
 calls_a_remote_reusable_workflow() {
     local line value path rest
-    local pat_uses='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*(.*)$'
+    # The key may be anywhere on the line, not only first: a flow mapping or a
+    # flow-sequence step carries it as `{uses: …}` or `[{uses: …}]`, and the
+    # first revision's line-anchored pattern never saw those, so a remote callee
+    # could hide in flow style while the sweep said `ok`. `uses` must be a whole
+    # word (no alphanumeric, underscore or dash before it), exactly like the
+    # `permissions` pattern, so `x-uses:` is not a key.
+    local pat_uses='(^|[^[:alnum:]_-])uses[[:space:]]*:[[:space:]]*(.*)$'
+    # The explicit-key spelling splits the key and its value across lines:
+    # `- ? uses` then `  : other-org/ci/.github/workflows/x.yml@main`. The key
+    # line carries no colon, so the pattern above misses the callee entirely; a
+    # `uses` spelled this way is refused rather than read past.
+    local pat_explicit_uses='(^|[^[:alnum:]_-])\?[[:space:]]*["]?uses([[:space:]]|$)'
     while IFS= read -r line; do
+        if [[ "$line" =~ $pat_explicit_uses ]]; then
+            return 0
+        fi
         if [[ "$line" =~ $pat_uses ]]; then
             rest="${BASH_REMATCH[2]}"
             # A folded `>-` scalar was joined onto this line by
@@ -576,14 +917,59 @@ calls_a_remote_reusable_workflow() {
             # line was refused.
             case "$rest" in
                 ">"*|"|"*)
+                    # The indicator may carry a chomping sign and/or an explicit
+                    # indentation digit in either order (`|2-`, `>+2`, `>-2`). The
+                    # cycle-6 referee put the callee on the next line under `>2-`
+                    # and the sign-only strip read the value as `2-`, so the
+                    # callee was never seen.
                     rest="${rest#?}"
-                    case "$rest" in [-+]*) rest="${rest#?}" ;; esac
+                    # Strip the whole run: `|2-` and `>-2` both carry a digit
+                    # and a sign, and `${var##[-+0-9]}` removes one character,
+                    # not the run.
+                    while [ -n "$rest" ] && [[ "$rest" == [-+0-9]* ]]; do
+                        rest="${rest#?}"
+                    done
                     rest="${rest#"${rest%%[![:space:]]*}"}"
                     ;;
             esac
             value="${rest%%[[:space:]#]*}"
+            # A `uses:` with nothing on its own line is a block scalar (`uses: |`)
+            # or a continuation whose callee sits on a deeper line this reader
+            # never joins. That is a callee it cannot read, and the rule here is
+            # to refuse what it cannot read: the cycle-6 referee smuggled a remote
+            # workflow in under `uses: |` and `|2-` and the sweep said ok.
+            [ -n "$value" ] || return 0
+            # A local `./` target is only in scope when it is a workflow file
+            # this sweep already reads: the main loop enumerates
+            # `.github/workflows/*.yml|*.yaml` and nothing else. Any other `./`
+            # value is a local ACTION — `.github/actions/publish`, `./tools/
+            # publish` — whose body this check never reads, so a composite
+            # action holding `run: gh release create` published while the sweep
+            # printed ok (cycle-7 attacker). Keep the pass for the workflow-file
+            # shape only and refuse every other local target, with its own
+            # reason so the report names what was unread.
             case "$value" in
-                ./*) continue ;;
+                ./*)
+                    path="${value%@*}"
+                    # A flow callee carries the mapping's closing brace (or a
+                    # sequence bracket/comma) in the same token:
+                    # `steps: [{uses: ./.github/workflows/other.yml}]` reads the
+                    # value as `…other.yml}]`. Strip that punctuation before the
+                    # workflow-file test so a legitimate local callee in flow
+                    # style still passes, exactly as it did before cycle 7.
+                    while [ -n "$path" ]; do
+                        case "$path" in
+                            *[]},]) path="${path%?}" ;;
+                            *) break ;;
+                        esac
+                    done
+                    case "$path" in
+                        ./.github/workflows/*.yml|./.github/workflows/*.yaml)
+                            continue ;;
+                    esac
+                    printf 'calls-a-local-action\n'
+                    return 0
+                    ;;
             esac
             # An alias or merge key resolves to something this reader cannot
             # see. Refusing what cannot be read is the rule everywhere else in
@@ -767,9 +1153,11 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
         # callee in another repository cannot be read from here, so it fails
         # closed whatever it is named. Matched on the stripped body, so the
         # comments in this repository that discuss release workflows are not
-        # offenders.
-        if printf '%s\n' "$clean" | calls_a_remote_reusable_workflow; then
-            report "$branch" "$path" "calls-a-release-workflow"
+        # offenders. The function prints the specific unread shape when it has
+        # one (`calls-a-local-action`); anything else is the remote callee.
+        if callee_reason="$(printf '%s\n' "$clean" | calls_a_remote_reusable_workflow)"; then
+            report "$branch" "$path" \
+                "${callee_reason:-calls-a-release-workflow}"
             continue
         fi
         # Last, and only for a body that published nothing above: the token.
@@ -788,5 +1176,5 @@ if [ "$offenders" -gt 0 ]; then
     exit 1
 fi
 
-printf 'ok: no non-main ref carries a publish-capable workflow\n' >&2
+printf 'ok: no non-main branch carries a publish-capable workflow\n' >&2
 exit 0

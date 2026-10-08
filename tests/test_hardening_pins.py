@@ -85,6 +85,27 @@ def _written_package(folder: str) -> tuple[Path, dict[str, str]]:
     return Path(folder) / "site", manifest
 
 
+def _importable_package(folder: str, label: str) -> Path:
+    """Write an hwilib whose ``_cli.main`` reports which copy actually ran.
+
+    ``_written_package`` records bytes for the payload check, but its
+    ``_cli.py`` is a comment and cannot answer a real helper spawn. This one
+    can: the module prints ``label`` and the ``__init__.py`` file the child
+    imported, so a spawn pins the *tree*, not just the argv. Returns the
+    directory that has to lead ``sys.path`` for this copy to win.
+    """
+    package = Path(folder) / "hwilib"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text(
+        f"# {label} init\n", encoding="utf-8")
+    (package / "_cli.py").write_text(
+        "import hwilib\n\n\ndef main():\n"
+        f"    print({label!r}, hwilib.__file__)\n",
+        encoding="utf-8",
+    )
+    return Path(folder)
+
+
 # ---------------------------------------------------------------------------
 # CT-29 / CT-49 / CT-58 — HWI helper identity
 # ---------------------------------------------------------------------------
@@ -343,9 +364,21 @@ class HwiIdentityPins(unittest.TestCase):
                         "scripts/hwi_entry.py must exist for source mode to run")
         with patch.object(sys, "frozen", False, create=True), \
                 patch.object(sys, "executable", "/nowhere/python3"):
-            self.assertEqual(
-                _hwi_command("hwi"),
-                ["/nowhere/python3", "-I", "-P", str(entry)])
+            command = _hwi_command("hwi")
+        # CT-90 (site hook): source mode no longer runs the entry as a plain
+        # script. It runs a `-c` bootstrap under the stricter helper flags,
+        # handed the entry and its search path as real argv values, so no
+        # `.pth` can slip a directory ahead of the pinned tree.
+        self.assertEqual(
+            command[:6],
+            ["/nowhere/python3", "-I", "-S", "-P", "-c",
+             probe._HWI_HELPER_BOOTSTRAP])
+        self.assertEqual(command[6], str(entry))
+        directories = int(command[7])
+        self.assertEqual(directories, len(command) - 8)
+        self.assertIn(
+            probe._hwi_helper_search_dirs(probe._hwi_package_roots()),
+            [command[8:]])
 
     def test_the_path_lookup_fallback_is_gone(self):
         """CT-49: probe.py must not be able to resolve a helper from PATH.
@@ -407,10 +440,13 @@ class HwiIdentityPins(unittest.TestCase):
         """
         with patch.object(sys, "frozen", False, create=True), \
                 patch.object(sys, "executable", "/nowhere/python3"):
-            self.assertEqual(list(probe._HWI_ISOLATION_FLAGS), ["-I", "-P"])
+            # CT-90 (site hook): the helper now runs under the same strict
+            # isolation as the check child. It was `-I -P`, which left site
+            # processing on and let a planted `.pth` choose `hwilib`.
+            self.assertEqual(list(probe._HWI_ISOLATION_FLAGS), ["-I", "-S", "-P"])
             self.assertEqual(list(probe._HWI_CHECK_FLAGS), ["-I", "-S", "-P"])
             self.assertEqual(
-                _hwi_command("hwi")[:3], ["/nowhere/python3", "-I", "-P"])
+                _hwi_command("hwi")[:4], ["/nowhere/python3", "-I", "-S", "-P"])
             check = probe._hwi_payload_check_command("pass", ["/pkg/hwilib"])
             self.assertEqual(check, [
                 "/nowhere/python3", "-I", "-S", "-P",
@@ -420,17 +456,21 @@ class HwiIdentityPins(unittest.TestCase):
         """CT-90: `site` is what executes a `.pth`, and `-I` does not stop it.
 
         Measured on the real interpreter rather than asserted about the flag
-        list: the helper's flags leave `site` imported (so `site.py` has run its
-        `.pth` files), the check child's flags do not.
+        list: the old helper flags (`-I -P`) leave `site` imported (so `site.py`
+        has run its `.pth` files), and both children's flags now do not.
         """
         question = "import sys; print('site' in sys.modules)"
+        old_helper_flags = subprocess.run(
+            [sys.executable, "-I", "-P", "-c", question],
+            capture_output=True, text=True, check=True)
         helper_flags = subprocess.run(
             [sys.executable, *probe._HWI_ISOLATION_FLAGS, "-c", question],
             capture_output=True, text=True, check=True)
         check_flags = subprocess.run(
             [sys.executable, *probe._HWI_CHECK_FLAGS, "-c", question],
             capture_output=True, text=True, check=True)
-        self.assertEqual(helper_flags.stdout.strip(), "True")
+        self.assertEqual(old_helper_flags.stdout.strip(), "True")
+        self.assertEqual(helper_flags.stdout.strip(), "False")
         self.assertEqual(check_flags.stdout.strip(), "False")
 
     def test_the_roots_come_from_the_caller_not_the_environment(self):
@@ -549,10 +589,32 @@ class HwiIdentityPins(unittest.TestCase):
                     probe._verify_hwi_payload([str(root)])
 
     def test_a_file_removed_from_the_package_is_refused(self):
+        """Both removal layers are real, not just one of them.
+
+        A removed file has to be caught twice over: the check child compares the
+        walked set against the manifest itself, and the parent refuses a child
+        answer that is silent about a recorded name. With only one layer, a
+        weakened edit to the other would leave this test green.
+        """
         with tempfile.TemporaryDirectory() as folder:
             root, manifest = _written_package(folder)
             (root / "hwilib" / "_cli.py").unlink()
             with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+            # Layer one: the child's own set comparison.
+            self.assertIn("set(found) != set(manifest)",
+                          probe._hwi_payload_check_script())
+            # Layer two: the parent requires a line for every manifest name.
+            # Simulate a short answer from the child and watch the parent refuse
+            # it rather than accept a tree that is missing a recorded file.
+            short_answer = "\n".join(
+                f"{name} /nowhere/{name} {digest}"
+                for name, digest in manifest.items() if name != "_cli.py")
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True), \
+                    patch("probe.subprocess.run",
+                          return_value=CompletedProcess([], 0, short_answer, "")):
                 with self.assertRaisesRegex(
                         ProbeError, "does not match its recorded digest"):
                     probe._verify_hwi_payload([str(root)])
@@ -725,6 +787,133 @@ class HwiIdentityPins(unittest.TestCase):
                 [Path(path).name for path, _ in verified],
                 ["__init__.py", "_cli.py", "commands.py"])
 
+    def test_a_genuine_compileall_bytecode_file_is_accepted(self):
+        """CT-102: a pyc pip would write is not refused for its marshal bytes.
+
+        `pip install hwi==3.2.0` runs `compileall.compile_dir`, and the pin used
+        to compare `marshal.dumps(scrub(code))` byte for byte. Marshal encodes
+        string-interning/ref-flag state, so a nested code object whose constants
+        include a tuple of bytes -- `read_varint`'s size table in the real
+        115-file tree -- dumps to different bytes than the same source compiled
+        in-process, even though every constant compares equal. A genuine tree
+        was refused with "does not match its recorded digest". The comparison is
+        now by value, recursively, so `co_filename` and marshal state cannot
+        decide it. The forged body at the end proves the rule still refuses.
+        """
+        snippet = (
+            "def size_for(prefix):\n"
+            "    sizes = {b\"\\xfd\": 2, b\"\\xfe\": 4, b\"\\xff\": 8}\n"
+            "    if not prefix:\n"
+            "        raise ValueError(\"Can't read prefix!\")\n"
+            "    return sizes.get(prefix, 1)\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            source.write_text(snippet, encoding="utf-8")
+            manifest["commands.py"] = hashlib.sha256(
+                source.read_bytes()).hexdigest()
+            # The genuine artifact: pip's own compile step, fresh header and all.
+            subprocess.run(
+                [sys.executable, "-m", "compileall", "-q", "-o0",
+                 str(root / "hwilib")],
+                check=True, capture_output=True)
+            cache = next((root / "hwilib" / "__pycache__").glob("*.pyc"))
+            # The fixture must actually reproduce the defect, or a green run
+            # could pass for a reason that is not the fix.
+            def old_scrub(code):
+                consts = tuple(
+                    old_scrub(item) if hasattr(item, "co_code") else item
+                    for item in code.co_consts)
+                return code.replace(co_filename="", co_consts=consts)
+
+            recorded = marshal.loads(cache.read_bytes()[16:])
+            fresh = compile(source.read_bytes(), str(source), "exec",
+                            dont_inherit=True)
+            self.assertNotEqual(
+                marshal.dumps(old_scrub(recorded)),
+                marshal.dumps(old_scrub(fresh)),
+                "the fixture must reproduce the marshal-bytes defect")
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                verified = probe._verify_hwi_payload([str(root)])
+            self.assertEqual(len(verified), 3)
+            # Positive half of the rule: a body that is not that compile is
+            # still refused, even with a header copied from the real source.
+            stat = source.stat()
+            header = (
+                importlib.util.MAGIC_NUMBER
+                + bytes(4)
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little"))
+            cache.write_bytes(header + marshal.dumps(
+                compile(b"MARKER = 'attacker'\n", "commands.py", "exec")))
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_a_bytecode_file_with_a_retyped_constant_is_refused(self):
+        """CT-102: equal by value is not enough; a constant's TYPE is pinned.
+
+        `code.replace(co_consts=...)` rebuilds a code object with co_code and
+        the line table untouched, so swapping 1 for 1.0 (or True) yields a pyc
+        whose every field compares equal -- `1.0 == True == 1` -- while the
+        module no longer holds the constant the recorded source compiles. A
+        hand-built pyc of that shape passed the by-value fingerprint; the
+        freshness rule now compares constants by value AND by type.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            source.write_text("VALUE = 1\n", encoding="utf-8")
+            manifest["commands.py"] = hashlib.sha256(
+                source.read_bytes()).hexdigest()
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                self.assertEqual(
+                    len(probe._verify_hwi_payload([str(root)])), 3)
+            stat = source.stat()
+            header = (
+                importlib.util.MAGIC_NUMBER
+                + bytes(4)
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little"))
+            genuine = compile(source.read_bytes(), str(source), "exec",
+                              dont_inherit=True)
+            retyped = genuine.replace(co_consts=tuple(
+                1.0 if isinstance(item, int) and not isinstance(item, bool)
+                else item
+                for item in genuine.co_consts))
+            # The fixture has to reproduce the defect, or a green run could
+            # pass for a reason that is not the type pin.
+            self.assertEqual(genuine.co_code, retyped.co_code)
+            self.assertEqual(genuine.co_linetable, retyped.co_linetable)
+            self.assertEqual(genuine.co_consts, retyped.co_consts)
+            self.assertNotEqual(
+                tuple(type(item).__name__ for item in genuine.co_consts),
+                tuple(type(item).__name__ for item in retyped.co_consts))
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(
+                header + marshal.dumps(retyped))
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_a_missing_package_is_refused_as_not_installed(self):
+        """The empty-roots guard: no package must not read as an empty tree.
+
+        An uninstalled `hwilib` leaves no roots, and the parent must refuse
+        before it spawns anything at all rather than report success over zero
+        files.
+        """
+        with patch.object(probe, "_hwi_package_roots", return_value=[]), \
+                patch("probe.subprocess.run") as run:
+            with self.assertRaisesRegex(
+                    ProbeError, "is not installed in this environment"):
+                probe._verify_hwi_payload()
+        run.assert_not_called()
+
     def test_bytecode_without_a_recorded_source_is_refused(self):
         """A legacy `.pyc` next to no source is importable and unpinned."""
         with tempfile.TemporaryDirectory() as folder:
@@ -786,6 +975,95 @@ class HwiIdentityPins(unittest.TestCase):
                         [sys.executable, "-I", "-P", "-c",
                          f"print({version!r})"])
             self.assertNotIn(path, probe._verified_hwi_paths)
+
+    def test_a_bytecode_file_added_after_a_warm_verdict_is_refused(self):
+        """CT-102: a warm verdict is re-established, not merely re-hashed.
+
+        The attacker's repro: pass one identity check, then drop a bytecode file
+        whose header is copied from the genuine source and whose body is
+        attacker code. CPython trusts that header and loads it, and a cold walk
+        already refuses it. The warm path used to re-hash only the files the
+        earlier walk recorded -- a set that can never name a file that did not
+        exist then -- so the second identity check returned early and the helper
+        imported the attacker's module. The warm path now re-runs the payload
+        walk, so the added file is refused exactly as on a cold walk.
+        """
+        class _Answered:
+            returncode = 0
+            stdout = f"hwi {EXPECTED_HWI_VERSION}\n"
+            stderr = ""
+
+        real_run = probe.subprocess.run
+
+        def answer_version_only(argv, *args, **kwargs):
+            # Only the helper's own `--version` question is faked; the payload
+            # check still spawns its real, isolated child.
+            if list(argv) and list(argv)[-1] == "--version":
+                return _Answered()
+            return real_run(argv, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            path = str(root / "hwilib")
+            source = root / "hwilib" / "commands.py"
+
+            def forge(attacker_source):
+                stat = source.stat()
+                return (
+                    importlib.util.MAGIC_NUMBER + bytes(4)
+                    + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                    + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
+                    + marshal.dumps(
+                        compile(attacker_source, "commands.py", "exec")))
+
+            command = [sys.executable, "-I", "-S", "-P", "-c", "pass"]
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True), \
+                    patch.object(probe, "_hwi_package_roots",
+                                 return_value=[path]), \
+                    patch.object(probe.subprocess, "run",
+                                 side_effect=answer_version_only):
+                try:
+                    _verify_hwi_identity(path, command)
+                    self.assertIn(path, probe._verified_hwi_paths)
+                    self.assertTrue(probe._cached_identity_holds(path, True))
+                    cache = root / "hwilib" / "__pycache__"
+                    cache.mkdir()
+                    (cache / "commands.cpython-312.pyc").write_bytes(
+                        forge("MARKER = 'attacker'\n"))
+                    self.assertFalse(
+                        probe._cached_identity_holds(path, True),
+                        "a warm verdict must re-walk the tree, not only re-hash "
+                        "the files that walk once recorded")
+                    with self.assertRaisesRegex(
+                            ProbeError, "does not match its recorded digest"):
+                        _verify_hwi_identity(path, command)
+                finally:
+                    probe._verified_hwi_paths.discard(path)
+                    probe._verified_hwi_files.pop(path, None)
+            self.assertNotIn(path, probe._verified_hwi_paths)
+
+    def test_a_module_added_after_a_warm_verdict_is_not_believed(self):
+        """The same hole with a plain module: a recorded file set is not a tree.
+
+        Re-hashing the pairs can never see a file added after the walk, whatever
+        its suffix. The warm source-mode verdict re-walks for this reason too.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            path = str(root / "hwilib")
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True), \
+                    patch.object(probe, "_hwi_package_roots",
+                                 return_value=[path]):
+                probe._verified_hwi_files[path] = probe._verify_hwi_payload()
+                probe._verified_hwi_paths.add(path)
+                try:
+                    self.assertTrue(probe._cached_identity_holds(path, True))
+                    (root / "hwilib" / "planted.py").write_text(
+                        "# added after the verdict\n", encoding="utf-8")
+                    self.assertFalse(probe._cached_identity_holds(path, True))
+                finally:
+                    probe._verified_hwi_paths.discard(path)
+                    probe._verified_hwi_files.pop(path, None)
 
     def test_the_ci_payload_check_runs_the_app_check_and_fails_closed(self):
         """CT-112: the accept half needs a path that CI actually executes.
@@ -850,11 +1128,11 @@ class HwiIdentityPins(unittest.TestCase):
                 % str(marker), encoding="utf-8")
 
             ran = subprocess.run(
-                [str(python), *probe._HWI_ISOLATION_FLAGS, "-c", "pass"],
+                [str(python), "-I", "-P", "-c", "pass"],
                 check=False, capture_output=True, text=True)
             self.assertEqual(ran.returncode, 0, ran.stderr)
             self.assertTrue(marker.exists(),
-                            "the old check flags must let a .pth hook run")
+                            "the old helper flags must let a .pth hook run")
 
             marker.unlink()
             stopped = subprocess.run(
@@ -863,6 +1141,110 @@ class HwiIdentityPins(unittest.TestCase):
             self.assertEqual(stopped.returncode, 0, stopped.stderr)
             self.assertFalse(marker.exists(),
                              "the check child must not run environment hooks")
+
+            # CT-90 (site hook): the helper's flags are now the strict ones
+            # too, so a `.pth` cannot choose `hwilib` for it either.
+            self.assertEqual(list(probe._HWI_ISOLATION_FLAGS),
+                             list(probe._HWI_CHECK_FLAGS))
+            stopped = subprocess.run(
+                [str(python), *probe._HWI_ISOLATION_FLAGS, "-c", "pass"],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            self.assertFalse(marker.exists(),
+                             "the helper must not run environment hooks")
+
+    def test_a_pth_in_site_packages_cannot_redirect_the_helper(self):
+        """CT-90 (site hook): a `.pth` must not choose `hwilib` for the helper.
+
+        `-I` leaves `site` running, so a `.pth` planted in the environment's
+        own site directory executes before the helper's first line and can
+        insert a decoy ahead of the pinned tree even though the payload check
+        hashed the genuine tree and passed. The helper now runs under `-S`
+        with the verified root inserted first, so the decoy is never imported.
+        The old flags are exercised as the attacker's control: they must let
+        the decoy win, or this test is not measuring the fix.
+        """
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        with tempfile.TemporaryDirectory() as folder:
+            venv_dir = Path(folder) / "venv"
+            subprocess.run(
+                [sys.executable, "-m", "venv", "--without-pip", str(venv_dir)],
+                check=True, capture_output=True, text=True)
+            python = venv_dir / (
+                "Scripts/python.exe" if os.name == "nt" else "bin/python")
+            site_dir = Path(subprocess.run(
+                [str(python), "-c",
+                 "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+                check=True, capture_output=True, text=True).stdout.strip())
+
+            genuine = _importable_package(str(Path(folder) / "genuine"), "PINNED")
+            decoy = _importable_package(str(Path(folder) / "decoy"), "DECOY")
+            (site_dir / "zzz_redirect.pth").write_text(
+                "import sys; sys.path.insert(0, %r)\n" % str(decoy),
+                encoding="utf-8")
+
+            # Attacker's control: under the old helper flags the `.pth` runs
+            # and the decoy answers for hwilib.
+            old = subprocess.run(
+                [str(python), "-I", "-P", str(entry)],
+                check=False, capture_output=True, text=True)
+            self.assertIn(
+                "DECOY", old.stdout + old.stderr,
+                "the planted .pth must be able to redirect the old spawn")
+
+            # The fixed spawn: the verified root leads and the site hook is
+            # never processed, because adding a directory to sys.path
+            # explicitly does not run `.pth` files. This goes through
+            # `_hwi_command`, the surface the app itself spawns, with the
+            # fixture's root and site directory standing in for the real ones.
+            with patch.object(sys, "frozen", False, create=True), \
+                    patch.object(sys, "executable", str(python)), \
+                    patch.object(probe, "_hwi_package_roots",
+                                 return_value=[str(genuine / "hwilib")]), \
+                    patch.object(probe.sysconfig, "get_paths",
+                                 return_value={"purelib": str(site_dir),
+                                               "platlib": str(site_dir)}):
+                command = _hwi_command("hwi")
+            fixed = subprocess.run(
+                command, check=False, capture_output=True, text=True)
+            self.assertIn("PINNED", fixed.stdout, fixed.stderr)
+            self.assertNotIn("DECOY", fixed.stdout + fixed.stderr)
+            self.assertNotIn(str(decoy), fixed.stdout + fixed.stderr)
+            self.assertEqual(command[6], str(entry))
+
+    def test_the_helper_search_path_puts_the_verified_roots_first(self):
+        """CT-90 (site hook): only the verified root may lead the helper path.
+
+        The `-c` bootstrap inserts the pinned tree first and the interpreter's
+        own site-packages after it, so a directory that is not on the verified
+        list can never precede the tree the payload check just hashed.
+        """
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        with patch.object(sys, "frozen", False, create=True), \
+                patch.object(sys, "executable", "/nowhere/python3"), \
+                patch.object(probe, "_hwi_package_roots",
+                             return_value=["/pinned/hwilib"]), \
+                patch.object(probe.sysconfig, "get_paths",
+                             return_value={"purelib": "/venv/lib",
+                                           "platlib": "/venv/plat"}):
+            command = _hwi_command("hwi")
+        self.assertEqual(command[:6], [
+            "/nowhere/python3", "-I", "-S", "-P", "-c",
+            probe._HWI_HELPER_BOOTSTRAP])
+        self.assertEqual(command[6], str(entry))
+        directories = int(command[7])
+        self.assertEqual(command[8:8 + directories],
+                         ["/pinned", "/venv/lib", "/venv/plat"])
+        self.assertEqual(directories, len(command) - 8)
+        # The argv shape is only as strong as the bootstrap that consumes it:
+        # the roots have to be *prepended* by slice so nothing on the existing
+        # path can precede them. A future edit to `extend`, `append` or
+        # `insert` would keep this test's argv green while moving the verified
+        # tree behind a planted directory.
+        self.assertIn("sys.path[:0] =", probe._HWI_HELPER_BOOTSTRAP)
+        self.assertNotIn("extend", probe._HWI_HELPER_BOOTSTRAP)
+        self.assertNotIn("append", probe._HWI_HELPER_BOOTSTRAP)
+        self.assertNotIn("insert", probe._HWI_HELPER_BOOTSTRAP)
 
     def test_a_swapped_sibling_module_does_not_inherit_a_cached_verdict(self):
         """CT-90 road 3: the cached verdict covers the tree, not two files.

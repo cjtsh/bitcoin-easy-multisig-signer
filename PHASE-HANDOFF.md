@@ -60,8 +60,14 @@ the workflow text (CT-97, which is how `MAC_NOTARY_KEY_P8_BASE64` was missed);
 the Windows helper's identity is documented as self-asserted rather than claimed
 to sit inside a signature (CT-105); and a hard link is refused as well as a
 symlink (CT-92). `releases/PATCH-0.6.8.md` carries the round and its
-break-and-watch evidence; the 666-test suite, `bash -n`, the workflow YAML parse
-and the ten `node` UI suites are green on this tree. Two items remain owner
+break-and-watch evidence; on the frozen tree the suite is `Ran 693 tests in 184.818s` —
+**OK** (681 on the wave-2 tree, 666 at `f79203c`), with 53 sweep, 47 credential-file,
+55 `HwiIdentityPins` and 79 hardening-file cases; `bash -n` is clean, the workflow YAML
+parses, and all ten `tests/ui_*.cjs` scripts exit 0. An
+independent re-audit of `f79203c` filed eight bypasses; the round in front
+of you closes them plus five more flow spellings a self-attack found, a third wave
+closed the holes the next attack left, and the
+same ledger carries those rounds. Two items remain owner
 decisions, not agent calls: whether the Windows helper gets an Authenticode
 signature or its sidecar moves out of the writable directory (CT-105), and
 whether the human gate on `release-signing` is restored or that environment

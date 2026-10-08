@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import urllib.parse
 
 from support import bash_executable, run_bash_file, workflow_credential_scope
 
@@ -123,23 +124,52 @@ class CredentialWorld:
         self.secrets = {
             environment: list(names) for environment, names in DERIVED.items()
         }
+        # Environments the API reports but no audited workflow names. They are
+        # the attacker of the cycle-5 finding: live on the platform, invisible
+        # to a check that only reads the text. `undeclared()` describes one.
+        self.undeclared_environments = set()
+
+    def undeclared(self, name, *, secrets=(), policies=(), gates=()):
+        """Describe an environment the audited text never names.
+
+        Adds it to the API's environment list and records the API answers the
+        check must read for it. The default branch policy is empty, which is
+        the platform default and the shape a tag dispatch can reach.
+        """
+        self.undeclared_environments.add(name)
+        self.secrets[name] = list(secrets)
+        self.policies[name] = list(policies)
+        self.gates[name] = list(gates)
+        return name
+
+    def environments_in_api(self):
+        """Every environment `GET /repos/{repo}/environments` reports."""
+        return sorted(set(DERIVED) | self.undeclared_environments)
 
     def _endpoints(self):
-        for name in sorted(DERIVED):
+        for name in self.environments_in_api():
             if name in self.missing_environments:
                 continue
-            yield f"repos/{REPO}/environments/{name}", {
+            # The platform returns names decoded but the API paths carry them
+            # percent-encoded, so `*` is read and requested as `%2A`.
+            quoted = urllib.parse.quote(name, safe="")
+            yield f"repos/{REPO}/environments/{quoted}", {
                 "protection_rules": list(self.gates[name])
             }
-            yield f"repos/{REPO}/environments/{name}/deployment-branch-policies", {
+            yield f"repos/{REPO}/environments/{quoted}/deployment-branch-policies", {
                 "branch_policies": [
                     {"name": policy.split(" ")[0], "type": policy.split(" ")[1]}
                     for policy in self.policies[name]
                 ]
             }
-            yield f"repos/{REPO}/environments/{name}/secrets", {
+            yield f"repos/{REPO}/environments/{quoted}/secrets", {
                 "secrets": [{"name": secret} for secret in self.secrets[name]]
             }
+        names = self.environments_in_api()
+        yield f"repos/{REPO}/environments", {
+            "total_count": len(names),
+            "environments": [{"name": name} for name in names],
+        }
         yield f"repos/{REPO}/actions/secrets", {
             "secrets": [{"name": secret} for secret in self.repository_secrets]
         }
@@ -388,6 +418,82 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("found: develop branch", result.stderr)
 
+    def test_an_undeclared_environment_holding_a_credential_is_refused(self):
+        """The cycle-5 hole: the API is the authority, not the audited text.
+
+        An environment the platform reports but no workflow here names was
+        never audited at all. The attacker's shape is an environment called
+        `*` whose branch policy list is empty — every ref, including a tag, may
+        deploy into it — holding the release key. The old read came back `ok`
+        and `unreachable from any tag` without ever asking the platform about
+        it. The name is URL-encoded in the API path (`%2A`), so this pins the
+        decoded refusal and the encoded request.
+        """
+        world = CredentialWorld()
+        world.undeclared("*", secrets=["GPG_PRIVATE_KEY"])
+        result = self.run_check(world)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, out)
+        self.assertIn(
+            "the * environment is not named by any workflow in", result.stderr
+        )
+        self.assertIn(
+            "does not allow deployments from the main branch alone (found: none)",
+            result.stderr,
+        )
+        self.assertNotIn("ok:", result.stdout)
+        self.assertIn(
+            f"api --paginate repos/{REPO}/environments/%2A/secrets",
+            result.gh_calls,
+        )
+
+    def test_an_undeclared_environment_holding_no_credential_is_ignored(self):
+        """The control: `github-pages` is on the platform and is not main-only.
+
+        It holds none of the watched names, so it is not on the release path
+        and must not be refused — the real repository must stay at exit 0. Its
+        secrets are still read, so `holds nothing` is an answer rather than an
+        assumption, and its policy is never consulted because the gate opens
+        only on a watched name.
+        """
+        world = CredentialWorld()
+        world.undeclared("github-pages", secrets=[], policies=["gh-pages branch"])
+        result = self.run_check(world)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("ok:", result.stdout)
+        self.assertNotIn("github-pages", result.stderr)
+        self.assertIn(
+            f"api --paginate repos/{REPO}/environments/github-pages/secrets",
+            result.gh_calls,
+        )
+
+    def test_an_undeclared_environment_with_a_human_gate_is_refused(self):
+        """The same rules as a declared environment, not just the branch rule.
+
+        The finding is `never audited`, so an undeclared environment that holds
+        a watched credential must answer to every rule the declared ones do: a
+        wait timer stops a release starting on its own just as it would in
+        `release-signing`. Main-only is armed here so the gate is the only
+        defect, and the refusal names the environment.
+        """
+        world = CredentialWorld()
+        world.undeclared(
+            "release-backdoor",
+            secrets=["GPG_PRIVATE_KEY"],
+            policies=["main branch"],
+            gates=[wait_timer_rule()],
+        )
+        result = self.run_check(world)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, out)
+        self.assertIn(
+            "the release-backdoor environment is not named by any workflow in",
+            result.stderr,
+        )
+        self.assertIn("declares a human gate", result.stderr)
+        self.assertIn("wait_timer(5)", result.stderr)
+
     def test_an_unreadable_policy_endpoint_is_refused(self):
         """A platform that will not answer is not a platform that answered yes.
 
@@ -519,8 +625,12 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
                       "GPG_PRIVATE_KEY in a job that declares no environment",
                       result.stderr)
 
-    def test_a_four_space_indented_job_is_refused(self):
-        """Same rule for an indent the two-space job parser does not accept."""
+    def test_a_four_space_indented_job_is_read(self):
+        """Cycle-6 attacker: the job indent was hard-coded to two spaces, so a
+        four-space file was not read as jobs at all and every reference in it
+        became unattributed. The walk measures the indent now, so the credential
+        is scoped to its environment exactly as in the two-space spelling.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             workflows = pathlib.Path(temporary)
             (workflows / "indented.yml").write_text(
@@ -534,10 +644,41 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
                 "        - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
                 encoding="utf-8",
             )
-            result = self.run_check(CredentialWorld(), workflows)
+            world = CredentialWorld()
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("cannot attribute to a job", result.stderr)
+
+    def test_a_whitespace_before_a_job_colon_is_read(self):
+        """`  leak :` is a legal YAML mapping key. The old pattern required the
+        colon immediately after the name, so the job was folded into the
+        previous body and its environment was attributed to the wrong job
+        (cycle-6 attacker: an `evil` environment holding the credential passed
+        while the `leak:` control was refused).
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "spaced.yml").write_text(
+                "name: spaced\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo ok\n"
+                "  leak :\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("cannot attribute to a job", result.stderr)
-        self.assertIn("GPG_PRIVATE_KEY", result.stderr)
+        self.assertIn("declares no environment", result.stderr)
 
     def test_a_workflow_level_env_cannot_hide_behind_a_scoped_job(self):
         """Cycle-6 referee E: `live_references` skipped any name the walk had
@@ -566,12 +707,15 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
                       "somewhere this check cannot attribute to a job",
                       result.stderr)
 
-    def test_a_bracket_expression_secret_is_derived(self):
-        """A name spelled through `secrets[format(...)]` is a name.
+    def test_a_bracket_expression_secret_is_refused_as_unreadable(self):
+        """A name spelled through `secrets[format(...)]` cannot be scoped.
 
-        The two literal forms both missed it, so the credential was watched by
-        nothing; quoted literals inside a bracket index are now names, and a
-        bracket with no literal is reported as unreadable.
+        The old rule took every quoted literal in the index as a candidate and
+        watched `GPG_PRIVATE_KEY`, or — for `format('{0}_KEY', 'GPG_PRIVATE')`
+        — the harmless `GPG_PRIVATE`, while what the expression actually
+        resolved to stayed live and unwatched (cycle-6 attacker). An index that
+        is not one whole quoted literal is now a name the reader cannot read,
+        and the check refuses rather than guesses.
         """
         with tempfile.TemporaryDirectory() as temporary:
             workflows = pathlib.Path(temporary)
@@ -588,11 +732,223 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
                 encoding="utf-8",
             )
             world = CredentialWorld()
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("cannot read as a single name", result.stderr)
+
+    def test_a_single_literal_bracket_secret_is_still_derived(self):
+        """`secrets["GPG_PRIVATE_KEY"]` is one whole literal, so it is a name,
+        and the repository-level copy of it is still refused."""
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "literal.yml").write_text(
+                "name: literal\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets[\'GPG_PRIVATE_KEY\'] }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
             world.repository_secrets = ["GPG_PRIVATE_KEY"]
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
             result = self.run_check(world, workflows)
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("still has a REPOSITORY-level secret named GPG_PRIVATE_KEY",
                       result.stderr)
+
+    def test_a_hash_inside_a_word_does_not_hide_a_reference(self):
+        """Cycle-6 attacker: `#` ended the line wherever it appeared, so
+        `echo x#${{ secrets.NAME }}` — live in the shell GitHub runs, because
+        the `#` sits inside a word — was stripped away and the name was watched
+        by nobody. A `#` begins a comment only at a line start or after
+        whitespace.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "hash.yml").write_text(
+                "name: hash\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo x#${{ secrets.GPG_PRIVATE_KEY }}\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.repository_secrets = ["GPG_PRIVATE_KEY"]
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("still has a REPOSITORY-level secret named GPG_PRIVATE_KEY",
+                      result.stderr)
+
+    def test_a_lowercase_secret_reference_is_matched_to_its_name(self):
+        """Secret names are not case-sensitive to GitHub, so
+        `secrets.gpg_private_key` resolves the API name `GPG_PRIVATE_KEY`.
+        Comparing spellings literally left the repository-level copy unwatched
+        (cycle-6 attacker); the derivation uppercases every name it reads.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "lower.yml").write_text(
+                "name: lower\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.gpg_private_key }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.repository_secrets = ["GPG_PRIVATE_KEY"]
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("still has a REPOSITORY-level secret named GPG_PRIVATE_KEY",
+                      result.stderr)
+
+    def test_a_reference_split_across_lines_is_still_live(self):
+        """Cycle-6 attacker: `secrets` and its bracket on separate lines is one
+        reference. The per-line walk saw neither half; the whole-file net reads
+        the joined text, so the name is live and unattributed, which is refused.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "split.yml").write_text(
+                "name: split\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets\n"
+                "        [\'GPG_PRIVATE_KEY\'] }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("cannot attribute to a job", result.stderr)
+        self.assertIn("GPG_PRIVATE_KEY", result.stderr)
+
+    def test_a_yaml_anchor_does_not_hide_a_job_or_an_environment(self):
+        """`build: &b` and `environment: &env release-signing` are YAML
+        syntax, not names. The old patterns kept the anchor text, so the job or
+        the environment became unreadable and an honest file was refused
+        (cycle-6 attacker).
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "anchor.yml").write_text(
+                "name: anchor\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build: &b\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: &env release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ok:", result.stdout)
+
+    def test_a_flow_mapping_environment_is_read_as_its_name(self):
+        """`environment: {name: release-signing}` is legal YAML, and PyYAML
+        resolves it to a dict with a `name` key.
+
+        The reader returned the whole brace text as the name, so an honest
+        workflow was refused, and the caller word-split it into environments
+        that do not exist (`{name:` and `release-signing}`). Both spellings are
+        here — the plain mapping and the one with a `url:` beside the name —
+        and the absence of phantoms is pinned as well as the parse.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "flow.yml").write_text(
+                "name: flow\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  publish:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: {name: release-signing}\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            (workflows / "flow-url.yml").write_text(
+                "name: flow-url\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  publish:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: {name: release-signing, url: https://example.invalid}\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            world.secrets["release-signing"] = ["GPG_PRIVATE_KEY"]
+            result = self.run_check(world, workflows)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("ok:", result.stdout)
+        self.assertNotIn("cannot parse", out)
+        self.assertNotIn("{name:", out)
+        self.assertNotIn("url:", out)
+
+    def test_an_unnameable_flow_mapping_stays_one_environment(self):
+        """A mapping with no `name:` key has no environment name to read.
+
+        Refusing it is the fail-closed answer, and the reader hands its text
+        back on purpose so the refusal can say what it saw. The caller used to
+        loop over the derived names unquoted, so that one text became two
+        environments that do not exist (`{url:` and `https://example.invalid}`)
+        and the operator got a page of phantom refusals instead of one. Exactly
+        one missing-environment statement must appear.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "nameless.yml").write_text(
+                "name: nameless\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  publish:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: {url: https://example.invalid}\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            world = CredentialWorld()
+            result = self.run_check(world, workflows)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, out)
+        self.assertIn(
+            "cannot parse ({url: https://example.invalid})", result.stderr)
+        self.assertEqual(
+            result.stderr.count("has no environment named"),
+            1,
+            f"a name with a space split into phantom environments:\n{out}",
+        )
+        self.assertIn(
+            "has no environment named {url: https://example.invalid}, so",
+            result.stderr,
+        )
 
     def test_a_list_shaped_secret_answer_is_a_refusal_with_a_reason(self):
         """A JSON list is not a collection this reader can read.

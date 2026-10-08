@@ -13,8 +13,9 @@ answers the ledger in code: a BSMS record that lists the same signer key
 twice under two origin fingerprints is refused at parse; the payload check
 locates the pinned library files and hashes them without executing them, in a
 check child that runs `-I -S -P` (no site-packages, no `.pth` hooks, no user
-site) while the helper itself runs `-I -P`, keeping site-packages so the pinned
-`hwilib` imports; a cached helper identity
+site), and the helper now runs under the same strict isolation with the verified
+package roots and this interpreter's own site-packages re-inserted as its search
+path; a cached helper identity
 is re-hashed before it is believed; the two public reference feeds require
 the session token and the token comparison is total for every header value;
 the publish-path sweep recognizes REST and third-party publishers, requires
@@ -38,8 +39,15 @@ BLOCKED**: 0 Critical, 1 High, 4 Medium, 10 Low, 5 Info, with Red (CT-72),
 Orange (CT-73) and Copper (CT-90) each independently forcing the grade. The
 report is published on `main` for anyone to read.
 
-**The tree in front of you is the cycle-5 remediation of that grade**, a
-second round on the same 0.6.8 revision. Where cycle 4 closed the
+**The tree in front of you is the second cycle-6 remediation round.** The first
+cycle-6 round answered the cycle-5 grade above; an independent re-audit of that
+round's commit, `f79203c`, then filed eight bypasses, and this round closes them
+and the five further flow-style spellings a self-attack on the first fix found;
+a third wave then closed the holes the next attack left — a genuine compiled
+`hwilib` that was refused as altered, a `.pyc` added after a warm verdict, a
+local action the sweep could not read, two flow spellings it over-refused, and
+an environment holding a watched credential that no workflow ever named.
+Where cycle 4 closed the
 *demonstrations* the audit had used, this round closes the *classes*:
 a duplicate signer key is now refused by key material — public point plus
 chain code — so re-spelling it under another network version or another
@@ -48,7 +56,8 @@ one public key twice is refused independently (CT-72); the source-mode HWI
 payload check pins all 115 `.py` files of the tree as literals, runs its
 check child with `-I -S -P` so a site-packages `.pth` cannot execute inside
 it, hands that child the package roots as argv because `-S` removes the name
-it could otherwise resolve, compares the whole set in both directions, and
+it could otherwise resolve, compares the whole set in both directions, spawns the helper under the same
+`-I -S -P` isolation with those roots re-inserted ahead of site-packages, and
 runs against the real lock in every prepared build environment (CT-90); the
 publish-path sweep strips comments before any decision and judges the token
 grant from a parsed `permissions:` mapping, so a spaced key is a write grant
@@ -65,7 +74,7 @@ the frozen revision) passed all seven jobs and published nothing — the
 publish step took its documented `publish=false` refusal path before any tag
 or release was created. That candidate predates this remediation round, so it
 is evidence about the frozen revision and not about the tree in front of you.
-The owner hardware walkthrough and a cycle-6 audit of this tree are what gate
+The owner hardware walkthrough and an audit of this revision are what gate
 promotion now.
 The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`

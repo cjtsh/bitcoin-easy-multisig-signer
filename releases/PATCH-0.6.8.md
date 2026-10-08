@@ -24,7 +24,7 @@ the payment engine changed "in exactly two places". The CT-72 parse gate and the
 payload check were the two *grade-setting* changes; the same revision also re-hashed every
 verified helper path on each cache hit (CT-91), put the session token in front of the two
 GET feeds (CT-74/CT-75), and changed how the helper and its check child are invoked
-(`-I -P`, passed as argv rather than written into the command line). No new payment
+(`-I -S -P`, passed as argv rather than written into the command line). No new payment
 capability is added.
 
 Every finding below is closed either by a test demonstrated able to fail (broken on a
@@ -42,7 +42,7 @@ The 33 findings the cycle-4 report carried, in its numbering.
 | ID | Sev | Fix | Closing evidence |
 | --- | --- | --- | --- |
 | CT-72 | High | The BSMS parse refuses a wallet file that lists the same signer **key material** twice — the public point plus the chain code — even when the copies carry different origin fingerprints *and* are spelled under different network versions. A fingerprint is a label and a base58 string is a spelling; only the key bytes answer "how many keys must approve this payment". A second, independent gate in `signing.py::parse_multisig_script` refuses a compiled witness script that names the same public key twice, so a duplicate cannot reach finalization by any other route. **Corrected in cycle 5 (CT-115):** the closing evidence first cited here was the pre-existing *fingerprint* gate, which a respelled duplicate evades; that evasion is exactly what cycle 5 closed. | `tests/test_probe.py::test_one_key_listed_twice_under_two_origins_is_refused`, `::test_the_same_key_pasted_twice_keeps_its_fingerprint_refusal` (the fingerprint gate — green while the key gate was absent, which is why it was not evidence for CT-72), `::test_the_same_key_respelled_under_another_version_is_still_refused` (xpub/tpub/upub/ypub/zpub), `::test_a_respelled_duplicate_is_refused_even_when_the_fingerprints_differ`; `tests/test_signing.py::test_a_compiled_script_with_a_duplicated_pubkey_is_refused`, `::test_a_duplicate_key_input_cannot_reach_complete_with_one_signature`; break-and-watch: with the base58 comparison restored the hostile file parses as an honest 2-of-2 and one approval finalizes it |
-| CT-73 | Med | The publish-path sweep now recognizes every publisher the audit used to evade it — `gh api`, direct REST uploads (`uploads.github.com`), `api.github.com`, third-party release actions (`action-gh-release`, `release-action`, `upload-release-asset`, `create-release`, `gh-release`), `permissions: write-all` — and requires every non-main ref that carries a workflow to *show* a read-only token (`permissions: read-all`, `{}`, or `contents: read`). Silence is an offender: an omitted block inherits a repository default no ref can disclose. | `tests/test_workflow_config.py::PublishPathSweepTests` — the six publisher/token refusal tests and the read-all accept test added with this fix (the class held 18 cases at `bd0c0e8` and holds 44 on this revision; its later growth is recorded in the CT-73 + CT-102 row); sweep run clean against the live remote |
+| CT-73 | Med | The publish-path sweep now recognizes every publisher the audit used to evade it — `gh api`, direct REST uploads (`uploads.github.com`), `api.github.com`, third-party release actions (`action-gh-release`, `release-action`, `upload-release-asset`, `create-release`, `gh-release`), `permissions: write-all` — and requires every non-main branch that carries a workflow to *show* a read-only token (`permissions: read-all`, `{}`, or `contents: read`). Silence is an offender: an omitted block inherits a repository default no ref can disclose. | `tests/test_workflow_config.py::PublishPathSweepTests` — the six publisher/token refusal tests and the read-all accept test added with this fix (the class held 18 cases at `bd0c0e8`, 44 at `f79203c`, and holds 53 on this revision; its later growth is recorded in the CT-73 + CT-102 row, the R2- rows and the W3- rows); sweep run clean against the live remote |
 | CT-74 | Low | The loopback token comparison is total. A non-ASCII `X-Local-Token` header (decoded latin-1) used to raise `TypeError` out of `hmac.compare_digest` before the 403 path, dropping the socket and printing a traceback per request. Both sides are now compared as bytes, so every header value reaches the same 403. | `tests/test_gui.py::LocalGuiTests::test_a_non_ascii_token_header_reaches_the_403_and_not_a_crash` (break-and-watch: the old inline comparison → `TypeError: comparing strings with non-ASCII characters is not supported` + `ConnectionResetError`) |
 | CT-75 | Info | `GET /api/price` and `GET /api/fees` now require the session token, like every other route. The page itself stays unauthenticated (the token lives in the URL fragment); the UI's two feed fetches send the header. | `tests/test_gui.py::LocalGuiTests::test_the_feeds_refuse_a_caller_without_the_token` (patches both fetchers so a broken gate answers 200 instead of reaching the network) + the renamed token-gated cache tests |
 | CT-76 | Info | The sweep empties `refs/remotes/publish-audit/*` on the way **out** as well as before it starts — `trap cleanup EXIT`, so the refusal path and any `set -e` failure clean up too. A read-only sweep may not change what the caller sees. | `tests/test_workflow_config.py::PublishPathSweepTests::test_the_sweep_leaves_no_private_refs_in_the_callers_repository` (break-and-watch on the pre-fix script: 15 refs left behind, seven tests red) |
@@ -59,7 +59,7 @@ The 33 findings the cycle-4 report carried, in its numbering.
 | CT-87 | Info | Documented, not changed. The 10,000,000-sat absolute floor term is subsumed by the 4,000,000-sat untrusted-quote term today, but it is deliberately retained: the gate is conservative, and the absolute floor must not be coupled to the quoted-price floor — a future price change must not be able to raise the absolute floor. | `gui.py` gate + `ui.html` mirror + `tests/test_gui.py::LargeAmountMirrorPins` |
 | CT-88 | Info | Documented by design. The threshold comes from the operator's own BSMS file (an `AGENTS.md` invariant: any valid 2-or-3-key set, threshold from file), so a 1-of-N quorum in the file is honored like any other. Import-time emphasis is not a control. | `AGENTS.md`; `tests/test_probe.py` |
 | CT-89 | Info | Residual documented. The vendored embit raw decoder accepts unknown-HRP bech32; the app-level address-prefix gate plus the recipient round trip is the only defense — and that round trip is now pinned (CT-85). Vendor internals are out of scope by the standing plan. | `tests/test_money_path_pins.py::RecipientRoundTripPins`; `vendor/README.md` |
-| CT-90 | Med **the blocker** | The payload check no longer executes the package it inspects. It locates the package by scanning `sys.path` for `hwilib/__init__.py` (`_hwi_package_roots()`; deliberately **not** `PathFinder.find_spec`, which an earlier draft of this row wrongly named), hands those roots to the check child as argv, and the child opens and hashes every file without importing anything; the child no longer runs library code at all. The check child runs `-I -S -P` and the helper runs `-I -P`, so a site hook cannot execute inside the child while the helper still resolves the package the ordinary way. The manifest pins all 115 `.py` source files of the tree by digest; every other loadable file (`.so`, `.pyd`, `.dll`, `.dylib`, an extra `.py`, a `.pyc`/`.pyo`) is refused by a rule over its file suffix rather than by a digest, and a `.pyc` is accepted only when it recompiles to a manifest-verified source, so a planted `__pycache__` payload whose header matches the recorded source is refused (the cycle-5 adversarial pass planted one and the first version of this check passed it). The false comment claiming poisoned site-packages was refused is gone. | `tests/test_hardening_pins.py::HwiIdentityPins::test_a_hwilib_that_lies_about_its_files_is_refused_without_running_it` (the attack, over a real subprocess: old script wrote its marker and the pin *passed*; the new one executes nothing and refuses), `::test_the_check_child_runs_without_site_support`, `::test_the_check_child_does_not_start_a_site_hook`, `::test_the_roots_come_from_the_caller_not_the_environment`, `::test_a_planted_bytecode_file_is_refused`, `::test_the_interpreters_own_bytecode_is_accepted`, `::test_a_file_added_between_the_walks_is_refused`, `::test_the_payload_check_accepts_a_package_whose_bytes_are_recorded`, `::test_a_substituted_hwilib_payload_is_refused`; plus a genuine `hwi==3.2.0` install from the hash-locked file whose published digests match the pins (audit transcript, not a committed test — the repo venv stays hwilib-free, CT-96) |
+| CT-90 | Med **the blocker** | The payload check no longer executes the package it inspects. It locates the package by scanning `sys.path` for `hwilib/__init__.py` (`_hwi_package_roots()`; deliberately **not** `PathFinder.find_spec`, which an earlier draft of this row wrongly named), hands those roots to the check child as argv, and the child opens and hashes every file without importing anything; the child no longer runs library code at all. The check child runs `-I -S -P` and the source-mode helper now does too, each with an explicit search path — the check child as argv, the helper as a `-c` bootstrap that puts the verified roots first — so no site hook can execute in either while the pinned package still imports. The manifest pins all 115 `.py` source files of the tree by digest; every other loadable file (`.so`, `.pyd`, `.dll`, `.dylib`, an extra `.py`, a `.pyc`/`.pyo`) is refused by a rule over its file suffix rather than by a digest, and a `.pyc` is accepted only when it recompiles to a manifest-verified source, so a planted `__pycache__` payload whose header matches the recorded source is refused (the cycle-5 adversarial pass planted one and the first version of this check passed it). The false comment claiming poisoned site-packages was refused is gone. | `tests/test_hardening_pins.py::HwiIdentityPins::test_a_hwilib_that_lies_about_its_files_is_refused_without_running_it` (the attack, over a real subprocess: old script wrote its marker and the pin *passed*; the new one executes nothing and refuses), `::test_the_check_child_runs_without_site_support`, `::test_the_check_child_does_not_start_a_site_hook`, `::test_the_roots_come_from_the_caller_not_the_environment`, `::test_a_planted_bytecode_file_is_refused`, `::test_the_interpreters_own_bytecode_is_accepted`, `::test_a_file_added_between_the_walks_is_refused`, `::test_the_payload_check_accepts_a_package_whose_bytes_are_recorded`, `::test_a_substituted_hwilib_payload_is_refused`; plus a genuine `hwi==3.2.0` install from the hash-locked file whose published digests match the pins (audit transcript, not a committed test — the repo venv stays hwilib-free, CT-96) |
 | CT-91 | Low | The identity cache no longer outlives the file. Each verified path records the `(path, digest)` pairs it verified; a cache hit re-hashes them and only then returns. A helper swapped inside one signing session is refused. | `tests/test_hardening_pins.py::HwiIdentityPins::test_a_helper_swapped_inside_one_session_does_not_inherit_the_verdict`, `::test_an_unchanged_helper_is_still_checked_only_once`, `::test_begin_signing_session_clears_every_cached_identity` (break-and-watch: old plain-path cache → `ProbeError` not raised) |
 | CT-92 | Low | The frozen helper refuses a **linked** — or otherwise non-regular — bundled USB library: the extraction directory is writable by this user and `Path.resolve()` follows links, so a planted symlink satisfied every path comparison while loading other bytes. The check now decides from the directory entry (`os.lstat`, before opening anything), keeps the `O_NOFOLLOW` open plus `fstat` (`st_nlink == 1`), and compares a `(st_dev, st_ino, st_size, st_mtime_ns)` identity **after** the load, so a library swapped in the check-then-load window is refused as well. | `tests/test_hwi_entry.py::test_frozen_helper_refuses_a_hardlinked_bundled_library`, `::test_frozen_helper_refuses_a_symlinked_bundled_library`, `::test_the_libusb_preflight_refuses_a_hardlinked_library`, `::test_a_library_swapped_between_the_check_and_the_load_is_refused`, `::test_the_libusb_preflight_refuses_a_fifo_without_blocking` (break-and-watch: the old path-identity code printed `Bundled libusb: /private/var/…/libusb-1.0.dylib` and accepted the linked path; removing the descriptor's `st_nlink == 1` condition reddens **both** hardlink tests while the symlink test stays green; removing the post-load identity comparison reddens the swap test; removing the `lstat` guard makes the FIFO case hang until the five-second thread join fails) |
 | CT-93 | Info | Documented: an operator who passes an explicit `--hwi` is choosing that helper, and the app still requires the helper and its sidecar to agree. Operator trust decision, unchanged. | `probe.py` explicit-path branch; `tests/test_hardening_pins.py` |
@@ -94,7 +94,7 @@ execute inside the check and then lie about its path, so the digests matched and
 check passed. The app now locates the package by scanning `sys.path` for
 `hwilib/__init__.py` (`_hwi_package_roots()`, deliberately not `find_spec`) and hands those
 roots to a check child that runs `-I -S -P` — no site hook, no import — so nothing in the
-library executes inside the check, while the helper itself runs `-I -P`. Anything whose bytes
+library executes inside the check, and since the second cycle-6 round the source-mode helper runs under the same `-I -S -P` isolation with the verified roots re-inserted first. Anything whose bytes
 do not match is refused, and the audit's own attack now executes nothing and is refused.
 
 ## Cycle-5 remediation: the classes, not the demonstrations
@@ -110,9 +110,9 @@ repository, says so in the open.
 | ID | Sev | The class | Fix and evidence |
 | --- | --- | --- | --- |
 | CT-72 | High | Identity of a signer key | The duplicate gate compares **key material** — `(public point, chain code)` — instead of a base58 string, and `parse_multisig_script` independently refuses a compiled witness script naming one public key twice. Evidence: the four rows of `tests/test_probe.py` and the two `tests/test_signing.py` cases listed in the CT-72 row above, each demonstrated red against the previous source. |
-| CT-90 | Med | Whole-payload identity, interpreter isolation, verify-at-execution | `HWI_PAYLOAD_MANIFEST` records all 115 `.py` files of the pinned hwilib tree as literals in `probe.py` — not a digest read from `RECORD`, which the same writer who replaced the tree could rewrite. The check child runs `-I -S -P`, so a `.pth` in site-packages cannot execute inside it — `-I -P` alone does not stop site hooks. Because `-S` removes site-packages from the child's path, the child cannot resolve `hwilib` by name at all; the parent passes the package roots as argv, and the child prints the manifest files it found and validated as `name path recorded-digest` triplets — not a list of every file it walked, which the whole-tree comparison then judges. The whole name set is compared in both directions, the CT-91 cache re-reads all of it, and `_require_unchanged()` reads every file the child reported a second time immediately before the spawn, so a deterministic swap written between the check and the exec is refused instead of inheriting a verdict about bytes that no longer exist. Every prepared build environment runs `scripts/check-hwi-payload.py` against the real hash-locked install before any signing material enters the job. Evidence: `tests/test_hardening_pins.py::HwiIdentityPins::test_the_ci_payload_check_runs_the_app_check_and_fails_closed`, `::test_the_check_child_cannot_run_a_pth_hook_planted_in_site_packages`, `::test_a_swapped_sibling_module_does_not_inherit_a_cached_verdict`, `::test_a_payload_swapped_between_the_check_and_the_spawn_is_refused`; `tests/test_workflow_config.py::test_each_prepared_build_environment_proves_its_hwilib_matches_the_pin`. Break-and-watch used a **genuine** `hwi==3.2.0` install: the previous source accepted a `commands.py` with one injected line (and an added `zz_extra.py`) while reporting two files verified; the current source refuses it. |
+| CT-90 | Med | Whole-payload identity, interpreter isolation, verify-at-execution | `HWI_PAYLOAD_MANIFEST` records all 115 `.py` files of the pinned hwilib tree as literals in `probe.py` — not a digest read from `RECORD`, which the same writer who replaced the tree could rewrite. The check child runs `-I -S -P`, so a `.pth` in site-packages cannot execute inside it — `-I -P` alone does not stop site hooks — and since the second cycle-6 round the source-mode helper runs under the same `-I -S -P` isolation with the verified roots re-inserted ahead of site-packages. Because `-S` removes site-packages from the child's path, the child cannot resolve `hwilib` by name at all; the parent passes the package roots as argv, and the child prints the manifest files it found and validated as `name path recorded-digest` triplets — not a list of every file it walked, which the whole-tree comparison then judges. The whole name set is compared in both directions, the CT-91 cache re-reads all of it, and `_require_unchanged()` reads every file the child reported a second time immediately before the spawn, so a deterministic swap written between the check and the exec is refused instead of inheriting a verdict about bytes that no longer exist. Every prepared build environment runs `scripts/check-hwi-payload.py` against the real hash-locked install before any signing material enters the job. Evidence: `tests/test_hardening_pins.py::HwiIdentityPins::test_the_ci_payload_check_runs_the_app_check_and_fails_closed`, `::test_the_check_child_cannot_run_a_pth_hook_planted_in_site_packages`, `::test_a_swapped_sibling_module_does_not_inherit_a_cached_verdict`, `::test_a_payload_swapped_between_the_check_and_the_spawn_is_refused`; `tests/test_workflow_config.py::test_each_prepared_build_environment_proves_its_hwilib_matches_the_pin`. Break-and-watch used a **genuine** `hwi==3.2.0` install: the previous source accepted a `commands.py` with one injected line (and an added `zz_extra.py`) while reporting two files verified; the current source refuses it. |
 | CT-73 + CT-102 | Med + Info | The sweep's decision procedure | `scripts/check-publish-paths.sh` now strips comments before **any** decision and decides the token grant from a parsed `permissions:` mapping: a spaced key (`contents : write`), a quoted flow mapping, a duplicate key, `write-all`, and a bare nested `write` are all read as the grants they are, while a comment naming a write grant is no longer an offender. The read-only proof comes from the mapping, never from body text. The rule is **fail-closed**: a `permissions:` construct the parser cannot read — a YAML alias (`permissions: *w`), a merge key (`<<: *w`), a quoted key (`"contents": write`), a nested mapping, a value outside the recognized vocabulary — is reported as `unreadable-token-permissions` and refused, rather than silently read as no grant. That closes the class instead of the three spellings a pre-audit adversarial pass demonstrated walking past the first version. Command continuations are joined before the publisher vocabulary runs, so a `gh \` split across a line break is read as `gh release`. The publisher vocabulary gained `gh api graphql`, `$GITHUB_API_URL`, `${{ github.api_url }}`, `actions/github-script`, camelCase REST release calls, and — in place of only callees whose path names a release — **any `uses:` into another repository**, because a remote workflow's text cannot be read from this checkout whichever name it carries; a first-party action (`actions/checkout@v4`), a local `./.github/workflows/…` callee and an action vendored under a path (`github/codeql-action/init@v3`) are not offenders — the rule keys on the GitHub-documented callee shape `{owner}/{repo}/.github/workflows/{file}@{ref}`, because a first revision keyed on "two or more slashes before an `@`" wrongly refused the subdirectory action and would have blocked a legitimate dispatch. Shell spellings of one command are normalized before matching (`gh  release`, `gh "release"`, `gh 'rel'"ease"`). Evidence: `PublishPathSweepTests`, to which the cycle-5 round added sixteen cases (the class held 18 at `bd0c0e8`, 28 at `fea859c`, 34 at `1ff0175` and 44 on this revision) — its tests include `test_the_sweep_refuses_a_permission_it_cannot_read`, a `subTest` over the alias, the merge key and the quoted key, `test_the_sweep_refuses_a_publisher_split_across_a_continuation`, `test_the_sweep_normalizes_shell_spellings_of_one_command`, `test_the_sweep_refuses_a_remote_reusable_workflow_under_any_name`, `test_the_sweep_does_not_mistake_an_action_or_a_local_callee`, `test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee` and `test_the_sweep_refuses_the_rest_api_through_the_api_url_context`. Seven breaks of the original matchers were watched; each reddens the test named for it (an independent referee measured eight of the ten tests then present red against the previous script), and two of them also redden an older test that covers the same code path — removing the reusable-workflow call turns four red, including the pre-existing `test_the_sweep_refuses_a_reusable_release_workflow`, and loosening the `./*`/remote-callee boundary turns three red, including `test_a_uses_line_that_only_mentions_release_is_not_a_callee` — so "each reddens exactly its own named test" overstated it. The fail-closed arm was separately watched red, and the live `origin` sweep is still clean. **Scope, stated in the same open:** the sweep fetches branches only (`+refs/heads/*`), so a tag-only publish path is outside its reach; a tag's control is CT-97's environment scope, and the default-token residual is recorded under `## Documented residuals`. The sweep stays bash + git: `PublishPathSweepTests` deliberately does not gate it on PyYAML. |
-| CT-97 | Med | The watched credential name set | `scripts/check-release-credentials.sh` derives its watched names from the workflow text — every `secrets.NAME` reference, partitioned by the environment each referencing job declares — instead of a hand-typed list of five. The sixth name, `MAC_NOTARY_KEY_P8_BASE64`, is covered the day it appears. The rule is one-directional exactness plus non-vacuity: an extra name is refused, an environment holding none of its own names is refused, and a referenced-but-absent name is reported as a `note:` rather than a refusal, because the workflow reads the notary key only on the optional notarize path while every required credential is guarded by `: "${NAME:?}"`. `--print-scope` prints the derived table so the next reader can see what the check believes. The cycle-5 adversarial pass then found the derivation **attributable-only**: it built its watched set from the structured `jobs()` walk, so a release credential named in a workflow-level `env:` block, under a quoted job key, or under a `jobs:` block indented past the literal `jobs:` line was never read, and the check reported the environment scope clean while a repository-level credential of that name existed. `live_references()` now scans the whole comment-stripped file and anything it cannot attribute to a job is refused as `<file> names the release credential <NAME> somewhere this check cannot attribute to a job`, so an unreadable spelling fails closed instead of disappearing. Evidence: `tests/support.py::workflow_credential_scope`, `tests/test_release_credentials.py` (29 tests when this row was written; 36 on this revision — see the cycle-6 section — including a workflow-level `env:`, a quoted job key, a four-space `jobs:` block, a bracket-spelled `secrets['NAME']`, a missing branch policy, a non-`main` branch policy and an unreadable policy endpoint), `ReleaseCredentialScopePins`, and each refusal arm broken and watched red. |
+| CT-97 | Med | The watched credential name set | `scripts/check-release-credentials.sh` derives its watched names from the workflow text — every `secrets.NAME` reference, partitioned by the environment each referencing job declares — instead of a hand-typed list of five. The sixth name, `MAC_NOTARY_KEY_P8_BASE64`, is covered the day it appears. The rule is one-directional exactness plus non-vacuity: an extra name is refused, an environment holding none of its own names is refused, and a referenced-but-absent name is reported as a `note:` rather than a refusal, because the workflow reads the notary key only on the optional notarize path while every required credential is guarded by `: "${NAME:?}"`. `--print-scope` prints the derived table so the next reader can see what the check believes. The cycle-5 adversarial pass then found the derivation **attributable-only**: it built its watched set from the structured `jobs()` walk, so a release credential named in a workflow-level `env:` block, under a quoted job key, or under a `jobs:` block indented past the literal `jobs:` line was never read, and the check reported the environment scope clean while a repository-level credential of that name existed. `live_references()` now scans the whole comment-stripped file and anything it cannot attribute to a job is refused as `<file> names the release credential <NAME> somewhere this check cannot attribute to a job`, so an unreadable spelling fails closed instead of disappearing. Evidence: `tests/support.py::workflow_credential_scope`, `tests/test_release_credentials.py` (29 tests when this row was written, 36 at `f79203c`, 42 on this revision — see the cycle-6 section — including a workflow-level `env:`, a quoted job key, a four-space `jobs:` block, a bracket-spelled `secrets['NAME']`, a missing branch policy, a non-`main` branch policy and an unreadable policy endpoint), `ReleaseCredentialScopePins`, and each refusal arm broken and watched red. |
 | CT-105 | Med | The Windows helper's trust model | The claim that a frozen build's sidecar "sits inside the signed bundle it authenticates" is true on macOS only. On Windows `hwi.exe` and `hwi.sha256` sit in the same user-writable directory and neither is signed, so the app's sidecar check there is a corruption check, not an identity check. That is now stated in `probe.py`, `scripts/build-sbom.py`, `HWI-DEPENDENCY.md` and a new `SIGNING.md` section, and pinned by `tests/test_hardening_pins.py::HwiIdentityPins::test_the_identity_docstring_does_not_claim_a_windows_signature`. Signing the Windows helper or moving the sidecar out of the writable directory was put to the owner as a business choice rather than an agent call; **the owner's decision, taken 2026-10-08, is to keep Windows unsigned (Option A)** — ship with the SmartScreen instructions, the GPG-signed `SHA256SUMS` and the Sigstore attestation that already exist — and to leave the sidecar beside `hwi.exe` with the identity limit stated in the open. A Windows code-signing certificate stays a future business option, not a gap this round leaves unfinished. |
 | CT-92 | Low | Link, not only symlink, and check-then-load | `scripts/hwi_entry.py` decides from the directory entry (`os.lstat`) before opening anything, then opens with `O_NOFOLLOW` and requires `fstat` to report a regular file with `st_nlink == 1`, and compares a `(st_dev, st_ino, st_size, st_mtime_ns)` identity after the load and before usb1 receives the handle. A hard link has no distinct path to resolve, so `is_symlink()` alone never saw it; the `lstat` arm is also what refuses a FIFO without blocking on `os.open` and what makes the link refusal work on Windows, where `O_NOFOLLOW` is `0`. Evidence: `tests/test_hwi_entry.py` plants **real** `os.link`/`os.symlink` links instead of monkeypatching `Path.is_symlink`; removing the descriptor's `st_nlink == 1` condition reddens **both** hardlink tests (an earlier draft of this row said "the hardlink test" singular) while the symlink test stays green; removing the post-load identity comparison reddens `test_a_library_swapped_between_the_check_and_the_load_is_refused`; removing the `lstat` guard makes `test_the_libusb_preflight_refuses_a_fifo_without_blocking` hang until its five-second thread join fails. |
 | CT-98 · CT-107 · CT-108 · CT-109 · CT-110 · CT-113 · CT-114 | Low–Info | Small pins and honest wording | `candidate_run_id` expressions are pinned out of **every** run block that consumes the input, not just the version job's guard (CT-98). The provisioning script's header no longer claims argv never carries a value; it names the two windows that do (`security export -P`, `notarytool store-credentials --password`) and pins them (CT-107). The broadcast identity clause has a test that actually drives the swap window (CT-108, `tests/test_send_flow.py::test_broadcast_refuses_when_the_prepared_payment_is_swapped_mid_flight`). `_clean_token` and `_device_class` have direct drop tests (CT-109). The three unquoted version interpolations are quoted and pinned (CT-110). `do_GET` records why it has no Origin check and a test pins that the token is the whole control there (CT-113). The BOM strip removes exactly one BOM instead of a character set (CT-114). |
@@ -288,12 +288,16 @@ Added by the cycle-5 adversarial pass, so none of these is mistaken for a closed
 
 Added by the cycle-6 review, same rule — disclosed rather than claimed closed:
 
-- **The helper itself runs `-I -P`, so site-packages stays on its path.** A `.pth`/meta-path
-  hook planted in site-packages is not blocked in the helper process; `-S`, which drops
-  site-packages entirely, is used only in the payload check child — and that child cannot
-  resolve `hwilib` by name at all, so it is never a substitute for the helper's own import.
-  The check child is where a site hook is refused; the helper is where the pinned package must
-  still import.
+- **The helper's own site processing is gone on this revision; the residual is the reverse.** In
+  the first cycle-6 round the helper itself ran `-I -P`, so a `.pth`/meta-path hook planted in
+  site-packages was not blocked in the helper process; `-S` was used only in the payload check
+  child, and that child cannot resolve `hwilib` by name at all, so it was never a substitute for
+  the helper's own import. The second cycle-6 round spawns the source-mode helper under `-I -S -P`
+  too, with a fixed `-c` bootstrap that inserts the verified package roots first and this
+  interpreter's own `sysconfig` `purelib`/`platlib` after them, so no site hook runs and the
+  pinned `hwilib` still imports. The cost is disclosed with the fix: a directory that reached the
+  helper only through a `.pth` file (an editable install) no longer does. The frozen bundle path
+  is unchanged — it still runs the bundled executable directly.
 - **The publish sweep is a text matcher and does not follow shell-variable indirection.** It
   joins command continuations and normalizes shell spellings of the verb, but a publisher
   written `CMD=gh; $CMD release create …` names no token the matcher can see. No static reader
@@ -302,6 +306,50 @@ Added by the cycle-6 review, same rule — disclosed rather than claimed closed:
   That namespace is its own private audit area, but a caller whose repository already had a
   remote of that name would have those remote-tracking refs deleted. A known hygiene defect,
   disclosed rather than fixed here.
+
+Added by the cycle-6 second round, same rule:
+
+- **The publisher word list is a belt; the read-only-token requirement is the guarantee.** These
+  spellings genuinely execute on the runner while naming no token a lexical scan can see: a YAML
+  tab escape (`"gh\t release create v9"`), a command substitution (`$(which gh) release create
+  v9`), a quoted variable (`Z=gh; "$Z" release create v9`), a backslash-escaped space
+  (`gh release\ create v9`), and an `IFS` substitution (`gh${IFS}release${IFS}create v9`). None
+  is fixed here. What holds is that a workflow which cannot show a read-only token is refused
+  before any publisher word is considered; the word list is a second line, not the first.
+- **A `jobs:` alias or merge key is over-refused; a flow `jobs:` map is now read.** `jobs: *j`
+  leaves the jobs walk without a literal `jobs:` line, so every reference in the file is
+  unattributed and the check refuses it rather than passing it — over-refusal in the safe
+  direction. A flow-style `jobs: {…}` mapping was over-refused the same way until the third wave
+  taught the walk to read a flow job's own read-only token (W3-4); a flow map it cannot resolve
+  still fails closed.
+- **The widened callee reader can read a `uses:` that is not a call.** The any-position `uses:`
+  match added in R2-7 also fires on text inside a literal `|` run body, so that file is refused
+  as `calls-a-release-workflow` rather than passed. Over-refusal in the safe direction.
+- **The sweep reads branches, not tags, so a tag-only publish path is out of its scope.** It
+  fetches `+refs/heads/*` with `--no-tags`; a released tag's tree legitimately contains the
+  release workflow, and the tag-side control is not the absence of such a workflow from the text
+  but the credential check's API walk, which enforces the branch policy on every environment that
+  holds a watched credential (W3-7). The live repository has exactly three environments —
+  `apple-signing` and `release-signing`, both main-only and holding the release/signing
+  credentials, and `github-pages`, holding none — and no repository-level secrets, with the live
+  check exiting 0.
+- **The explicit-helper-path branch anchors only on a sidecar it reads beside the binary.**
+  `_verify_hwi_bytes` (`probe.py:843`) compares an explicitly named helper against `hwi.sha256`
+  in the same directory or in the bundle's `Resources`, so a local writer who replaces both files
+  together is not detected there; on macOS that sidecar sits inside the codesign seal, on Windows
+  it does not (CT-105). No independent anchor exists on this branch — a known limitation, not a
+  fixed one.
+- **A `.pyc` compiled into the pinned package after a warm verdict was executable** until the
+  third wave made `_cached_identity_holds(path, payload=True)` re-run the whole payload walk, so a
+  warm verdict re-establishes the whole-tree facts instead of re-hashing only the recorded pairs
+  (`probe.py:433`, `:904`). Closed in this round. The child's freshness rule is now a by-value
+  comparison of code objects (`fingerprint()`, `probe.py:706`, `:757`), not `marshal.dumps` bytes
+  — a genuine `compileall`-written `.pyc` had been refused because `marshal` encodes
+  string-interning state — and a `.pyc` whose body is not the recorded source is still refused.
+- **`scripts/hwi_entry.py` is run with `runpy.run_path` and is in neither the manifest nor the
+  spawn-time re-read.** Rewriting it needs write access to the app tree, which is the same access
+  the pinned package itself needs; there is no independent anchor for the entry file on the
+  source-mode path. A known limitation, not a fixed one.
 
 ## Verification on this revision
 
@@ -312,7 +360,7 @@ Added by the cycle-6 review, same rule — disclosed rather than claimed closed:
   (`.venv/bin/python -m unittest discover -s tests -q`): one test spawns
   `python -c "import safe_http"`, which cannot resolve from inside `tests/` and fails
   there for that reason alone.
-- The UI DOM suites: all ten `tests/ui_*.cjs` files pass under `node`.
+- The UI DOM suites: all ten `tests/ui_*.cjs` files exit 0 under `node`.
 - `bash -n` clean on every shell script touched (`scripts/check-publish-paths.sh`,
   `scripts/build-source.sh`, `scripts/check-release-credentials.sh`,
   `scripts/provision-release-credentials.sh`); every `.github/workflows/*.yml` parses
@@ -387,13 +435,17 @@ Added by the cycle-6 review, same rule — disclosed rather than claimed closed:
   adversarial pass — the payload bytecode pins, the sweep spellings, the credential
   attribution, the helper swap/FIFO pins and the witness-script key-encoding pin).
 - `bash -n` clean on every shell script in `scripts/`; every `.github/workflows/*.yml`
-  parses under `yaml.safe_load`; all ten `tests/ui_*.cjs` suites pass under `node`.
+  parses under `yaml.safe_load`; all ten `tests/ui_*.cjs` suites exit 0 under `node`.
 - `bash scripts/check-publish-paths.sh origin` against the live remote: exit 0,
-  `ok: no non-main ref carries a publish-capable workflow`.
+  `ok: no non-main ref carries a publish-capable workflow` (the wording at the cycle-5 roll; the
+  third wave has since narrowed it to `…non-main branch…`, because the sweep fetches heads only).
 - `scripts/check-release-credentials.sh` against the live account (real `gh`, authenticated
   as the maintainer): exit 0, `ok: the release credentials are environment-scoped,
   main-only, and unreachable from any tag`, plus the expected `note:` for the unstored
-  notary key.
+  notary key. Since the third wave the check enumerates every API environment and enforces
+  main-only, no human gate and no wait timer on any environment that holds a watched name, so
+  that ok line rests on the environment branch policies read from the API, not on the absence of
+  a tag-triggered workflow in the audited text.
 - Break-and-watch, each on a disposable `git worktree` with the working files copied in,
   the named regression introduced, the named test watched red, the file restored
   byte-identical (`cmp`) and the control green again:
@@ -509,6 +561,23 @@ demonstrations; it attacked the *classes* those demonstrations were taken to clo
 holes the first round had not filed. Every change below is on the working tree and each is held
 by a test demonstrated able to fail.
 
+A second, independent re-audit — again in fresh worktrees, forbidden from modifying the
+repository and given none of the first round's reasoning — then attacked commit `f79203c`,
+which is cycle 6's own answer to the first review. It filed eight bypasses; all eight are fixed
+in the rows below, the round reports each guard broken on a disposable copy, its own test watched
+red, and the file restored before the next was touched. Attacking the first of those fixes then
+found five more flow-style spellings of a write token, and the two reader gates were widened to
+read them (R2-2, R2-3). A separate pass closed a `.pth` hole in the helper spawn (R2-15). The R2-
+rows are those fixes; they are one row per reader hole, not a one-to-one restatement of the
+reviewers' eight filings.
+
+A third wave closed the holes the next attack left, in three lanes landing together: a genuine
+`compileall`-written `.pyc` was refused while a `.pyc` added after a warm verdict executed
+(W3-1, W3-2); a local `./` action the sweep could not read could publish, and the ok/refusal text
+overclaimed the sweep's scope (W3-3, W3-6); two flow spellings were over-refused (W3-4, W3-5);
+and the credential check never queried an API environment it had not seen named (W3-7, W3-8). The
+W3- rows are those fixes.
+
 | # | Finding | What was wrong | Fix on this revision | Evidence |
 | --- | --- | --- | --- | --- |
 | E1a | The `permissions:` key had to be unquoted | `"permissions": write-all` on a job was read as no grant, so a publishing job passed as read-only | `permissions_verdict()` matches the key with `local pat_perm='^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$'` (`scripts/check-publish-paths.sh:338`) and reports `grants-write-all` (`:678`). The pattern is held in a variable because `/bin/bash` 3.2.57 rejects an inline `["\']?` class inside `[[ =~ ]]`, and `bash -n` does not catch it | `PublishPathSweepTests::test_the_sweep_refuses_a_quoted_permission_key` |
@@ -516,14 +585,39 @@ by a test demonstrated able to fail.
 | E2 | A `uses:` the reader could not resolve fell through | `uses: *w` (alias/merge) and a folded `uses: >-` callee were read as no callee | `calls_a_remote_reusable_workflow()` refuses an alias/merge value and strips a leading `>`/`\|` indicator (plus an optional `-`/`+`) before taking the value, because YAML folding joins a folded scalar onto its indicator line | `test_the_sweep_refuses_a_uses_the_reader_cannot_resolve`, `test_the_sweep_refuses_a_folded_uses_callee` |
 | E4/E3 | The credential check read only page 1 | On a repository with more than one page of secrets a release credential could sit on page 2 unseen | `scripts/check-release-credentials.sh` passes `--paginate` at `:427` (repository secrets), `:456` (branch policies) and `:463` (environment secrets); each of the three readers drains back-to-back documents with `json.JSONDecoder().raw_decode` (`:303`/`:331`/`:361`) | `test_the_repository_read_asks_for_every_page`, `test_a_repository_secret_on_a_later_page_is_refused` |
 | CT-97b | A quoted job key was not a job | `  "leak":` merged its body into the previous job, so a credential it declared looked scoped when it was not | `JOB` (`scripts/check-release-credentials.sh:121`) accepts an optionally quoted job name | `test_a_quoted_job_key_is_read_as_its_own_job` (replacing cycle-5's `test_a_quoted_job_key_is_refused`) |
-| CT-97c | The whole-file net compared names, not occurrences | A workflow-level `env:` repeating a name already seen inside a scoped job was reported as attributed | `live = Counter(live_references(text))` (`:248-251`) compares occurrences | `test_a_workflow_level_env_cannot_hide_behind_a_scoped_job`, `test_a_workflow_level_env_is_refused`, `test_a_four_space_indented_job_is_refused` — one net, three reds |
-| CT-97d | Derived names and hostile answers | `secrets[format('{0}','NAME')]` was not derived; a list-shaped answer from a reader raised `AttributeError`; `name: Don't build # see ${{ secrets.X }}` was read as a reference | `format(...)` derives to `NAME`; a non-dict answer is a refusal with a reason; `strip_comment()` treats a quote as opening a scalar only where a token can begin | `test_a_bracket_expression_secret_is_derived`, `test_a_list_shaped_secret_answer_is_a_refusal_with_a_reason`, `test_a_list_shaped_environment_answer_is_a_refusal_with_a_reason`, `test_an_apostrophe_does_not_turn_a_comment_into_a_reference` |
+| CT-97c | The whole-file net compared names, not occurrences | A workflow-level `env:` repeating a name already seen inside a scoped job was reported as attributed | `live = Counter(live_references(text))` (`:248-251`) compares occurrences | `test_a_workflow_level_env_cannot_hide_behind_a_scoped_job`, `test_a_workflow_level_env_is_refused`, `test_a_four_space_indented_job_is_refused` (since replaced by `test_a_four_space_indented_job_is_read`; see R2-10) — one net, three reds |
+| CT-97d | Derived names and hostile answers | `secrets[format('{0}','NAME')]` was not derived; a list-shaped answer from a reader raised `AttributeError`; `name: Don't build # see ${{ secrets.X }}` was read as a reference | `format(...)` derives to `NAME`; a non-dict answer is a refusal with a reason; `strip_comment()` treats a quote as opening a scalar only where a token can begin | `test_a_bracket_expression_secret_is_derived` (since replaced by `test_a_bracket_expression_secret_is_refused_as_unreadable`; see R2-14), `test_a_list_shaped_secret_answer_is_a_refusal_with_a_reason`, `test_a_list_shaped_environment_answer_is_a_refusal_with_a_reason`, `test_an_apostrophe_does_not_turn_a_comment_into_a_reference` |
 | B-A | The payload walk could step past a symlinked directory | `pathlib.rglob('*')` does not descend a symlinked directory, so a symlinked `__pycache__` was never opened | `_hwi_payload_check_script()` walks with `os.scandir` and `follow_symlinks=False` and refuses anything that is neither a regular file nor a directory | `test_a_symlinked_bytecode_directory_is_refused` (its attack body is real code, `MARKER = 'attacker'`, not a comment) |
 | B-C | Only the last package root was re-read | The check child printed only the last root's files, so `_require_unchanged` re-read only that root | Every root's files are printed and every `(path, digest)` pair returned, so an earlier root is re-read too | `test_every_root_is_reverified_before_the_spawn` |
 | E6 | `co_filename` was part of the bytecode identity | A genuine tree compiled by `pip install --target` from a staging directory was refused | The rule unmarshals (never executes) and compares `marshal.dumps(scrub(code))`, where `scrub` blanks `co_filename` recursively | `test_bytecode_compiled_at_another_path_is_accepted`, `test_a_bytecode_file_with_a_wrong_magic_is_refused`, `test_a_bytecode_file_with_nonzero_flags_is_refused` |
 | — | The remote-callee rule over-refused | Cycle-5's matcher refused any `uses:` with two or more slashes before an `@`, which also refused ordinary subdirectory actions and container references | The rule is narrowed to the callee shapes GitHub documents — `*/.github/workflows/*` and a two-or-more-slash path ending `.yml`/`.yaml`, minus the local `./` form — so `github/codeql-action/analyze@v3` and `docker://ghcr.io/o/i@sha256:d` pass **by design** | `tests/test_workflow_config.py:1480` (`test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee`); the comment at `scripts/check-publish-paths.sh:545-561` |
+| R2-1 | A flow `permissions:` mapping split across lines | `permissions: {issues: read,` with `contents: write}` on the next line was folded as a mapping that never closed; the first scope read read-only and `contents: write` vanished | `permissions_verdict()` refuses a `{`-valued token with no `}` — `unrecognized=1; continue` (`scripts/check-publish-paths.sh:451-454`) — and the branch reports `unreadable-token-permissions` (`:807`) | `PublishPathSweepTests::test_the_sweep_refuses_a_flow_permission_mapping_split_across_lines` |
+| R2-2 | A flow-style job put its token mid-line | `publish: {runs-on: …, permissions: {contents: write}, …}` kept the key off line start, so the anchored pattern saw no grant while a separate job's `contents: read` covered the file | After the anchored miss, an opening brace at line start or after space/comma arms a mid-line read (`scripts/check-publish-paths.sh:495-524`); `contents: write` reports `grants-contents-write` (`:794`) | `::test_the_sweep_refuses_a_flow_style_job_that_grants_write` |
+| R2-3 | Five more flow spellings of a write token | Attacking the fix above found a quoted job key, a flow mapping on the line after the key, a tagged `!!map {…}`, an escaped key (`"permiss\u0069ons"`), and the explicit-key `? permissions` / `: write-all` form each carrying a grant | The widened gate refuses the first three as `grants-contents-write` and the two key spellings it cannot resolve as `unreadable-token-permissions` (`scripts/check-publish-paths.sh:495-524`) | `::test_the_sweep_refuses_every_flow_spelling_of_a_write_token` |
+| R2-4 | The widened flow gate could over-refuse prose | A `run:` string echoing `"{permissions: write}"`, or the repository's own build step holding a `b"\x7fELF"` literal, sits on a brace-bearing line and could be read as a token | The gate keys on an opening brace where a flow mapping can begin, and the escaped-key rule keys on the quote being in a key position (`scripts/check-publish-paths.sh:482-524`); both files are accepted | `::test_prose_that_names_a_permission_is_not_a_grant` (the over-refusal control) |
+| R2-5 | A deeper `permissions:` covered a job that declared none | The coverage proof counted any deeper `permissions:` line — e.g. a variable `permissions: read` under `env:` — as the job's own token, so a file with an undeclared job read read-only | `_jobs_all_declare_permissions()` counts only a `permissions:` at the job's direct-child indent (`scripts/check-publish-paths.sh:586-617`); an undeclared job leaves the file `partial` → `partial-token-permissions` (`:816`) | `::test_a_deeper_permissions_key_does_not_cover_a_job` |
+| R2-6 | A block-indicator `uses:` hid its callee | `uses: \|`, `uses: \|2-` and `uses: >2-` put the callee on the next line; the indicator was read as the value, so the call passed | The indicator strip removes the whole run of signs and digits (`scripts/check-publish-paths.sh:678-694`) and an empty value is a refusal (`:701`), so the callee is refused as `calls-a-release-workflow` | `::test_the_sweep_refuses_a_block_scalar_uses_that_hides_its_callee` |
+| R2-7 | A `uses:` the reader could not place | `call: {uses: …}`, `call: {"uses": …}`, `steps: [{uses: …}]` and the explicit-key `? uses` / `: …` form kept the key off line start, so a remote callee passed | `pat_uses` matches `uses:` anywhere a key can begin (`scripts/check-publish-paths.sh:661`) and `pat_explicit_uses` refuses the split key (`:666-670`); a local `./` callee and a subdirectory action still pass (`:702-717`) | `::test_the_sweep_refuses_a_callee_inside_a_flow_mapping` |
+| R2-8 | A `#` inside a word ended the line | `echo x#${{ secrets.NAME }}` is live in the shell GitHub runs, and stripping from any `#` hid the reference from the walk | `strip_comment()` treats `#` as a comment only at line start or after whitespace (`scripts/check-release-credentials.sh:142-149`) | `tests/test_release_credentials.py::test_a_hash_inside_a_word_does_not_hide_a_reference` |
+| R2-9 | A job key with whitespace before its colon was not a job | `  leak :` merged into the previous job's body, so its environment and its credential were attributed to the wrong job | `JOB` accepts whitespace around the colon (`scripts/check-release-credentials.sh:126`) | `::test_a_whitespace_before_a_job_colon_is_read` |
+| R2-10 | The job indent was hard-coded to two spaces | A four-space file was read as no jobs, so every live reference in it was unattributed and an honest file was refused | `jobs()` measures the job indent as the smallest indent in the `jobs:` block (`scripts/check-release-credentials.sh:157-197`) | `::test_a_four_space_indented_job_is_read` (REPLACED the over-refusing `test_a_four_space_indented_job_is_refused`) |
+| R2-11 | A YAML anchor made a job or an environment unreadable | `build: &b` and `environment: &env release-signing` kept the anchor text as the name, so the job or environment did not resolve | `JOB` allows a trailing anchor (`scripts/check-release-credentials.sh:126`) and `environment()` strips a leading anchor (`:206-211`) | `::test_a_yaml_anchor_does_not_hide_a_job_or_an_environment` |
+| R2-12 | A lowercase or single-bracket spelling escaped the watched name | `secrets.gpg_private_key` resolves the same API name (`GPG_PRIVATE_KEY`) but was compared literally, and a single quoted bracket name was not derived | `references()` uppercases every derived name (`scripts/check-release-credentials.sh:223-247`); a whole-literal bracket index is still a name (`:242-246`) | `::test_a_lowercase_secret_reference_is_matched_to_its_name`, `::test_a_single_literal_bracket_secret_is_still_derived` |
+| R2-13 | A reference split across lines was read as neither half | `secrets` newline `.NAME` / `["NAME"]` is one reference; the per-line walk saw neither half | `live_references()` strips comments per line, then joins the text before matching (`scripts/check-release-credentials.sh:254-264`) | `::test_a_reference_split_across_lines_is_still_live` |
+| R2-14 | An expression bracket index or an escaped dot form was read as a harmless name | `secrets[format('{0}_KEY','GPG_PRIVATE')]` was derived as the harmless `GPG_PRIVATE`, and `secrets.GP\u0047_PRIVATE_KEY` stopped at `GP`, so the real name was watched by nobody | `references()` returns `?unreadable` for a non-literal bracket index or an escaped/interpolated dot form (`scripts/check-release-credentials.sh:223-247`), and the caller refuses it (`:454-461`) | `::test_a_bracket_expression_secret_is_refused_as_unreadable` (REPLACED `test_a_bracket_expression_secret_is_derived`) |
+| R2-15 | A `.pth` in site-packages could redirect the helper after the pin passed | The source-mode helper ran `-I -P`, which does not stop `site`, so a `.pth` could insert a tree ahead of the pinned one while the identity check still said PASS | The helper now runs `-I -S -P` under a fixed `-c` bootstrap that inserts the verified package roots first, then the interpreter's `purelib`/`platlib` (`probe.py:526`, `:532`, `:569-576`, `:579-599`, `:602-617`, `:635`) | `HwiIdentityPins::test_a_pth_in_site_packages_cannot_redirect_the_helper` (`tests/test_hardening_pins.py:918`), `::test_the_helper_search_path_puts_the_verified_roots_first` (`:977`) |
+| W3-1 | A genuine `compileall` `.pyc` was refused | The child compared `marshal.dumps(scrub(code))`; `marshal` encodes string-interning/`FLAG_REF` state, so a real `pip`/`compileall`-written `__pycache__/client.cpython-312.pyc` compared unequal and the pinned tree was refused | The child's freshness test compares code objects by value through a recursive `fingerprint()` (`probe.py:706`), ending `return fingerprint(recorded) == fingerprint(code)` (`:757`); `co_filename` is normalised away and the format covers every code field plus `co_consts` recursively (code objects, tuples and frozensets recursed, everything else by value AND by type — see W3-9). A `.pyc` whose body is not the recorded source is still refused, proved in the same test | `HwiIdentityPins::test_a_genuine_compileall_bytecode_file_is_accepted` (`tests/test_hardening_pins.py:790`), `::test_a_missing_package_is_refused_as_not_installed` (`:903`) |
+| W3-2 | A `.pyc` added after a warm verdict executed | `_cached_identity_holds` re-hashed only the recorded `(path, digest)` pairs, so a new compiled file inside the pinned package inherited a standing PASS | `_cached_identity_holds(path, payload=False)` re-runs the whole payload walk when `payload` is true, and `_verify_hwi_identity` (`probe.py:904`) passes it for the source-mode case (`probe.py:433`) | `::test_a_bytecode_file_added_after_a_warm_verdict_is_refused` (`:931`), `::test_a_module_added_after_a_warm_verdict_is_not_believed` (`:997`) |
+| W3-3 | A local action the sweep could not read could publish | A `./`-prefixed target was passed without reading it, so an unread local action could carry a publisher | `calls_a_remote_reusable_workflow()` passes a local `./` target only when it is `.github/workflows/*.yml\|*.yaml` (after stripping `@ref` and flow punctuation); any other local target fails closed with the new reason `calls-a-local-action`, reported through the caller (`scripts/check-publish-paths.sh:893`, `:951-972`, `:1158-1161`) | `test_the_sweep_refuses_a_local_action_it_does_not_read` (`tests/test_workflow_config.py:1776`) |
+| W3-4 | A flow `jobs:` map was over-refused | A flow-style `jobs: {…}` mapping that declared its own read-only token was read as no jobs and refused | `_flow_members` (`:564`), `_flow_key_value` (`:621`), `_flow_job_declares_permissions` (`:660`), `_flow_jobs_mapping_covers` (`:679`) and `_collect_flow` (`:699`) read it; `_jobs_all_declare_permissions` (`:748`, delegating `:777`, per-job `:813`) keeps the cycle-6 depth guard, so a `permissions:` nested under `env:`/`strategy:` still does not cover a job | `test_the_sweep_accepts_a_read_only_token_in_a_flow_style_job` (`tests/test_workflow_config.py:1486`) |
+| W3-5 | `with: {x-permissions: …}` was over-refused | The mid-line flow pattern matched `x-permissions` as a grant | `pat_inline` gained a left boundary — `(^|[[:space:]{,])permissions[^[:alnum:]_]*:(.*)$` (`scripts/check-publish-paths.sh:507`), capture group 2 — so the `x-permissions` spelling is not a grant | subTest in `test_prose_that_names_a_permission_is_not_a_grant` (`tests/test_workflow_config.py:1581`) |
+| W3-6 | The ok/refusal text overclaimed the sweep's scope | It said "non-main ref" while the sweep fetches heads only (`git fetch --no-tags … +refs/heads/*`, `scripts/check-publish-paths.sh:1016`), and the header did not say tags are out of scope by design | The header scope comment (`:2-17`), `REFUSAL` (`:117`) and the ok line (`:1179`) now say "no non-main branch carries a publish-capable workflow"; tags are stated out of scope by design, with tag-triggered credential use controlled by the environment branch policy | nine updated assertion sites in `tests/test_workflow_config.py` (`:743`, `:783`, `:835-836`, `:1053`, `:1079`, `:1128`, `:1213`, `:1862`, `:1882`) |
+| W3-7 | An environment holding a watched credential but never named was never queried | The check audited only environments the workflow text named, so an undeclared `*` environment with an empty branch policy could deploy from a tag | A new section 3 (`scripts/check-release-credentials.sh:599`, API walk `:609`) pages `repos/$REPO/environments` and enforces main-only, no human gate and no wait timer on any environment that holds a watched name, named or not; one holding none (e.g. `github-pages`) is skipped before its policy is read, with its secrets still listed. `names_from` decode mode (`:399`), `encoded_env()` (`:409`), whitespace-safe declared stream (`:556-558`) requesting percent-encoded names (`*` → `%2A`). Refusal wording: "the <env> environment is not named by any workflow in $WORKFLOWS_DIR and holds the watched credential name(s) [<names>], but it <does not allow deployments from the main branch alone (found: none)>[ and declares a human gate (wait_timer(5))]; a tag dispatch could still name it, so it is refused rather than left unaudited" | `tests/test_release_credentials.py:421` (`test_an_undeclared_environment_holding_a_credential_is_refused`), `:450` (`test_an_undeclared_environment_holding_no_credential_is_ignored`, the `github-pages` control, must stay exit 0), `:471` (`test_an_undeclared_environment_with_a_human_gate_is_refused`) |
+| W3-8 | `environment: {name: x}` was mis-parsed | A flow mapping was read as its raw text, so the environment name did not resolve | `flow_name()` (`scripts/check-release-credentials.sh:199`), called from `environment()` (`:252`), reads `{name: x}` and `{name: x, url: …}`; a mapping with no name key falls back to its raw text as one environment, so no phantom names | `tests/test_release_credentials.py:870` (`test_a_flow_mapping_environment_is_read_as_its_name`), `:914` (`test_an_unnameable_flow_mapping_stays_one_environment`) |
 
-The last row corrects a claim about this rule: the refusal of `docker://…@sha256:…` and
+| W3-9 | A hand-built `.pyc` retyped a constant and passed the fingerprint | `code.replace(co_consts=…)` rebuilds a code object with `co_code` and the line table untouched while swapping `1` for `1.0` (or `True`); `1.0 == True == 1`, so a by-value comparison accepted a pyc that is not the compiled source. Found by a self-attack on W3-1 before the commit | `fingerprint()` now reduces every non-code constant to `(type(item).__name__, item)`, so a constant is compared by value AND type (`probe.py:728`); the genuine `compileall` tree still passes (W3-1) and a different value is still refused | `HwiIdentityPins::test_a_bytecode_file_with_a_retyped_constant_is_refused` (`tests/test_hardening_pins.py:855`) |
+
+The `—` row above the second-round rows corrects a claim about this rule: the refusal of `docker://…@sha256:…` and
 `github/codeql-action/analyze@v3` was true of commit `1ff0175` and is false of the working tree.
 That finding was measured against `1ff0175`, not this revision; the narrowing is deliberate and
 pinned, not an oversight.
@@ -540,18 +634,85 @@ Cycle 6 added nine cases to `PublishPathSweepTests`, eight to `tests/test_releas
 `test_the_sweep_refuses_a_read_only_token_on_only_some_jobs` and
 `test_the_sweep_accepts_a_read_only_token_declared_on_every_job`.
 
+The second round added seven cases to `PublishPathSweepTests`, eight to
+`tests/test_release_credentials.py` (two of them replacing older cases), and two to
+`HwiIdentityPins`. Its sweep tests are
+`test_the_sweep_refuses_a_flow_permission_mapping_split_across_lines`,
+`test_the_sweep_refuses_a_flow_style_job_that_grants_write`,
+`test_the_sweep_refuses_every_flow_spelling_of_a_write_token`,
+`test_the_sweep_refuses_a_block_scalar_uses_that_hides_its_callee`,
+`test_the_sweep_refuses_a_callee_inside_a_flow_mapping`,
+`test_a_deeper_permissions_key_does_not_cover_a_job` and
+`test_prose_that_names_a_permission_is_not_a_grant` (the over-refusal control). Its credential
+tests are `test_a_hash_inside_a_word_does_not_hide_a_reference`,
+`test_a_whitespace_before_a_job_colon_is_read`, `test_a_four_space_indented_job_is_read`
+(replacing `test_a_four_space_indented_job_is_refused`),
+`test_a_yaml_anchor_does_not_hide_a_job_or_an_environment`,
+`test_a_lowercase_secret_reference_is_matched_to_its_name`,
+`test_a_single_literal_bracket_secret_is_still_derived`,
+`test_a_reference_split_across_lines_is_still_live` and
+`test_a_bracket_expression_secret_is_refused_as_unreadable` (replacing
+`test_a_bracket_expression_secret_is_derived`). Its `HwiIdentityPins` tests are
+`test_a_pth_in_site_packages_cannot_redirect_the_helper` and
+`test_the_helper_search_path_puts_the_verified_roots_first`.
+
+The third wave added two sweep cases —
+`test_the_sweep_accepts_a_read_only_token_in_a_flow_style_job` and
+`test_the_sweep_refuses_a_local_action_it_does_not_read` — and folded the `x-permissions` case
+into `test_prose_that_names_a_permission_is_not_a_grant`; five credential cases —
+`test_an_undeclared_environment_holding_a_credential_is_refused`,
+`test_an_undeclared_environment_holding_no_credential_is_ignored`,
+`test_an_undeclared_environment_with_a_human_gate_is_refused`,
+`test_a_flow_mapping_environment_is_read_as_its_name` and
+`test_an_unnameable_flow_mapping_stays_one_environment` — with no existing credential case
+rewritten; and five `HwiIdentityPins` cases —
+`test_a_genuine_compileall_bytecode_file_is_accepted`,
+`test_a_missing_package_is_refused_as_not_installed`,
+`test_a_bytecode_file_added_after_a_warm_verdict_is_refused`,
+`test_a_module_added_after_a_warm_verdict_is_not_believed` and
+`test_a_bytecode_file_with_a_retyped_constant_is_refused` — with
+`test_the_helper_search_path_puts_the_verified_roots_first` and
+`test_a_file_removed_from_the_package_is_refused` hardened.
+
 ### Verification of the cycle-6 remediation
 
-Measured on this revision from the repository root with `python -m unittest discover -s tests`
-(Python 3.12.14) — the same command `README.md` documents as
-`.venv/bin/python -m unittest discover -s tests`:
+Re-measured on the frozen third-wave tree from the repository root with
+`python -m unittest discover -s tests` (Python 3.12.14) — the same command `README.md` documents as
+`.venv/bin/python -m unittest discover -s tests`. The counts below are final for this revision.
 
 | Suite | Tests on this revision | Earlier |
 | --- | --- | --- |
-| `tests/test_workflow_config.py::PublishPathSweepTests` | 44 | 34 at `1ff0175`, 28 at `fea859c`, 18 at `bd0c0e8` |
-| `tests/test_release_credentials.py` | 36 | 29 at `1ff0175` |
-| `tests/test_hardening_pins.py::HwiIdentityPins` | 48 | 43 at `1ff0175` |
-| full suite | `Ran 666 tests` — **OK** | `Ran 644 tests in 165.7s` in the cycle-5 record |
+| `tests/test_workflow_config.py::PublishPathSweepTests` | 53 | 51 at wave 2, 44 at `f79203c`, 34 at `1ff0175`, 28 at `fea859c`, 18 at `bd0c0e8` |
+| `tests/test_release_credentials.py` | 47 | 42 at wave 2, 36 at `f79203c`, 29 at `1ff0175` |
+| `tests/test_release_credentials.py::ReleaseCredentialCheckTests` | 41 | — |
+| `tests/test_hardening_pins.py::HwiIdentityPins` | 55 | 50 at wave 2, 48 at `f79203c`, 43 at `1ff0175` |
+| `tests/test_hardening_pins.py` (whole file) | 79 | 74 at wave 2 |
+| full suite | `Ran 693 tests in 184.818s` — **OK** | `Ran 681 tests` on the wave-2 tree; `Ran 666 tests` at `f79203c`; `Ran 644 tests in 165.7s` in the cycle-5 record |
+
+Every row's `measured at` is this pass on the frozen third-wave tree with the audit interpreter
+(Python 3.12.14), run from the repository root: `PublishPathSweepTests` `Ran 53 tests` — **OK**,
+`tests/test_release_credentials.py` `Ran 47 tests` — **OK** (of which
+`ReleaseCredentialCheckTests` `Ran 41 tests`), `HwiIdentityPins` `Ran 55 tests` — **OK**,
+`tests/test_hardening_pins.py` `Ran 79 tests` — **OK**. The credential file went 42 → 47 across the
+third wave with no existing case rewritten; its second-round two replacements
+(`test_a_four_space_indented_job_is_refused` → `test_a_four_space_indented_job_is_read` and
+`test_a_bracket_expression_secret_is_derived` →
+`test_a_bracket_expression_secret_is_refused_as_unreadable`) stand. The sweep class went 51 → 53,
+`HwiIdentityPins` went 50 → 55, and the hardening file 74 → 79.
+
+On the same frozen tree, `bash -n` is clean on every shell script, every
+`.github/workflows/*.yml` parses under `yaml.safe_load`, and all ten `tests/ui_*.cjs` scripts
+exit 0 under `node` (each asserts with `node:assert/strict` and signals pass by exit code —
+only some print a trailing `…: ok` line, so the exit code is the evidence, not a stdout match).
+Both live checks were re-run after the last wave-3 fix landed and each exits 0:
+`bash scripts/check-publish-paths.sh origin` prints
+`ok: no non-main branch carries a publish-capable workflow`, and
+`bash scripts/check-release-credentials.sh` prints the `apple-signing` /
+`MAC_NOTARY_KEY_P8_BASE64` note and
+`ok: the release credentials are environment-scoped, main-only, and unreachable from any tag`.
+The repository has exactly three environments (`apple-signing` and `release-signing`, main-only
+and holding the release and signing credentials; `github-pages`, holding none) and no
+repository-level secrets.
 
 Every cycle-6 change above was broken and watched red when it was made; four of them were
 re-broken here, on a disposable copy of the tree, and the red recorded (the file was restored
@@ -574,16 +735,24 @@ byte-identical afterwards):
   digest loop and the parent's completeness loop, so that comparison is defence in depth and no
   break-and-watch is claimed for it.
 
-What remains open after this round is unchanged from `## Documented residuals`: the sweep reads
-branches only, a tag run keeps the default token, the helper runs `-I -P` while only the check
-child runs `-S`, `ctypes.CDLL` constructors run at load, shell-variable indirection is not
-followed, and a pre-existing `refs/remotes/publish-audit/*` would be clobbered.
+The second and third rounds report the same discipline for their own fixes: each guard was broken
+on a disposable copy and its named test watched red before the file was restored. Those transcripts
+are not reproduced here; the tests are named in the R2- and W3- rows, and the 693-test run above is
+what this pass measured on the frozen tree.
+
+What remains open after this round is unchanged from `## Documented residuals`, with one
+substitution: the sweep reads branches only, a tag run keeps the default token, `ctypes.CDLL`
+constructors run at load, shell-variable indirection is not followed, and a pre-existing
+`refs/remotes/publish-audit/*` would be clobbered. The helper no longer keeps site-packages: both
+children run `-I -S -P`, and the residual is now on the other side — a path that reached the
+helper only through a `.pth` file (an editable install) no longer does.
 
 ## Publication
 
 **Not yet published.** This revision is the candidate the owner reviews; the next Color
 Team cycle audits this commit before any tag exists. Cycle 5 graded the previous revision
-**⛔ BLOCKED** on the findings remediated above; this round is the answer to that grade and
-has not itself been audited. Promotion to a public release requires, in order: the cycle-6
-audit result, a signed and notarized `publish=false` candidate through the unified
-pipeline, and the owner hardware walkthrough. Manual publication is prohibited.
+**⛔ BLOCKED** on the findings remediated above; the cycle-6 review of `f79203c` then filed the
+bypasses the second cycle-6 round fixes, and this revision has not itself been audited. Promotion
+to a public release requires, in order: an audit of this revision, a signed and notarized
+`publish=false` candidate through the unified pipeline, and the owner hardware walkthrough.
+Manual publication is prohibited.
