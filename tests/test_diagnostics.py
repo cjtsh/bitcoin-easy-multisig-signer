@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from gui import (DIAGNOSTIC_ROUTE_STAGES, DIAGNOSTIC_STAGES, LocalApp,
-                 assert_private_file, save_diagnostic_report)
+                 _clean_token, _device_class, assert_private_file,
+                 save_diagnostic_report)
 
 
 class DiagnosticTests(unittest.TestCase):
@@ -25,6 +26,34 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(report["events"][0]["outcome"], "passed")
         self.assertEqual(len(report["events"]), 1)
         self.assertNotIn("bc1-private-address", json.dumps(report))
+
+    def test_a_token_that_is_not_a_plain_identifier_is_dropped(self):
+        """CT-109: `_clean_token` is the whole gate, and nothing pinned it.
+
+        The report tests only ever fed it values it accepts, so loosening the
+        pattern to, say, "anything printable" would have stayed green while
+        every diagnostic event silently started carrying free text. The shapes
+        below are the ones that would still look meaningful if it loosened.
+        """
+        for rejected in ('jade".evil', "../../etc/passwd", "a" * 21,
+                         "two words", "-leading-dash", "quote'd", "", "   ",
+                         "UPPER_with.dash-and-dot"):
+            with self.subTest(value=rejected):
+                self.assertEqual(_clean_token(rejected), "")
+        # Positive half: the tokens the app actually records survive.
+        self.assertEqual(_clean_token("JADE"), "jade")
+        self.assertEqual(_clean_token("ledger_nano_s"), "ledger_nano_s")
+        self.assertEqual(_clean_token("bitbox02"), "bitbox02")
+
+    def test_a_well_formed_token_that_is_not_a_known_device_class_is_dropped(self):
+        """CT-109: the pattern alone would pass a 20-character address.
+
+        `bc1qabcdef0123456789` fits `[a-z0-9][a-z0-9_.-]{0,19}` exactly, so the
+        vocabulary check is what keeps an address or a serial out of the report.
+        """
+        self.assertEqual(_device_class("bc1qabcdef0123456789"), "")
+        self.assertEqual(_device_class("a_nineteen_char_tok"), "")
+        self.assertEqual(_device_class("Ledger"), "ledger")
 
     def test_every_rejected_route_is_attributed_to_a_real_stage(self):
         """A refused signature must not look like a refused fee estimate.

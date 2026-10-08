@@ -592,6 +592,15 @@ class LocalApp:
                 )
 
             def do_GET(self):
+                # CT-113: GET deliberately has no Origin check, unlike do_POST.
+                # Origin exists to stop a cross-origin page from causing a state
+                # change, and nothing here changes state. "/" carries no wallet
+                # data and no token, and the price and fee feeds need the local
+                # token, which a browser does not attach cross-origin without a
+                # CORS preflight this server never grants (CT-75). The token is
+                # the whole control on a GET, so this omission is the design and
+                # not an oversight. If a state-changing GET is ever added, this
+                # note stops being true and the Origin test has to move with it.
                 if not self._trusted_host():
                     self._send(403, {"error": "Local access only."})
                     return

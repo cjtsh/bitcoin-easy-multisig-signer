@@ -18,9 +18,14 @@ not set by process:
    is quorum deception in the operator's own wallet file, reproduced end to end twice.
 
 This release is an audit-ledger remediation. The wallet, transaction, signing and
-broadcast policy is unchanged; the payment engine changed in exactly two places, both
-of which can only *refuse* an input that was previously accepted (the CT-72 parse gate
-and the CT-90 payload check). No new payment capability is added.
+broadcast policy is unchanged, and every change below can only *refuse* an input that was
+previously accepted. This sentence was corrected in cycle 5 (CT-116): it is not true that
+the payment engine changed "in exactly two places". The CT-72 parse gate and the CT-90
+payload check were the two *grade-setting* changes; the same revision also re-hashed every
+verified helper path on each cache hit (CT-91), put the session token in front of the two
+GET feeds (CT-74/CT-75), and changed how the helper and its check child are invoked
+(`-I -P`, passed as argv rather than written into the command line). No new payment
+capability is added.
 
 Every finding below is closed either by a test demonstrated able to fail (broken on a
 disposable copy, watched red, restored) or by a documentation/residual disposition
@@ -36,7 +41,7 @@ The 33 findings the cycle-4 report carried, in its numbering.
 
 | ID | Sev | Fix | Closing evidence |
 | --- | --- | --- | --- |
-| CT-72 | High | The BSMS parse refuses a wallet file that lists the same signer **key** twice, even under two different origin fingerprints. A fingerprint is a label; the key bytes are the signer, so only the bytes answer "how many keys must approve this payment". `signing.py` is deliberately untouched: the parse gate makes its counting unreachable for this input. | `tests/test_probe.py::test_one_key_listed_twice_under_two_origins_is_refused`, `::test_the_same_key_pasted_twice_keeps_its_fingerprint_refusal` (break-and-watch: the check disabled → the hostile file parses as a 2-of-2 and one approval could finalize it) |
+| CT-72 | High | The BSMS parse refuses a wallet file that lists the same signer **key material** twice — the public point plus the chain code — even when the copies carry different origin fingerprints *and* are spelled under different network versions. A fingerprint is a label and a base58 string is a spelling; only the key bytes answer "how many keys must approve this payment". A second, independent gate in `signing.py::parse_multisig_script` refuses a compiled witness script that names the same public key twice, so a duplicate cannot reach finalization by any other route. **Corrected in cycle 5 (CT-115):** the closing evidence first cited here was the pre-existing *fingerprint* gate, which a respelled duplicate evades; that evasion is exactly what cycle 5 closed. | `tests/test_probe.py::test_one_key_listed_twice_under_two_origins_is_refused`, `::test_the_same_key_pasted_twice_keeps_its_fingerprint_refusal` (the fingerprint gate — green while the key gate was absent, which is why it was not evidence for CT-72), `::test_the_same_key_respelled_under_another_version_is_still_refused` (xpub/tpub/upub/ypub/zpub), `::test_a_respelled_duplicate_is_refused_even_when_the_fingerprints_differ`; `tests/test_signing.py::test_a_compiled_script_with_a_duplicated_pubkey_is_refused`, `::test_a_duplicate_key_input_cannot_reach_complete_with_one_signature`; break-and-watch: with the base58 comparison restored the hostile file parses as an honest 2-of-2 and one approval finalizes it |
 | CT-73 | Med | The publish-path sweep now recognizes every publisher the audit used to evade it — `gh api`, direct REST uploads (`uploads.github.com`), `api.github.com`, third-party release actions (`action-gh-release`, `release-action`, `upload-release-asset`, `create-release`, `gh-release`), `permissions: write-all` — and requires every non-main ref that carries a workflow to *show* a read-only token (`permissions: read-all`, `{}`, or `contents: read`). Silence is an offender: an omitted block inherits a repository default no ref can disclose. | `tests/test_workflow_config.py::PublishPathSweepTests` (six new refusal tests + a read-all accept test); sweep run clean against the live remote |
 | CT-74 | Low | The loopback token comparison is total. A non-ASCII `X-Local-Token` header (decoded latin-1) used to raise `TypeError` out of `hmac.compare_digest` before the 403 path, dropping the socket and printing a traceback per request. Both sides are now compared as bytes, so every header value reaches the same 403. | `tests/test_gui.py::LocalGuiTests::test_a_non_ascii_token_header_reaches_the_403_and_not_a_crash` (break-and-watch: the old inline comparison → `TypeError: comparing strings with non-ASCII characters is not supported` + `ConnectionResetError`) |
 | CT-75 | Info | `GET /api/price` and `GET /api/fees` now require the session token, like every other route. The page itself stays unauthenticated (the token lives in the URL fragment); the UI's two feed fetches send the header. | `tests/test_gui.py::LocalGuiTests::test_the_feeds_refuse_a_caller_without_the_token` (patches both fetchers so a broken gate answers 200 instead of reaching the network) + the renamed token-gated cache tests |
@@ -61,7 +66,7 @@ The 33 findings the cycle-4 report carried, in its numbering.
 | CT-94 | Info | Documented by design: the app binds to the device by possession and key proof, not by firmware version reporting — possession-based binding is the stronger property. | `probe.py`; cycle-4 report §"New findings" |
 | CT-95 | Info | Residual documented: the bridge URL pin returns true when the window's URL cannot be read, a decision its own comment records; the compensating control is the payload byte-equality check. Unchanged this cycle. | `desktop.py:69-82` |
 | CT-96 | Info | Residual documented: hwilib is intentionally absent from the CI requirement set, so the payload pin's real-install accept path runs in desktop builds. The gap is narrowed by the CT-90 fixture accept test (real subprocess), the literal published-digest test, the desktop lock job that hash-verifies hwi 3.2.0, and the genuine-install transcript. | `tests/test_hardening_pins.py`; `requirements-desktop.lock:489` |
-| CT-97 | Med | **Fixed (owner directed option B, 2026-10-07).** The release credentials are no longer repository secrets: they live in the `release-signing` and `apple-signing` GitHub environments, each deployable only from `main` and declaring no human gate, and the jobs that use them declare their environment. An old tag runs its own frozen workflow text but cannot deploy to either environment. All five values are environment-scoped as of 2026-10-08 and no owner action remains. | `.github/workflows/build-candidate.yml`; `tests/test_workflow_config.py::ReleaseCredentialScopePins`; `tests/test_release_credentials.py`; `scripts/check-release-credentials.sh`; `scripts/provision-release-credentials.sh`; `SIGNING.md`; `RELEASE-PROCESS.md` |
+| CT-97 | Med | **Fixed (owner directed option B, 2026-10-07).** The release credentials are no longer repository secrets: they live in the `release-signing` and `apple-signing` GitHub environments, each deployable only from `main` and declaring no human gate, and the jobs that use them declare their environment. An old tag runs its own frozen workflow text but cannot deploy to either environment. All five stored values are environment-scoped as of 2026-10-08. A sixth name, `MAC_NOTARY_KEY_P8_BASE64`, is referenced by the optional notarize path and is not stored in either environment yet; since cycle 5 (WO-4) the check derives its watched set from the workflow text, so that name is covered the day it appears instead of being missed, and it is refused if it turns up at repository level or in the wrong environment. | `.github/workflows/build-candidate.yml`; `tests/test_workflow_config.py::ReleaseCredentialScopePins`; `tests/test_release_credentials.py`; `scripts/check-release-credentials.sh`; `scripts/provision-release-credentials.sh`; `SIGNING.md`; `RELEASE-PROCESS.md` |
 | CT-98 | Low | The dispatch input `candidate_run_id` reaches the release-gate script through `env:`, never interpolated as `${{ }}` into the shell text, so a value like `1; something` is data the numeric test judges rather than code bash runs. The checksums job already did it this way. | `tests/test_workflow_config.py::test_publication_is_restricted_to_the_default_branch` (now asserts the env delivery and the absence of any `${{` in the run body) |
 | CT-99 | Low | The container proof runs a digest-pinned image — `ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55` — with the refresh command recorded in a comment. | `tests/test_linux_port.py::LinuxWorkflowTests::test_the_promise_of_no_libfuse_so_2_is_proven_where_the_library_is_absent` (asserts the full digest pin) |
 | CT-100 | Low | Addressed by disclosure. Every per-platform SBOM now records the toolchain that produced it (`toolchain_platform`, `toolchain_python`, `toolchain_cc`, `toolchain_clang`, `toolchain_msbuild`, `toolchain_docker` — first banner line, or `not found`), so drift inside a pinned runner label is *visible in the attested artifact*. Bit-reproducible builds are still not claimed: runner images, apt, MSVC and Docker tags float inside GitHub's pinned labels and are trusted infrastructure not inspectable from this repository. | `tests/test_build_sbom.py::ToolchainDisclosurePins` (five tests, including a real probe on this interpreter) |
@@ -90,6 +95,37 @@ check passed. The app now locates the files **without running them**
 (`PathFinder.find_spec`), runs the check and the helper under the same scrubbed
 interpreter, and refuses anything whose bytes do not match. The audit's own attack now
 executes nothing and is refused.
+
+## Cycle-5 remediation: the classes, not the demonstrations
+
+Cycle 5 (`bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.8.md`) graded this
+revision **⛔ BLOCKED** on three independent failure states — Red (CT-72), Orange (CT-73)
+and Copper (CT-90) — with CT-72 open as a High. The process post-mortem in that report is
+the reason this section exists: the cycle-4 fixes each closed the *demonstration* the audit
+had used, and a green test then meant "the old proof of concept fails", never "the class is
+closed". This round fixes the classes and, where a class cannot be closed inside the
+repository, says so in the open.
+
+| ID | Sev | The class | Fix and evidence |
+| --- | --- | --- | --- |
+| CT-72 | High | Identity of a signer key | The duplicate gate compares **key material** — `(public point, chain code)` — instead of a base58 string, and `parse_multisig_script` independently refuses a compiled witness script naming one public key twice. Evidence: the four rows of `tests/test_probe.py` and the two `tests/test_signing.py` cases listed in the CT-72 row above, each demonstrated red against the previous source. |
+| CT-90 | Med | Whole-payload identity, interpreter isolation, verify-at-execution | `HWI_PAYLOAD_MANIFEST` records all 115 `.py` files of the pinned hwilib tree as literals in `probe.py` — not a digest read from `RECORD`, which the same writer who replaced the tree could rewrite. The check child runs `-I -S -P`, so a `.pth` in site-packages cannot execute inside it — `-I -P` alone does not stop site hooks. Because `-S` removes site-packages from the child's path, the child cannot resolve `hwilib` by name at all; the parent passes the package roots as argv and the child reports every file it finds there. The whole name set is compared in both directions, the CT-91 cache re-reads all of it, and `_require_unchanged()` reads every file the child reported a second time immediately before the spawn, so a deterministic swap written between the check and the exec is refused instead of inheriting a verdict about bytes that no longer exist. Every prepared build environment runs `scripts/check-hwi-payload.py` against the real hash-locked install before any signing material enters the job. Evidence: `tests/test_hardening_pins.py::HwiIdentityPins::test_the_ci_payload_check_runs_the_app_check_and_fails_closed`, `::test_the_check_child_cannot_run_a_pth_hook_planted_in_site_packages`, `::test_a_swapped_sibling_module_does_not_inherit_a_cached_verdict`, `::test_a_payload_swapped_between_the_check_and_the_spawn_is_refused`; `tests/test_workflow_config.py::test_each_prepared_build_environment_proves_its_hwilib_matches_the_pin`. Break-and-watch used a **genuine** `hwi==3.2.0` install: the previous source accepted a `commands.py` with one injected line (and an added `zz_extra.py`) while reporting two files verified; the current source refuses it. |
+| CT-73 + CT-102 | Med + Info | The sweep's decision procedure | `scripts/check-publish-paths.sh` now strips comments before **any** decision and decides the token grant from a parsed `permissions:` mapping: a spaced key (`contents : write`), a quoted flow mapping, a duplicate key, `write-all`, and a bare nested `write` are all read as the grants they are, while a comment naming a write grant is no longer an offender. The read-only proof comes from the mapping, never from body text. The publisher vocabulary gained `gh api graphql`, `$GITHUB_API_URL`, `actions/github-script`, camelCase REST release calls and reusable release workflows whose path names a release. Evidence: ten new `PublishPathSweepTests` cases, seven separate breaks each watched red, and the live `origin` sweep still clean. The sweep stays bash + git: `PublishPathSweepTests` deliberately does not gate it on PyYAML. |
+| CT-97 | Med | The watched credential name set | `scripts/check-release-credentials.sh` derives its watched names from the workflow text — every `secrets.NAME` reference, partitioned by the environment each referencing job declares — instead of a hand-typed list of five. The sixth name, `MAC_NOTARY_KEY_P8_BASE64`, is covered the day it appears. The rule is one-directional exactness plus non-vacuity: an extra name is refused, an environment holding none of its own names is refused, and a referenced-but-absent name is reported as a `note:` rather than a refusal, because the workflow reads the notary key only on the optional notarize path while every required credential is guarded by `: "${NAME:?}"`. `--print-scope` prints the derived table so the next reader can see what the check believes. Evidence: `tests/support.py::workflow_credential_scope`, `tests/test_release_credentials.py` (21 tests), `ReleaseCredentialScopePins`, and seven breaks. |
+| CT-105 | Med | The Windows helper's trust model | The claim that a frozen build's sidecar "sits inside the signed bundle it authenticates" is true on macOS only. On Windows `hwi.exe` and `hwi.sha256` sit in the same user-writable directory and neither is signed, so the app's sidecar check there is a corruption check, not an identity check. That is now stated in `probe.py`, `scripts/build-sbom.py`, `HWI-DEPENDENCY.md` and a new `SIGNING.md` section, and pinned by `tests/test_hardening_pins.py::HwiIdentityPins::test_the_identity_docstring_does_not_claim_a_windows_signature`. Signing the Windows helper or moving the sidecar out of the writable directory are **owner decisions, open as of 2026-10-08**, recorded as such rather than invented here until the owner picks one. |
+| CT-92 | Low | Link, not only symlink | `scripts/hwi_entry.py` opens the bundled USB library with `O_NOFOLLOW`, then requires `fstat` to report a regular file with `st_nlink == 1`, both before the load and in the post-load equality check. A hard link has no distinct path to resolve, so `is_symlink()` alone never saw it. Evidence: `tests/test_hwi_entry.py` now plants **real** links instead of monkeypatching `Path.is_symlink`; the hardlink test is red when either the `O_NOFOLLOW` or the `st_nlink` arm is removed, and the symlink test stays green. |
+| CT-98 · CT-107 · CT-108 · CT-109 · CT-110 · CT-113 · CT-114 | Low–Info | Small pins and honest wording | `candidate_run_id` expressions are pinned out of **every** run block that consumes the input, not just the version job's guard (CT-98). The provisioning script's header no longer claims argv never carries a value; it names the two windows that do (`security export -P`, `notarytool store-credentials --password`) and pins them (CT-107). The broadcast identity clause has a test that actually drives the swap window (CT-108, `tests/test_send_flow.py::test_broadcast_refuses_when_the_prepared_payment_is_swapped_mid_flight`). `_clean_token` and `_device_class` have direct drop tests (CT-109). The three unquoted version interpolations are quoted and pinned (CT-110). `do_GET` records why it has no Origin check and a test pins that the token is the whole control there (CT-113). The BOM strip removes exactly one BOM instead of a character set (CT-114). |
+| CT-100 · CT-106 · CT-111 · CT-115 · CT-116 | Info | Disclosure, not silence | `ToolchainDisclosurePins` asserts a literal expected probe-name set instead of iterating the table it is testing (CT-100). The release-environment comment says the gate protects the secret, not the environment, and a test refuses a job-level `if:` that would make the claim true by accident (CT-106). The explorer limitation is documented in `README.md` and `USER-MANUAL.md`: a self-consistent liar can drive preparation over phantom funds, preparation moves nothing, broadcast refuses a mismatched transaction ID rather than claiming success, and a mainnet lie must survive the signers' screens (CT-111). The two false statements in this ledger were corrected in place (CT-115, CT-116). |
+
+**What this round does not claim.** No new payment capability; the money path still holds
+and every change here can only refuse. The vendored-decoder residual (CT-89), the
+explicit-helper operator choice (CT-93), the bridge-URL fallback (CT-95) and the
+practice-network scan limits stand as documented. Two items remain **owner decisions**, not
+agent calls: whether the Windows helper gets an Authenticode signature or the sidecar moves
+out of the writable directory (CT-105), and whether the human gate on `release-signing`,
+removed in this cycle, is restored or the environment is moved onto a publish-only job
+(CT-106/CT-97).
+
 
 ## The prior ledger, round-tripped: CT-01…CT-71
 
@@ -173,17 +209,21 @@ Implemented in this revision:
 - `scripts/provision-release-credentials.sh` is the recovery path the owner asked for. It
   re-derives every credential this machine can — the release key from the GnuPG keyring, the
   Developer ID p12 plus a fresh password from the login keychain, the app-specific password
-  from a hidden prompt or a file — sets each one with `gh secret set` on standard input so no
-  value ever reaches argv, a log or a transcript, deletes the repository-level copies with
+  from a hidden prompt or a file — sets each one with `gh secret set` on standard input so no value
+  sent to GitHub reaches argv, a log or a transcript, deletes the repository-level copies with
   `--prune`, and finishes by running the check. `--dry-run` names every secret it would set
-  and touches nothing.
+  and touches nothing. Corrected in cycle 5 (CT-107): the header used to claim argv is never used at
+  all. Two local tools on this path (`security export -P`, `notarytool store-credentials --password`)
+  offer no other form, so those windows are named and pinned rather than denied.
 
 **Live platform state, 2026-10-08.** Both environments exist under the owner's account
 (GitHub settings, not files in this repository): `release-signing` holds `GPG_PRIVATE_KEY`
 and `GPG_PASSPHRASE`, `apple-signing` holds `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD` and
 `MAC_APP_SPECIFIC_PASSWORD`. All five values are environment-scoped and the repository
-secret list is empty. Each environment allows only the `main` branch and declares no
-required reviewer and no wait timer, so a promotion starts on its own and any agent team the
+secret list is empty. The optional notarize path also names `MAC_NOTARY_KEY_P8_BASE64`, which is not
+stored in either environment as of that date; `scripts/check-release-credentials.sh` reports it as a
+`note:` rather than a silent omission (cycle 5, WO-4). Each environment allows only the `main` branch
+and declares no required reviewer and no wait timer, so a promotion starts on its own and any agent team the
 owner authorises can cut a release. The last value, `MAC_APP_SPECIFIC_PASSWORD`, was moved
 **without owner action**: a temporary workflow sealed it to an RSA key that existed only on
 the maintainer's machine and printed only the ciphertext, so nothing readable ever entered a
@@ -198,8 +238,9 @@ tag`. `SIGNING.md` carries the master-copy table and the recovery path;
 Kept deliberately, with reasons, so a later reader does not mistake them for oversights:
 CT-87 (conservative dead disjunct retained), CT-88 (threshold from the owner's file by
 design), CT-89 (vendored decoder leniency; the app-level round trip is pinned), CT-92
-(the extracted `_MEI*` copy's bytes are path- and load-checked, not digest-compared
-against a build record — the macOS digest is a source constant in
+(the extracted `_MEI*` copy's bytes are path- and load-checked — now including a real link
+check (`O_NOFOLLOW`, `S_ISREG`, `st_nlink == 1`) added in cycle 5 — but still not digest-compared
+against a build record: the macOS digest is a source constant in
 `scripts/build-macos.sh`, Windows checks the `LIBUSB_WINDOWS_SHA256` variable, Linux
 builds from source), CT-93 (explicit-helper operator trust), CT-94 (possession-based
 device binding by design), CT-95 (documented bridge-url fallback, compensated by payload
@@ -284,10 +325,56 @@ published digest, desktop lock job and a genuine-install transcript), CT-54/CT-5
 - No wallet material, secret, or credential appears in this file or in the tests added
   by it; every fixture is synthetic.
 
+## Verification of the cycle-5 remediation
+
+- The full Python suite on this tree: `Ran 622 tests` — **OK**, zero failures, zero skips
+  (580 at the cycle-4 roll; the 42 added here are the WO-1…WO-8 pins).
+- `bash -n` clean on every shell script in `scripts/`; every `.github/workflows/*.yml`
+  parses under `yaml.safe_load`; all ten `tests/ui_*.cjs` suites pass under `node`.
+- `bash scripts/check-publish-paths.sh origin` against the live remote: exit 0,
+  `ok: no non-main ref carries a publish-capable workflow`.
+- `scripts/check-release-credentials.sh` against the live account (real `gh`, authenticated
+  as the maintainer): exit 0, `ok: the release credentials are environment-scoped,
+  main-only, and unreachable from any tag`, plus the expected `note:` for the unstored
+  notary key.
+- Break-and-watch, each on a disposable `git worktree` with the working files copied in,
+  the named regression introduced, the named test watched red, the file restored
+  byte-identical (`cmp`) and the control green again:
+  - **CT-72** — the previous `probe.py`/`signing.py` on a detached `HEAD` worktree: the four
+    new probe tests fail 7 times (the `subTest` version spellings) and the two signing tests
+    fail, with the duplicate gate absent.
+  - **CT-73/CT-102** — seven breaks: comment stripping disabled, the spaced-key regex
+    narrowed, the flow-mapping arm disabled, `github-script` removed, the camelCase REST
+    names removed, the `$GITHUB_API_URL` arm dropped, and the reusable-workflow match
+    narrowed. Eight of ten new sweep tests are red against the previous sweep.
+  - **CT-90** — a genuine `hwi==3.2.0` install with one line injected into `commands.py`
+    (and later an added `zz_extra.py`): the previous source reports `accepted: 2 files` and
+    passes; the current source refuses with
+    `The hardware-wallet tool does not match its recorded digest. Refusing to run it.`
+    Removing `-S`, or the child's tree gate, turns named tests red. Dropping the
+    spawn-time re-read (`_require_unchanged`) turns
+    `::test_a_payload_swapped_between_the_check_and_the_spawn_is_refused` red with
+    `AssertionError: ProbeError not raised`, and nothing else.
+  - **CT-97** — seven breaks (extra name, empty environment, missing policy, wrong policy,
+    stray gate, repository-level copy, tag-scoped policy), each red.
+  - **CT-92** — the previous `is_symlink()` guard: the hardlink test is red and the
+    preflight accepts a hardlinked library; removing the `st_nlink` arm reproduces exactly
+    that red while the symlink test stays green.
+  - **CT-105** — the old "inside the signed bundle" sentence restored in `probe.py`, the
+    SBOM sentence replaced, and the `SIGNING.md` heading renamed: three separate reds.
+  - **CT-108** — the broadcast identity clause replaced with `if False:` in `_broadcast`
+    only: the new send-flow test fails with
+    `Expected 'broadcast_transaction' to not have been called. Called 1 times.`
+- No wallet material, secret or credential appears in the tests added by this round; every
+  fixture is synthetic, and the one genuine hwilib tree used for the CT-90 demonstration
+  lived in `/tmp`, never in this repository.
+
+
 ## Publication
 
 **Not yet published.** This revision is the candidate the owner reviews; the next Color
-Team cycle audits this commit before any tag exists. Promotion to a public release
-requires, in order: the cycle-5 audit result, a signed and notarized `publish=false`
-candidate through the unified pipeline, and the owner hardware walkthrough. Manual
-publication is prohibited.
+Team cycle audits this commit before any tag exists. Cycle 5 graded the previous revision
+**⛔ BLOCKED** on the findings remediated above; this round is the answer to that grade and
+has not itself been audited. Promotion to a public release requires, in order: the cycle-6
+audit result, a signed and notarized `publish=false` candidate through the unified
+pipeline, and the owner hardware walkthrough. Manual publication is prohibited.

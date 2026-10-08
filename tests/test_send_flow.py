@@ -449,6 +449,42 @@ class SendFlowTests(unittest.TestCase):
         self.assertIn("differs from the reviewed payment",
                       json.load(err.exception)["error"])
 
+    def test_broadcast_refuses_when_the_prepared_payment_is_swapped_mid_flight(self):
+        """CT-108: the identity clause inside the broadcast lock must be reachable.
+
+        `payment` is captured before the network pre-checks. The clause
+        `state.prepared is not payment` exists to catch a concurrent
+        refresh/import/settings edit that lands during those checks, but no test
+        ever drove that window, so the clause could have been deleted and the
+        suite stayed green. Here the swap happens inside
+        verify_selected_outpoints - exactly the seam - and the replacement is
+        equal-valued with the same scan generation, so only object identity
+        distinguishes it.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+        reviewed = self.app.prepared
+
+        def swap_the_payment(*_args, **_kwargs):
+            # Same values, same scan generation, different object.
+            self.app.prepared = replace(reviewed)
+
+        self.outpoint_check.side_effect = swap_the_payment
+        with patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": result["txid"]})
+            send.assert_not_called()
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("The payment changed before broadcast.",
+                      json.load(err.exception)["error"])
+
     def test_money_endpoints_refuse_a_stale_review_id_by_name(self):
         """The review-id binding refuses by its own rule, not by accident (CT-05)."""
         self.prepare_a_reviewed_transaction()

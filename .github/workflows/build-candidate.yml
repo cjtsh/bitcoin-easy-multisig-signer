@@ -128,7 +128,7 @@ jobs:
             echo "== $test"
             node "$test"
           done
-      - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
+      - run: bash scripts/build-source.sh "${{ needs.version.outputs.version }}"
       # Run the tests FROM the archive. An archive missing a test helper still
       # builds and still uploads, so nothing caught it until the tests were run
       # out of the extracted tarball.
@@ -232,7 +232,15 @@ jobs:
           grep -q "MAC_NOTARY_KEY_PATH, MAC_NOTARY_KEY_ID and MAC_NOTARY_ISSUER_ID" notary-guard.txt \
             || grep -q "Notarisation credentials are set incompletely" notary-guard.txt
       - name: Prepare hash-locked build environment before signing secrets
-        run: PREPARE_ONLY=1 bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
+        run: PREPARE_ONLY=1 bash scripts/build-macos.sh "${{ needs.version.outputs.version }}"
+      - name: The installed hwilib must match the pinned tree
+        # CT-90/CT-112: the accept half of the payload pin used to be exercised
+        # only against fixture bytes, so nothing proved the lock resolves to the
+        # source the manifest records. This runs the app's own check against the
+        # environment that gets bundled, before any signing secret is imported.
+        run: |
+          set -euo pipefail
+          .build-venv/bin/python scripts/check-hwi-payload.py
       - name: Import the Developer ID certificate
         # Only the notarized path needs a signing identity. An unsigned test build
         # must keep working without any Apple credentials.
@@ -317,7 +325,7 @@ jobs:
           # The notary credential — a profile name, or the API key triple — is
           # exported by the "Provide notary credentials" step, so it arrives through
           # the environment rather than being duplicated here.
-        run: bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
+        run: bash scripts/build-macos.sh "${{ needs.version.outputs.version }}"
       - name: Verify the DMG, the signature and the bundled app
         run: |
           set -euo pipefail
@@ -465,6 +473,13 @@ jobs:
         env:
           PREPARE_ONLY: "1"
         run: ./scripts/build-windows.ps1 -Version "${{ needs.version.outputs.version }}"
+      - name: The installed hwilib must match the pinned tree
+        # CT-90/CT-112: the same check the app runs, against the environment
+        # this build bundles, so a lock that resolved to other source fails the
+        # candidate here instead of after publication.
+        run: |
+          set -euo pipefail
+          .build-venv/Scripts/python.exe scripts/check-hwi-payload.py
       - name: Build the Windows bundle
         shell: pwsh
         env:
@@ -589,6 +604,12 @@ jobs:
           # requirements file fails here rather than inside a build.
           PREPARE_ONLY: "1"
         run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+      - name: The installed hwilib must match the pinned tree
+        # CT-90/CT-112: the same check the app runs, against the environment
+        # this build bundles.
+        run: |
+          set -euo pipefail
+          .build-venv/bin/python scripts/check-hwi-payload.py
       - name: Build the AppImage and the tarball
         env:
           BUILD_DEPS_PREPARED: "1"
@@ -712,8 +733,10 @@ jobs:
     # publish. A historical tag's workflow text never declares this
     # environment, so no tag dispatch can reach the key — for every tag,
     # including ones that do not exist yet. The key is named only under
-    # `if: ${{ inputs.publish }}`, so a candidate run never enters this
-    # environment at all. Both halves are pinned:
+    # `if: ${{ inputs.publish }}`. That gate protects the secret, not the
+    # environment: `environment:` is a job key and this job carries no job-level
+    # `if:`, so a `publish=false` promotion still enters release-signing and only
+    # skips the step that reads the key (CT-106). Both halves are pinned:
     # tests/test_workflow_config.py::ReleaseCredentialScopePins reads this file
     # and scripts/check-release-credentials.sh reads the platform.
     environment: release-signing

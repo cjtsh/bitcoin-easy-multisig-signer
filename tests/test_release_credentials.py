@@ -23,13 +23,30 @@ import subprocess
 import tempfile
 import unittest
 
-from support import bash_executable, run_bash_file
+from support import bash_executable, run_bash_file, workflow_credential_scope
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "check-release-credentials.sh"
 REPO = "owner/repo"
-RELEASE_SECRETS = ("GPG_PRIVATE_KEY", "GPG_PASSPHRASE")
-APPLE_SECRETS = ("MAC_CERT_P12_BASE64", "MAC_CERT_PASSWORD", "MAC_APP_SPECIFIC_PASSWORD")
+
+
+def derived_scope() -> dict:
+    """``{environment: [secret name, ...]}`` from the workflow text itself.
+
+    CT-97's repository half was a five-name constant here and in the check
+    script. `MAC_NOTARY_KEY_P8_BASE64` was live in build-candidate.yml while
+    neither knew it existed. The watched set is derived now, and the check's own
+    stdlib derivation is asserted equal to this one.
+    """
+    found = {}
+    for _workflow, _job, environment, name in workflow_credential_scope(ROOT):
+        found.setdefault(environment, set()).add(name)
+    return {environment: sorted(names) for environment, names in found.items()}
+
+
+DERIVED = derived_scope()
+RELEASE_SECRETS = tuple(DERIVED["release-signing"])
+APPLE_SECRETS = tuple(DERIVED["apple-signing"])
 
 # A `bash` that actually runs a script, not the WSL launcher a bare "bash"
 # resolves to on Windows runners (it exits 1 with "Windows Subsystem for Linux
@@ -84,18 +101,14 @@ class CredentialWorld:
         # Human gates that would stop a release starting on its own. The honest
         # configuration has none: the owner asked for a path any agent team can
         # run, so the check refuses a required reviewer or a wait timer.
-        self.gates = {"release-signing": [], "apple-signing": []}
-        self.policies = {
-            "release-signing": ["main branch"],
-            "apple-signing": ["main branch"],
-        }
+        self.gates = {environment: [] for environment in DERIVED}
+        self.policies = {environment: ["main branch"] for environment in DERIVED}
         self.secrets = {
-            "release-signing": list(RELEASE_SECRETS),
-            "apple-signing": list(APPLE_SECRETS),
+            environment: list(names) for environment, names in DERIVED.items()
         }
 
     def _endpoints(self):
-        for name in ("release-signing", "apple-signing"):
+        for name in sorted(DERIVED):
             if name in self.missing_environments:
                 continue
             yield f"repos/{REPO}/environments/{name}", {
@@ -123,7 +136,7 @@ class CredentialWorld:
 
 
 class ReleaseCredentialCheckTests(unittest.TestCase):
-    def run_check(self, world: CredentialWorld):
+    def run_check(self, world: CredentialWorld, workflows: pathlib.Path | None = None):
         """Run the real script with the fake `gh` first on PATH."""
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -138,13 +151,93 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
             fake.chmod(0o755)
             env = dict(os.environ)
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
-            return run_bash_file(SCRIPT, REPO, env=env, cwd=ROOT)
+            args = (REPO,) if workflows is None else (REPO, str(workflows))
+            return run_bash_file(SCRIPT, *args, env=env, cwd=ROOT)
 
     def test_the_check_passes_when_the_credentials_are_environment_scoped(self):
         """The positive half: the honest configuration is accepted."""
         result = self.run_check(CredentialWorld())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("ok:", result.stdout)
+
+    def test_the_derivation_covers_the_notary_key_that_was_unwatched(self):
+        """CT-97's repository half: the watched set comes from the workflows.
+
+        `.github/workflows/build-candidate.yml` names
+        `secrets.MAC_NOTARY_KEY_P8_BASE64` inside its notarize step. The old
+        five-name constant did not, so that credential was live and unwatched:
+        it could sit at repository level and reach every historical tag without
+        the check saying a word.
+        """
+        self.assertIn("MAC_NOTARY_KEY_P8_BASE64", DERIVED["apple-signing"])
+        self.assertEqual(DERIVED["release-signing"], ["GPG_PASSPHRASE", "GPG_PRIVATE_KEY"])
+
+    def test_a_repository_level_copy_of_the_notary_key_is_refused(self):
+        """The sixth name is watched now, so a repository-level copy refuses."""
+        world = CredentialWorld()
+        world.repository_secrets = ["MAC_NOTARY_KEY_P8_BASE64"]
+        result = self.run_check(world)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "still has a REPOSITORY-level secret named MAC_NOTARY_KEY_P8_BASE64",
+            result.stderr,
+        )
+
+    def test_the_script_derivation_agrees_with_the_yaml_derivation(self):
+        """The stdlib bash derivation and the PyYAML one must say the same thing.
+
+        The check runs on the operator's `python3`, which has no PyYAML, so it
+        parses the text itself. That parser is the only thing standing between a
+        new credential name and a silent gap, and a hand-written parser is
+        exactly the sort of code that rots. This compares it, field for field,
+        against a real YAML parse of the same files.
+        """
+        expected = {
+            (name, environment, f"{workflow}:{job}")
+            for workflow, job, environment, name in workflow_credential_scope(ROOT)
+        }
+        self.assertTrue(expected, "the derivation found no credential at all")
+        result = run_bash_file(SCRIPT, "--print-scope", cwd=ROOT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        found = {
+            tuple(line.split("\t"))
+            for line in result.stdout.splitlines()
+            if line.strip()
+        }
+        self.assertEqual(
+            found, expected,
+            "the check's own parser and a real YAML parse disagree; the check is "
+            "watching a different set of names than the workflows name",
+        )
+
+    def test_a_workflow_that_names_a_credential_without_an_environment_is_refused(self):
+        """A new unscoped `secrets.FOO` cannot ride along unnoticed.
+
+        This is the shape of the whole finding: a job that declares no
+        environment receives the secret on every ref, including a historical
+        tag. The derivation must catch it from the text alone.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "hostile.yml").write_text(
+                "name: hostile\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  leak:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.FOO }}\"\n",
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("declares no environment", result.stderr)
+        self.assertIn("FOO", result.stderr)
+        self.assertIn("hostile.yml:leak", result.stderr)
+        self.assertIn(
+            "refusing: the release credentials are not environment-scoped",
+            result.stderr,
+        )
 
     def test_a_repository_level_copy_of_a_release_key_is_refused(self):
         """The load-bearing refusal: environment secrets are ADDED to
@@ -194,13 +287,37 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         self.assertIn("declares a human gate", result.stderr)
         self.assertIn("wait_timer(5)", result.stderr)
 
-    def test_an_environment_missing_a_credential_is_refused(self):
+    def test_an_environment_that_holds_none_of_its_credentials_is_refused(self):
+        """An emptied environment would make every other arm vacuous."""
         world = CredentialWorld()
-        world.secrets["apple-signing"] = ["MAC_CERT_P12_BASE64", "MAC_CERT_PASSWORD"]
+        world.secrets["apple-signing"] = []
         result = self.run_check(world)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("must hold exactly", result.stderr)
-        self.assertIn("MAC_APP_SPECIFIC_PASSWORD", result.stderr)
+        self.assertIn("holds none of the credentials its jobs reference", result.stderr)
+        self.assertIn("MAC_CERT_P12_BASE64", result.stderr)
+
+    def test_an_absent_optional_credential_is_noted_and_not_refused(self):
+        """The App Store Connect key is named by the workflow and absent from the
+        platform, because the Apple-ID notary route is the one in use.
+
+        That is a fact to report, not a reason to block a release: the notary step
+        reads the name as optional and falls back, and the Apple-ID route's own
+        names are guarded by `: "${...:?}"`, so nothing silently skips a
+        signature. This pins the one-directional rule, and it is the shape the
+        live check actually runs against.
+        """
+        world = CredentialWorld()
+        world.secrets["apple-signing"] = [
+            name for name in APPLE_SECRETS if name != "MAC_NOTARY_KEY_P8_BASE64"
+        ]
+        result = self.run_check(world)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "ok: the release credentials are environment-scoped", result.stdout
+        )
+        self.assertIn("note:", result.stderr)
+        self.assertIn("MAC_NOTARY_KEY_P8_BASE64", result.stderr)
+        self.assertIn("optional", result.stderr)
 
     def test_an_environment_holding_the_other_credentials_is_refused(self):
         """Least privilege: one credential set per environment, so a job that
@@ -209,7 +326,8 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         world.secrets["release-signing"] = list(RELEASE_SECRETS) + ["MAC_CERT_P12_BASE64"]
         result = self.run_check(world)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("must hold exactly", result.stderr)
+        self.assertIn("which no job that declares release-signing references", result.stderr)
+        self.assertIn("it must hold only", result.stderr)
         self.assertIn("MAC_CERT_P12_BASE64", result.stderr)
 
     def test_a_missing_environment_is_refused(self):
@@ -246,8 +364,10 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
     GitHub never returns a secret's value, so the only way back from a lost
     environment secret is to re-derive it from the master copy on this machine.
     That script now sits on the release path, so it is pinned here: it must be
-    able to arm every name, and it must never be the thing that leaks one — no
-    shell tracing and no value in argv, which `ps` can see.
+    able to arm every name, and it must not leak one to GitHub's argv or to a
+    log. It does not claim argv never carries a value: two local tools take a
+    secret as an argument and offer no other form, so those windows are pinned
+    rather than denied (CT-107).
     """
 
     def test_the_provision_script_exists_and_is_executable(self):
@@ -265,7 +385,16 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
         self.assertIn("--dry-run", result.stdout)
         self.assertIn("--prune", result.stdout)
 
-    def test_the_provision_script_never_passes_a_value_in_argv(self):
+    def test_every_value_sent_to_github_arrives_on_stdin(self):
+        """CT-107: the stdin rule covers what leaves this machine for GitHub.
+
+        `gh secret set` must be the single write path and no `--body` may carry
+        a value. Two local commands are exceptions this test does not pretend
+        away — `security export -P` and `notarytool store-credentials
+        --password` take the secret in argv because neither offers another
+        form — so the header must name them instead of claiming argv is never
+        used at all.
+        """
         text = PROVISION.read_text(encoding="utf-8")
         self.assertNotIn("set -x", text, "shell tracing would print a value")
         self.assertNotIn("--body", text, "argv is visible to ps; values must arrive on stdin")
@@ -274,6 +403,14 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
             1,
             "every write must go through the single stdin helper",
         )
+        self.assertNotIn(
+            "passes every value on standard input rather than in argv", text,
+            "the header must not claim argv never carries a value")
+        self.assertIn(
+            "those argv windows exist and are pinned rather than denied", text)
+        self.assertIn('-P "$pw"', text,
+                      "the pinned security-export argv window must stay named")
+        self.assertIn("notarytool store-credentials", text)
 
     def test_the_provision_script_is_pinned_to_the_documented_material(self):
         text = PROVISION.read_text(encoding="utf-8")

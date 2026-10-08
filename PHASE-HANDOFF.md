@@ -14,7 +14,7 @@ payload check could be made to *pass* while substituted code ran inside it
 console fix and of the Linux AppImage remains in this file's history and
 in `releases/`; those port builds are superseded by the unified pipeline.
 
-## Current stop point — 0.6.8 answers cycle 4; the cycle-5 plan is next and unsigned
+## Current stop point — 0.6.8 answered cycle 4, cycle 5 graded it BLOCKED, and the classes are now fixed
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
@@ -34,10 +34,40 @@ by two things, not by a count: Copper proved its own failure state
 (**CT-90**) and Red's High (**CT-72**) stood. Report, plan, lock and index
 are in this repository's root.
 
-**0.6.8 is committed and is not published.** Cycle 4's findings are
-answered in code and in the round-trip ledger
-(`releases/PATCH-0.6.8.md` is the evidence record; every ID the cycle-4
-report carried is accounted for). The cycle-5 plan is
+**The cycle-5 panel graded ⛔ BLOCKED as well**, on three independent failure
+states in the same revision: Red's High **CT-72** stood (a BSMS naming one
+signer key twice under two spellings parsed as an honest 2-of-2), Orange
+recorded the sweep's token decision as wrong (**CT-73**, a spaced
+`contents : write` walked past the write arm while a comment satisfied the
+read-only arm) and Copper again proved its own failure state (**CT-90**: the
+payload check ran with `-I -P`, which does not stop a `.pth` site hook, and it
+pinned two files of 115). The report is
+`bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.8.md`, published on
+`main`. Its post-mortem is the reason the current work is framed as classes
+rather than findings: each cycle-4 fix had closed the demonstration, so a green
+test meant the old proof of concept failed, never that the class was shut.
+
+**0.6.8 is committed and is not published.** Cycle 4's findings are answered in
+code and in the round-trip ledger, and the cycle-5 grade has now been answered
+in a second round on the same revision: duplicate signer keys are refused by key
+material and by a second gate in `signing.py::parse_multisig_script` (CT-72);
+the HWI payload pin covers all 115 `.py` files as literals in `probe.py`, the
+check child runs `-I -S -P` and is handed the package roots as argv, and every
+prepared build environment runs `scripts/check-hwi-payload.py` against the real
+lock (CT-90); the publish sweep parses `permissions:` and strips comments before
+any decision (CT-73/CT-102); the credential check derives its watched names from
+the workflow text (CT-97, which is how `MAC_NOTARY_KEY_P8_BASE64` was missed);
+the Windows helper's identity is documented as self-asserted rather than claimed
+to sit inside a signature (CT-105); and a hard link is refused as well as a
+symlink (CT-92). `releases/PATCH-0.6.8.md` carries the round and its
+break-and-watch evidence; the 622-test suite, `bash -n`, the workflow YAML parse
+and the ten `node` UI suites are green on this tree. Two items remain owner
+decisions, not agent calls: whether the Windows helper gets an Authenticode
+signature or its sidecar moves out of the writable directory (CT-105), and
+whether the human gate on `release-signing` is restored or that environment
+moves onto a publish-only job (CT-97/CT-106).
+
+The cycle-5 plan is
 `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
 cycle-4 plan carried verbatim with the target revision moved to the
 0.6.8 remediation commit `bc92f054822008510249e743a60033009dc4995a`, and section 9 re-signed by the
@@ -52,10 +82,13 @@ open item, **CT-97**, is fixed at the repository level by the owner's
 2026-10-07 direction: the release credentials live in the `release-signing` and
 `apple-signing` environments, each deployable only from `main` and declaring no
 human gate, so a historical tag's frozen workflow cannot read them and a
-promotion never pauses for a person. All five values are environment-scoped and
+promotion never pauses for a person. All five stored values are environment-scoped and
 the repository secret list is empty; the last one, `MAC_APP_SPECIFIC_PASSWORD`,
 which no machine here can re-derive, was moved on 2026-10-08 without owner action
-by sealing it to a key held only locally. The recovery path is scripted
+by sealing it to a key held only locally. The notarize path references a sixth
+name, `MAC_NOTARY_KEY_P8_BASE64`, which is not stored in either environment yet
+and is reported as a `note:` rather than silently omitted, because the check
+derives its watched names from the workflow text (cycle 5, WO-4). The recovery path is scripted
 (`scripts/provision-release-credentials.sh`), and
 `scripts/check-release-credentials.sh` prints
 `ok: the release credentials are environment-scoped, main-only, and unreachable

@@ -55,21 +55,46 @@ byte check that the helper does not get a vote in:
 
 - **Frozen builds** execute the bundled helper beside the app and require
   `hwi.sha256` to match it. Each of `scripts/build-macos.sh`,
-  `build-linux.sh` and `build-windows.ps1` writes that sidecar from the
-  helper it just built and signed; `scripts/build-sbom.py` records the same
+  `build-linux.sh` and `build-windows.ps1` writes that sidecar from the helper
+  it just built (signed only on macOS); `scripts/build-sbom.py` records the same
   digest as `hwi_helper_sha256` and fails rather than publish an SBOM that
-  disagrees with the artifact. The sidecar lives **inside the signed bundle** —
-  `Contents/Resources/hwi.sha256` on macOS, where codesign seals it (macOS
-  refuses to seal an `.app` that carries a non-code file in `Contents/MacOS`),
-  and beside the helper on Windows and Linux. `probe._hwi_sidecars` and
-  `build_sbom.helper_sidecars` list the same places; every present copy must
-  agree with the helper's bytes.
+  disagrees with the artifact. Where the sidecar lives decides what it is worth,
+  and that differs by platform (CT-105):
+
+  * **macOS** — `Contents/Resources/hwi.sha256`, inside the `.app` that codesign
+    sealed (macOS refuses to seal an `.app` that carries a non-code file in
+    `Contents/MacOS`). Replacing the helper therefore means breaking a signature
+    the owner can verify with `codesign`/`spctl`.
+  * **Windows and Linux** — the sidecar sits beside the helper in the same
+    directory, and this app ships no code signature on either platform. A local
+    writer who can replace `hwi.exe` can replace `hwi.sha256` in the same
+    breath, so the sidecar there proves the build is complete and uncorrupted,
+    **not** that the helper is the one this project published. That is the trust
+    model as built; the published `SHA256SUMS`/`SHA256SUMS.asc` pair is what
+    establishes the published bytes, and it is checked by the person
+    downloading, not by the app.
+
+  `probe._hwi_sidecars` and `build_sbom.helper_sidecars` list the same places;
+  every present copy must agree with the helper's bytes.
 - **Source mode executes no helper binary at all.** It runs the repository's
   own `scripts/hwi_entry.py` under the running interpreter, so there is
   nothing on `PATH` for a neighbour to replace — `shutil.which` is gone from
   `probe.py`. The remaining substitution surface is the `hwilib` that entry
-  imports, and `HWI_PAYLOAD_PINS` in `probe.py` pins `hwilib/__init__.py`
-  and `hwilib/_cli.py` by SHA-256, hashed by the anchored interpreter.
+  imports, and `HWI_PAYLOAD_MANIFEST` in `probe.py` pins **every one of the 115
+  `.py` files** the 3.2.0 release ships, by SHA-256, hashed by the anchored
+  interpreter. `HWI_PAYLOAD_PINS` keeps the two file names as the named anchors
+  (`__init__.py` and `_cli.py`), but the tree is what is checked: a poisoned
+  sibling module — `commands.py` is imported on every device call — or an added
+  file fails the check instead of passing it (CT-90). The check child runs with
+  `-I -S -P`, so a `.pth` in the environment's site directory cannot execute
+  before it hashes; the old `-I -P` left `site` enabled (CT-90). CI runs the
+  same check against the locked build environment in all three build jobs
+  (`scripts/check-hwi-payload.py`), so the accept half is exercised against
+  real hwi bytes rather than fixture bytes only (CT-112). The check child and
+  the helper are separate processes, so the parent reads every file the child
+  reported once more immediately before it spawns the helper
+  (`_require_unchanged`); a swap written into that window is refused rather
+  than run (CT-90).
 - **An explicitly named helper** (`--hwi /path/to/hwi`) must carry its own
   `hwi.sha256`. Without one it is refused before it is executed.
 
@@ -156,12 +181,19 @@ Nothing about this is a one-line change. In order:
 
 1. Bump `hwi` in `requirements-desktop.txt`.
 2. Regenerate **both** hash-locked files for **Python 3.12**.
-3. **Recompute `HWI_PAYLOAD_PINS` in `probe.py`** from the new `hwilib/__init__.py`
-   and `hwilib/_cli.py`, and update `test_the_payload_pins_pin_the_published_hwilib_files`
-   with the new literals. This is not optional: the pins are what make a
-   substituted `hwilib` refuse to run, and a bump that leaves the old pins in
-   place fails every source-mode device command. The new digests also go in
-   `releases/PATCH-<version>.md`.
+3. **Regenerate `HWI_PAYLOAD_MANIFEST` in `probe.py`** from the new release's
+   `hwilib` tree — every `.py` file it ships, not just the two named pins — and
+   keep `HWI_PAYLOAD_PINS` in step with `__init__.py` and `_cli.py`. Update
+   `test_the_payload_manifest_pins_the_published_hwilib_tree` with the new
+   literals **and** the new whole-tree digest; the test recomputes the digest
+   from the table, so a table that has been edited by hand fails there. This is
+   not optional: the tree pin is what makes a substituted `hwilib` refuse to
+   run, and a bump that leaves the old pin in place fails every source-mode
+   device command. The new digests also go in `releases/PATCH-<version>.md`.
+   Generate it from the locked environment with
+   `python - <<'PY'` reading `hashlib.sha256` over `sorted(root.rglob("*.py"))`,
+   and confirm the accept path with
+   `.build-venv/bin/python scripts/check-hwi-payload.py` before publishing.
 4. Update the Python guard in `scripts/build-macos.sh` if the supported range moved.
 5. Update the Python pin at **every** `python-version:` site — four in
    `.github/workflows/build-candidate.yml` plus one each in `windows-inputs.yml`

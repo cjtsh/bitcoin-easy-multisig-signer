@@ -26,26 +26,57 @@ environment-scoped (CT-97), recoverable only by re-deriving them with
 `scripts/provision-release-credentials.sh`. Every fix is held by a test
 demonstrated able to fail, and `releases/PATCH-0.6.8.md` is the evidence
 record and the round trip of every finding the cycle-4 report carried.
-**0.6.8 is not published.** The cycle-5 audit runs on this revision first,
-against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
-cycle-4 plan carried verbatim with the target revision moved to commit
+**0.6.8 is not published.** The cycle-5 audit ran against this revision under
+`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the cycle-4
+plan carried verbatim with the target revision moved to commit
 `bc92f054822008510249e743a60033009dc4995a`, and section 9 re-signed by the
-owner on 08 OCT 2026 for that revision, because changes after the 07 OCT 2026
-signature — the provisioning
-script, the gate-free and Windows-portability fix, then the source-archive
-recipe fix — moved the freeze past it. The signed, notarized `publish=false`
-candidate is green: run 37783584533 at `1a5e9bf` (documentation only on top of the
-frozen revision) passed all seven jobs and published nothing — the publish step took
-its documented `publish=false` refusal path before any tag or release was created. The
-owner hardware walkthrough is what gates promotion now.
+owner on 08 OCT 2026 for that revision — and its report,
+`bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.8.md`, graded **⛔
+BLOCKED**: 0 Critical, 1 High, 4 Medium, 10 Low, 5 Info, with Red (CT-72),
+Orange (CT-73) and Copper (CT-90) each independently forcing the grade. The
+report is published on `main` for anyone to read.
+
+**The tree in front of you is the cycle-5 remediation of that grade**, a
+second round on the same 0.6.8 revision. Where cycle 4 closed the
+*demonstrations* the audit had used, this round closes the *classes*:
+a duplicate signer key is now refused by key material — public point plus
+chain code — so re-spelling it under another network version or another
+origin fingerprint changes nothing, and a compiled witness script that names
+one public key twice is refused independently (CT-72); the source-mode HWI
+payload check pins all 115 `.py` files of the tree as literals, runs its
+check child with `-I -S -P` so a site-packages `.pth` cannot execute inside
+it, hands that child the package roots as argv because `-S` removes the name
+it could otherwise resolve, compares the whole set in both directions, and
+runs against the real lock in every prepared build environment (CT-90); the
+publish-path sweep strips comments before any decision and judges the token
+grant from a parsed `permissions:` mapping, so a spaced key is a write grant
+and a comment is never evidence (CT-73/CT-102); the credential check derives
+its watched names from the workflow text instead of a hand-typed list, which
+is how `MAC_NOTARY_KEY_P8_BASE64` was being missed (CT-97); the Windows
+helper's trust model is stated honestly rather than claimed away (CT-105);
+and a hard link is refused, not only a symlink (CT-92). `releases/PATCH-0.6.8.md`
+carries the round in full, including what is *not* closed.
+
+The signed, notarized `publish=false` candidate for the frozen cycle-5
+revision is green: run 37783584533 at `1a5e9bf` (documentation only on top of
+the frozen revision) passed all seven jobs and published nothing — the
+publish step took its documented `publish=false` refusal path before any tag
+or release was created. That candidate predates this remediation round, so it
+is evidence about the frozen revision and not about the tree in front of you.
+The owner hardware walkthrough and a cycle-6 audit of this tree are what gate
+promotion now.
 The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`
 environments, each deployable only from `main` and declaring no human gate, so a
 dispatch at a historical tag cannot read them and a promotion never pauses for a
-person. All five values are environment-scoped and the repository-level secret
-list is empty; the last one, `MAC_APP_SPECIFIC_PASSWORD`, which no machine here
-can re-derive, was moved on 2026-10-08 without owner action by sealing it to a
-key held only locally. `scripts/check-release-credentials.sh` prints
+person. All five stored values are environment-scoped and the repository-level
+secret list is empty; the last one, `MAC_APP_SPECIFIC_PASSWORD`, which no machine
+here can re-derive, was moved on 2026-10-08 without owner action by sealing it to a
+key held only locally. The check now derives its watched names from the workflow
+text rather than a typed list, so the sixth name the notarize path references,
+`MAC_NOTARY_KEY_P8_BASE64`, is reported as a `note:` until the owner stores it
+and is refused if it ever appears at repository level or in the wrong environment
+(cycle 5, CT-97). `scripts/check-release-credentials.sh` prints
 `ok: the release credentials are environment-scoped, main-only, and unreachable
 from any tag`; the recovery path is scripted
 (`scripts/provision-release-credentials.sh`), and `SIGNING.md` carries the master

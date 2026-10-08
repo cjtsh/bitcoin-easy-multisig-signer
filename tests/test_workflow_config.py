@@ -22,7 +22,13 @@ import subprocess
 import tempfile
 import unittest
 
-from support import bash_syntax_check, find_build_recipe, run_bash_file, run_bash_script
+from support import (
+    bash_syntax_check,
+    find_build_recipe,
+    run_bash_file,
+    run_bash_script,
+    workflow_credential_scope,
+)
 
 try:
     import yaml
@@ -191,6 +197,32 @@ class WorkflowConfigTests(unittest.TestCase):
             self.assertNotIn("brew install", script)
         self.assertNotIn('echo "KEYCHAIN_PASSWORD=', self.text)
 
+    def test_each_prepared_build_environment_proves_its_hwilib_matches_the_pin(self):
+        """CT-90/CT-112: the payload pin's accept half must run against the real
+        locked environment before the build, not only against fixture bytes."""
+        interpreters = {
+            "macos": ".build-venv/bin/python",
+            "windows": ".build-venv/Scripts/python.exe",
+            "linux": ".build-venv/bin/python",
+        }
+        for job, interpreter in interpreters.items():
+            names = [step.get("name", "") for step in self.data["jobs"][job]["steps"]]
+            self.assertIn("The installed hwilib must match the pinned tree", names,
+                          f"the {job} build must verify the locked hwilib tree")
+            step = self.data["jobs"][job]["steps"][
+                names.index("The installed hwilib must match the pinned tree")]
+            self.assertIn(f"{interpreter} scripts/check-hwi-payload.py", step["run"])
+            self.assertIn("set -euo pipefail", step["run"],
+                          "a check that cannot fail the step proves nothing")
+        macos = [step.get("name", "") for step in self.data["jobs"]["macos"]["steps"]]
+        self.assertLess(
+            macos.index("Prepare hash-locked build environment before signing secrets"),
+            macos.index("The installed hwilib must match the pinned tree"))
+        self.assertLess(
+            macos.index("The installed hwilib must match the pinned tree"),
+            macos.index("Import the Developer ID certificate"),
+            "the tree is verified before any signing material enters the job")
+
     def test_only_manual_dispatch_can_publish(self):
         """A source push must not publish a money-moving desktop app."""
         trigger = self.data.get("on", self.data.get(True))
@@ -214,6 +246,24 @@ class WorkflowConfigTests(unittest.TestCase):
         # and the release gate runs the caller's command. It must arrive as
         # environment data, so no expression belongs in this run block at all.
         self.assertNotIn("${{", guard["run"])
+
+    def test_no_run_block_that_consumes_the_candidate_id_interpolates_an_expression(self):
+        """CT-98: the version job's guard was pinned; its consumers were not.
+
+        The checksums job's "Download and verify the tested candidate
+        artifacts" step reads CANDIDATE_RUN_ID a dozen times. A dispatch input
+        is attacker-shaped text, so an expression inside any of these bodies is
+        code execution in the release job rather than a value.
+        """
+        consumers = [step for job in self.data["jobs"].values()
+                     for step in job.get("steps", [])
+                     if "$CANDIDATE_RUN_ID" in str(step.get("run", ""))]
+        self.assertGreaterEqual(
+            len(consumers), 2,
+            "both the default-branch guard and the artifact download read the id")
+        for step in consumers:
+            with self.subTest(step=step.get("name", "?")):
+                self.assertNotIn("${{", step["run"])
 
     def test_versioned_release_notes_are_included_when_present(self):
         self.assertIn('release_notes="releases/RELEASE-NOTES-${VERSION}.md"', self.text)
@@ -991,6 +1041,138 @@ class PublishPathSweepTests(unittest.TestCase):
                          f"the sweep refused a read-only branch:\n{out}")
         self.assertNotIn("refusing:", out)
 
+    # -- CT-73 + CT-102, cycle 5: the text sweep moved in two directions. -----
+    #
+    # The cycle-5 audit walked past the write arm with `contents : write` (a
+    # real YAML grant that a regex demanding the colon immediately after the key
+    # did not match) and satisfied the read-only arm with a COMMENT. Every
+    # fixture below is a shape the old sweep either missed or blamed wrongly.
+    # The false-positive direction matters as much: prose must not be able to
+    # move a verdict either way.
+
+    def test_the_sweep_parses_a_spaced_permission_key(self):
+        """`contents : write` is a grant to YAML, and was not to a regex."""
+        body = self._recipe(
+            "spaced",
+            "run: echo ok",
+            permissions="  contents: read\n"
+                        "permissions:\n"
+                        "  contents : write\n",
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-contents-write")
+
+    def test_the_sweep_parses_a_quoted_flow_permission_mapping(self):
+        """`permissions: {contents: "write"}` at job level is still a grant."""
+        body = self._recipe("flow", "run: echo ok") + (
+            "    permissions: {contents: \"write\"}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-contents-write")
+
+    def test_a_comment_cannot_prove_a_token_is_read_only(self):
+        """The exact evasion: no parsed grant, no pass. Prose is not a proof."""
+        body = (
+            "name: liar\n"
+            "on: workflow_dispatch\n"
+            "# permissions: read-all\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "no-read-only-token-permissions")
+
+    def test_the_sweep_refuses_a_github_script_publisher(self):
+        """`actions/github-script` runs JavaScript the sweep cannot read."""
+        body = self._recipe("script", "uses: actions/github-script@v7")
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "runs-github-script")
+
+    def test_the_sweep_refuses_a_camel_case_rest_release_call(self):
+        """The REST write in JavaScript's spelling."""
+        body = self._recipe(
+            "camel",
+            "run: node -e \"github.rest.repos.createRelease({})\"",
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "calls-the-rest-release-api")
+
+    def test_the_sweep_refuses_a_pat_with_the_rest_api_url(self):
+        """A PAT plus `$GITHUB_API_URL` publishes with no `contents:` grant."""
+        body = self._recipe(
+            "pat",
+            "run: curl -H \"Authorization: token $PAT\" "
+            "\"$GITHUB_API_URL/repos/o/r/releases\"",
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "talks-to-the-rest-api")
+
+    def test_the_sweep_refuses_a_reusable_release_workflow(self):
+        """A `uses:` callee is a publish path the sweep cannot read."""
+        body = self._recipe(
+            "reuse",
+            "uses: o/r/.github/workflows/release-publish.yml@main",
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "calls-a-release-workflow")
+
+    def test_a_comment_that_names_a_write_grant_is_not_an_offender(self):
+        """The false-positive half: prose is not a grant in either direction."""
+        body = self._recipe(
+            "comment",
+            "run: echo ok",
+            permissions="  contents: read\n"
+                        "# a publisher would need contents: write here\n",
+        )
+        result = self._run_one_branch("clean", body)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep blamed a comment:\n{out}")
+        self.assertIn("ok: no non-main ref carries a publish-capable workflow",
+                      out)
+
+    def test_a_comment_that_names_a_publisher_is_not_an_offender(self):
+        """A comment saying `gh release` is not a publisher either.
+
+        This is the tripwire for comment stripping itself: the parser ignores a
+        `#`-prefixed line on its own, but the substring arms would happily read
+        a command out of a sentence.
+        """
+        body = self._recipe(
+            "prose",
+            "run: echo ok",
+            permissions="  contents: read\n"
+                        "# This job never runs gh release or gh api.\n",
+        )
+        result = self._run_one_branch("clean", body)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep read a command out of a comment:\n{out}")
+        self.assertIn("ok: no non-main ref carries a publish-capable workflow",
+                      out)
+
+    def test_a_uses_line_that_only_mentions_release_is_not_a_callee(self):
+        """`.` matches a newline in bash's ERE, so the match must be per line.
+
+        This repository's own windows-inputs.yml branches were flagged by the
+        whole-body version of the reusable-workflow rule: an unrelated
+        `uses: actions/upload-artifact@…` line plus the word "release" further
+        down the file.
+        """
+        body = self._recipe(
+            "artifact",
+            "uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+            permissions="  contents: read\n"
+                        "# The release tarball ships configure.\n",
+        )
+        result = self._run_one_branch("clean", body)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep mispaired a uses: line with a comment:\n{out}")
+
     def test_the_sweep_leaves_no_private_refs_in_the_callers_repository(self):
         """CT-76: a clean run may not leave fifteen branches behind.
 
@@ -1092,7 +1274,15 @@ class SweepFailClosedPins(unittest.TestCase):
         self.assertNotRegex(code, r"(^|[\s|;&])grep(\s|$)",
                             "the sweep must not depend on grep to decide a refusal")
         self.assertIn("nocasematch", self.text)
-        self.assertIn("CONTENT_WRITE_RE", self.text)
+        # CT-73: the token decision is a parsed mapping, not a regex over the
+        # file text. The whole-body regexes are what the cycle-5 audit walked
+        # past with `contents : write` and satisfied with a comment.
+        self.assertIn("permissions_verdict", self.text,
+                      "the token grant must be parsed, not pattern-matched")
+        self.assertIn("strip_comments", self.text,
+                      "comments must be removed before any decision")
+        self.assertNotIn("CONTENT_WRITE_RE", self.text)
+        self.assertNotIn("READ_ONLY_RE", self.text)
 
     def test_the_bodies_come_from_object_ids_not_from_rev_colon_path(self):
         """`git show ref:path` is the read that went blind on Windows.
@@ -1261,21 +1451,62 @@ class ReleaseCredentialScopePins(unittest.TestCase):
     identity.
     """
 
-    RELEASE_SECRETS = ("GPG_PRIVATE_KEY", "GPG_PASSPHRASE")
-    APPLE_SECRETS = (
-        "MAC_CERT_P12_BASE64",
-        "MAC_CERT_PASSWORD",
-        "MAC_APP_SPECIFIC_PASSWORD",
-    )
+    # CT-97, cycle 5: the watched set is *derived* from the workflow text, not
+    # typed by hand. The five-name constant in this class and in the check missed
+    # `MAC_NOTARY_KEY_P8_BASE64`, which the macos job really names, so a live
+    # credential sat outside the watched set that was supposed to cover it.
+    #
+    # This literal is the expectation the derivation is held to, so adding a
+    # credential to a workflow turns a test red instead of quietly widening what
+    # is watched. The empty key names jobs that declare no environment.
+    DOCUMENTED_SCOPE = {
+        "apple-signing": (
+            "MAC_APP_SPECIFIC_PASSWORD",
+            "MAC_CERT_P12_BASE64",
+            "MAC_CERT_PASSWORD",
+            "MAC_NOTARY_KEY_P8_BASE64",
+        ),
+        "release-signing": ("GPG_PASSPHRASE", "GPG_PRIVATE_KEY"),
+    }
     SCOPE = {"macos": "apple-signing", "checksums": "release-signing"}
+
+    @classmethod
+    def setUpClass(cls):
+        derived: dict = {}
+        for _workflow, _job, environment, name in workflow_credential_scope():
+            derived.setdefault(environment, set()).add(name)
+        cls.derived = {env: tuple(sorted(names)) for env, names in derived.items()}
 
     def setUp(self):
         self.text = ACTIVE.read_text(encoding="utf-8")
         self.jobs = yaml.safe_load(self.text)["jobs"]
 
     @property
+    def RELEASE_SECRETS(self) -> tuple:
+        return self.derived.get("release-signing", ())
+
+    @property
+    def APPLE_SECRETS(self) -> tuple:
+        return self.derived.get("apple-signing", ())
+
+    @property
     def credentials(self) -> tuple:
-        return self.RELEASE_SECRETS + self.APPLE_SECRETS
+        return tuple(sorted(set(self.RELEASE_SECRETS) | set(self.APPLE_SECRETS)))
+
+    def test_the_watched_names_are_exactly_the_documented_set(self):
+        """The derivation, not a hand-typed tuple, decides what is watched.
+
+        A credential added to a workflow lands here as a changed mapping, so its
+        author must also decide the environment and update SIGNING.md. A name in
+        a job that declares **no** environment lands under the empty key and
+        fails this test outright -- that is the shape that reaches every ref.
+        """
+        self.assertEqual(
+            self.derived,
+            self.DOCUMENTED_SCOPE,
+            "the credential scope changed; move it deliberately and update "
+            "SIGNING.md and scripts/check-release-credentials.sh together",
+        )
 
     def _job_body(self, name: str) -> str:
         """The raw text of one top-level job, comments included.
@@ -1290,11 +1521,25 @@ class ReleaseCredentialScopePins(unittest.TestCase):
         self.assertIsNotNone(match, f"{ACTIVE.name} has no job named {name}")
         return match.group(1)
 
+    SECRET_REFERENCE = re.compile(
+        r"secrets\s*\.\s*([A-Za-z0-9_-]+)"
+        r"|secrets\s*\[\s*['\"]([A-Za-z0-9_-]+)['\"]\s*\]"
+    )
+
     def _jobs_naming_a_credential(self) -> dict:
+        """Every job that reads any ``secrets.NAME``, known name or not.
+
+        Deliberately not limited to ``self.credentials``: a brand-new credential
+        is exactly the case this must catch, so the scan is a regex over the raw
+        job body and an unknown name is reported like any other.
+        """
         found = {}
         for name in self.jobs:
             body = self._job_body(name)
-            named = sorted(s for s in self.credentials if f"secrets.{s}" in body)
+            named = sorted(
+                {match.group(1) or match.group(2)
+                 for match in self.SECRET_REFERENCE.finditer(body)}
+            )
             if named:
                 found[name] = (body, named)
         return found
@@ -1337,9 +1582,55 @@ class ReleaseCredentialScopePins(unittest.TestCase):
                     "credential is a second, unscoped path to it",
                 )
 
+    def test_no_run_body_interpolates_the_version_unquoted(self):
+        """CT-110: the expression is substituted before bash ever parses the line.
+
+        An unquoted `... ${{ needs.version.outputs.version }}` in a run body is
+        word-split by the shell, so a version output carrying a space or a shell
+        metacharacter changes the command. `env:` entries are YAML scalars and
+        reach the process as one value, so only run bodies must quote.
+        """
+        offenders = []
+        for number, line in enumerate(self.text.splitlines(), start=1):
+            if "${{ needs.version.outputs.version }}" not in line:
+                continue
+            stripped = line.strip()
+            if re.fullmatch(
+                    r"-?\s*[A-Za-z_][A-Za-z0-9_]*:\s*"
+                    r"\$\{\{ needs\.version\.outputs\.version \}\}", stripped):
+                continue
+            if '"${{ needs.version.outputs.version }}"' not in line:
+                offenders.append(f"line {number}: {stripped}")
+        self.assertEqual(
+            offenders, [],
+            "every shell use of the version must be quoted: " + repr(offenders))
+
+    def test_the_release_environment_claim_matches_the_job_key(self):
+        """CT-106: `environment:` is a job key and this job has no job-level gate.
+
+        The comment used to say a candidate run "never enters this environment
+        at all". A `publish=false` promotion still enters release-signing — it
+        only skips the step that reads the key. The gate protects the secret,
+        not the environment, and the prose has to say which one it protects.
+        """
+        # Prose is wrapped and each line carries a `#`, so flatten it after
+        # dropping the comment markers; otherwise a phrase split across two
+        # comment lines reads as if a `#` sat in the middle of the sentence.
+        prose = " ".join(re.sub(r"^\s*#\s?", "", line)
+                         for line in self.text.splitlines())
+        self.assertNotIn("never enters this environment at all", prose)
+        self.assertIn("only skips the step that reads the key", prose)
+        self.assertIn("That gate protects the secret, not the environment", prose)
+        body = self._job_body("checksums")
+        self.assertNotRegex(
+            body.split("steps:")[0], r"^\s{4}if:",
+            "if the job gains a job-level `if:` the comment must change with it")
+
     def test_the_release_key_is_reachable_only_on_the_publish_path(self):
-        """The GPG step is already `if: inputs.publish`, so the release-signing
-        environment is entered on a promotion and never by a candidate run."""
+        """The GPG step is already `if: inputs.publish`, so the release key is
+        read only on the publish path. The environment itself is entered by any
+        promotion, candidate or not, because `environment:` is a job key with no
+        job-level gate — the gate protects the secret, not the environment."""
         steps = re.split(r"\n      - ", self._job_body("checksums"))
         naming = [step for step in steps if "secrets.GPG_" in step]
         self.assertEqual(len(naming), 1, "expected exactly one step in checksums to name the release key")

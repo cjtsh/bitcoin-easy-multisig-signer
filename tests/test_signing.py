@@ -9,6 +9,7 @@ finaliser that produced well-formed but unspendable bytes would fail these tests
 import base64
 import sys
 import unittest
+from hashlib import sha256
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -309,10 +310,54 @@ class FinalizeTests(unittest.TestCase):
             accept_signature_update(before, after)
 
     def test_a_script_that_is_not_multisig_is_refused(self):
-        with self.assertRaises(SigningError):
-            parse_multisig_script(b"\x00\x14" + b"\x11" * 20)
-        with self.assertRaises(SigningError):
-            parse_multisig_script(b"")
+        for bad in (b"\x00\x14" + b"\x11" * 20, b""):
+            with self.assertRaises(SigningError):
+                parse_multisig_script(bad)
+
+    def test_a_compiled_script_with_a_duplicated_pubkey_is_refused(self):
+        """CT-72 second gate: the compiled witness script carries raw key bytes.
+
+        The parse-time gate sees a descriptor and could in principle be bypassed
+        by a later parser change; the script that actually spends is raw
+        secp256k1 points, so it refuses a duplicate on its own. The honest
+        2-of-2 control proves the refusal is about duplication, not the shape.
+        """
+        first = bytes.fromhex(
+            "031561fd0d8902f69e80743be75bfac83ec3ddf6607ce2d2f8526bb0991925e0ee")
+        second = bytes.fromhex(
+            "0241ea5cb48ecc741308624baf221aa4e3057447056e4fa48749572714abff29f1")
+        duplicated = (bytes([0x52]) + b"\x21" + first + b"\x21" + first
+                      + bytes([0x52, 0xAE]))
+        with self.assertRaisesRegex(SigningError, "same public key more than once"):
+            parse_multisig_script(duplicated)
+        honest = (bytes([0x52]) + b"\x21" + first + b"\x21" + second
+                  + bytes([0x52, 0xAE]))
+        self.assertEqual(parse_multisig_script(honest), (2, [first, second]))
+
+    def test_a_duplicate_key_input_cannot_reach_complete_with_one_signature(self):
+        """End-to-end shape (CT-72): one device approval must not satisfy a quorum.
+
+        The witness script is injected directly, so the test does not depend on
+        the parser refusing the descriptor first: even if some future path built
+        such a PSBT, the duplicate is caught when the script is read, so the
+        quorum question is never answered -- and finalisation refuses too. On the
+        unfixed code the duplicate was invisible here, so execution ran on to the
+        next refusal; the assertion names the message that says *why* it stopped.
+        """
+        packet, keys, prepared = prepared_psbt()
+        scope = packet.inputs[0]
+        threshold, pubkeys = parse_multisig_script(scope.witness_script.data)
+        self.assertEqual(threshold, 2)
+        duplicated = (bytes([0x52]) + b"\x21" + pubkeys[0] + b"\x21" + pubkeys[0]
+                      + bytes([0x52, 0xAE]))
+        scope.witness_script = Script(duplicated)
+        scope.witness_utxo.script_pubkey = Script(b"\x00\x20" + sha256(duplicated).digest())
+        packet.sign_with(keys[0])
+        with self.assertRaisesRegex(SigningError, "same public key more than once") as raised:
+            is_complete(packet)
+        self.assertNotIn("does not own its output", str(raised.exception))
+        with self.assertRaisesRegex(SigningError, "same public key more than once"):
+            finalize_multisig(packet, prepared["txid"])
 
     def test_a_witness_script_that_does_not_own_its_output_is_refused(self):
         """Prevout-ownership pin, part 1 (CT-15): the script hash must match."""

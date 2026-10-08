@@ -202,6 +202,15 @@ class ToolchainDisclosurePins(unittest.TestCase):
     named field instead of in silence.
     """
 
+    # CT-100: iterating TOOLCHAIN_PROBES proves only that the table agrees with
+    # itself, so deleting a probe or renaming one stayed green while the SBOM
+    # field silently disappeared. These names are literals, independent of the
+    # source they describe.
+    EXPECTED_PROBE_NAMES = (
+        "toolchain_platform", "toolchain_python", "toolchain_cc",
+        "toolchain_clang", "toolchain_msbuild", "toolchain_docker",
+    )
+
     def _inventory(self):
         embedded = {name: "b" * 64 for name in build_sbom.native_library_names()}
         return build_sbom.build("a" * 64, ROOT, set(), embedded, helper_sha="c" * 64)
@@ -212,9 +221,13 @@ class ToolchainDisclosurePins(unittest.TestCase):
             result = self._inventory()
         properties = {entry["name"]: entry["value"]
                       for entry in result["metadata"]["properties"]}
-        self.assertTrue(build_sbom.TOOLCHAIN_PROBES)
+        self.assertEqual([name for name, _ in build_sbom.TOOLCHAIN_PROBES],
+                         list(self.EXPECTED_PROBE_NAMES),
+                         "the SBOM must carry exactly these toolchain fields")
         for name, argv in build_sbom.TOOLCHAIN_PROBES:
             self.assertEqual(properties[name], "banner of " + argv[0], name)
+        for name in self.EXPECTED_PROBE_NAMES:
+            self.assertIn(name, properties)
 
     def test_a_tool_that_is_not_installed_is_recorded_and_not_omitted(self):
         with patch.object(build_sbom.subprocess, "run",

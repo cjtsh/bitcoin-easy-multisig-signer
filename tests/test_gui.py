@@ -75,8 +75,10 @@ class LocalGuiTests(unittest.TestCase):
         with urlopen(self.base, timeout=3) as response:
             return response.read().decode()
 
-    def get(self, route, token=None):
+    def get(self, route, token=None, origin=None):
         headers = {"X-Local-Token": self.app.token if token is None else token}
+        if origin is not None:
+            headers["Origin"] = origin
         request = Request(self.base + route, headers=headers)
         with urlopen(request, timeout=3) as response:
             return json.load(response)
@@ -471,6 +473,30 @@ class LocalGuiTests(unittest.TestCase):
             self.post("/api/import", {"chain": "testnet4", "text": text},
                       token="wrong-token")
         self.assertEqual(err.exception.code, 403)
+
+    def test_a_get_is_gated_by_the_token_and_not_by_origin(self):
+        """CT-113: GET has no Origin check, and that is deliberate.
+
+        The Origin test exists to stop a cross-origin page from causing a state
+        change. A GET here changes nothing: "/" serves the shell with no wallet
+        data and no token, and the price and fee feeds carry data only with the
+        token - which a browser will not attach cross-origin without a CORS
+        preflight this server never grants. So the token is the whole control on
+        GET, and a foreign Origin carrying a valid token is answered. If a
+        state-changing GET is ever added this test is the tripwire: the note in
+        do_GET stops being true and this assertion has to change with it.
+        """
+        with self.assertRaises(HTTPError) as err:
+            self.get("/api/price", token="wrong-token")
+        self.assertEqual(err.exception.code, 403)
+        with patch("gui.fetch_btc_usd", return_value={"usd": 1}):
+            self.assertEqual(
+                self.get("/api/price", origin="https://not-local.example"),
+                {"usd": 1})
+        # "/" is reachable without a token and carries no wallet material.
+        page = self.get_page()
+        self.assertIn("PSBT means Partially Signed Bitcoin Transaction.", page)
+        self.assertNotIn(self.app.token, page)
 
     def test_a_non_ascii_token_header_reaches_the_403_and_not_a_crash(self):
         """CT-74: bytes above 0x7F in the token header must be refused.

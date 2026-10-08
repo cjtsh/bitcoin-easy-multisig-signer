@@ -8,6 +8,7 @@ That is what a locked Trezor did to the owner's first hardware check.
 """
 
 import importlib.util
+import os
 import sys
 import tempfile
 import types
@@ -192,39 +193,81 @@ class HwiEntryTests(unittest.TestCase):
 
     # -- CT-92: the extraction directory is writable by this user ----------
 
-    def test_frozen_helper_refuses_a_linked_bundled_library(self):
-        """CT-92: a path comparison must not be satisfiable through a link.
+    BUNDLED_NAMES = ("libusb-1.0.0.dylib", "libusb-1.0.dylib",
+                     "libusb-1.0.dll", "libusb-1.0.so.0")
 
-        PyInstaller unpacks the helper into a directory this user can write to,
-        and Path.resolve() follows links, so a link planted at the bundled name
-        would make every path equality hold while loading other bytes. The link
-        itself has to be refused, before anything is loaded.
-        """
+    @staticmethod
+    def _stub_usb1():
         usb1 = types.ModuleType("usb1")
         usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
         usb1.USBDeviceHandle = type("Handle", (), {
             "releaseInterface": lambda self, interface: None})
         usb1.loadLibrary = Mock(return_value=True)
-        with tempfile.TemporaryDirectory() as folder:
-            for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib",
-                         "libusb-1.0.dll", "libusb-1.0.so.0"):
-                (Path(folder) / name).write_bytes(b"synthetic library")
+        return usb1
+
+    def _plant_links(self, folder: Path, make_link) -> Path:
+        """Put a real link at every bundled name, pointing at a payload.
+
+        A real link, not a patched `is_symlink`: the point of CT-92 is that the
+        old check asked the path and answered by name, so a test that patches
+        the predicate only re-states the implementation and stays green when the
+        guard does. The payload is the bytes the build never shipped.
+        """
+        payload = folder / "attacker-payload"
+        payload.write_bytes(b"not the library this build shipped")
+        for name in self.BUNDLED_NAMES:
+            make_link(payload, folder / name)
+        return payload
+
+    def test_frozen_helper_refuses_a_hardlinked_bundled_library(self):
+        """CT-92: a hard link is not a symlink, and it is the same inode.
+
+        `is_symlink()` answers False for it and `resolve()` has nothing to
+        follow, so a hard link planted at the bundled name made every path
+        equality hold while loading bytes this build never shipped. The check is
+        made on the descriptor now -- a regular file whose link count is one --
+        so this plants a real hard link and requires the refusal before any
+        loader is handed the path.
+        """
+        usb1 = self._stub_usb1()
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            payload = self._plant_links(folder, os.link)
+            self.assertGreater(os.stat(payload).st_nlink, 1)
             with patch.object(sys, "frozen", True, create=True), patch.object(
                 sys, "_MEIPASS", folder, create=True
-            ), patch.object(Path, "is_symlink", return_value=True), patch(
-                "ctypes.CDLL"
-            ) as loader:
+            ), patch("ctypes.CDLL") as loader:
                 with self.assertRaisesRegex(
                         RuntimeError, "not a regular file in this app"):
                     load_hwi_entry(usb1)
             loader.assert_not_called()
             usb1.loadLibrary.assert_not_called()
 
-    def test_the_libusb_preflight_refuses_a_linked_library(self):
+    def test_frozen_helper_refuses_a_symlinked_bundled_library(self):
+        """The symbolic case stays refused, and is refused on the file itself."""
+        usb1 = self._stub_usb1()
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            try:
+                self._plant_links(folder, os.symlink)
+            except (OSError, NotImplementedError) as error:  # pragma: no cover
+                self.skipTest(f"this platform will not make a symlink: {error}")
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "_MEIPASS", folder, create=True
+            ), patch("ctypes.CDLL") as loader:
+                with self.assertRaisesRegex(
+                        RuntimeError, "not a regular file in this app"):
+                    load_hwi_entry(usb1)
+            loader.assert_not_called()
+            usb1.loadLibrary.assert_not_called()
+
+    def test_the_libusb_preflight_refuses_a_hardlinked_library(self):
         """The same rule holds on the path the app's capability probe uses.
 
-        The loaded path here resolves to exactly the expected file, so only the
-        link test can refuse it — the failure mode this pins.
+        The loaded path here *is* the expected file -- `_name` is set to it and
+        `resolve()` returns it unchanged -- so only the link check can refuse
+        it. Every path comparison in this function holds; the descriptor's link
+        count is what fails.
         """
         class Context:
             def __enter__(self):
@@ -249,17 +292,18 @@ class HwiEntryTests(unittest.TestCase):
         usb1.USBContext = Context
         usb1.libusb1 = Libusb1()
         module = load_hwi_entry(usb1)
-        with tempfile.TemporaryDirectory() as folder:
-            for name in ("libusb-1.0.0.dylib", "libusb-1.0.dylib",
-                         "libusb-1.0.dll", "libusb-1.0.so.0"):
-                (Path(folder) / name).write_bytes(b"synthetic library")
-            usb1.libusb1.libusb._name = str(Path(folder) / module._usb_names[-1])
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self._plant_links(folder, os.link)
+            expected = folder / module._usb_names[-1]
+            usb1.libusb1.libusb._name = str(expected)
+            self.assertEqual(Path(str(expected)).resolve(), expected.resolve())
             old_usb1 = sys.modules.get("usb1")
             sys.modules["usb1"] = usb1
             try:
                 with patch.object(sys, "frozen", True, create=True), patch.object(
                     sys, "_MEIPASS", folder, create=True
-                ), patch.object(Path, "is_symlink", return_value=True):
+                ):
                     with self.assertRaisesRegex(
                             RuntimeError, "loaded a library outside this app"):
                         module._check_libusb()

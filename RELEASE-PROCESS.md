@@ -175,8 +175,12 @@ Tags are immutable, so the protection is a rule about which ref a run is on, and
 it holds for tags that do not exist yet. Run
 `scripts/check-release-credentials.sh` before every promotion and in every audit
 cycle: it is read-only and refuses if a credential is repository-level, an
-environment is missing or not `main`-only, its secret set changed, or an
-environment declares a human gate (a required reviewer or a wait timer). Neither
+environment is missing or not `main`-only, its secret set changed, a job names a
+credential without declaring an environment, or an environment declares a human
+gate (a required reviewer or a wait timer). The set it watches is derived from
+the `secrets.NAME` references in the workflow text, so a newly named credential
+becomes watched the day it appears rather than when someone remembers to edit a
+list; `--print-scope` shows the derived rows. Neither
 environment pauses for a person, so any agent team the owner authorises can cut a
 release. `tests/test_workflow_config.py` holds the repository half of the
 control; `SIGNING.md` carries the recovery steps.
@@ -187,8 +191,10 @@ its environment: it exports `GPG_PRIVATE_KEY` from the release key in the
 maintainer's GnuPG keyring, exports `MAC_CERT_P12_BASE64` plus a fresh
 `MAC_CERT_PASSWORD` from the `Developer ID Application: Bitseeker LLC
 (B8G5L7M8TB)` identity in the login keychain, takes
-`MAC_APP_SPECIFIC_PASSWORD` from a hidden prompt or a file, and then deletes
-whatever repository-level copies remain (`--prune`). It never prints a value and
+`MAC_APP_SPECIFIC_PASSWORD` from a hidden prompt or a file, takes
+`MAC_NOTARY_KEY_P8_BASE64` from `--notary-key-file` when the App Store Connect
+API-key notary route is in use, and then deletes whatever repository-level copies
+remain (`--prune`). It never prints a value and
 never passes one in argv, and it finishes by running the check above. GitHub
 cannot return a secret's value to anyone, so a lost environment secret is a
 re-run of that script, not a new certificate.

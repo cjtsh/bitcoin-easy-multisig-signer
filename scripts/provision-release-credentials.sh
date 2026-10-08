@@ -8,9 +8,14 @@
 # copy. Every release credential except the Apple app-specific password has one on
 # this machine — the release key is in the GnuPG keyring and the Developer ID
 # identity is in the login keychain — so this script re-derives them, re-sets them
-# and re-proves them in one command. It never prints a value, it passes every value
-# on standard input rather than in argv (argv is visible to `ps`), and it keeps its
-# working copy in a mode-700 temporary directory that is scrubbed on exit.
+# and re-proves them in one command. It never prints a value, and it keeps its
+# working copy in a mode-700 temporary directory that is scrubbed on exit. Values
+# go to GitHub on standard input, never in argv, because argv is visible to `ps`.
+# Two local tools on this path take a secret as an argument and offer no other
+# form, so those argv windows exist and are pinned rather than denied (CT-107):
+# `security export -P` when the Developer ID identity is re-exported, and
+# `notarytool store-credentials --password` when the notary profile is rebuilt.
+# Both run on the owner's own machine, once, at provisioning time.
 #
 # See SIGNING.md → "If the credentials vanish" for the runbook.
 #
@@ -35,7 +40,7 @@ LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 GPG_PASSPHRASE_PLACEHOLDER="unused-the-release-key-carries-no-passphrase"
 
 REPO="$REPO_DEFAULT"
-DRY=0; ONLY=""; PRUNE=0; VERIFY=1; KEEP=0; APP_FILE=""; APP_PROMPT=0
+DRY=0; ONLY=""; PRUNE=0; VERIFY=1; KEEP=0; APP_FILE=""; APP_PROMPT=0; NOTARY_FILE=""
 
 usage() {
   cat <<'EOF'
@@ -47,15 +52,20 @@ Usage: scripts/provision-release-credentials.sh [options]
   --only <name>[,<name>...]    provision only these secret names
   --app-password-file <path>   read MAC_APP_SPECIFIC_PASSWORD from this file
   --app-password-prompt        ask for it (input never echoed, never in history)
+  --notary-key-file <path>     read MAC_NOTARY_KEY_P8_BASE64 from this .p8 file
   --prune                      delete repository-level copies of what was touched
   --no-verify                  skip scripts/check-release-credentials.sh
   --dry-run                    print the plan and touch nothing
   --keep-temp                  keep the mode-700 temp dir (debugging only)
   -h, --help                   this text
 
-The four machine-recoverable secrets are re-derived from their master copies; the
-Apple app-specific password can only come from the owner, because only they can
-sign in to appleid.apple.com and create one.
+The four machine-recoverable secrets are re-derived from their master copies. The
+two that cannot be: the Apple app-specific password, because only the owner can
+sign in to appleid.apple.com and create one, and the App Store Connect API key,
+because only the owner can download the .p8 -- and only if they chose that notary
+route at all. Every name the workflows reference must exist in its environment, so
+this script refuses to guess: pass --app-password-file/--app-password-prompt and
+--notary-key-file for the ones you have, or remove the route from the workflow.
 EOF
 }
 
@@ -67,6 +77,7 @@ while [ $# -gt 0 ]; do
     --only) [ $# -ge 2 ] || die "--only needs a value"; ONLY="$2"; shift 2 ;;
     --app-password-file) [ $# -ge 2 ] || die "--app-password-file needs a path"; APP_FILE="$2"; shift 2 ;;
     --app-password-prompt) APP_PROMPT=1; shift ;;
+    --notary-key-file) [ $# -ge 2 ] || die "--notary-key-file needs a path"; NOTARY_FILE="$2"; shift 2 ;;
     --prune) PRUNE=1; shift ;;
     --no-verify) VERIFY=0; shift ;;
     --dry-run) DRY=1; shift ;;
@@ -92,7 +103,7 @@ want() {
 
 for name in ${ONLY//,/ }; do
   case "$name" in
-    GPG_PRIVATE_KEY|GPG_PASSPHRASE|MAC_CERT_P12_BASE64|MAC_CERT_PASSWORD|MAC_APP_SPECIFIC_PASSWORD) ;;
+    GPG_PRIVATE_KEY|GPG_PASSPHRASE|MAC_CERT_P12_BASE64|MAC_CERT_PASSWORD|MAC_APP_SPECIFIC_PASSWORD|MAC_NOTARY_KEY_P8_BASE64) ;;
     *) die "unknown secret name: $name" ;;
   esac
 done
@@ -104,6 +115,7 @@ if [ "$DRY" = 1 ]; then
   if want MAC_CERT_P12_BASE64; then echo "would set MAC_CERT_P12_BASE64 in $APPLE_ENV (a fresh p12 exported from the login keychain identity \"$CERT_LABEL\" $CERT_SHA1)"; fi
   if want MAC_CERT_PASSWORD; then echo "would set MAC_CERT_PASSWORD in $APPLE_ENV (a fresh random password)"; fi
   if want MAC_APP_SPECIFIC_PASSWORD; then echo "would set MAC_APP_SPECIFIC_PASSWORD in $APPLE_ENV from --app-password-file or --app-password-prompt"; fi
+  if want MAC_NOTARY_KEY_P8_BASE64; then echo "would set MAC_NOTARY_KEY_P8_BASE64 in $APPLE_ENV from --notary-key-file (the App Store Connect API key, base64)"; fi
   if [ "$PRUNE" = 1 ]; then echo "would delete any repository-level copy of those names"; fi
   if [ "$VERIFY" = 1 ]; then echo "would run scripts/check-release-credentials.sh"; fi
   exit 0
@@ -185,10 +197,20 @@ provision_app_password() {
   set_secret "$APPLE_ENV" MAC_APP_SPECIFIC_PASSWORD "$file"
 }
 
+provision_notary_key() {
+  local file="$TMP/MAC_NOTARY_KEY_P8_BASE64"
+  [ -r "$NOTARY_FILE" ] || die "cannot read $NOTARY_FILE"
+  # tr -d '\n' because the secret must survive JSON/API transport intact, and the
+  # workflow decodes it with `openssl base64 -d -A` for the same reason.
+  base64 -i "$NOTARY_FILE" | tr -d '\n' > "$file"
+  [ -s "$file" ] || die "the App Store Connect key is empty"
+  set_secret "$APPLE_ENV" MAC_NOTARY_KEY_P8_BASE64 "$file"
+}
+
 prune_repo_secrets() {
   local existing name
   existing="$(gh api "repos/$REPO/actions/secrets" --jq '.secrets[].name' 2>/dev/null || true)"
-  for name in GPG_PRIVATE_KEY GPG_PASSPHRASE MAC_CERT_P12_BASE64 MAC_CERT_PASSWORD MAC_APP_SPECIFIC_PASSWORD; do
+  for name in GPG_PRIVATE_KEY GPG_PASSPHRASE MAC_CERT_P12_BASE64 MAC_CERT_PASSWORD MAC_APP_SPECIFIC_PASSWORD MAC_NOTARY_KEY_P8_BASE64; do
     if ! want "$name"; then continue; fi
     if printf '%s\n' "$existing" | grep -qx "$name"; then
       gh secret delete "$name" --repo "$REPO" >/dev/null
@@ -201,6 +223,13 @@ if want GPG_PRIVATE_KEY || want GPG_PASSPHRASE; then provision_gpg; fi
 if want MAC_CERT_P12_BASE64 || want MAC_CERT_PASSWORD; then provision_cert; fi
 if want MAC_APP_SPECIFIC_PASSWORD && { [ -n "$APP_FILE" ] || [ "$APP_PROMPT" = 1 ]; }; then
   provision_app_password
+fi
+if want MAC_NOTARY_KEY_P8_BASE64; then
+  if [ -n "$NOTARY_FILE" ]; then
+    provision_notary_key
+  else
+    echo "no App Store Connect key given: leaving MAC_NOTARY_KEY_P8_BASE64 alone" >&2
+  fi
 fi
 if [ "$PRUNE" = 1 ]; then prune_repo_secrets; fi
 

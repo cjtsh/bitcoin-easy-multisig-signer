@@ -29,6 +29,32 @@ publisher identity to the operating system, which is why Windows and Linux
 first-launch may show an OS warning, and why the verification steps below
 matter.
 
+## The bundled helper's digest sidecar (CT-105)
+
+`hwi.exe` / `hwi` ships beside a `hwi.sha256` digest that `probe.py` checks
+before it runs the helper (CT-49). Where that file sits decides what it proves,
+and the answer is not the same on every platform:
+
+| Platform | Sidecar location | What a match proves |
+|---|---|---|
+| macOS | `Contents/Resources/hwi.sha256`, inside the notarized `.app` | The helper is the bytes this build sealed — replacing it breaks a signature Gatekeeper verifies |
+| Windows / Linux | `hwi.sha256` beside the helper, in the app directory | The helper is complete and uncorrupted. It is **not** proof the helper is the one this project published: the same local writer can replace both files |
+
+Neither Windows nor Linux signs the app bundle (see the table above), so on
+those platforms the app's own sidecar check is a corruption check, not an
+identity check. Identity comes from the published `SHA256SUMS` /
+`SHA256SUMS.asc` pair, the Sigstore attestation, and the hash of the downloaded
+archive — verified by the person downloading, not by the running app. The
+"unsigned" row in the table above and this one are the same fact seen from two
+sides; do not describe the Windows helper as verified by a signature.
+
+An Authenticode certificate for `hwi.exe`, or moving the sidecar out of the
+user-writable directory, would change this column. **Owner decision, open as of
+2026-10-08.** Both options are owner-side calls, recorded in the cycle-5
+remediation ledger (`releases/PATCH-0.6.8.md`) under CT-105 rather than taken
+unilaterally; until one is chosen, the Windows helper's identity is
+self-asserted and this document says so.
+
 ## The one release pipeline
 
 `.github/workflows/build-candidate.yml` is the **only** build and publish path.
@@ -96,10 +122,26 @@ protected environments, each deployable only from `main`:
 | Environment | Credentials | Deployment rule |
 |---|---|---|
 | `release-signing` | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | `main` only, no human gate |
-| `apple-signing` | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD` | `main` only, no human gate |
+| `apple-signing` | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD`, `MAC_NOTARY_KEY_P8_BASE64` | `main` only, no human gate |
 
 `.github/workflows/build-candidate.yml` declares the environment on the job that
-needs it: `macos` → `apple-signing`, `checksums` → `release-signing`. The GPG
+needs it: `macos` → `apple-signing`, `checksums` → `release-signing`.
+
+**The watched set is derived, not typed.** `scripts/check-release-credentials.sh`
+parses every workflow for `secrets.NAME` references and partitions them by the
+environment the referencing job declares; the list above is what that derivation
+produces today. `MAC_NOTARY_KEY_P8_BASE64` is in it (cycle 5, CT-97) because the
+notarize step really names it — it is the base64 of an App Store Connect API key,
+the *alternative* to the Apple-ID route the owner validated. The check watches it
+in both scoping directions: a repository-level copy of it is refused, and a job
+that read it without declaring an environment would be refused. It does **not**
+require the name to exist: the notary step reads it as optional and falls back,
+and the Apple-ID route's own names are guarded by `: "${...:?}"`, so an absent
+secret fails the release closed instead of silently skipping a signature. The
+check prints a `note:` for a referenced name that is absent, so the gap is
+visible without blocking the release. A name that is referenced and *unwatched*
+is the thing that went wrong for a cycle; a name that is referenced and absent
+is a configuration the owner chose. The GPG
 step already runs only under `if: ${{ inputs.publish }}` and the Apple steps only
 under `if: ${{ inputs.notarize }}`, so a candidate build never enters either
 environment.
@@ -131,8 +173,11 @@ Rules:
   before every promotion and in every audit cycle. It refuses (exit 1) if a
   release credential sits at repository level, an environment is missing, an
   environment's branch policy is not exactly `main`, an environment's secret set
-  is not exactly the expected one, or an environment declares a human gate (a
-  required reviewer or a wait timer).
+  is not the derived one, or an environment declares a human gate (a required
+  reviewer or a wait timer). It also refuses when a job names a credential but
+  declares no environment, because that job receives the value on every ref.
+  `--print-scope` prints the derived `name<TAB>environment<TAB>workflow:job` rows
+  without touching GitHub.
 - `tests/test_workflow_config.py` fails the build if a job names one of these
   credentials without declaring its environment, if the job→environment map
   changes, or if any other workflow file names a credential at all.
@@ -144,14 +189,15 @@ Rules:
 ### The master copy behind each secret
 
 GitHub never returns a secret's value, not even to an administrator, so what
-matters is where the recoverable master copy lives. Two of the three are on the
-maintainer's Mac, which is why a lost environment secret is a short job rather
-than a new certificate:
+matters is where the recoverable master copy lives. Most are on the maintainer's
+Mac, which is why a lost environment secret is a short job rather than a new
+certificate:
 
 | Secret | Master copy | How it is rebuilt |
 |---|---|---|
 | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | the release key in the maintainer's GnuPG keyring — `ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7`, `Bitseeker LLC <release@bitseeker.llc>`, whose public half is the committed `signing-key.asc` | `scripts/provision-release-credentials.sh` exports it. Only losing the keyring itself means running `gpg --full-generate-key` (step 1 above) and committing a new `signing-key.asc` |
 | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD` | the `Developer ID Application: Bitseeker LLC (B8G5L7M8TB)` identity in the login keychain, SHA-1 `02624AD5998203927864C7167C461DE0E6D19707` | the same script exports a fresh `.p12` and generates a fresh password, so the two names are always in step |
+| `MAC_NOTARY_KEY_P8_BASE64` | the App Store Connect API key (`.p8`) the owner downloaded once — **not on this machine unless the owner saved it**, and the API-key route may not be in use at all | pass it back with `scripts/provision-release-credentials.sh --only MAC_NOTARY_KEY_P8_BASE64 --notary-key-file <path-to-.p8>`; Apple lets a key be downloaded only once, so a lost `.p8` means revoking it and making a new one in App Store Connect. Removing the API-key route from `build-candidate.yml` is the other way out, and it is an owner decision |
 | `MAC_APP_SPECIFIC_PASSWORD` | the `apple-signing` environment secret — put there on 2026-10-08 with no owner action; **no readable copy exists on this machine** | if it is ever lost, Apple shows an app-specific password only once at creation, so the only way back is a new one: appleid.apple.com → Sign-In & Security → App-Specific Passwords → generate one (label it `besa-notary`), then `scripts/provision-release-credentials.sh --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune` |
 
 ### If the credentials vanish (the recovery path)
@@ -170,6 +216,10 @@ scripts/provision-release-credentials.sh --prune
 # (only then is a fresh one from the Apple ID owner needed)
 scripts/provision-release-credentials.sh \
   --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune
+
+# replace the App Store Connect API key, if that notary route is in use
+scripts/provision-release-credentials.sh \
+  --only MAC_NOTARY_KEY_P8_BASE64 --notary-key-file ~/Downloads/AuthKey_ABC123.p8 --prune
 
 # see what it would do, touching nothing (safe to run any time)
 scripts/provision-release-credentials.sh --dry-run

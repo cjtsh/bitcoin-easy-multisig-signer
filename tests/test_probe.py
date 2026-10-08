@@ -83,6 +83,28 @@ def duplicate_key_record(distinct_fingerprints: bool = True) -> str:
             f"No path restrictions\n{reference}\n")
 
 
+def respelled_duplicate_key_record(version: int) -> str:
+    """CT-72 variant: the same key bytes, re-serialized under another version.
+
+    ``xpub`` next to ``tpub`` (or any other ``to_base58(version=...)`` re-spelling)
+    produces two different base58 strings from one secp256k1 point and one chain
+    code. An equality test on the strings therefore sees two distinct signers; a
+    comparison on the material sees one. The fingerprints differ on purpose, so
+    the older fingerprint gate cannot be what refuses this file.
+    """
+    root = bip32.HDKey.from_seed(bytes([1]) * 32)
+    label = bip32.HDKey.from_seed(bytes([2]) * 32).my_fingerprint.hex()
+    account = root.derive("m/48h/1h/0h/2h").to_public()
+    canonical = account.to_base58()
+    variant = account.to_base58(version=version.to_bytes(4, "big"))
+    keys = [f"[{root.my_fingerprint.hex()}/48h/1h/0h/2h]{canonical}/0/*",
+            f"[{label}/48h/1h/0h/2h]{variant}/0/*"]
+    descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
+    reference = Descriptor.from_string(descriptor).derive(0).address(NETWORKS["test"])
+    return (f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\n"
+            f"No path restrictions\n{reference}\n")
+
+
 class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -125,6 +147,28 @@ class ProbeTests(unittest.TestCase):
     def test_the_same_key_pasted_twice_keeps_its_fingerprint_refusal(self):
         with self.assertRaisesRegex(ProbeError, "Duplicate signer fingerprints"):
             self.write(duplicate_key_record(distinct_fingerprints=False))
+
+    def test_the_same_key_respelled_under_another_version_is_still_refused(self):
+        # CT-72 variant: the previous gate compared base58 spellings, so the
+        # same key as xpub+tpub read as two signers. Every serialization version
+        # must collide with the canonical one, because the gate is about the key
+        # material and no version field is part of it.
+        for name, version in (("tpub", 0x043587CF), ("upub", 0x044A5262),
+                              ("ypub", 0x049D7CB2), ("zpub", 0x04B24746)):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ProbeError, "listed more than once"):
+                    self.write(respelled_duplicate_key_record(version))
+
+    def test_a_respelled_duplicate_is_refused_even_when_the_fingerprints_differ(self):
+        # The fingerprint gate must not be doing this work: the variant record
+        # deliberately carries two distinct origins, so only the key-material
+        # gate can refuse it.
+        record = respelled_duplicate_key_record(0x043587CF)
+        descriptor = Descriptor.from_string(record.splitlines()[1].rsplit("#", 1)[0])
+        fingerprints = {key.fingerprint for key in descriptor.keys}
+        self.assertEqual(len(fingerprints), 2)
+        with self.assertRaisesRegex(ProbeError, "listed more than once"):
+            parse_bsms(record)
 
     def test_sparrow_style_record_without_a_checksum_is_accepted(self):
         text, _ = sparrow_record()
@@ -216,6 +260,20 @@ class ProbeTests(unittest.TestCase):
         # So is CRLF: a wallet file saved on Windows is still a BSMS record.
         self.assertEqual(parse_bsms(good.replace("\n", "\r\n")).reference_status,
                          "verified")
+
+    def test_only_one_leading_bom_is_stripped(self):
+        """CT-114: the strip was a character set, not a single character.
+
+        `text.lstrip("\ufeff")` strips any number of leading BOMs, so a record
+        carrying two of them — which no exporter writes and no reader should
+        treat as valid — parsed as if it were well-formed. Exactly the one BOM
+        that `utf-8-sig` would have removed is allowed.
+        """
+        good, _ = test_record()
+        self.assertEqual(parse_bsms("\ufeff" + good).reference_status, "verified")
+        with self.assertRaisesRegex(
+                ProbeError, "Expected a four-line BSMS 1.0 wallet record."):
+            parse_bsms("\ufeff\ufeff" + good)
 
     def test_bad_checksum_fails_closed(self):
         record, _ = test_record()

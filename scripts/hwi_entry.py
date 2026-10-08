@@ -1,6 +1,8 @@
 """Standalone HWI CLI entry point bundled beside the desktop app."""
 
 import ctypes
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -15,17 +17,47 @@ def _bundled_usb_names() -> tuple[str, ...]:
 
 _usb_names = _bundled_usb_names()
 
+_NOT_REGULAR = "The bundled USB library is not a regular file in this app."
+
+
+def _refuse_unless_regular(path: Path) -> None:
+    """Refuse anything at `path` that is not this build's own regular file.
+
+    CT-92: the directory the bootloader extracts into is writable by this user,
+    so a link planted at the bundled name satisfies a path comparison while
+    loading bytes this build never shipped. Two kinds of link matter, and
+    `is_symlink()` sees only the symbolic one:
+
+    * a symbolic link, which `resolve()` would follow to itself and compare
+      equal, and
+    * a **hard** link, which is not a symlink at all and has no distinct path
+      to resolve -- it is the same inode under a second name.
+
+    So the check opens the file with `O_NOFOLLOW` (no traversal of a final
+    symlink) and then asks the descriptor it actually got, not the path: a
+    regular file (`S_ISREG`) whose link count is one. A hard link has
+    `st_nlink > 1` by definition, so it is refused here before any loader is
+    handed the path.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise RuntimeError(_NOT_REGULAR) from error
+    try:
+        info = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise RuntimeError(_NOT_REGULAR)
+
+
 if getattr(sys, "frozen", False):
     bundled = [Path(sys._MEIPASS) / name for name in _usb_names]
     if not all(path.is_file() for path in bundled):
         raise RuntimeError("The bundled USB library is missing; the signer helper cannot start.")
-    # CT-92: the extraction directory is writable by this user, so a link
-    # planted at the bundled name would satisfy a path comparison while
-    # loading bytes this build never shipped. A link is not the library, no
-    # matter where it points, so only a real file is loaded.
-    if any(path.is_symlink() for path in bundled):
-        raise RuntimeError(
-            "The bundled USB library is not a regular file in this app.")
+    for path in bundled:
+        _refuse_unless_regular(path)
     # usb1 exposes an explicit loader. Bind its first load to the verified
     # bundle path; preloading a differently named library does not stop usb1
     # from finding a second copy installed on the machine later.
@@ -101,8 +133,15 @@ def _check_libusb() -> int:
         loaded = Path(usb1.libusb1.libusb._name).resolve()
         expected_path = Path(sys._MEIPASS) / _usb_names[-1]
         # CT-92: resolve() follows a link, so a linked file at the expected
-        # name would compare equal to itself. The link itself is refused.
-        if expected_path.is_symlink() or loaded != expected_path.resolve():
+        # name would compare equal to itself. The check is made on the file
+        # itself: it must be a regular file with a single link, which refuses
+        # a symbolic link and a hard link alike.
+        try:
+            _refuse_unless_regular(expected_path)
+        except RuntimeError as error:
+            raise RuntimeError(
+                "The USB stack loaded a library outside this app.") from error
+        if loaded != expected_path.resolve():
             raise RuntimeError("The USB stack loaded a library outside this app.")
         print(f"Bundled libusb: {loaded}")
     return 0

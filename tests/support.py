@@ -166,6 +166,64 @@ def find_build_recipe(root: Path, name: str) -> Path | None:
     return None
 
 
+def workflow_credential_scope(root: Path | None = None) -> list[tuple[str, str, str, str]]:
+    """Derive ``(workflow, job, environment, secret name)`` from the workflows.
+
+    CT-97's repository half: the watched credential set must come from the
+    workflow text itself. ``MAC_NOTARY_KEY_P8_BASE64`` was live in
+    ``.github/workflows/build-candidate.yml`` while a hand-maintained five-name
+    constant in the check and in two pin classes did not know it existed, so the
+    sixth name was unwatched.
+
+    This is the independent Python half of the derivation: it parses the YAML
+    and walks the resulting structure, so a name inside a comment cannot reach
+    it. ``scripts/check-release-credentials.sh --print-scope`` is the stdlib-only
+    bash half (the operator's ``python3`` has no PyYAML), and the two are
+    asserted equal on the real files so they cannot drift apart silently.
+    ``environment`` is ``""`` for a job that declares none — the shape that
+    makes a credential reachable on every ref.
+    """
+    import re
+
+    import yaml
+
+    root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
+    pattern = re.compile(
+        r"secrets\s*\.\s*([A-Za-z0-9_-]+)"
+        r"|secrets\s*\[\s*['\"]([A-Za-z0-9_-]+)['\"]\s*\]"
+    )
+
+    def strings(node):
+        if isinstance(node, dict):
+            for value in node.values():
+                yield from strings(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from strings(value)
+        elif isinstance(node, str):
+            yield node
+
+    workflows = root / ".github" / "workflows"
+    if not workflows.is_dir():
+        workflows = root / "ci"
+    found = []
+    for path in sorted(workflows.glob("*.y*ml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for job, body in (data.get("jobs") or {}).items():
+            body = body or {}
+            environment = body.get("environment")
+            if isinstance(environment, dict):
+                environment = environment.get("name")
+            environment = environment or ""
+            names = set()
+            for text in strings(body):
+                for match in pattern.finditer(text):
+                    names.add(match.group(1) or match.group(2))
+            for name in sorted(names):
+                found.append((path.name, job, str(environment), name))
+    return found
+
+
 def assert_private_file(test: unittest.TestCase, path: Path) -> None:
     """Assert a file the app wrote is private, using the app's own rule.
 

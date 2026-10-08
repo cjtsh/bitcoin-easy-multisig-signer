@@ -91,6 +91,14 @@ def parse_multisig_script(script: bytes) -> tuple[int, list[bytes]]:
         raise SigningError("This witness script is not a multisig script.")
     if not 1 <= threshold <= len(keys):
         raise SigningError("The witness script's threshold is impossible.")
+    # CT-72 second gate: the compiled script carries raw public keys, so this is
+    # the one place where a duplicate signer cannot hide behind a spelling. A
+    # script naming the same key twice is not a real 2-of-N: one device approval
+    # fills both slots and the witness carries the same signature twice. The
+    # parse-time gate is upstream of this, but the script is the object that
+    # actually spends, so it refuses independently of how the PSBT was built.
+    if len(set(keys)) != len(keys):
+        raise SigningError("The witness script names the same public key more than once.")
     return threshold, keys
 
 

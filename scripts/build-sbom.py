@@ -95,7 +95,9 @@ def helper_sidecars(helper: Path) -> list[Path]:
     checks. macOS cannot keep the sidecar beside the helper — codesign refuses
     to seal an .app carrying a non-code file in Contents/MacOS — so the Mac
     build records it in Contents/Resources, where the outer signature seals it.
-    Windows and an explicitly named helper keep it beside the binary.
+    Windows keeps it beside the binary in the same user-writable directory, and
+    neither the helper nor the sidecar is signed there — see SIGNING.md (CT-105).
+    An explicitly named helper keeps its own beside the binary.
     """
     candidates = [helper.with_name("hwi.sha256")]
     resources = helper.parent.parent / "Resources" / "hwi.sha256"
@@ -107,18 +109,20 @@ def helper_sidecars(helper: Path) -> list[Path]:
 def helper_digest(root: Path) -> str:
     """The helper's digest, with the sidecar the app will check at run time.
 
-    The build writes hwi.sha256 into the signed bundle; probe.py refuses to run
-    a helper whose bytes do not match that sidecar (CT-49). Recording the same
-    digest here means a reader can compare the published SBOM against the file
-    inside the artifact without trusting the app to describe itself. A missing
-    or disagreeing sidecar fails the SBOM rather than publishing a weaker claim.
+    The build writes hwi.sha256 beside the helper — in Contents/Resources on
+    macOS, where the bundle signature covers it, and beside the binary on
+    Windows, where nothing signs it (CT-105); probe.py refuses to run a helper
+    whose bytes do not match that sidecar (CT-49). Recording the same digest
+    here means a reader can compare the published SBOM against the file inside
+    the artifact without trusting the app to describe itself. A missing or
+    disagreeing sidecar fails the SBOM rather than publishing a weaker claim.
     """
     helper = frozen_helper(root)
     sidecars = helper_sidecars(helper)
     if not sidecars:
         raise ValueError(
             f"Missing hwi.sha256 for {helper.name}: the build must record the "
-            "helper's digest inside the signed bundle."
+            "helper's digest beside it."
         )
     digest = sha256(helper)
     for sidecar in sidecars:

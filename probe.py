@@ -78,6 +78,19 @@ def _reference_status(descriptor_text: str, reference: str, network: str) -> str
         return "mismatch"
 
 
+def _key_material(key: Any) -> tuple[bytes, bytes]:
+    """The identity of a signer key: its public point and its chain code.
+
+    A base58 string is a *spelling*, not a key: the same secp256k1 point and
+    chain code serialize to different text under each network version
+    (``xpub``/``tpub``/``ypub``/``zpub``), and two such strings compare unequal.
+    Anything that asks "is this the same signer?" must compare these bytes
+    (CT-72), the same pair `_same_xpub` already binds a device to.
+    """
+    inner = key.key
+    return (inner.key.sec(), inner.chain_code)
+
+
 def load_bsms(path: Path) -> WalletRecord:
     try:
         if path.stat().st_size > MAX_BSMS_BYTES:
@@ -94,7 +107,13 @@ def parse_bsms(text: str) -> WalletRecord:
     """Parse a BSMS record in memory so GUI uploads never touch disk."""
     if len(text.encode("utf-8")) > MAX_BSMS_BYTES:
         raise ProbeError("BSMS file is unexpectedly large.")
-    lines = text.lstrip("\ufeff").splitlines()
+    # Exactly one leading BOM is removed. load_bsms already reads the file with
+    # utf-8-sig, so the only BOM this can meet is the one a GUI upload supplies;
+    # `lstrip` was a character-set strip, so a record that carried two BOMs was
+    # silently accepted as if it were well-formed text (CT-114).
+    if text.startswith("\ufeff"):
+        text = text[1:]
+    lines = text.splitlines()
     if len(lines) != 4 or lines[0] != "BSMS 1.0":
         raise ProbeError("Expected a four-line BSMS 1.0 wallet record.")
     descriptor_field, restrictions, reference = lines[1:]
@@ -164,17 +183,20 @@ def parse_bsms(text: str) -> WalletRecord:
             or not isinstance(change_descriptor.miniscript, Multi)
             or change_descriptor.miniscript.args[0].num != threshold
             or len(change_keys) != len(keys)
-            or sorted(key.key.to_base58() for key in change_keys)
-               != sorted(key.key.to_base58() for key in keys)):
+            or sorted(_key_material(key) for key in change_keys)
+               != sorted(_key_material(key) for key in keys)):
             raise ProbeError("BSMS receive and change descriptors do not use the same multisig keys.")
     if len({key.fingerprint for key in keys}) != len(keys):
         raise ProbeError("Duplicate signer fingerprints are ambiguous in this proof.")
     # CT-72: two origin fingerprints can label the SAME xpub. The receive list
     # then reads as an honest m-of-n with two cosigner cards while one device
     # approval finalizes it, so the screen would show a quorum that does not
-    # exist. A fingerprint is the signer's label; the key bytes are the signer,
-    # so only the bytes can answer "how many keys must approve this payment".
-    if len({key.key.to_base58() for key in keys}) != len(keys):
+    # exist. A fingerprint is the signer's label and a base58 string is a
+    # spelling; the key bytes are the signer, so only the bytes can answer "how
+    # many keys must approve this payment". Comparing serializations let the
+    # same key through as xpub next to tpub, so this compares the material
+    # itself — public point plus chain code — which no re-spelling can change.
+    if len({_key_material(key) for key in keys}) != len(keys):
         raise ProbeError(
             "The same signer key is listed more than once in this wallet file. "
             "A multisig proof must name each cosigner key exactly once."
@@ -222,10 +244,147 @@ HWI_PAYLOAD_PINS: dict[str, str] = {
     "hwilib": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
     "hwilib._cli": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
 }
-# A frozen build writes this inside the signed bundle it authenticates —
-# Contents/Resources on macOS, where codesign seals it, and beside the helper on
-# Windows. An explicitly named helper carries its own, beside itself. It is also
-# what the SBOM records for the helper.
+
+# CT-90 (whole tree): the two files above are what ran, not what imported.
+# `hwilib/commands.py` is imported by the entry point and executed on every
+# device call, and it is not one of them; a poisoned sibling module with both
+# named files genuine passed the old two-file pin. The whole installed package
+# is therefore covered: every source file hwilib ships is listed here by its
+# package-relative path and its SHA-256. A file that is missing, altered, or
+# added to the package fails the check, so the pin no longer names a subset of
+# the code the helper can reach.
+#
+# Recorded from hwi 3.2.0 (`hwilib.__version__ == "3.2.0"`). Byte-pinning every
+# file is deliberate: RECORD cannot be the pinned authority here because it is
+# itself a file an attacker with write access to site-packages can rewrite, and
+# a rewritten RECORD would then validate a rewritten tree. A literal value in
+# this file cannot be rewritten by touching the environment the app inspects.
+# `tests/test_hardening_pins.py` recomputes the tree digest from this table, so
+# the derivation is executable documentation rather than a remembered number.
+HWI_PAYLOAD_MANIFEST: dict[str, str] = {
+    "__init__.py": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
+    "_base58.py": "dd5d3fc11eae7c81ba2414cd39f6ef5106e9cb3894ae2c1773bf23af46468ad6",
+    "_bech32.py": "7080dafd7d9fe20f07d15b10a95a770a14ab48334acd8943e829b412709f2244",
+    "_cli.py": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
+    "_gui.py": "b74ac4d73204cee8a943e30fc98c0321a0eabf81f5a9d5954047995b97f8299a",
+    "_script.py": "4531b3dc525b1c776398e95a776ef5f38b8a79121e0cda345827e9dc31976422",
+    "_serialize.py": "291c5c19c303dd86104914d7a7b0bcc32d8fb6f9a1e0a7d90500b16b5b396bb5",
+    "commands.py": "c8a9bc917a90e19ea31db7e9d01d2c8b13f13fbad8b876a9e25d381743e28e06",
+    "common.py": "a4d8a88cc284d9a0db9db73c9e977518675ae803bc3b476655de3fb8bd0fdf4f",
+    "descriptor.py": "d33fd58edc4a83d926e72b5ae02ce2d381bd1641766f477d0cecefa80c1da2da",
+    "devices/__init__.py": "dcf0fcbee38dba8b5da135f36f2664856393beec09fd3b02065f82f18515101d",
+    "devices/bitbox02.py": "daf565c88bf5276b2350f2c39c624a054c88f55f7371f7484c5224cc172b1f95",
+    "devices/bitbox02_lib/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "devices/bitbox02_lib/bitbox02/__init__.py": "c4d7e877144707d04391aced5edc31be508a3f87ef54ee0724a1aadb36ec4015",
+    "devices/bitbox02_lib/bitbox02/bitbox02.py": "4cef48feb1334680dcea72f9608b56ab96e3bfc8aaa00709f45baef78e14fa55",
+    "devices/bitbox02_lib/bitbox02/bootloader.py": "3c01220249a0ee25f93b63b90814283cec76b16009da6f2c9ae94ea47c34a6b6",
+    "devices/bitbox02_lib/bitbox02/secp256k1.py": "211188addd99feaf0d69cb39ce1d2eb46038b1a4aa04ac511d2c4aa56cb75544",
+    "devices/bitbox02_lib/communication/__init__.py": "27a6ebcf635dc37b54270cfa02813873b6bf12dba2e420acb4304c9050f0b840",
+    "devices/bitbox02_lib/communication/bitbox_api_protocol.py": "d4d193437f0176257d133d9da3fb432305fb21fc35df2f827107e8458d28aa1f",
+    "devices/bitbox02_lib/communication/communication.py": "9d17dac870f6970cbf544656172be83effdfcaf3348d37a44ec154c6b2de63ab",
+    "devices/bitbox02_lib/communication/devices.py": "b7df789a1ea9b91ab9b0e47c9f508ce1e4b3fc3121c683e19364d8944aac57f6",
+    "devices/bitbox02_lib/communication/generated/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "devices/bitbox02_lib/communication/generated/antiklepto_pb2.py": "002c48b4a60d4ccffed0d11a0c9404042ee25ebfe11eafe363d0eb3e383ad33f",
+    "devices/bitbox02_lib/communication/generated/backup_commands_pb2.py": "76a031ae9de53c9cfee71697e9c30ef36e3cdf6aa5c93a0cb6181d94905eb116",
+    "devices/bitbox02_lib/communication/generated/bitbox02_system_pb2.py": "da182415ec0a254804a198f239beb09df6f6d5b4c1da059b88f6adc0549878a4",
+    "devices/bitbox02_lib/communication/generated/bluetooth_pb2.py": "e1b063fbcae61d5359b0f75ae7e27239e0b1330f13b7fdba49bf6ff48301113e",
+    "devices/bitbox02_lib/communication/generated/btc_pb2.py": "0dc0b0ab5c2117d7a276998ef549f84089e4c28e43b3fea0f180f2464f567c97",
+    "devices/bitbox02_lib/communication/generated/cardano_pb2.py": "7438e0c6df1a52b61d83ae7b37c508d1abcb23c08d68d7c5a98b97dcd337aa84",
+    "devices/bitbox02_lib/communication/generated/common_pb2.py": "9e59c79b7d180c517f2138924317b691312cda06555dc58d5b6e33ff9eb68a65",
+    "devices/bitbox02_lib/communication/generated/eth_pb2.py": "f946089b8a3be946efac305e31b074dbedab697614c6df6febaa2a2bdb30bbd8",
+    "devices/bitbox02_lib/communication/generated/hww_pb2.py": "be2776cae43bd1cb65ed5d3d9e5c70b98bb61bd641a8cc5d0c25f6268709b3d5",
+    "devices/bitbox02_lib/communication/generated/keystore_pb2.py": "7091d1da13a58ff1b137ea60e2613bee2531351d4ba3bbdeef8ea36e54f09598",
+    "devices/bitbox02_lib/communication/generated/mnemonic_pb2.py": "c30ee7944adbbac452288b0b7580c9da11e24cf6ba3fb4b42ca5cce259cf4eec",
+    "devices/bitbox02_lib/communication/generated/perform_attestation_pb2.py": "4177a19aae7d7b3ffa532606295188ba87475e9650bb4af0ef55906bd8d7e014",
+    "devices/bitbox02_lib/communication/generated/system_pb2.py": "52405697ace035f84e1743af4ae4046f550c6de80a10a9ef9af3bad8a3bb9b6e",
+    "devices/bitbox02_lib/communication/u2fhid/__init__.py": "20baa5ad6e5175e292a0c3be870b317e000ff1cbbd4430f4ec30d039453a737b",
+    "devices/bitbox02_lib/communication/u2fhid/u2fhid.py": "b3eedfb5cc11c918ed0939a184bd5f3bc363a98f9aaa62c48a741b66960ff534",
+    "devices/bitbox02_lib/util.py": "631d60ca3190467ca5c128bdb5c6aa1c32568114530844b2f9131e57a249aff4",
+    "devices/ckcc/__init__.py": "59722096c55d5add9a829dd5b7c6aa0a59f0d659f580cc5297f7078b8562509f",
+    "devices/ckcc/client.py": "11b01d4d2ebd149847cbe055062531347c67f99ae9e79a1eb811e207e5db364f",
+    "devices/ckcc/constants.py": "82a07eee60c90522de58c606b4d1e5a6eaae4a32ae2f62e1724bf1dfc9aa8973",
+    "devices/ckcc/protocol.py": "161a691512a690c6bed7abdc59cde77dec8d567ea2e2c75f7ff525994602a719",
+    "devices/ckcc/sigheader.py": "ad96d00fa79ed58bf6f54dd1f93cf7885046fc87911cae6a9f3a47230a3f71d5",
+    "devices/ckcc/utils.py": "e2598d86ae6c1abfac87300edd5965f8358ed1f12f68731fb587f5a8307b9a78",
+    "devices/coldcard.py": "0bd86ac44a2ce025ce6472a74a379ae17a76be478bd9efefda1897b2691b165d",
+    "devices/digitalbitbox.py": "ff41b1e973df86015cc603ec78f645f36dfc5f7bbf7af6a71fad2fc12900c7b4",
+    "devices/jade.py": "b4f569ca53a3fffd1987752ef951f4783b62ac9fc0fe484633b549715400bc5c",
+    "devices/jadepy/__init__.py": "8f9d9d1e183f538df910c0319ce02e07028c731c9a5c835b2e254e52b29d124d",
+    "devices/jadepy/jade.py": "938ccf984e4023cdce5b22a6177f22f567cf559763c967142036adb9857fe249",
+    "devices/jadepy/jade_error.py": "a50a952a33a1924cc9e26fe465270ecfcb21e3d5f55ff3b3e69e697bd0790cbd",
+    "devices/jadepy/jade_serial.py": "55bd3c7c9de3751a82f51bba7c18a350597bcc5f1ee667014d8066074fcb0943",
+    "devices/jadepy/jade_tcp.py": "9ea17cf844fe568b2add6615cbc52c2079711d1740147fa3fb8df2c6eec8776f",
+    "devices/keepkey.py": "17dee77d4863376483ee50a8c23fd8da29eddd7b0afa7383c0afb8889b57701a",
+    "devices/ledger.py": "8918c5264206e731ce2fd24ee7d649335cce819fd62acb523bc74f559a47d79b",
+    "devices/ledger_bitcoin/__init__.py": "49c97303d77c7a385bb029c05b4c7d16becdf81c2037f06cfc4d9882fb88ae28",
+    "devices/ledger_bitcoin/btchip/__init__.py": "c66532426414107c998bd42995a5671235fa191a1d36d84f78689e5263a0773b",
+    "devices/ledger_bitcoin/btchip/bitcoinTransaction.py": "53a7f02ab5b82995026f6951d6c55f5610300dbe3c86365d0a814a965e67ae71",
+    "devices/ledger_bitcoin/btchip/bitcoinVarint.py": "be2fbf248a1ade9c4b984c336596e107ab2af7935e2aefa58ccd9b06934e0e2a",
+    "devices/ledger_bitcoin/btchip/btchip.py": "3996c7340de192ecfe1cd6326da8c92b6ea2d5bddbe8e3ad9cd77fe6957233ad",
+    "devices/ledger_bitcoin/btchip/btchipException.py": "4b7826c3ce10ba396346ee293bd63d425feea94747041ebc8ca1faeea08e59d8",
+    "devices/ledger_bitcoin/btchip/btchipHelpers.py": "c085af543c5b0117f969415e103fb6895335dd2113e098a54460872c40d10c16",
+    "devices/ledger_bitcoin/btchip/btchipUtils.py": "e871f1a9e4c9f78aa368cdbcf6b23b072b49536bf829d1c3870a72081d6c7e8c",
+    "devices/ledger_bitcoin/btchip/ledgerWrapper.py": "d9b17848d62d699114562545e2e4de7a734f8a03951eb4bf7cf1c44801795001",
+    "devices/ledger_bitcoin/client.py": "8e09cbc9bc72db81e3b6d3375e9ad49bb4ca2326ac3af728ae1bbdf8979efdda",
+    "devices/ledger_bitcoin/client_base.py": "c376aabe89bfb19f43df6b498625e3e4877fe42a7d665ad204dd410e27f3adeb",
+    "devices/ledger_bitcoin/client_command.py": "cfc24efe646838d6e40de5835926ab3b9aa497055d0788fcb9ab8c5d079b42e0",
+    "devices/ledger_bitcoin/client_legacy.py": "6dc42eaff68a93f45a75a6bdc68b4fd40657ac279fffb0f1f50c694ad3edd62a",
+    "devices/ledger_bitcoin/command_builder.py": "fe9c18a5f8c0934b67ea72cde0b036e6333e0c4050b9b41a91eefb6b14df5ea3",
+    "devices/ledger_bitcoin/errors.py": "43fa7a4f7c85cb7d164753e22e92edcbe8fe7b51018a5042cdc87f3d5f655972",
+    "devices/ledger_bitcoin/exception/__init__.py": "3e6ff7c4e337aeee8feae8f33196c5c3f8b7cce4609e1d42ff09bf3624dd8ff0",
+    "devices/ledger_bitcoin/exception/device_exception.py": "0801e42c7602be20a80eda5895dd7f1569bb45ad71bdbb4545b0aaae54221796",
+    "devices/ledger_bitcoin/exception/errors.py": "a3daa36e873de4070de7906cf66a324472281340e4d33d1e31baad5a9516c2ba",
+    "devices/ledger_bitcoin/ledgercomm/__init__.py": "5cb2baf9a3d6af938df804eb26e4fac8a2ef964a17119bdc707b159384628d5b",
+    "devices/ledger_bitcoin/ledgercomm/interfaces/__init__.py": "6a1c5fdfd5dc1fe69d7aa24fb94902994eb8fc16b471105d0c7e04e407491b9e",
+    "devices/ledger_bitcoin/ledgercomm/interfaces/comm.py": "395909d51b2ae567e8647e654a13543cac0c25330d7aa9b7b58b6a933f3b1afa",
+    "devices/ledger_bitcoin/ledgercomm/interfaces/hid_device.py": "43fa3cbf2198526cbbac1220de68f17bd6c23fbcb95e69734160556dfb0968b0",
+    "devices/ledger_bitcoin/ledgercomm/interfaces/tcp_client.py": "990281b72bd60264579bbcc941f84b9248223bcb02940daf1a9224ebaab68dbb",
+    "devices/ledger_bitcoin/ledgercomm/log.py": "9ee3a4e583c96c0d016dcf065d695228156d6b92082b6d4285018630dc9277d6",
+    "devices/ledger_bitcoin/ledgercomm/transport.py": "c93c39c907c2751788bcbba9ddd3a1b6bebf81cc4e0b8920d1b5a5deacffb312",
+    "devices/ledger_bitcoin/merkle.py": "32ff9240ffe2b9a573f7ae5233d7d2a8afb7a6213e9bf2440aae2c7a36b7593d",
+    "devices/ledger_bitcoin/wallet.py": "965e0f3ebbef143206802ab8b14f5351e692cb627a344ba38f9c06f1110daa54",
+    "devices/trezor.py": "225f79cbd04f8d7411bfbc6eccf57d8834c1d027ea4f4fb71f14fbb8dd57528c",
+    "devices/trezorlib/__init__.py": "4f36c54a1ef972bb1861c340afdc05d7d2531cb01386b888ddaa68e224e9518f",
+    "devices/trezorlib/btc.py": "a5c23a305d4c23601abe7e699dc03fe2fcb852a1d9cf6e5392ff20f4ad8dc48a",
+    "devices/trezorlib/client.py": "0d8e185c2339df8b0809c1d454f66162c984d85f7dbd2448f70b5020afb2a273",
+    "devices/trezorlib/debuglink.py": "948aa6e6821b3ed39febe12033fec19a72798a8bde45ed71493d7ffb47b7d93d",
+    "devices/trezorlib/device.py": "0eb133ba6690c4087c94ed30f8d6901201abc540116eda46e4f772fec5dcdc81",
+    "devices/trezorlib/exceptions.py": "19d2bd924094bb757e83dba75ab543e58fd6e345182c9eff4826a086d72ed955",
+    "devices/trezorlib/firmware.py": "f5cce86eeebb53dc68fd735b7bc42117bf687850c6547a83690b362e42fbebe3",
+    "devices/trezorlib/log.py": "a198bf46ac4dd3e88c20609e7809be1d77755f5abf9b79ed977dd27d3ad8531f",
+    "devices/trezorlib/mapping.py": "768c1b1223fa13108b16b09e6048e2e45db15283109dd115befb1cb56ef8875f",
+    "devices/trezorlib/messages.py": "cfa33678bf354254ae2860ef10b64c23b3c7f6abc2bc43777b2f60591fc6a2b6",
+    "devices/trezorlib/models.py": "879b35839975f1c963940262d83e36ecfc8fe2443a58454025dae7596fad377a",
+    "devices/trezorlib/protobuf.py": "2ee0f3e07cf6819f075329345872840f09f9ee6ea285ea98c0b7068cae6cbb1e",
+    "devices/trezorlib/tools.py": "dfd21888c87575ebbcadc8abf69b36bccbbb0c049e87a8d04f9ab2405f7ed091",
+    "devices/trezorlib/transport/__init__.py": "79716a20967e9f9af9e81be54221b607f2541f117dfaa89e0846bf85a288ff7f",
+    "devices/trezorlib/transport/hid.py": "f4a7416bd187202fdef7821fdb1694527da87458396a3f363114bb7293c07953",
+    "devices/trezorlib/transport/protocol.py": "148782565da7af550658cb1e72ddb3f012ad80b9bde4081e5a6d0bf8a4b2feba",
+    "devices/trezorlib/transport/udp.py": "24b85df4eff68c2d27cd4c0e51bf52f688b7da46ec7e25c03a34848d9ce9e152",
+    "devices/trezorlib/transport/webusb.py": "560260fda58b84a9c0a314ba4255b97d96fa6e1f1d9edfad10009def62d9f371",
+    "errors.py": "0e1bacca8c8a23b516c068d87f266f8875b72c39b62cee92c0e3d4049e208d2f",
+    "hwwclient.py": "763a2c9dc708ab5973507036c1d3a72659067663d42810664d10182d114efc27",
+    "key.py": "d28925c3e87623991d2b37fb0fc5dd0e6a1bb967cbcfe491c52ac5d71a71fce4",
+    "psbt.py": "12b56ff86596ba162701c5ffdd752b4138a1ae971d04bd2a40627803bf476a2c",
+    "tx.py": "42ee8983aa15cee6aedb976453e49e6da2cc80bb9ebcef24dcaa3ee3cf4e89f9",
+    "udevinstaller.py": "739b3b9ad970b28ff0213811a827a00ed0b53e4efc16f5e84c935e8aa8909bb4",
+    "ui/ui_bitbox02pairing.py": "e86b7b29166b5bffd7d0321c22324f25c17e64edeecc0c4b506e7f5980404554",
+    "ui/ui_displayaddressdialog.py": "d1a36ff01f7e2ef6d6b92b5212124bccc8c4bf27fdd0283cb4649c673164cf35",
+    "ui/ui_getkeypooloptionsdialog.py": "387b38576956be0cc1348a10c932c088e7680fbe1d5da665ae232d1fbe91e766",
+    "ui/ui_getxpubdialog.py": "a3e6c1675b350c5dc3a1cfb1c1dbc9e87cf8e45042d852bbc7033590559b5f6e",
+    "ui/ui_mainwindow.py": "37338409fd23c71e8e1dff8b315bcaf26552980ddc239fcc336700a0f8229452",
+    "ui/ui_sendpindialog.py": "053dcf30bf377b917c995951104720d3c56a548ca46b74fc477eae9ae5eff3d8",
+    "ui/ui_setpassphrasedialog.py": "622a944a6ff99c9eb03b97586c1b2dd02582ed5c6790c0fa2f14923bde0a42ea",
+    "ui/ui_signmessagedialog.py": "ad0032707d8eb677722c2c882576b1dc80b21a64e20eaaef3fc5682835dc2978",
+    "ui/ui_signpsbtdialog.py": "dd4e901b413022703c2268520561df53bc52840d4f44ba29f4eefc74d36f0069",
+}
+# A frozen build writes this beside the helper — Contents/Resources on macOS,
+# where codesign seals it into the bundle, and the helper's own directory on
+# Windows. What that is worth depends on the platform, and the difference is
+# real: on macOS replacing the helper means breaking a signature the owner can
+# check, while on Windows nothing signs either file and the sidecar only proves
+# the build is complete and uncorrupted. An explicitly named helper carries its
+# own, beside itself. It is also what the SBOM records for the helper (CT-105).
 HWI_DIGEST_SIDECAR = "hwi.sha256"
 
 _HWI_NO_DIGEST = (
@@ -249,6 +408,25 @@ _verified_hwi_paths: set[str] = set()
 # What was hashed when each path was verified, so a reuse can re-read it
 # instead of trusting a remembered verdict (CT-91).
 _verified_hwi_files: dict[str, tuple[tuple[str, str], ...]] = {}
+
+
+def _require_unchanged(verified: tuple[tuple[str, str], ...]) -> None:
+    """Re-read the bytes the check child just hashed, at the spawn.
+
+    The check and the helper are separate processes. A deterministic swap
+    written into the package between the child's exit and the helper's exec
+    would otherwise run code that no verdict ever covered, so the parent reads
+    the same files again here -- immediately before the argv it is about to
+    execute (CT-90). This narrows the check-to-use window to the exec itself;
+    it does not replace running from an open handle, which source mode cannot
+    do while the package is imported by name.
+    """
+    for file_path, expected in verified:
+        try:
+            if sha256(Path(file_path).read_bytes()).hexdigest() != expected:
+                raise ProbeError(_HWI_WRONG_DIGEST)
+        except OSError as exc:
+            raise ProbeError(_HWI_WRONG_DIGEST) from exc
 
 
 def _cached_identity_holds(path: str) -> bool:
@@ -334,10 +512,46 @@ def _hwi_path(executable: str) -> str:
 # off sys.path. What the check can see, the helper imports, and the reverse.
 _HWI_ISOLATION_FLAGS = ("-I", "-P")
 
+# CT-90 (site hooks): `-I` does NOT stop `site` from running, so a `.pth` file
+# in the environment's site directory executes arbitrary code at interpreter
+# start-up -- before the first line of the check child -- and can describe a
+# different `hwilib` than the one on disk while standing inside the inspection
+# meant to catch it. The check child therefore adds `-S`, which skips site
+# processing entirely. `-S` also drops site-packages from its own `sys.path`,
+# which is why the package roots are handed to it as arguments instead of being
+# resolved by a meta-path search the child should not trust: it hashes the
+# directories this interpreter imports from, and nothing in the import
+# machinery can redirect it there.
+_HWI_CHECK_FLAGS = ("-I", "-S", "-P")
 
-def _hwi_payload_check_command(script: str) -> list[str]:
-    """The argv that runs the payload check under those same rules."""
-    return [sys.executable, *_HWI_ISOLATION_FLAGS, "-c", script]
+
+def _hwi_package_roots(search_path: list[str] | None = None) -> list[str]:
+    """Every hwilib package on the interpreter's own import path.
+
+    Taken from ``sys.path`` entries that hold a ``hwilib/__init__.py`` -- that
+    is the set the helper resolves the package through, because it runs under
+    this same interpreter. Deliberately not a ``find_spec`` answer: a meta-path
+    hook can describe a package the helper will never import, and the check has
+    to hash what the helper will actually reach.
+    """
+    roots: list[str] = []
+    for entry in (sys.path if search_path is None else search_path):
+        if not entry:
+            continue
+        candidate = Path(entry) / "hwilib"
+        if (candidate / "__init__.py").is_file():
+            roots.append(str(candidate))
+    return roots
+
+
+def _hwi_payload_check_command(script: str, roots: list[str]) -> list[str]:
+    """The argv that runs the payload check under those same rules.
+
+    The package roots travel as arguments, because the child runs without site
+    processing (see `_HWI_CHECK_FLAGS`) and must not be redirectable to another
+    package by the very environment it is auditing.
+    """
+    return [sys.executable, *_HWI_CHECK_FLAGS, "-c", script, *roots]
 
 
 def _hwi_command(executable: str) -> list[str]:
@@ -365,42 +579,63 @@ def _hwi_payload_check_script() -> str:
     runs ``hwilib/__init__.py`` before a byte is hashed, so attacker code sat
     inside its own inspection -- it wrote a marker, repointed ``__file__`` and
     planted ``sys.modules['hwilib._cli']`` at the genuine files, and the pin
-    passed. ``PathFinder.find_spec`` answers only "which file would be
-    imported" and executes nothing; the submodule is found from the parent's
-    recorded search locations for the same reason.
+    passed. This child imports nothing of the package and reads no module
+    object: it walks the package directory, hashes every source file in it, and
+    prints what it found. The parent decides. So a poisoned sibling module
+    (``hwilib/commands.py``), a file added to the package, or a file removed
+    from it fails against the recorded tree rather than being believed.
+
+    The package roots arrive in ``sys.argv``: under ``-S`` the child has no
+    site-packages, and the roots are the directories this interpreter actually
+    imports from, not whatever a meta-path hook would claim (CT-90).
     """
     return (
-        "import hashlib, importlib.machinery, pathlib\n"
+        "import hashlib, pathlib, sys\n"
+        f"manifest = {HWI_PAYLOAD_MANIFEST!r}\n"
         "def digest(path):\n"
         "    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()\n"
-        "spec = importlib.machinery.PathFinder.find_spec('hwilib')\n"
-        "if spec is None or not spec.origin:\n"
-        "    raise SystemExit(1)\n"
-        "print('hwilib ' + spec.origin + ' ' + digest(spec.origin))\n"
-        "sub = importlib.machinery.PathFinder.find_spec(\n"
-        "    'hwilib._cli', list(spec.submodule_search_locations or []))\n"
-        "if sub is None or not sub.origin:\n"
-        "    raise SystemExit(1)\n"
-        "print('hwilib._cli ' + sub.origin + ' ' + digest(sub.origin))\n"
+        "roots = sys.argv[1:]\n"
+        "if not roots:\n"
+        "    raise SystemExit(3)\n"
+        "for root in roots:\n"
+        "    root_path = pathlib.Path(root)\n"
+        "    found = {path.relative_to(root_path).as_posix(): path\n"
+        "             for path in root_path.rglob('*.py') if path.is_file()}\n"
+        "    if set(found) != set(manifest):\n"
+        "        raise SystemExit(2)\n"
+        "    for name, path in sorted(found.items()):\n"
+        "        if digest(path) != manifest[name]:\n"
+        "            raise SystemExit(2)\n"
+        "for name, path in sorted(found.items()):\n"
+        "    print(name + ' ' + str(path) + ' ' + manifest[name])\n"
     )
 
 
-def _verify_hwi_payload() -> tuple[tuple[str, str], ...]:
+def _verify_hwi_payload(
+    search_path: list[str] | None = None,
+) -> tuple[tuple[str, str], ...]:
     """Refuse a substituted hwilib before it can see an xpub or a PSBT.
 
     The in-tree entry point is repository source; the code that can be swapped
     out from under a running interpreter is the third-party package it imports.
-    The two files behind the pinned HWI release are located by path search and
-    hashed without a line of them running, under the same isolated interpreter
-    that runs the helper -- so a poisoned site-packages is refused rather than
-    believed, and the file that was hashed is the file that runs (CT-90).
+    Every source file behind the pinned HWI release is hashed without a line of
+    the package running, in a child that carries no site-packages and so cannot
+    be reached by a site hook, and the whole recorded tree must match in both
+    directions -- a missing file, an altered file and an added file are each a
+    substitution (CT-90).
 
-    It returns the files it hashed, so a later call can re-read those bytes
-    instead of trusting a remembered verdict (CT-91).
+    It returns every file it hashed, so a later call can re-read all of those
+    bytes instead of trusting a remembered verdict (CT-91).
     """
+    roots = _hwi_package_roots(search_path)
+    if not roots:
+        raise ProbeError(
+            "The pinned hardware-wallet library is not installed in this "
+            "environment. Install hwi " + EXPECTED_HWI_VERSION + " to use devices."
+        )
     try:
         result = subprocess.run(
-            _hwi_payload_check_command(_hwi_payload_check_script()),
+            _hwi_payload_check_command(_hwi_payload_check_script(), roots),
             capture_output=True,
             text=True,
             timeout=30,
@@ -409,6 +644,8 @@ def _verify_hwi_payload() -> tuple[tuple[str, str], ...]:
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProbeError(_HWI_UNIDENTIFIED) from exc
+    if result.returncode == 2:
+        raise ProbeError(_HWI_WRONG_DIGEST)
     if result.returncode != 0:
         raise ProbeError(
             "The pinned hardware-wallet library is not installed in this "
@@ -416,15 +653,15 @@ def _verify_hwi_payload() -> tuple[tuple[str, str], ...]:
         )
     seen: dict[str, tuple[str, str]] = {}
     for line in (result.stdout or "").splitlines():
-        # "<module> <path> <sha256>", split from the right so that a path with
-        # spaces in it survives.
+        # "<relative path> <path> <sha256>", split from the right so that a
+        # path with spaces in it survives.
         parts = line.split(" ")
         if len(parts) >= 3:
             seen[parts[0]] = (" ".join(parts[1:-1]), parts[-1].strip())
     verified: list[tuple[str, str]] = []
-    for name, expected in HWI_PAYLOAD_PINS.items():
+    for name in sorted(HWI_PAYLOAD_MANIFEST):
         found = seen.get(name)
-        if found is None or found[1] != expected:
+        if found is None or found[1] != HWI_PAYLOAD_MANIFEST[name]:
             raise ProbeError(_HWI_WRONG_DIGEST)
         verified.append(found)
     return tuple(verified)
@@ -453,10 +690,16 @@ def _hwi_sidecars(path: str) -> list[Path]:
 def _verify_hwi_bytes(path: str) -> tuple[tuple[str, str], ...]:
     """Compare a standalone helper against a digest that is not its own claim.
 
-    A frozen build's sidecar sits inside the signed bundle it authenticates, so
-    replacing the helper means breaking that signature first. An explicitly
-    named helper is refused outright without one. Source mode runs no helper
-    binary at all — see _verify_hwi_payload for the surface it does pin.
+    What the sidecar proves depends on where the platform can put it. On macOS a
+    frozen build records it in Contents/Resources, inside the bundle codesign
+    sealed, so replacing the helper means breaking that signature first. On
+    Windows the sidecar sits beside hwi.exe in the same directory, and neither
+    file is signed, so there it proves the build is complete and uncorrupted —
+    not that a local writer did not replace both files together (CT-105). That
+    is the Windows trust model as built, and it is documented as such in
+    SIGNING.md rather than claimed away. An explicitly named helper is refused
+    outright without one. Source mode runs no helper binary at all — see
+    _verify_hwi_payload for the surface it does pin.
 
     It returns the file it hashed, for the reason _verify_hwi_payload does: a
     later call re-reads those bytes instead of trusting a verdict (CT-91).
@@ -518,6 +761,7 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
     first_line = output.strip().splitlines()[0].strip() if output.strip() else ""
     if result.returncode != 0 or first_line not in _HWI_VERSION_LINES:
         raise ProbeError(_HWI_NOT_THE_RELEASE)
+    _require_unchanged(verified)
     _verified_hwi_files[path] = verified
     _verified_hwi_paths.add(path)
 
