@@ -1235,6 +1235,130 @@ class PublishGuardBranchPins(unittest.TestCase):
                                  "a statement after the exit absorbs the refusal")
 
 
+@unittest.skipIf(yaml is None, "PyYAML not installed; workflow lint skipped")
+class ReleaseCredentialScopePins(unittest.TestCase):
+    """CT-97: a release credential must be environment-scoped, never ref-visible.
+
+    A GitHub **repository** secret is handed to a job on any ref, so a dispatch
+    at a historical tag runs that tag's own frozen workflow text but still
+    receives today's signing keys — tags are immutable history and cannot be
+    repaired, so the fix is platform-side: the credentials live in two protected
+    environments whose deployment rule allows `main` only, and the jobs that use
+    them declare those environments. These pins hold the repository half, so a
+    later edit cannot quietly unscope a credential; the platform half is checked
+    by `scripts/check-release-credentials.sh` (see ReleaseCredentialCheckTests in
+    tests/test_release_credentials.py). Splitting the credential sets is also
+    least privilege: the job that needs the release key never loads the Apple
+    identity.
+    """
+
+    RELEASE_SECRETS = ("GPG_PRIVATE_KEY", "GPG_PASSPHRASE")
+    APPLE_SECRETS = (
+        "MAC_CERT_P12_BASE64",
+        "MAC_CERT_PASSWORD",
+        "MAC_APP_SPECIFIC_PASSWORD",
+    )
+    SCOPE = {"macos": "apple-signing", "checksums": "release-signing"}
+
+    def setUp(self):
+        self.text = ACTIVE.read_text(encoding="utf-8")
+        self.jobs = yaml.safe_load(self.text)["jobs"]
+
+    @property
+    def credentials(self) -> tuple:
+        return self.RELEASE_SECRETS + self.APPLE_SECRETS
+
+    def _job_body(self, name: str) -> str:
+        """The raw text of one top-level job, comments included.
+
+        Sliced from the text rather than re-serialized: `yaml.safe_dump` would
+        drop the comments that explain why each declaration exists.
+        """
+        pattern = re.compile(
+            rf"^  {re.escape(name)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", re.M | re.S
+        )
+        match = pattern.search(self.text)
+        self.assertIsNotNone(match, f"{ACTIVE.name} has no job named {name}")
+        return match.group(1)
+
+    def _jobs_naming_a_credential(self) -> dict:
+        found = {}
+        for name in self.jobs:
+            body = self._job_body(name)
+            named = sorted(s for s in self.credentials if f"secrets.{s}" in body)
+            if named:
+                found[name] = (body, named)
+        return found
+
+    def test_every_job_that_names_a_credential_declares_an_environment(self):
+        naming = self._jobs_naming_a_credential()
+        self.assertTrue(naming, "no job names a release credential; the workflow changed shape")
+        for name, (body, named) in naming.items():
+            with self.subTest(job=name, secret=named[0]):
+                self.assertIn(
+                    "environment:",
+                    body,
+                    f"{name} names {named[0]} but declares no environment: a repository "
+                    "secret reaches that job on every ref, including a historical tag",
+                )
+
+    def test_the_scope_map_is_exactly_the_documented_pair(self):
+        found = {}
+        for name, (body, named) in self._jobs_naming_a_credential().items():
+            match = re.search(r"^    environment: (\S+)$", body, re.M)
+            self.assertIsNotNone(match, f"{name} names {named[0]} but declares no environment")
+            found[name] = match.group(1)
+        self.assertEqual(
+            found,
+            self.SCOPE,
+            "the credential scope map changed; move it deliberately and update SIGNING.md "
+            "and scripts/check-release-credentials.sh together",
+        )
+
+    def test_no_other_workflow_file_names_a_release_credential(self):
+        for path in all_workflows():
+            if path.resolve() == ACTIVE.resolve():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for secret in self.credentials:
+                self.assertNotIn(
+                    f"secrets.{secret}",
+                    text,
+                    f"{path.name} names {secret}; a second workflow holding a release "
+                    "credential is a second, unscoped path to it",
+                )
+
+    def test_the_release_key_is_reachable_only_on_the_publish_path(self):
+        """The GPG step is already `if: inputs.publish`, so the release-signing
+        approval pauses a promotion and never a candidate run."""
+        steps = re.split(r"\n      - ", self._job_body("checksums"))
+        naming = [step for step in steps if "secrets.GPG_" in step]
+        self.assertEqual(len(naming), 1, "expected exactly one step in checksums to name the release key")
+        self.assertIn("inputs.publish", naming[0],
+                      "the release key must stay on the publish path")
+        for secret in self.RELEASE_SECRETS:
+            self.assertIn(f"secrets.{secret}", naming[0])
+
+    def test_the_apple_credentials_stay_on_the_notarize_path(self):
+        """An unsigned test build must keep working with no Apple credential and
+        no approval, so those names may appear only in notarize-guarded steps."""
+        steps = re.split(r"\n      - ", self._job_body("macos"))
+        naming = [step for step in steps if "secrets.MAC_" in step]
+        self.assertEqual(len(naming), 2, "expected exactly the two notarize steps to name Apple credentials")
+        for step in naming:
+            self.assertIn("inputs.notarize", step,
+                          "an Apple credential must stay on the notarize path")
+
+    def test_the_documents_name_the_control_and_its_check(self):
+        signing = (ROOT / "SIGNING.md").read_text(encoding="utf-8")
+        process = (ROOT / "RELEASE-PROCESS.md").read_text(encoding="utf-8")
+        for environment in self.SCOPE.values():
+            self.assertIn(environment, signing, f"SIGNING.md must name the {environment} environment")
+        self.assertIn("scripts/check-release-credentials.sh", signing)
+        self.assertIn("scripts/check-release-credentials.sh", process,
+                      "RELEASE-PROCESS.md must name the standing check as a promotion step")
+
+
 class ReleaseNotesTests(unittest.TestCase):
     """What a downloader reads must not describe the build as two different things.
 

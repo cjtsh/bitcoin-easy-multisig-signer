@@ -38,15 +38,23 @@ payment capability is added.
   download now includes `signing-key.asc`, which the verification
   instructions already told a tarball-only verifier to import.
 
-## One open item for the owner
+## One item the owner had to decide
 
-Historical release tags can still be dispatched, and a workflow frozen at
-such a tag reads today's repository secret names, held back only by the
-release already existing. That cannot be fixed from this revision: editing
-those workflows would mean moving published tags, which this project
-forbids, and secrets and environment rules are repository settings, not
-files. It needs an owner decision — a dated acceptance, scoping the release
-secrets to a protected environment, or another remedy. It is recorded in
+Historical release tags can still be dispatched, and a workflow frozen at such a
+tag reads whatever secrets the repository holds today. All 66 tags from
+`v0.1.0` on carry a dispatchable publisher and the pre-0.6.4 ones lack the
+default-branch guard, and those tags cannot be edited without moving published
+tags, which this project forbids. The owner directed the fix on 2026-10-07: the
+signing credentials are scoped to two protected GitHub environments —
+`release-signing` (the release GPG key, `main`-only, owner approval required)
+and `apple-signing` (the Apple identity, `main`-only, no approval) — and the
+jobs that use them declare their environment. An old tag never declares the
+environment, and a tag created in the future still cannot deploy to it, so the
+protection extends to tags that do not exist yet. What remains is the owner's
+value move: re-enter the five secrets into the environments (GitHub never
+returns a secret's value) and delete the repository-level copies, then run
+`scripts/check-release-credentials.sh`, which refuses until that is complete.
+See [`SIGNING.md`](../SIGNING.md) and
 [`releases/PATCH-0.6.8.md`](PATCH-0.6.8.md).
 
 ## Downloads

@@ -42,11 +42,13 @@ report carried is accounted for). The cycle-5 plan is
 cycle-4 plan carried verbatim with the target revision moved to the
 0.6.8 remediation commit `5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`, and its section 9 left **unsigned**
 for the owner — no acceptance and no signature is invented for it. The auditor writes the
-lock and the index row for cycle 5, not this repository's authors. One item remains an owner decision, **CT-97**: historical tags
-still dispatch workflows frozen at those tags with today's repository
-secret names, gated only by the release already existing. It cannot be
-fixed from this revision without moving a published tag, which this
-project forbids.
+lock and the index row for cycle 5, not this repository's authors. The last
+open item, **CT-97**, is fixed at the repository level by the owner's
+2026-10-07 direction: the release credentials live in the `release-signing` and
+`apple-signing` environments, each deployable only from `main`, and a historical
+tag's frozen workflow cannot read them. The owner's remaining step is the value
+move — re-enter the five secrets and delete the repository-level copies;
+`scripts/check-release-credentials.sh` refuses until that is done.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 

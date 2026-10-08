@@ -29,12 +29,13 @@ against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
 cycle-4 plan carried verbatim with the target revision moved to commit
 `5effcf5c8764b16f9e640095bb7b8d62aa65f4e3` and section 9 left unsigned for the owner; then a signed,
 notarized `publish=false` candidate and the owner hardware walkthrough gate
-promotion. One item is left to the owner — **CT-97**:
-historical tags still dispatch workflows frozen at those tags with today's
-repository secret names, held back only by the release already existing. It
-cannot be fixed from this revision without moving a published tag, which
-this project forbids, and no acceptance is invented for it;
-`releases/PATCH-0.6.8.md` states the options.
+promotion. The last open item, **CT-97**, is fixed at the repository level: the
+release credentials are scoped to the `release-signing` and `apple-signing`
+environments, each deployable only from `main`, so a dispatch at a historical tag
+cannot read them. The owner's remaining step is the value move — re-enter the
+five secrets in those environments and delete the repository-level copies;
+`scripts/check-release-credentials.sh` refuses until that is done, and
+`SIGNING.md` carries the steps.
 
 The prior release, **0.6.7**, is the Color Team cycle-3 build-process
 remediation: the retired per-platform workflows are deleted from every

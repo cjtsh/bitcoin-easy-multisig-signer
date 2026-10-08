@@ -152,6 +152,14 @@ jobs:
   macos:
     name: Apple Silicon DMG
     needs: version
+    # CT-97: the Apple credentials live in this protected environment, whose
+    # deployment rule allows only `main`. A dispatch at a historical tag runs
+    # that tag's own workflow text, which never declares this environment, so
+    # the run can never be handed the credentials — and that holds for tags cut
+    # years from now, because the rule is about the ref, not about a tag list.
+    # scripts/check-release-credentials.sh proves the placement; SIGNING.md
+    # carries the runbook.
+    environment: apple-signing
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -698,6 +706,14 @@ jobs:
   checksums:
     name: SHA256SUMS
     needs: [version, source, macos, windows, linux]
+    # CT-97: the release GPG key lives in this protected environment, which
+    # allows deployments from `main` only and requires a human approval before
+    # the signing step can run. A historical tag's workflow text never declares
+    # this environment, so no tag dispatch can reach the key — for every tag,
+    # including ones that do not exist yet. The key is named only under
+    # `if: ${{ inputs.publish }}`, so a candidate run does not pause for the
+    # approval; only the promotion does.
+    environment: release-signing
     runs-on: ubuntu-24.04
     permissions:
       actions: read

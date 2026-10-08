@@ -163,3 +163,18 @@ tag X+1 is stale-by-construction and was filed as CT-46.
 **The audit ledger is the backlog.** Work the appendix of the latest
 color-team report as the fix list. Close each finding with a test demonstrated
 able to fail, or with a written owner acceptance — never by silence.
+
+**Release credentials are environment-scoped, never repository-level.** The
+signing credentials live in the `release-signing` and `apple-signing`
+environments, each deployable only from `main`, and each job that names a
+credential declares its environment. A repository secret reaches a job on **any**
+ref, so a dispatch at a historical tag would run that tag's frozen workflow text
+with today's signing keys; every tag from `v0.1.0` on carries a dispatchable
+`build-candidate.yml` and the pre-0.6.4 ones lack the default-branch guard.
+Tags are immutable, so the protection is a rule about which ref a run is on, and
+it holds for tags that do not exist yet. Run
+`scripts/check-release-credentials.sh` before every promotion and in every audit
+cycle: it is read-only and refuses if a credential is repository-level, an
+environment is missing or not `main`-only, its secret set changed, or
+`release-signing` has no required reviewer. `tests/test_workflow_config.py` holds
+the repository half of the control; `SIGNING.md` carries the owner setup steps.

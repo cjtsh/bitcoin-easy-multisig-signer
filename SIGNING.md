@@ -70,7 +70,9 @@ without this key.
    gpg --armor --export release@bitseeker.com > signing-key.asc
    git add signing-key.asc && git commit -m "Add the release signing public key"
    ```
-3. Add two repository secrets (Settings → Secrets and variables → Actions):
+3. Add the two secrets to the **`release-signing` environment**, never as
+   repository secrets (Settings → Environments → `release-signing` → Environment
+   secrets — see "Where the release credentials live" below):
    - `GPG_PRIVATE_KEY` — the armored **private** key
      (`gpg --armor --export-secret-keys release@bitseeker.com`)
    - `GPG_PASSPHRASE` — the key's passphrase (empty secret if none)
@@ -79,6 +81,71 @@ Guard the private key like the Apple credentials: it is publisher identity.
 The public key in the repo is how a downloader checks `SHA256SUMS.asc`; the
 release job verifies the signature against that committed key before anything
 is published.
+
+## Where the release credentials live (CT-97)
+
+The signing credentials are **not** repository secrets. They live in two
+protected environments, each deployable only from `main`:
+
+| Environment | Credentials | Deployment rule |
+|---|---|---|
+| `release-signing` | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | `main` only, and the owner approves each deployment |
+| `apple-signing` | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD` | `main` only, no approval |
+
+`.github/workflows/build-candidate.yml` declares the environment on the job that
+needs it: `macos` → `apple-signing`, `checksums` → `release-signing`. The GPG
+step already runs only under `if: ${{ inputs.publish }}` and the Apple steps only
+under `if: ${{ inputs.notarize }}`, so the approval pauses a promotion and never
+a candidate build. A repository-level secret is handed to a job on **any** ref,
+so without this a dispatch at a historical tag would run that tag's own frozen
+workflow text with today's signing keys; all 66 tags from `v0.1.0` on carry a
+dispatchable `build-candidate.yml` and the pre-0.6.4 ones lack the
+default-branch guard. Tags are immutable history and cannot be repaired, so the
+fix is a rule about which ref a run is on: an old tag never declares the
+environment and gets nothing, and a **future** tag inherits the workflow text
+that does declare it but still cannot deploy, because the environment admits
+`main` only. That is what makes this hold for tags that do not exist yet.
+
+Rules:
+
+- **Never** add a release credential back as a repository secret. Environment
+  secrets are *added to* repository secrets, so a surviving repository-level copy
+  would keep supplying every ref.
+- A credential can only be moved by re-entering its value: GitHub never returns a
+  secret's value, not even to an administrator.
+- `scripts/check-release-credentials.sh` is the standing, read-only check. Run it
+  before every promotion and in every audit cycle. It refuses (exit 1) if a
+  release credential sits at repository level, an environment is missing, an
+  environment's branch policy is not exactly `main`, an environment's secret set
+  is not exactly the expected one, or `release-signing` has no required reviewer.
+- `tests/test_workflow_config.py` fails the build if a job names one of these
+  credentials without declaring its environment, if the job→environment map
+  changes, or if any other workflow file names a credential at all.
+
+**Moving the credentials (owner, one time).** The two environments exist and admit
+`main` only, but the values still sit in the repository-level secrets. GitHub never
+returns a secret's value to anyone, so each one is re-entered:
+
+1. Settings → Environments → `release-signing` → Environment secrets: add
+   `GPG_PRIVATE_KEY` (the armored private key) and `GPG_PASSPHRASE`.
+2. Settings → Environments → `apple-signing` → Environment secrets: add
+   `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD`.
+3. Run `scripts/check-release-credentials.sh`. It will name every
+   repository-level copy it can still see.
+4. Settings → Secrets and variables → Actions: delete the five repository-level
+   copies. **The control is not armed until this step**, because environment
+   secrets are added to repository secrets.
+5. Run `scripts/check-release-credentials.sh` again. It must print
+   `ok: the release credentials are environment-scoped, main-only, and
+   unreachable from any tag`. Do this before the next promotion.
+
+With the `gh` CLI the same move is one command per secret, reading each value
+from a file so it never enters the shell history:
+
+```bash
+gh secret set GPG_PRIVATE_KEY --env release-signing --repo cjtsh/bitcoin-easy-multisig-signer < ~/gpg-private-key.asc
+gh secret delete GPG_PRIVATE_KEY --repo cjtsh/bitcoin-easy-multisig-signer
+```
 
 ## How a downloader verifies any asset
 

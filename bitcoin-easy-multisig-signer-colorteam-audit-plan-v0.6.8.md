@@ -318,17 +318,21 @@ No other new questions this cycle. The five cycle-`v0.6.4` questions and their a
 are carried forward unchanged (section 9); the standard does not change until it is
 passed. Two things the owner must settle at signing:
 
-1. **CT-97 — historical tags (owner decision required).** Release tags from `v0.1.0`
-   through `v0.6.3` freeze the workflow text of their commit, and a dispatch at such a
-   tag reads today's repository secret names, gated only by the release already
-   existing. It cannot be fixed from this revision without moving or deleting a
-   published tag, which `AGENTS.md` forbids, and repository secret and environment
-   rules are not files. The cycle-4 Amber lane filed it Medium. The owner must choose,
-   in writing and dated, before signing: **(A)** accept the risk with a dated note that
-   names the reopening trigger; **(B)** scope the release secrets to a protected `main`
-   environment with required reviewers; or **(C)** direct another remedy.
-   `releases/PATCH-0.6.8.md` states the same three options. No acceptance is invented
-   for the owner.
+1. **CT-97 — historical tags (resolved by owner direction on 2026-10-07).** Release tags
+   from `v0.1.0` through `v0.6.3` freeze the workflow text of their commit, and a dispatch
+   at such a tag reads today's repository secret names, gated only by the release already
+   existing. It cannot be fixed from this revision without moving or deleting a published
+   tag, which `AGENTS.md` forbids, and repository secret and environment rules are not
+   files. The cycle-4 Amber lane filed it Medium. **The owner chose (B)** — scope the
+   release credentials to protected environments — and directed the permanent form of the
+   fix rather than a dated acceptance. The repository half is implemented, pinned and
+   break-and-watched in this revision; the referee must verify the platform half by running
+   `scripts/check-release-credentials.sh` (it must report ok, not merely exist) and by
+   confirming each environment admits only `main`. **The owner's remaining step is the value
+   move**: re-enter the five secrets in the environments and delete the repository-level
+   copies. Until that is done the check refuses and the control is created but not armed —
+   that state is visible to the referee, not hidden. The full decision is recorded in
+   section 9 and in `releases/PATCH-0.6.8.md`.
 2. **Report availability:** the cycle-4 Color Team report is available to the
    **referee** so each CT finding's remedy can be verified, while the specialist lanes
    run without it (section 0 preamble).
@@ -354,12 +358,12 @@ passed. Two things the owner must settle at signing:
   is available to the referee for fix verification; specialist lanes run without it.
   The repository's earlier AI audit reports stay excluded as inputs. (Same
   transcription.)
-- *Section 8 (new this cycle, owner decision required):* **CT-97** — historical tags
-  still dispatch workflows frozen at those tags with today's repository secret names,
-  gated only by the release already existing. It cannot be fixed from this revision
-  without moving a published tag, which `AGENTS.md` forbids. The owner must choose one
-  of the options stated above and in `releases/PATCH-0.6.8.md` and write the choice,
-  dated, in this section before signing. No acceptance is invented for the owner.
+- *Section 8 (owner-decided this cycle):* **CT-97** — historical tags still dispatch
+  workflows frozen at those tags with today's repository secret names, gated only by the
+  release already existing. The owner directed **option B** on 2026-10-07: the release
+  credentials live in protected environments that admit only `main`. The decision is
+  transcribed in the block below for the owner's signature; no acceptance is invented for
+  the owner, and the owner's remaining value move is recorded in section 8.
 
 **Answers to the questions above** *(carried forward from the signed cycle-`v0.6.7`
 plan with the revision-specific clauses moved to this cycle; the signature below
@@ -393,14 +397,28 @@ ratifies them for this cycle).*
    push rights are owner GitHub account hygiene, outside the application's threat
    model, and the panel treats them as such.
 
-**CT-97 owner decision** *(to be completed and dated by the owner; the audit is not
-handed to the panel with this line blank, and no acceptance is invented for the owner).*
+**CT-97 owner decision** *(the owner directed option B on 2026-10-07; that direction is
+transcribed here, and confirming it is part of the signature below — no acceptance is
+invented for the owner).*
 
-- **Decision:** ______________________
-- **Date:** ______________________
+- **Decision:** **Option B — scope the release credentials to protected environments.** The
+  signing credentials were repository secrets, which reach a job on **any** ref; they now
+  live in the `release-signing` environment (release GPG key, `main`-only, owner approval
+  required) and the `apple-signing` environment (Apple identity, `main`-only, no approval),
+  and each job that uses them declares its environment. A historical tag's frozen workflow
+  cannot deploy to either environment, and a tag created in the future inherits the same
+  refusal, which is why this holds for tags that do not exist yet. The owner chose the
+  permanent form over a dated acceptance because the project will cut many more releases.
+  The repository half is implemented, pinned and break-and-watched in this revision:
+  `.github/workflows/build-candidate.yml`, `tests/test_workflow_config.py::ReleaseCredentialScopePins`,
+  `tests/test_release_credentials.py`, `scripts/check-release-credentials.sh`, and `SIGNING.md`
+  ("Where the release credentials live"). The owner's remaining step is the value move —
+  re-enter the five secrets in the environments and delete the repository-level copies;
+  `scripts/check-release-credentials.sh` refuses until it is complete.
+- **Date:** 2026-10-07
 
-**Sign-off.** *Before signing: confirm that section 0 names commit `5effcf5c8764`
-as the frozen revision, complete the CT-97 decision above, then sign the two lines
+**Sign-off.** *Before signing: confirm that section 0 names the frozen revision,
+confirm the CT-97 decision above (option B, dated 2026-10-07), then sign the two lines
 below. The signature ratifies the scope and the revision together; if either moves,
 this section is void and the plan is re-signed.*
 
