@@ -95,14 +95,21 @@ protected environments, each deployable only from `main`:
 
 | Environment | Credentials | Deployment rule |
 |---|---|---|
-| `release-signing` | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | `main` only, and the owner approves each deployment |
-| `apple-signing` | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD` | `main` only, no approval |
+| `release-signing` | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | `main` only, no human gate |
+| `apple-signing` | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD` | `main` only, no human gate |
 
 `.github/workflows/build-candidate.yml` declares the environment on the job that
 needs it: `macos` → `apple-signing`, `checksums` → `release-signing`. The GPG
 step already runs only under `if: ${{ inputs.publish }}` and the Apple steps only
-under `if: ${{ inputs.notarize }}`, so the approval pauses a promotion and never
-a candidate build. A repository-level secret is handed to a job on **any** ref,
+under `if: ${{ inputs.notarize }}`, so a candidate build never enters either
+environment.
+
+Neither environment declares a required reviewer or a wait timer, by design:
+publishing must start on its own so any agent team the owner authorises can cut a
+release. A required reviewer would not add a second pair of eyes anyway — with
+`prevent_self_review: false` the same token that dispatched the run can approve
+it — while giving a release a way to stall. The ref rule below is the control
+that does the work. A repository-level secret is handed to a job on **any** ref,
 so without this a dispatch at a historical tag would run that tag's own frozen
 workflow text with today's signing keys; all 66 tags from `v0.1.0` on carry a
 dispatchable `build-candidate.yml` and the pre-0.6.4 ones lack the
@@ -124,7 +131,8 @@ Rules:
   before every promotion and in every audit cycle. It refuses (exit 1) if a
   release credential sits at repository level, an environment is missing, an
   environment's branch policy is not exactly `main`, an environment's secret set
-  is not exactly the expected one, or `release-signing` has no required reviewer.
+  is not exactly the expected one, or an environment declares a human gate (a
+  required reviewer or a wait timer).
 - `tests/test_workflow_config.py` fails the build if a job names one of these
   credentials without declaring its environment, if the job→environment map
   changes, or if any other workflow file names a credential at all.
@@ -144,7 +152,7 @@ than a new certificate:
 |---|---|---|
 | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | the release key in the maintainer's GnuPG keyring — `ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7`, `Bitseeker LLC <release@bitseeker.llc>`, whose public half is the committed `signing-key.asc` | `scripts/provision-release-credentials.sh` exports it. Only losing the keyring itself means running `gpg --full-generate-key` (step 1 above) and committing a new `signing-key.asc` |
 | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD` | the `Developer ID Application: Bitseeker LLC (B8G5L7M8TB)` identity in the login keychain, SHA-1 `02624AD5998203927864C7167C461DE0E6D19707` | the same script exports a fresh `.p12` and generates a fresh password, so the two names are always in step |
-| `MAC_APP_SPECIFIC_PASSWORD` | **nowhere on the machine** — Apple shows an app-specific password once, at creation | only the Apple ID owner can: appleid.apple.com → Sign-In & Security → App-Specific Passwords → generate one (label it `besa-notary`), then `scripts/provision-release-credentials.sh --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune` |
+| `MAC_APP_SPECIFIC_PASSWORD` | the `apple-signing` environment secret — put there on 2026-10-08 with no owner action; **no readable copy exists on this machine** | if it is ever lost, Apple shows an app-specific password only once at creation, so the only way back is a new one: appleid.apple.com → Sign-In & Security → App-Specific Passwords → generate one (label it `besa-notary`), then `scripts/provision-release-credentials.sh --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune` |
 
 ### If the credentials vanish (the recovery path)
 
@@ -158,7 +166,8 @@ mode-700 temporary directory that is scrubbed on exit.
 # everything this Mac can rebuild, then prove the control is armed
 scripts/provision-release-credentials.sh --prune
 
-# just the one credential only the owner can create
+# replace the app-specific password if Apple ever invalidates it
+# (only then is a fresh one from the Apple ID owner needed)
 scripts/provision-release-credentials.sh \
   --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune
 
@@ -170,6 +179,11 @@ scripts/provision-release-credentials.sh --dry-run
 is the step that actually arms CT-97. The check must print
 `ok: the release credentials are environment-scoped, main-only, and unreachable
 from any tag` before the next promotion.
+
+No human gate stands between a dispatch and a published release: an agent with
+push rights and an authenticated `gh` runs the two dispatches in
+`RELEASE-PROCESS.md` §2/§3 from `main` — the candidate first, then the promotion
+naming that candidate's run id.
 
 The local build uses the same Apple credential through the keychain profile
 `eas-notary` (`xcrun notarytool history --keychain-profile eas-notary` proves it

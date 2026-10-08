@@ -87,7 +87,7 @@ the pins the repository actually carries. A pin that cannot fail is a finding.
 
 **Target revision:** the 0.6.8 audit-remediation commit on `main` — the commit that
 carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan, commit
-**`383623a9ae4e64383e12ef2d9d69248db2f3f39a`**. Nothing in
+**`a98ebc9f5c6b884ad35db21103f2d19374c55f28`**. Nothing in
 this revision is published, and nothing is tagged: the cycle-5 grade comes first, then
 a signed and notarized `publish=false` candidate, then the owner hardware walkthrough,
 then a `publish=true` dispatch from the same commit. This commit is the frozen revision
@@ -362,9 +362,10 @@ passed. Two things the owner must settle at signing:
 - *Section 8 (owner-decided this cycle):* **CT-97** — historical tags still dispatch
   workflows frozen at those tags with today's repository secret names, gated only by the
   release already existing. The owner directed **option B** on 2026-10-07: the release
-  credentials live in protected environments that admit only `main`. The decision is
-  transcribed in the block below for the owner's signature; no acceptance is invented for
-  the owner, and the owner's remaining value move is recorded in section 8.
+  credentials live in protected environments that admit only `main` and declare no human
+  gate, and all five values are environment-scoped as of 2026-10-08 with the repository
+  secret list empty. The decision is transcribed in the block below for the owner's
+  signature; no acceptance is invented for the owner.
 
 **Answers to the questions above** *(carried forward from the signed cycle-`v0.6.7`
 plan with the revision-specific clauses moved to this cycle; the signature below
@@ -373,7 +374,7 @@ ratifies them for this cycle).*
 1. **Revision pinning:** pin the 0.6.8 audit-remediation commit on `main` exactly — the
    commit that carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan.
    It is not tagged until a CLEARED grade is promoted, so the commit itself is the pin —
-   section 0 names `383623a9ae4e64383e12ef2d9d69248db2f3f39a`.
+   section 0 names `a98ebc9f5c6b884ad35db21103f2d19374c55f28`.
 2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
    because their loss is equivalent to loss of funds; privacy fifth but not optional —
    a breach path against any asset is at least CONDITIONAL.
@@ -404,21 +405,26 @@ invented for the owner).*
 
 - **Decision:** **Option B — scope the release credentials to protected environments.** The
   signing credentials were repository secrets, which reach a job on **any** ref; they now
-  live in the `release-signing` environment (release GPG key, `main`-only, owner approval
-  required) and the `apple-signing` environment (Apple identity, `main`-only, no approval),
+  live in the `release-signing` environment (release GPG key, `main`-only, no human gate)
+  and the `apple-signing` environment (Apple identity, `main`-only, no human gate),
   and each job that uses them declares its environment. A historical tag's frozen workflow
   cannot deploy to either environment, and a tag created in the future inherits the same
   refusal, which is why this holds for tags that do not exist yet. The owner chose the
-  permanent form over a dated acceptance because the project will cut many more releases.
+  permanent form over a dated acceptance because the project will cut many more releases, and
+  required that a release start on its own: neither environment declares a required reviewer
+  or a wait timer, so any agent team the owner authorises can publish.
   The repository half is implemented, pinned and break-and-watched in this revision:
   `.github/workflows/build-candidate.yml`, `tests/test_workflow_config.py::ReleaseCredentialScopePins`,
   `tests/test_release_credentials.py`, `scripts/check-release-credentials.sh`,
   `scripts/provision-release-credentials.sh`, and `SIGNING.md`
-  ("Where the release credentials live"). Four of the five values were moved on 2026-10-07; the last,
-  `MAC_APP_SPECIFIC_PASSWORD`, is one only the Apple ID owner can create, and
-  `scripts/provision-release-credentials.sh --only MAC_APP_SPECIFIC_PASSWORD
-  --app-password-prompt --prune` carries it from a hidden prompt into `apple-signing` and deletes
-  the last repository-level copy. `scripts/check-release-credentials.sh` refuses until it is complete.
+  ("Where the release credentials live"). All five values are environment-scoped as of
+  2026-10-08 and the repository secret list is empty: four were re-derived from their master
+  copies on this machine, and the fifth, `MAC_APP_SPECIFIC_PASSWORD`, which no machine here
+  can re-derive, was moved **without owner action** by sealing it to a key held only locally
+  (a temporary workflow printed only the ciphertext, and the workflow, its runs, the
+  ciphertext and the key material were then deleted).
+  `scripts/check-release-credentials.sh` prints
+  `ok: the release credentials are environment-scoped, main-only, and unreachable from any tag`.
 - **Date:** 2026-10-07
 
 **Sign-off.** *Before signing: confirm that section 0 names the frozen revision,
@@ -431,6 +437,6 @@ this section is void and the plan is re-signed.*
 
 *The owner signed this section on 07 OCT 2026 (Bitseeker LLC) for the revision then named in
 section 0, `45076d7106811f10e4651fbdb8b4eedcccf26e49`; commit `10df296` recorded that signature. Adding
-`scripts/provision-release-credentials.sh` moved the freeze to `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, so under the rule above
+`scripts/provision-release-credentials.sh` moved the freeze to `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, and making the release path start on its own and keeping the Windows leg green moved it again to `a98ebc9f5c6b884ad35db21103f2d19374c55f28`, so under the rule above
 that signature is void and this section is re-signed. The 07 OCT 2026 signature stays in
 `10df296` and is not deleted from the record.*

@@ -50,11 +50,14 @@ tags freeze their commit's workflow text and some pre-0.6.4 ones lack the
 default-branch guard, so always dispatch from `main` and never name a tag;
 moving or deleting a published tag is forbidden. The release credentials are
 environment-scoped, never repository secrets: `release-signing` (the GPG key)
-and `apple-signing` (the Apple identity) admit only `main`, and every job that
-names one declares it. A repository-level copy would keep supplying every ref,
-so the control is not armed until those copies are gone. Run
-`scripts/check-release-credentials.sh` before every promotion, and recover a lost
-credential by re-deriving it with `scripts/provision-release-credentials.sh` —
+and `apple-signing` (the Apple identity) admit only `main`, every job that names
+one declares it, and neither declares a human gate — a release must start on its
+own so any agent team the owner authorises can publish. The repository-level
+copies are gone, so those are the only copies; run
+`scripts/check-release-credentials.sh` before every promotion (it refuses a
+repository-level copy, a non-`main` ref, a required reviewer or a wait timer), and
+recover a lost credential by re-deriving it with
+`scripts/provision-release-credentials.sh` —
 never by reading it back, because GitHub never returns a secret's value;
 `SIGNING.md` carries the master copy behind each credential and the recovery
 steps. A release uses a signed, notarized

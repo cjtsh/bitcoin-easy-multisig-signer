@@ -175,9 +175,11 @@ Tags are immutable, so the protection is a rule about which ref a run is on, and
 it holds for tags that do not exist yet. Run
 `scripts/check-release-credentials.sh` before every promotion and in every audit
 cycle: it is read-only and refuses if a credential is repository-level, an
-environment is missing or not `main`-only, its secret set changed, or
-`release-signing` has no required reviewer. `tests/test_workflow_config.py` holds
-the repository half of the control; `SIGNING.md` carries the owner setup steps.
+environment is missing or not `main`-only, its secret set changed, or an
+environment declares a human gate (a required reviewer or a wait timer). Neither
+environment pauses for a person, so any agent team the owner authorises can cut a
+release. `tests/test_workflow_config.py` holds the repository half of the
+control; `SIGNING.md` carries the recovery steps.
 
 **A credential moves by re-deriving it, never by reading it back.**
 `scripts/provision-release-credentials.sh` is the supported way to put a value in

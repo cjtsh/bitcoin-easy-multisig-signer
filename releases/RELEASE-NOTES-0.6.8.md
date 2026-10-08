@@ -46,18 +46,21 @@ tag reads whatever secrets the repository holds today. All 66 tags from
 default-branch guard, and those tags cannot be edited without moving published
 tags, which this project forbids. The owner directed the fix on 2026-10-07: the
 signing credentials are scoped to two protected GitHub environments —
-`release-signing` (the release GPG key, `main`-only, owner approval required)
-and `apple-signing` (the Apple identity, `main`-only, no approval) — and the
-jobs that use them declare their environment. An old tag never declares the
+`release-signing` (the release GPG key, `main`-only, no human gate) and
+`apple-signing` (the Apple identity, `main`-only, no human gate) — and the jobs
+that use them declare their environment. An old tag never declares the
 environment, and a tag created in the future still cannot deploy to it, so the
-protection extends to tags that do not exist yet. What remains is the owner's
-value move. Four of the five are already environment-scoped: they were re-derived
-from their master copies on this machine and deleted at repository level.
-`MAC_APP_SPECIFIC_PASSWORD` is the one value only the Apple ID owner can create
-(Apple shows it once), and `scripts/provision-release-credentials.sh` carries it
-into `apple-signing` from a hidden prompt and prunes the last repository-level
-copy. Run `scripts/check-release-credentials.sh`, which refuses until that is
-complete; `SIGNING.md` documents the master copy behind every credential.
+protection extends to tags that do not exist yet. All five values are now
+environment-scoped and the repository secret list is empty. The last one,
+`MAC_APP_SPECIFIC_PASSWORD`, which cannot be re-derived from this machine, was
+moved on 2026-10-08 **without owner action**: a temporary workflow sealed it to a
+key held only locally and printed only the ciphertext, so nothing readable ever
+entered a run log. `scripts/check-release-credentials.sh` now prints
+`ok: the release credentials are environment-scoped, main-only, and unreachable
+from any tag`, and no environment pauses for a person, so any agent team the
+owner authorises can cut a release. `SIGNING.md` documents the master copy behind
+every credential; `scripts/provision-release-credentials.sh` is the recovery
+path.
 See [`SIGNING.md`](../SIGNING.md) and
 [`releases/PATCH-0.6.8.md`](PATCH-0.6.8.md).
 

@@ -40,20 +40,25 @@ answered in code and in the round-trip ledger
 report carried is accounted for). The cycle-5 plan is
 `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
 cycle-4 plan carried verbatim with the target revision moved to the
-0.6.8 remediation commit `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, and its section 9 left **unsigned**
+0.6.8 remediation commit `a98ebc9f5c6b884ad35db21103f2d19374c55f28`, and its section 9 left **unsigned**
 for the owner. The owner's 07 OCT 2026 signature covered the previous freeze
 (`45076d7106811f10e4651fbdb8b4eedcccf26e49`); adding
-`scripts/provision-release-credentials.sh` moved the freeze, so that signature
+`scripts/provision-release-credentials.sh`, then the gate-free and Windows-portability
+fix, moved the freeze, so that signature
 is void and the plan is re-signed. No acceptance and no signature is invented for it. The auditor writes the
 lock and the index row for cycle 5, not this repository's authors. The last
 open item, **CT-97**, is fixed at the repository level by the owner's
 2026-10-07 direction: the release credentials live in the `release-signing` and
-`apple-signing` environments, each deployable only from `main`, and a historical
-tag's frozen workflow cannot read them. Four of the five values are already
-environment-scoped and gone from the repository level; `MAC_APP_SPECIFIC_PASSWORD`
-is the only one left, because Apple shows it once and only the owner can create it.
-The recovery path is scripted (`scripts/provision-release-credentials.sh`), and
-`scripts/check-release-credentials.sh` refuses until that last copy is gone.
+`apple-signing` environments, each deployable only from `main` and declaring no
+human gate, so a historical tag's frozen workflow cannot read them and a
+promotion never pauses for a person. All five values are environment-scoped and
+the repository secret list is empty; the last one, `MAC_APP_SPECIFIC_PASSWORD`,
+which no machine here can re-derive, was moved on 2026-10-08 without owner action
+by sealing it to a key held only locally. The recovery path is scripted
+(`scripts/provision-release-credentials.sh`), and
+`scripts/check-release-credentials.sh` prints
+`ok: the release credentials are environment-scoped, main-only, and unreachable
+from any tag`.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 

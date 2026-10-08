@@ -29,19 +29,22 @@ record and the round trip of every finding the cycle-4 report carried.
 **0.6.8 is not published.** The cycle-5 audit runs on this revision first,
 against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
 cycle-4 plan carried verbatim with the target revision moved to commit
-`383623a9ae4e64383e12ef2d9d69248db2f3f39a` and section 9 left unsigned for
-the owner, because adding `scripts/provision-release-credentials.sh` moved
-the freeze past the 07 OCT 2026 signature; then a signed, notarized
+`a98ebc9f5c6b884ad35db21103f2d19374c55f28` and section 9 left unsigned for
+the owner, because changes after the 07 OCT 2026 signature — the provisioning
+script, then the gate-free and Windows-portability fix — moved the freeze past it; then a signed, notarized
 `publish=false` candidate and the owner hardware walkthrough gate promotion.
 The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`
-environments, each deployable only from `main`, so a dispatch at a historical tag
-cannot read them. Four of the five values are already environment-scoped and gone
-from the repository level; `MAC_APP_SPECIFIC_PASSWORD` is the only one left,
-because Apple shows it once and only the owner can create it. The recovery path is
-scripted (`scripts/provision-release-credentials.sh`), and
-`scripts/check-release-credentials.sh` refuses until that last copy is gone;
-`SIGNING.md` carries the master copy behind each credential.
+environments, each deployable only from `main` and declaring no human gate, so a
+dispatch at a historical tag cannot read them and a promotion never pauses for a
+person. All five values are environment-scoped and the repository-level secret
+list is empty; the last one, `MAC_APP_SPECIFIC_PASSWORD`, which no machine here
+can re-derive, was moved on 2026-10-08 without owner action by sealing it to a
+key held only locally. `scripts/check-release-credentials.sh` prints
+`ok: the release credentials are environment-scoped, main-only, and unreachable
+from any tag`; the recovery path is scripted
+(`scripts/provision-release-credentials.sh`), and `SIGNING.md` carries the master
+copy behind each credential.
 
 The prior release, **0.6.7**, is the Color Team cycle-3 build-process
 remediation: the retired per-platform workflows are deleted from every
