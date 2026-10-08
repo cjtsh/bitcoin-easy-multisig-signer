@@ -1027,6 +1027,12 @@ class PublishPathSweepTests(unittest.TestCase):
         that carried the recipe. The files are on non-main branches by design,
         so a wording that trips the matchers is a real gate failure waiting for
         its first run, not a cosmetic one.
+
+        The recipe is resolved through support.find_build_recipe. Reading
+        .github/workflows/ directly worked in the checkout and broke the source
+        archive, which ships the recipes under ci/ and has no .github at all —
+        the 0.6.8 archive job failed on exactly that FileNotFoundError, the
+        third time this repository has paid for an inline recipe lookup.
         """
         script = (ROOT / "scripts" / "check-publish-paths.sh").read_text(encoding="utf-8")
         self.assertIn("contents", script, "the sweep no longer mentions contents")
@@ -1034,7 +1040,10 @@ class PublishPathSweepTests(unittest.TestCase):
                    "gh api", "api.github.com", "uploads.github.com",
                    "action-gh-release", "release-action")
         for name in ("linux-inputs.yml", "windows-inputs.yml"):
-            body = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            recipe = find_build_recipe(ROOT, name)
+            self.assertIsNotNone(
+                recipe, f"{name} is missing from both .github/workflows/ and ci/")
+            body = recipe.read_text(encoding="utf-8")
             for phrase in phrases:
                 with self.subTest(recipe=name, phrase=phrase):
                     self.assertNotIn(

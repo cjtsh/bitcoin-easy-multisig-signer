@@ -128,13 +128,18 @@ class HardeningPinPortabilityTests(unittest.TestCase):
         """One resolver, so the ci/ fallback cannot be dropped a third time.
 
         0.6.6 caught PipToolsPinTests opening only .github/workflows/; 0.6.7
-        caught ToolchainPinTests doing the same. Both now call
-        support.find_build_recipe, and this holds that nothing reopens the
-        inline two-path lookup to drift away from it again.
+        caught ToolchainPinTests doing the same; 0.6.8 caught CT-102's comment
+        check doing it a third time, which the old pin missed because it only
+        asked whether the module mentioned the helper somewhere. All of them
+        now call support.find_build_recipe, and this also refuses the inline
+        ROOT-anchored expression itself so a fourth repeat breaks a test.
         """
         support_text = (ROOT / "tests" / "support.py").read_text(encoding="utf-8")
         self.assertIn('root / "ci" / name', support_text)
         self.assertIn('root / ".github" / "workflows" / name', support_text)
+        inline = ('ROOT / ".github" / "workflows" / name',
+                  'self.root / ".github" / "workflows" / name',
+                  'root / ".github" / "workflows" / name')
         for name in ("test_hardening_pins.py", "test_workflow_config.py",
                      "test_libusb_vendor.py"):
             text = (ROOT / "tests" / name).read_text(encoding="utf-8")
@@ -144,6 +149,13 @@ class HardeningPinPortabilityTests(unittest.TestCase):
                               f"support.find_build_recipe")
                 self.assertNotIn('root / "ci" / name', text,
                                  f"{name} must not reopen the inline lookup")
+                for expression in inline:
+                    self.assertNotIn(
+                        expression, text,
+                        f"{name} must not open a recipe under .github/workflows/ "
+                        f"directly ({expression}); the source archive ships the "
+                        f"recipes under ci/ and has no .github at all, which is "
+                        f"how the 0.6.8 archive job failed on CT-102")
 
 
 if __name__ == "__main__":
