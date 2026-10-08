@@ -32,8 +32,11 @@ cycle-4 plan carried verbatim with the target revision moved to commit
 `bc92f054822008510249e743a60033009dc4995a` and section 9 left unsigned for
 the owner, because changes after the 07 OCT 2026 signature — the provisioning
 script, the gate-free and Windows-portability fix, then the source-archive
-recipe fix — moved the freeze past it; then a signed, notarized
-`publish=false` candidate and the owner hardware walkthrough gate promotion.
+recipe fix — moved the freeze past it. The signed, notarized `publish=false`
+candidate is green: run 37783584533 at `1a5e9bf` (documentation only on top of the
+frozen revision) passed all seven jobs and published nothing — the publish step took
+its documented `publish=false` refusal path before any tag or release was created. The
+owner hardware walkthrough is what gates promotion now.
 The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`
 environments, each deployable only from `main` and declaring no human gate, so a

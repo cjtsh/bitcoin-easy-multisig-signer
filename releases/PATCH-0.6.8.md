@@ -234,7 +234,11 @@ published digest, desktop lock job and a genuine-install transcript), CT-54/CT-5
   the job's own `FileNotFoundError: .github/workflows/linux-inputs.yml`, and the tightened
   pin in `tests/test_windows_portability.py` goes red on the same reverted tree with the
   message that names the 0.6.8 archive failure. Candidate run 37781832229 (the one that
-  found it) failed the job at `7d43464`; run 37779757281 failed it at `2f779e2`.
+  found it) failed the job at `7d43464`; run 37779757281 failed it at `2f779e2`. Run
+  37783584533 at `1a5e9bf` is the first fully green candidate: all seven jobs success,
+  including `Windows x64 bundle` and `Source archive and tests`, with the publish step
+  taking its documented `publish=false` refusal path — no tag and no release, which the
+  live release list confirms.
 - CT-97's repository half was break-and-watched on a disposable copy. Deleting
   `environment: apple-signing` from the `macos` job →
   `test_every_job_that_names_a_credential_declares_an_environment` and
