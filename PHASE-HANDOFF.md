@@ -40,7 +40,7 @@ answered in code and in the round-trip ledger
 report carried is accounted for). The cycle-5 plan is
 `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
 cycle-4 plan carried verbatim with the target revision moved to the
-0.6.8 remediation commit `5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`, and its section 9 left **unsigned**
+0.6.8 remediation commit `45076d7106811f10e4651fbdb8b4eedcccf26e49`, and its section 9 left **unsigned**
 for the owner — no acceptance and no signature is invented for it. The auditor writes the
 lock and the index row for cycle 5, not this repository's authors. The last
 open item, **CT-97**, is fixed at the repository level by the owner's

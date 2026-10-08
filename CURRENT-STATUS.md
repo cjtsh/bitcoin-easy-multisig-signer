@@ -27,7 +27,7 @@ record and the round trip of every finding the cycle-4 report carried.
 **0.6.8 is not published.** The cycle-5 audit runs on this revision first,
 against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
 cycle-4 plan carried verbatim with the target revision moved to commit
-`5effcf5c8764b16f9e640095bb7b8d62aa65f4e3` and section 9 left unsigned for the owner; then a signed,
+`45076d7106811f10e4651fbdb8b4eedcccf26e49` and section 9 left unsigned for the owner; then a signed,
 notarized `publish=false` candidate and the owner hardware walkthrough gate
 promotion. The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`

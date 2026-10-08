@@ -87,7 +87,7 @@ the pins the repository actually carries. A pin that cannot fail is a finding.
 
 **Target revision:** the 0.6.8 audit-remediation commit on `main` — the commit that
 carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan, commit
-**`5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`**. Nothing in
+**`45076d7106811f10e4651fbdb8b4eedcccf26e49`**. Nothing in
 this revision is published, and nothing is tagged: the cycle-5 grade comes first, then
 a signed and notarized `publish=false` candidate, then the owner hardware walkthrough,
 then a `publish=true` dispatch from the same commit. This commit is the frozen revision
@@ -372,7 +372,7 @@ ratifies them for this cycle).*
 1. **Revision pinning:** pin the 0.6.8 audit-remediation commit on `main` exactly — the
    commit that carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan.
    It is not tagged until a CLEARED grade is promoted, so the commit itself is the pin —
-   section 0 names `5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`.
+   section 0 names `45076d7106811f10e4651fbdb8b4eedcccf26e49`.
 2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
    because their loss is equivalent to loss of funds; privacy fifth but not optional —
    a breach path against any asset is at least CONDITIONAL.
