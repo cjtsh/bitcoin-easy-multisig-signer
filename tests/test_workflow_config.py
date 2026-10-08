@@ -1330,7 +1330,7 @@ class ReleaseCredentialScopePins(unittest.TestCase):
 
     def test_the_release_key_is_reachable_only_on_the_publish_path(self):
         """The GPG step is already `if: inputs.publish`, so the release-signing
-        approval pauses a promotion and never a candidate run."""
+        environment is entered on a promotion and never by a candidate run."""
         steps = re.split(r"\n      - ", self._job_body("checksums"))
         naming = [step for step in steps if "secrets.GPG_" in step]
         self.assertEqual(len(naming), 1, "expected exactly one step in checksums to name the release key")
@@ -1341,7 +1341,8 @@ class ReleaseCredentialScopePins(unittest.TestCase):
 
     def test_the_apple_credentials_stay_on_the_notarize_path(self):
         """An unsigned test build must keep working with no Apple credential and
-        no approval, so those names may appear only in notarize-guarded steps."""
+        no environment gate, so those names may appear only in notarize-guarded
+        steps."""
         steps = re.split(r"\n      - ", self._job_body("macos"))
         naming = [step for step in steps if "secrets.MAC_" in step]
         self.assertEqual(len(naming), 2, "expected exactly the two notarize steps to name Apple credentials")

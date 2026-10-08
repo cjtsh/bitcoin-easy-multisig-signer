@@ -19,10 +19,17 @@
 #      the load-bearing one: environment secrets are ADDED to repository
 #      secrets, so while a repository-level copy exists every ref still gets
 #      the key and nothing else here matters.
-#   2. `release-signing` exists, allows deployments from `main` only, requires a
-#      reviewer, and holds exactly the two GPG names.
-#   3. `apple-signing` exists, allows deployments from `main` only, and holds
-#      exactly the three Apple names.
+#   2. `release-signing` exists, allows deployments from `main` only, declares no
+#      human gate, and holds exactly the two GPG names.
+#   3. `apple-signing` exists, allows deployments from `main` only, declares no
+#      human gate, and holds exactly the three Apple names.
+#
+# A "human gate" is a required reviewer or a wait timer. Publishing must start on
+# its own: the project owner asked for a release path any agent team can run, and
+# with `prevent_self_review: false` a required reviewer is click-through by the
+# same token that dispatched the run, so it buys no separation of duties while
+# giving a release a way to stall. The ref rule (`main` only) is the control that
+# does the work.
 #
 # Run it before a promotion (RELEASE-PROCESS.md §3) and in every audit cycle
 # (SIGNING.md). It needs `gh` authenticated with read access to the repository's
@@ -55,25 +62,40 @@ report() {
 }
 
 # Print the sorted `name` field of a JSON collection on stdin.
+#
+# Every helper that pipes Python into bash ends with `tr -d '\r'` because
+# Windows Python writes CRLF: a trailing carriage return makes a name compare
+# unequal to the same name built by bash, which would turn an honest
+# configuration into a refusal. Command substitution strips a trailing newline
+# and not a carriage return, so the strip has to be explicit. `pipefail` (set
+# above) keeps a Python failure visible through the pipe.
 names_from() {
   python3 -c 'import json, sys
 rows = json.load(sys.stdin).get(sys.argv[1]) or []
-print("\n".join(sorted(row.get("name", "") for row in rows)))' "$1"
+print("\n".join(sorted(row.get("name", "") for row in rows)))' "$1" | tr -d '\r'
 }
 
 # Print "<name> <type>" for each deployment branch policy on stdin.
 policy_lines() {
   python3 -c 'import json, sys
 rows = json.load(sys.stdin).get("branch_policies") or []
-print("\n".join(sorted("%s %s" % (row.get("name"), row.get("type")) for row in rows)))'
+print("\n".join(sorted("%s %s" % (row.get("name"), row.get("type")) for row in rows)))' | tr -d '\r'
 }
 
-# Print the number of required reviewers declared on an environment on stdin.
-reviewer_count() {
+# Print any human gate declared on an environment on stdin: a required reviewer
+# pauses the run for a person and a wait timer delays it. Either one means a
+# release cannot start on its own, so either one is an offender here.
+gate_lines() {
   python3 -c 'import json, sys
 rules = json.load(sys.stdin).get("protection_rules") or []
-print(sum(len(rule.get("reviewers") or []) for rule in rules
-          if rule.get("type") == "required_reviewers"))'
+gates = []
+for rule in rules:
+    kind = rule.get("type")
+    if kind == "required_reviewers" and (rule.get("reviewers") or []):
+        gates.append("required_reviewers(%d)" % len(rule["reviewers"]))
+    elif kind == "wait_timer" and (rule.get("wait_timer") or 0):
+        gates.append("wait_timer(%s)" % rule.get("wait_timer"))
+print("\n".join(sorted(gates)))' | tr -d '\r'
 }
 
 expected_rules() {
@@ -95,7 +117,7 @@ for name in $ALL_SECRETS; do
   fi
 done
 
-# 2./3. Each environment exists, is main-only, holds exactly its own names.
+# 2./3. Each environment exists, is main-only, is gate-free, holds its own names.
 for env in "$RELEASE_ENV" "$APPLE_ENV"; do
   if ! env_json="$(gh api "repos/$REPO/environments/$env" 2>/dev/null)"; then
     report "$REPO has no environment named $env, so the credentials have nowhere environment-scoped to live"
@@ -116,11 +138,9 @@ for env in "$RELEASE_ENV" "$APPLE_ENV"; do
   if [[ "$actual" != "$expected" ]]; then
     report "the $env environment must hold exactly [$(printf '%s' "$expected" | tr '\n' ' ')] — found [$(printf '%s' "$actual" | tr '\n' ' ')]"
   fi
-  if [[ "$env" == "$RELEASE_ENV" ]]; then
-    reviewers="$(printf '%s' "$env_json" | reviewer_count)"
-    if [[ "${reviewers:-0}" -lt 1 ]]; then
-      report "the $RELEASE_ENV environment must require a reviewer; publishing is the irreversible act and should not start without the owner"
-    fi
+  gates="$(printf '%s' "$env_json" | gate_lines)"
+  if [[ -n "$gates" ]]; then
+    report "the $env environment declares a human gate ($(printf '%s' "$gates" | tr '\n' ' ')); publishing must start on its own, so remove it"
   fi
 done
 

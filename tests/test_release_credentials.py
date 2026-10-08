@@ -5,8 +5,8 @@ historical tag therefore runs that tag's own frozen (older, less guarded)
 workflow text but still receives today's signing keys, because secrets are
 matched by name and never by tag. Tags are immutable history, so the fix cannot
 live in the tag: the credentials moved into two protected environments whose
-deployment rule allows `main` only, and the two jobs that use them declare those
-environments.
+deployment rule allows `main` only and which declare no human gate, and the two
+jobs that use them declare those environments.
 
 `scripts/check-release-credentials.sh` is the standing check for that half — no
 unit test can see a GitHub setting. These tests run the **real** script against
@@ -23,13 +23,33 @@ import subprocess
 import tempfile
 import unittest
 
-from support import run_bash_file
+from support import bash_executable, run_bash_file
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "check-release-credentials.sh"
 REPO = "owner/repo"
 RELEASE_SECRETS = ("GPG_PRIVATE_KEY", "GPG_PASSPHRASE")
 APPLE_SECRETS = ("MAC_CERT_P12_BASE64", "MAC_CERT_PASSWORD", "MAC_APP_SPECIFIC_PASSWORD")
+
+# A `bash` that actually runs a script, not the WSL launcher a bare "bash"
+# resolves to on Windows runners (it exits 1 with "Windows Subsystem for Linux
+# has no installed distributions"). `support.bash_executable()` is the one
+# definition of that rule; a later bare `bash` entry here is what broke the
+# Windows leg of the 0.6.8 candidate, and tests/test_windows_portability.py
+# now refuses one.
+BASH = bash_executable()
+
+
+def required_reviewers_rule():
+    """A `required_reviewers` protection rule as the environments API returns it."""
+    return {
+        "type": "required_reviewers",
+        "reviewers": [{"type": "User", "reviewer": {"login": "owner"}}],
+    }
+
+
+def wait_timer_rule(minutes=5):
+    return {"type": "wait_timer", "wait_timer": minutes}
 
 # A fake `gh`: it answers only the read-only `api` paths the check reads, one
 # JSON fixture per path, and fails closed for anything else. The slug replaces
@@ -61,7 +81,10 @@ class CredentialWorld:
     def __init__(self):
         self.repository_secrets = []  # names still at repository level
         self.missing_environments = set()
-        self.reviewers = {"release-signing": 1, "apple-signing": 0}
+        # Human gates that would stop a release starting on its own. The honest
+        # configuration has none: the owner asked for a path any agent team can
+        # run, so the check refuses a required reviewer or a wait timer.
+        self.gates = {"release-signing": [], "apple-signing": []}
         self.policies = {
             "release-signing": ["main branch"],
             "apple-signing": ["main branch"],
@@ -75,16 +98,8 @@ class CredentialWorld:
         for name in ("release-signing", "apple-signing"):
             if name in self.missing_environments:
                 continue
-            reviewers = [
-                {"type": "User", "reviewer": {"login": "owner"}}
-                for _ in range(self.reviewers[name])
-            ]
             yield f"repos/{REPO}/environments/{name}", {
-                "protection_rules": (
-                    [{"type": "required_reviewers", "reviewers": reviewers}]
-                    if reviewers
-                    else []
-                )
+                "protection_rules": list(self.gates[name])
             }
             yield f"repos/{REPO}/environments/{name}/deployment-branch-policies", {
                 "branch_policies": [
@@ -155,12 +170,29 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         self.assertIn("does not allow deployments from the main branch alone", result.stderr)
         self.assertIn("v1 tag", result.stderr)
 
-    def test_the_release_environment_must_require_a_reviewer(self):
+    def test_a_required_reviewer_is_refused(self):
+        """Publishing must start on its own. A required reviewer pauses the
+        promote run for a person, and with `prevent_self_review: false` the same
+        token can then approve it, so the gate buys no separation of duties while
+        giving a release a way to stall."""
         world = CredentialWorld()
-        world.reviewers["release-signing"] = 0
+        world.gates["release-signing"] = [required_reviewers_rule()]
         result = self.run_check(world)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("must require a reviewer", result.stderr)
+        self.assertIn("declares a human gate", result.stderr)
+        self.assertIn("required_reviewers(1)", result.stderr)
+        self.assertIn(
+            "refusing: the release credentials are not environment-scoped",
+            result.stderr,
+        )
+
+    def test_a_wait_timer_is_refused(self):
+        world = CredentialWorld()
+        world.gates["apple-signing"] = [wait_timer_rule()]
+        result = self.run_check(world)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("declares a human gate", result.stderr)
+        self.assertIn("wait_timer(5)", result.stderr)
 
     def test_an_environment_missing_a_credential_is_refused(self):
         world = CredentialWorld()
@@ -198,7 +230,10 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         """Guards the fixture plumbing itself: without `gh` on PATH the fake
         would be irrelevant and every refusal test would pass for the wrong
         reason (gh missing, not the defect)."""
-        self.assertTrue(shutil.which("bash"), "these tests need bash")
+        self.assertTrue(
+            pathlib.Path(BASH).is_file() or shutil.which(BASH),
+            f"these tests need a working bash; got {BASH!r}",
+        )
         self.assertTrue(SCRIPT.is_file(), "the check script must exist")
 
 
@@ -221,7 +256,7 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
 
     def test_the_provision_script_is_syntactically_valid_and_prints_usage(self):
         result = subprocess.run(
-            ["bash", str(PROVISION), "--help"],
+            [BASH, str(PROVISION), "--help"],
             capture_output=True,
             text=True,
             check=False,
@@ -265,12 +300,12 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
                 )
                 fake.chmod(0o755)
             result = subprocess.run(
-                ["bash", str(PROVISION), "--dry-run"],
+                [BASH, str(PROVISION), "--dry-run"],
                 capture_output=True,
                 text=True,
                 check=False,
                 cwd=str(ROOT),
-                env=dict(os.environ, PATH=f"{folder}:/usr/bin:/bin"),
+                env=dict(os.environ, PATH=f"{folder}{os.pathsep}{os.environ.get('PATH', '')}"),
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertFalse(log.exists(), "a dry run must not invoke any tool")
@@ -278,7 +313,7 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
                 self.assertIn(name, result.stdout, "a dry run must name every secret it would set")
 
     def test_the_owner_path_carries_the_value_on_stdin_only(self):
-        """The one credential only the owner can create arrives through
+        """The one credential that can never be re-derived arrives through
         `--app-password-prompt`/`--app-password-file`. This runs that exact
         path against a fake `gh` and proves the value reaches GitHub on stdin
         and never in argv (which `ps` can see) or on stdout (which a log keeps).
@@ -305,7 +340,7 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
             fake_gh.chmod(0o755)
             result = subprocess.run(
                 [
-                    "bash",
+                    BASH,
                     str(PROVISION),
                     "--repo",
                     REPO,
@@ -319,7 +354,7 @@ class ProvisionReleaseCredentialsTests(unittest.TestCase):
                 text=True,
                 check=False,
                 cwd=str(ROOT),
-                env=dict(os.environ, PATH=f"{folder}:/usr/bin:/bin"),
+                env=dict(os.environ, PATH=f"{folder}{os.pathsep}{os.environ.get('PATH', '')}"),
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             argv = argv_log.read_text(encoding="utf-8")

@@ -707,12 +707,15 @@ jobs:
     name: SHA256SUMS
     needs: [version, source, macos, windows, linux]
     # CT-97: the release GPG key lives in this protected environment, which
-    # allows deployments from `main` only and requires a human approval before
-    # the signing step can run. A historical tag's workflow text never declares
-    # this environment, so no tag dispatch can reach the key — for every tag,
+    # allows deployments from `main` only and declares no human gate, so a
+    # promotion starts on its own and any agent team the owner authorises can
+    # publish. A historical tag's workflow text never declares this
+    # environment, so no tag dispatch can reach the key — for every tag,
     # including ones that do not exist yet. The key is named only under
-    # `if: ${{ inputs.publish }}`, so a candidate run does not pause for the
-    # approval; only the promotion does.
+    # `if: ${{ inputs.publish }}`, so a candidate run never enters this
+    # environment at all. Both halves are pinned:
+    # tests/test_workflow_config.py::ReleaseCredentialScopePins reads this file
+    # and scripts/check-release-credentials.sh reads the platform.
     environment: release-signing
     runs-on: ubuntu-24.04
     permissions:

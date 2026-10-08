@@ -59,6 +59,15 @@ class BashHelperTests(unittest.TestCase):
         notary = (ROOT / "tests" / "test_notary_args.py").read_text(encoding="utf-8")
         self.assertNotIn('["bash"', notary,
                          "test_notary_args must go through support.run_bash_file")
+        credentials = (ROOT / "tests" / "test_release_credentials.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(
+            '["bash"', credentials,
+            "test_release_credentials must go through support.bash_executable: a bare "
+            "bash is the WSL launcher on Windows and exits 1 with no output",
+        )
+        self.assertIn("bash_executable", credentials)
 
 
 class PrivateFileHelperTests(unittest.TestCase):
