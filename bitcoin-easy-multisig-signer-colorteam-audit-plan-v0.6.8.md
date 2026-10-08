@@ -87,7 +87,7 @@ the pins the repository actually carries. A pin that cannot fail is a finding.
 
 **Target revision:** the 0.6.8 audit-remediation commit on `main` — the commit that
 carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan, commit
-**`a98ebc9f5c6b884ad35db21103f2d19374c55f28`**. Nothing in
+**`bc92f054822008510249e743a60033009dc4995a`**. Nothing in
 this revision is published, and nothing is tagged: the cycle-5 grade comes first, then
 a signed and notarized `publish=false` candidate, then the owner hardware walkthrough,
 then a `publish=true` dispatch from the same commit. This commit is the frozen revision
@@ -374,7 +374,7 @@ ratifies them for this cycle).*
 1. **Revision pinning:** pin the 0.6.8 audit-remediation commit on `main` exactly — the
    commit that carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan.
    It is not tagged until a CLEARED grade is promoted, so the commit itself is the pin —
-   section 0 names `a98ebc9f5c6b884ad35db21103f2d19374c55f28`.
+   section 0 names `bc92f054822008510249e743a60033009dc4995a`.
 2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
    because their loss is equivalent to loss of funds; privacy fifth but not optional —
    a breach path against any asset is at least CONDITIONAL.
@@ -437,6 +437,6 @@ this section is void and the plan is re-signed.*
 
 *The owner signed this section on 07 OCT 2026 (Bitseeker LLC) for the revision then named in
 section 0, `45076d7106811f10e4651fbdb8b4eedcccf26e49`; commit `10df296` recorded that signature. Adding
-`scripts/provision-release-credentials.sh` moved the freeze to `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, and making the release path start on its own and keeping the Windows leg green moved it again to `a98ebc9f5c6b884ad35db21103f2d19374c55f28`, so under the rule above
+`scripts/provision-release-credentials.sh` moved the freeze to `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, making the release path start on its own and keeping the Windows leg green moved it to `a98ebc9f5c6b884ad35db21103f2d19374c55f28`, and reading the build recipes through the shared resolver in the archive moved it again to `bc92f054822008510249e743a60033009dc4995a`, so under the rule above
 that signature is void and this section is re-signed. The 07 OCT 2026 signature stays in
 `10df296` and is not deleted from the record.*

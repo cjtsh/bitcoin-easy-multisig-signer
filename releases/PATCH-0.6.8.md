@@ -66,7 +66,7 @@ The 33 findings the cycle-4 report carried, in its numbering.
 | CT-99 | Low | The container proof runs a digest-pinned image — `ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55` — with the refresh command recorded in a comment. | `tests/test_linux_port.py::LinuxWorkflowTests::test_the_promise_of_no_libfuse_so_2_is_proven_where_the_library_is_absent` (asserts the full digest pin) |
 | CT-100 | Low | Addressed by disclosure. Every per-platform SBOM now records the toolchain that produced it (`toolchain_platform`, `toolchain_python`, `toolchain_cc`, `toolchain_clang`, `toolchain_msbuild`, `toolchain_docker` — first banner line, or `not found`), so drift inside a pinned runner label is *visible in the attested artifact*. Bit-reproducible builds are still not claimed: runner images, apt, MSVC and Docker tags float inside GitHub's pinned labels and are trusted infrastructure not inspectable from this repository. | `tests/test_build_sbom.py::ToolchainDisclosurePins` (five tests, including a real probe on this interpreter) |
 | CT-101 | Info | The source tarball now carries `signing-key.asc`, so a tarball-only verifier can run the `gpg --import signing-key.asc` step `SIGNING.md` and `RELEASE-PROCESS.md` tell them to run. | `tests/test_build_source.py::ArchiveCompletenessTests::test_the_signing_key_reaches_the_archive` |
-| CT-102 | Info | The recipe comments no longer spell out the sweep's own matcher patterns (the false-positive direction only). | `tests/test_workflow_config.py::PublishPathSweepTests::test_the_recipe_comments_do_not_spell_out_their_own_matchers` |
+| CT-102 | Info | The recipe comments no longer spell out the sweep's own matcher patterns (the false-positive direction only). Its own recipe lookup now goes through `support.find_build_recipe`: the inline read broke the `Source archive and tests` job on the 0.6.8 candidate run, because the archive ships the recipes under `ci/` and has no `.github` at all — the third time this repository has paid for that lookup. | `tests/test_workflow_config.py::PublishPathSweepTests::test_the_recipe_comments_do_not_spell_out_their_own_matchers` |
 | CT-103 | Low | Both comment-satisfiable pins now assert the live code. The sweep's `cat-file` pin strips comment lines before asserting, and the large-amount message pin slices the actual refusal and asserts the triggers in it — each previously stayed green for its named regression because a comment carried the string. | `tests/test_workflow_config.py::SweepFailClosedPins::test_the_bodies_come_from_object_ids_not_from_rev_colon_path`; `tests/test_gui.py::LargeAmountMirrorPins::test_the_prepare_refusal_names_every_trigger` (both broken both ways and watched red) |
 | CT-104 | Info | `releases/PATCH-0.6.7.md` no longer claims the acceptance note carries a per-item tripwire for every item; it says what the note says (an explicit reopening tripwire where a later change could erase the rationale, a design property otherwise), and the note itself now states that a future note should carry its own tripwires. | `releases/OWNER-ACCEPTANCE-2026-10-07.md`; this repository's own history |
 
@@ -227,6 +227,14 @@ published digest, desktop lock job and a genuine-install transcript), CT-54/CT-5
   (`cmp`), and the control ran green again. The transcripts of the two grade-setting
   breaks (CT-72, CT-90) are the strongest form of this: with the old code the attack
   *succeeds*, and with the new code it executes nothing.
+- The `Source archive and tests` job is green from the built archive, and the archive
+  failure is reproducible. `bash scripts/build-source.sh 0.6.8`, extracted and run from
+  `/tmp/archive-check/bitcoin-easy-multisig-signer-v0.6.8`: `Ran 580 tests` — **OK**. On a
+  copy of that archive, reverting only the CT-102 recipe lookup to the inline read raises
+  the job's own `FileNotFoundError: .github/workflows/linux-inputs.yml`, and the tightened
+  pin in `tests/test_windows_portability.py` goes red on the same reverted tree with the
+  message that names the 0.6.8 archive failure. Candidate run 37781832229 (the one that
+  found it) failed the job at `7d43464`; run 37779757281 failed it at `2f779e2`.
 - CT-97's repository half was break-and-watched on a disposable copy. Deleting
   `environment: apple-signing` from the `macos` job →
   `test_every_job_that_names_a_credential_declares_an_environment` and
