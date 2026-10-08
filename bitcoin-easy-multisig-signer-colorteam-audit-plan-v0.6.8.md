@@ -91,7 +91,8 @@ carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan, commit
 this revision is published, and nothing is tagged: the cycle-5 grade comes first, then
 a signed and notarized `publish=false` candidate, then the owner hardware walkthrough,
 then a `publish=true` dispatch from the same commit. This commit is the frozen revision
-the owner signs in section 9 — `git log -1 --format=%h -- version.py` names it. Only
+the owner signs in section 9 — the last commit to change anything other than
+documentation, which `git log -1 --format=%h -- . ':(exclude)*.md'` names. Only
 documentation commits that record this plan and its own revision may sit on top of it
 (the cycle-`v0.6.7` plan was recorded the same way, after its tag); a change to code,
 tests or workflows moves this line with it and the freeze starts again. The panel audits
@@ -422,5 +423,5 @@ confirm the CT-97 decision above (option B, dated 2026-10-07), then sign the two
 below. The signature ratifies the scope and the revision together; if either moves,
 this section is void and the plan is re-signed.*
 
-- **Signed:** ______________________
-- **Date:** ______________________
+- **Signed:** Bitseeker LLC
+- **Date:** 07 OCT 2026
