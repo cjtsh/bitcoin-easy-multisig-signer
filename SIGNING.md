@@ -67,15 +67,21 @@ without this key.
    ```
 2. Commit the **public** key to the repository root so downloaders can import it:
    ```bash
-   gpg --armor --export release@bitseeker.com > signing-key.asc
+   gpg --armor --export release@bitseeker.llc > signing-key.asc
    git add signing-key.asc && git commit -m "Add the release signing public key"
    ```
-3. Add the two secrets to the **`release-signing` environment**, never as
-   repository secrets (Settings → Environments → `release-signing` → Environment
-   secrets — see "Where the release credentials live" below):
+3. Put the two secrets in the **`release-signing` environment**, never at
+   repository level (Settings → Environments → `release-signing` → Environment
+   secrets — see "Where the release credentials live" below). Do not paste them by
+   hand if you can avoid it: `scripts/provision-release-credentials.sh` reads the
+   private key straight out of the keyring and sets both names for you.
    - `GPG_PRIVATE_KEY` — the armored **private** key
-     (`gpg --armor --export-secret-keys release@bitseeker.com`)
-   - `GPG_PASSPHRASE` — the key's passphrase (empty secret if none)
+     (`gpg --armor --export-secret-keys release@bitseeker.llc`)
+   - `GPG_PASSPHRASE` — the key's passphrase. GitHub rejects an empty secret, and
+     the release key in use carries **no** passphrase so the publish job can sign
+     unattended, so this name holds the documented placeholder
+     `unused-the-release-key-carries-no-passphrase`. If the key is ever given a
+     passphrase, set the real one here and nothing else changes.
 
 Guard the private key like the Apple credentials: it is publisher identity.
 The public key in the repo is how a downloader checks `SHA256SUMS.asc`; the
@@ -111,8 +117,9 @@ Rules:
 - **Never** add a release credential back as a repository secret. Environment
   secrets are *added to* repository secrets, so a surviving repository-level copy
   would keep supplying every ref.
-- A credential can only be moved by re-entering its value: GitHub never returns a
-  secret's value, not even to an administrator.
+- GitHub never returns a secret's value, not even to an administrator. A
+  credential moves by re-deriving it from its master copy (below), never by hoping
+  to read it back.
 - `scripts/check-release-credentials.sh` is the standing, read-only check. Run it
   before every promotion and in every audit cycle. It refuses (exit 1) if a
   release credential sits at repository level, an environment is missing, an
@@ -121,30 +128,59 @@ Rules:
 - `tests/test_workflow_config.py` fails the build if a job names one of these
   credentials without declaring its environment, if the job→environment map
   changes, or if any other workflow file names a credential at all.
+- `scripts/provision-release-credentials.sh` is the only supported way to move a
+  credential value. It re-derives each one from its master copy and sets it with
+  `gh secret set` on standard input, so no value ever reaches a shell history,
+  argv, a log, or a chat transcript.
 
-**Moving the credentials (owner, one time).** The two environments exist and admit
-`main` only, but the values still sit in the repository-level secrets. GitHub never
-returns a secret's value to anyone, so each one is re-entered:
+### The master copy behind each secret
 
-1. Settings → Environments → `release-signing` → Environment secrets: add
-   `GPG_PRIVATE_KEY` (the armored private key) and `GPG_PASSPHRASE`.
-2. Settings → Environments → `apple-signing` → Environment secrets: add
-   `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD`.
-3. Run `scripts/check-release-credentials.sh`. It will name every
-   repository-level copy it can still see.
-4. Settings → Secrets and variables → Actions: delete the five repository-level
-   copies. **The control is not armed until this step**, because environment
-   secrets are added to repository secrets.
-5. Run `scripts/check-release-credentials.sh` again. It must print
-   `ok: the release credentials are environment-scoped, main-only, and
-   unreachable from any tag`. Do this before the next promotion.
+GitHub never returns a secret's value, not even to an administrator, so what
+matters is where the recoverable master copy lives. Two of the three are on the
+maintainer's Mac, which is why a lost environment secret is a short job rather
+than a new certificate:
 
-With the `gh` CLI the same move is one command per secret, reading each value
-from a file so it never enters the shell history:
+| Secret | Master copy | How it is rebuilt |
+|---|---|---|
+| `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | the release key in the maintainer's GnuPG keyring — `ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7`, `Bitseeker LLC <release@bitseeker.llc>`, whose public half is the committed `signing-key.asc` | `scripts/provision-release-credentials.sh` exports it. Only losing the keyring itself means running `gpg --full-generate-key` (step 1 above) and committing a new `signing-key.asc` |
+| `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD` | the `Developer ID Application: Bitseeker LLC (B8G5L7M8TB)` identity in the login keychain, SHA-1 `02624AD5998203927864C7167C461DE0E6D19707` | the same script exports a fresh `.p12` and generates a fresh password, so the two names are always in step |
+| `MAC_APP_SPECIFIC_PASSWORD` | **nowhere on the machine** — Apple shows an app-specific password once, at creation | only the Apple ID owner can: appleid.apple.com → Sign-In & Security → App-Specific Passwords → generate one (label it `besa-notary`), then `scripts/provision-release-credentials.sh --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune` |
+
+### If the credentials vanish (the recovery path)
+
+`scripts/provision-release-credentials.sh` is the whole recovery. It re-derives
+every credential the machine can, sets it in the right environment, and finishes
+by running the standing check. It never prints a value and never puts one in argv
+(argv is visible to `ps`): values move file → GitHub on standard input, inside a
+mode-700 temporary directory that is scrubbed on exit.
 
 ```bash
-gh secret set GPG_PRIVATE_KEY --env release-signing --repo cjtsh/bitcoin-easy-multisig-signer < ~/gpg-private-key.asc
-gh secret delete GPG_PRIVATE_KEY --repo cjtsh/bitcoin-easy-multisig-signer
+# everything this Mac can rebuild, then prove the control is armed
+scripts/provision-release-credentials.sh --prune
+
+# just the one credential only the owner can create
+scripts/provision-release-credentials.sh \
+  --only MAC_APP_SPECIFIC_PASSWORD --app-password-prompt --prune
+
+# see what it would do, touching nothing (safe to run any time)
+scripts/provision-release-credentials.sh --dry-run
+```
+
+`--prune` deletes any surviving repository-level copy of what was touched, which
+is the step that actually arms CT-97. The check must print
+`ok: the release credentials are environment-scoped, main-only, and unreachable
+from any tag` before the next promotion.
+
+The local build uses the same Apple credential through the keychain profile
+`eas-notary` (`xcrun notarytool history --keychain-profile eas-notary` proves it
+works). When the app-specific password is rotated, refresh that profile too, so a
+local notarization and a CI notarization never disagree:
+
+```bash
+xcrun notarytool store-credentials "eas-notary" \
+  --apple-id "$(gh variable get MAC_APPLE_ID --repo cjtsh/bitcoin-easy-multisig-signer)" \
+  --team-id  "$(gh variable get MAC_TEAM_ID  --repo cjtsh/bitcoin-easy-multisig-signer)"
+# notarytool then prompts for the app-specific password with echo off
 ```
 
 ## How a downloader verifies any asset

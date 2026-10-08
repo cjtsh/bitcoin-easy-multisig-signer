@@ -26,7 +26,8 @@ Every finding below is closed either by a test demonstrated able to fail (broken
 disposable copy, watched red, restored) or by a documentation/residual disposition
 stated in the open. **Nothing is closed by silence**, and no owner acceptance is
 invented. CT-97 was the one item that needed the owner's decision; the owner
-directed option B on 2026-10-07, and its repository half is implemented here — see
+directed option B on 2026-10-07, its repository half is implemented here, and the remaining
+owner step is scripted — see
 [CT-97 fixed in repository settings](#ct-97-fixed-in-repository-settings).
 
 ## Finding → fix → test
@@ -60,7 +61,7 @@ The 33 findings the cycle-4 report carried, in its numbering.
 | CT-94 | Info | Documented by design: the app binds to the device by possession and key proof, not by firmware version reporting — possession-based binding is the stronger property. | `probe.py`; cycle-4 report §"New findings" |
 | CT-95 | Info | Residual documented: the bridge URL pin returns true when the window's URL cannot be read, a decision its own comment records; the compensating control is the payload byte-equality check. Unchanged this cycle. | `desktop.py:69-82` |
 | CT-96 | Info | Residual documented: hwilib is intentionally absent from the CI requirement set, so the payload pin's real-install accept path runs in desktop builds. The gap is narrowed by the CT-90 fixture accept test (real subprocess), the literal published-digest test, the desktop lock job that hash-verifies hwi 3.2.0, and the genuine-install transcript. | `tests/test_hardening_pins.py`; `requirements-desktop.lock:489` |
-| CT-97 | Med | **Fixed (owner directed option B, 2026-10-07).** The release credentials are no longer repository secrets: they live in the `release-signing` and `apple-signing` GitHub environments, each deployable only from `main`, and the jobs that use them declare their environment. An old tag runs its own frozen workflow text but cannot deploy to either environment. The owner's half is the value move — see below. | `.github/workflows/build-candidate.yml`; `tests/test_workflow_config.py::ReleaseCredentialScopePins`; `tests/test_release_credentials.py`; `scripts/check-release-credentials.sh`; `SIGNING.md` |
+| CT-97 | Med | **Fixed (owner directed option B, 2026-10-07).** The release credentials are no longer repository secrets: they live in the `release-signing` and `apple-signing` GitHub environments, each deployable only from `main`, and the jobs that use them declare their environment. An old tag runs its own frozen workflow text but cannot deploy to either environment. The owner's half is the value move — see below. | `.github/workflows/build-candidate.yml`; `tests/test_workflow_config.py::ReleaseCredentialScopePins`; `tests/test_release_credentials.py`; `scripts/check-release-credentials.sh`; `scripts/provision-release-credentials.sh`; `SIGNING.md`; `RELEASE-PROCESS.md` |
 | CT-98 | Low | The dispatch input `candidate_run_id` reaches the release-gate script through `env:`, never interpolated as `${{ }}` into the shell text, so a value like `1; something` is data the numeric test judges rather than code bash runs. The checksums job already did it this way. | `tests/test_workflow_config.py::test_publication_is_restricted_to_the_default_branch` (now asserts the env delivery and the absence of any `${{` in the run body) |
 | CT-99 | Low | The container proof runs a digest-pinned image — `ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55` — with the refresh command recorded in a comment. | `tests/test_linux_port.py::LinuxWorkflowTests::test_the_promise_of_no_libfuse_so_2_is_proven_where_the_library_is_absent` (asserts the full digest pin) |
 | CT-100 | Low | Addressed by disclosure. Every per-platform SBOM now records the toolchain that produced it (`toolchain_platform`, `toolchain_python`, `toolchain_cc`, `toolchain_clang`, `toolchain_msbuild`, `toolchain_docker` — first banner line, or `not found`), so drift inside a pinned runner label is *visible in the attested artifact*. Bit-reproducible builds are still not claimed: runner images, apt, MSVC and Docker tags float inside GitHub's pinned labels and are trusted infrastructure not inspectable from this repository. | `tests/test_build_sbom.py::ToolchainDisclosurePins` (five tests, including a real probe on this interpreter) |
@@ -127,7 +128,13 @@ missing, and none is closed by silence here.
 | CT-49 | Fixed and pinned in frozen mode; residual became CT-90 | residual **fixed** (see CT-90 above) |
 | CT-50 · CT-51 · CT-53 · CT-55 · CT-56 · CT-57 · CT-60 · CT-71 | Verified fixed with fail-capable pins | carried; suite green |
 | CT-52 | Verified fixed; residual became CT-77…80 | residual **fixed** (CT-77…80 above) |
-| CT-54 | **Open dated deferral** — re## CT-97 fixed in repository settings
+| CT-54 | **Open dated deferral** — rebuild `vendor/libusb-1.0.0.dylib` from pinned upstream source at the next dependency bump. Hard expiry 2027-10-07 | still open, unchanged |
+| CT-58 | Verified fixed; residual became CT-91 | residual **fixed** (CT-91 above) |
+| CT-59 | **Open dated deferral** — a stalling explorer can make one scan slow; the scan fails closed and claims nothing. Hard expiry 2027-10-07 | still open, unchanged |
+| CT-61 · CT-63 · CT-64 · CT-65 · CT-66 · CT-67 · CT-68 · CT-69 · CT-70 | Closed by dated owner acceptance (2026-10-07) | carried closed |
+| CT-62 | Verified fixed; pin caveat became CT-103 | pin **fixed** (CT-103 above) |
+
+## CT-97 fixed in repository settings
 
 Cycle 4 filed CT-97: *historical tags (`v0.1.0`…`v0.6.3`) freeze dispatchable publishers
 with today's secrets, gated only by release-existence; the sweep never scans tags.* All 66
@@ -162,25 +169,26 @@ Implemented in this revision:
   reviewer, a missing or misplaced environment secret, and a missing environment.
 - `scripts/check-release-credentials.sh` is the standing read-only check of the platform
   half. Run it before every promotion and in every audit cycle.
+- `scripts/provision-release-credentials.sh` is the recovery path the owner asked for. It
+  re-derives every credential this machine can — the release key from the GnuPG keyring, the
+  Developer ID p12 plus a fresh password from the login keychain, the app-specific password
+  from a hidden prompt or a file — sets each one with `gh secret set` on standard input so no
+  value ever reaches argv, a log or a transcript, deletes the repository-level copies with
+  `--prune`, and finishes by running the check. `--dry-run` names every secret it would set
+  and touches nothing.
 
-Platform changes made 2026-10-07 under the owner's account (GitHub settings, not files in
-this repository): `release-signing` allows only the `main` branch and requires the owner's
-approval; `apple-signing` allows only `main` with no approval. The owner must still re-enter
-the five values — GitHub never returns a secret's value, not even to an administrator — and
-delete the repository-level copies. **Environment secrets are added to repository secrets,
-so the control is not armed until those copies are gone**, and the check refuses while any
-of them survives. `SIGNING.md` carries the runbook; `RELEASE-PROCESS.md` §5 makes the check
-a promotion step.
-
-y new publish-capable tag, or any change to which tags carry releases.
-- **Option B — mitigate in repository settings.** Scope the release secrets to the
-  `main` environment with required reviewers, so a dispatch from an old tag cannot read
-  them; this is an owner action outside the repository, and the acceptance should still
-  be dated and recorded.
-- **Option C — direct a different remedy.** Any remedy that requires moving or deleting
-  a published tag conflicts with `AGENTS.md` and will be raised before it is attempted.
-
-The audit cycle that follows will find this item open unless one of these is recorded.
+**Live platform state, 2026-10-07.** Both environments exist under the owner's account
+(GitHub settings, not files in this repository): `release-signing` allows only the `main`
+branch and requires the owner's approval; `apple-signing` allows only `main` with no
+approval. Four of the five values are already environment-scoped — `GPG_PRIVATE_KEY` and
+`GPG_PASSPHRASE` in `release-signing` (the key carries no passphrase, so that name holds a
+documented placeholder the workflow's branch accepts), `MAC_CERT_P12_BASE64` and
+`MAC_CERT_PASSWORD` in `apple-signing` — and their repository-level copies have been
+deleted. The fifth, `MAC_APP_SPECIFIC_PASSWORD`, is the one value this machine cannot
+re-derive (Apple shows an app-specific password once, at creation), so it is still a
+repository secret and the check still refuses: **the control is not armed until that last
+copy is gone.** `SIGNING.md` carries the owner's runbook and the master-copy table;
+`RELEASE-PROCESS.md` §5 makes the check a promotion step, and the recovery path is scripted.
 
 ## Documented residuals
 
@@ -198,13 +206,18 @@ published digest, desktop lock job and a genuine-install transcript), CT-54/CT-5
 
 ## Verification on this revision
 
-- The full Python suite on the rolled 0.6.8 tree: `Ran 573 tests` — **OK**, zero skips,
-  zero failures (558 before this cycle's CT-97 pins, which add two classes of 6 and 9).
+- The full Python suite on the rolled 0.6.8 tree: `Ran 579 tests` — **OK**, zero skips,
+  zero failures (573 before this revision's provisioning-script pins, which add a class of
+  6). Run it from the repository root, as `README.md` documents
+  (`.venv/bin/python -m unittest discover -s tests -q`): one test spawns
+  `python -c "import safe_http"`, which cannot resolve from inside `tests/` and fails
+  there for that reason alone.
 - The UI DOM suites: all ten `tests/ui_*.cjs` files pass under `node`.
 - `bash -n` clean on every shell script touched (`scripts/check-publish-paths.sh`,
-  `scripts/build-source.sh`); every `.github/workflows/*.yml` parses under
-  `yaml.safe_load`.
-- Every fix above was break-and-watched on a disposable copy (`/tmp/besa-break` … `/tmp/besa-break7`): the control ran green, the named regression
+  `scripts/build-source.sh`, `scripts/check-release-credentials.sh`,
+  `scripts/provision-release-credentials.sh`); every `.github/workflows/*.yml` parses
+  under `yaml.safe_load`.
+- Every fix above was break-and-watched on a disposable copy (`/tmp/besa-break` … `/tmp/besa-break8`): the control ran green, the named regression
   was introduced, the named test went red, the copy was restored byte-identical
   (`cmp`), and the control ran green again. The transcripts of the two grade-setting
   breaks (CT-72, CT-90) are the strongest form of this: with the old code the attack
@@ -219,11 +232,20 @@ published digest, desktop lock job and a genuine-install transcript), CT-54/CT-5
   (with `bash -n` still clean in the broken copy, so the failure is the check's absence and
   not a syntax break). Each file was restored byte-identical (`cmp`) and the 15-test
   control run was green again.
-- `scripts/check-release-credentials.sh` run live against this repository **exits 1 today**
-  and names all five surviving repository-level secrets. That is the honest state until the
-  owner completes the value move; it prints `ok: the release credentials are
-  environment-scoped, main-only, and unreachable from any tag` only when the control is
-  armed.
+- The provisioning script was break-and-watched on the same kind of copy (`/tmp/besa-break8`,
+  6-test class). Passing the value in argv (`--body "$(cat …)"`) →
+  `test_the_owner_path_carries_the_value_on_stdin_only` and
+  `test_the_provision_script_never_passes_a_value_in_argv` red; any tool call before the
+  dry-run `exit 0` → `test_a_dry_run_touches_nothing` red; a wrong pinned fingerprint →
+  the documented-material test red; a dry run that no longer names `GPG_PRIVATE_KEY` →
+  `test_a_dry_run_touches_nothing` red. Each file was restored byte-identical (`cmp`) and
+  the control ran green again.
+- `scripts/check-release-credentials.sh` run live against this repository **exits 1 today**,
+  and says exactly what is left: `MAC_APP_SPECIFIC_PASSWORD` is still a repository-level
+  secret and is not yet in `apple-signing`. The other four values are environment-scoped
+  (`GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` in `release-signing`, the certificate pair in
+  `apple-signing`). The check prints `ok: the release credentials are environment-scoped,
+  main-only, and unreachable from any tag` only when the last copy is gone.
 - No wallet material, secret, or credential appears in this file or in the tests added
   by it; every fixture is synthetic.
 

@@ -52,9 +52,12 @@ moving or deleting a published tag is forbidden. The release credentials are
 environment-scoped, never repository secrets: `release-signing` (the GPG key)
 and `apple-signing` (the Apple identity) admit only `main`, and every job that
 names one declares it. A repository-level copy would keep supplying every ref,
-so the control is not armed until those copies are gone — run
-`scripts/check-release-credentials.sh` before every promotion; `SIGNING.md`
-carries the runbook. A release uses a signed, notarized
+so the control is not armed until those copies are gone. Run
+`scripts/check-release-credentials.sh` before every promotion, and recover a lost
+credential by re-deriving it with `scripts/provision-release-credentials.sh` —
+never by reading it back, because GitHub never returns a secret's value;
+`SIGNING.md` carries the master copy behind each credential and the recovery
+steps. A release uses a signed, notarized
 `publish=false` candidate, then a `publish=true` dispatch from the same commit
 with that candidate's run ID; the workflow verifies and publishes those exact
 candidate bytes for every platform, signs the CI-generated `SHA256SUMS` with the

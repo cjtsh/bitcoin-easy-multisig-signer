@@ -87,7 +87,7 @@ the pins the repository actually carries. A pin that cannot fail is a finding.
 
 **Target revision:** the 0.6.8 audit-remediation commit on `main` — the commit that
 carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan, commit
-**`45076d7106811f10e4651fbdb8b4eedcccf26e49`**. Nothing in
+**`383623a9ae4e64383e12ef2d9d69248db2f3f39a`**. Nothing in
 this revision is published, and nothing is tagged: the cycle-5 grade comes first, then
 a signed and notarized `publish=false` candidate, then the owner hardware walkthrough,
 then a `publish=true` dispatch from the same commit. This commit is the frozen revision
@@ -373,7 +373,7 @@ ratifies them for this cycle).*
 1. **Revision pinning:** pin the 0.6.8 audit-remediation commit on `main` exactly — the
    commit that carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan.
    It is not tagged until a CLEARED grade is promoted, so the commit itself is the pin —
-   section 0 names `45076d7106811f10e4651fbdb8b4eedcccf26e49`.
+   section 0 names `383623a9ae4e64383e12ef2d9d69248db2f3f39a`.
 2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
    because their loss is equivalent to loss of funds; privacy fifth but not optional —
    a breach path against any asset is at least CONDITIONAL.
@@ -412,10 +412,13 @@ invented for the owner).*
   permanent form over a dated acceptance because the project will cut many more releases.
   The repository half is implemented, pinned and break-and-watched in this revision:
   `.github/workflows/build-candidate.yml`, `tests/test_workflow_config.py::ReleaseCredentialScopePins`,
-  `tests/test_release_credentials.py`, `scripts/check-release-credentials.sh`, and `SIGNING.md`
-  ("Where the release credentials live"). The owner's remaining step is the value move —
-  re-enter the five secrets in the environments and delete the repository-level copies;
-  `scripts/check-release-credentials.sh` refuses until it is complete.
+  `tests/test_release_credentials.py`, `scripts/check-release-credentials.sh`,
+  `scripts/provision-release-credentials.sh`, and `SIGNING.md`
+  ("Where the release credentials live"). Four of the five values were moved on 2026-10-07; the last,
+  `MAC_APP_SPECIFIC_PASSWORD`, is one only the Apple ID owner can create, and
+  `scripts/provision-release-credentials.sh --only MAC_APP_SPECIFIC_PASSWORD
+  --app-password-prompt --prune` carries it from a hidden prompt into `apple-signing` and deletes
+  the last repository-level copy. `scripts/check-release-credentials.sh` refuses until it is complete.
 - **Date:** 2026-10-07
 
 **Sign-off.** *Before signing: confirm that section 0 names the frozen revision,
@@ -423,5 +426,11 @@ confirm the CT-97 decision above (option B, dated 2026-10-07), then sign the two
 below. The signature ratifies the scope and the revision together; if either moves,
 this section is void and the plan is re-signed.*
 
-- **Signed:** Bitseeker LLC
-- **Date:** 07 OCT 2026
+- **Signed:** ______________________
+- **Date:** ______________________
+
+*The owner signed this section on 07 OCT 2026 (Bitseeker LLC) for the revision then named in
+section 0, `45076d7106811f10e4651fbdb8b4eedcccf26e49`; commit `10df296` recorded that signature. Adding
+`scripts/provision-release-credentials.sh` moved the freeze to `383623a9ae4e64383e12ef2d9d69248db2f3f39a`, so under the rule above
+that signature is void and this section is re-signed. The 07 OCT 2026 signature stays in
+`10df296` and is not deleted from the record.*

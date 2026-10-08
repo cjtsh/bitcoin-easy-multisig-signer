@@ -51,9 +51,13 @@ and `apple-signing` (the Apple identity, `main`-only, no approval) — and the
 jobs that use them declare their environment. An old tag never declares the
 environment, and a tag created in the future still cannot deploy to it, so the
 protection extends to tags that do not exist yet. What remains is the owner's
-value move: re-enter the five secrets into the environments (GitHub never
-returns a secret's value) and delete the repository-level copies, then run
-`scripts/check-release-credentials.sh`, which refuses until that is complete.
+value move. Four of the five are already environment-scoped: they were re-derived
+from their master copies on this machine and deleted at repository level.
+`MAC_APP_SPECIFIC_PASSWORD` is the one value only the Apple ID owner can create
+(Apple shows it once), and `scripts/provision-release-credentials.sh` carries it
+into `apple-signing` from a hidden prompt and prunes the last repository-level
+copy. Run `scripts/check-release-credentials.sh`, which refuses until that is
+complete; `SIGNING.md` documents the master copy behind every credential.
 See [`SIGNING.md`](../SIGNING.md) and
 [`releases/PATCH-0.6.8.md`](PATCH-0.6.8.md).
 

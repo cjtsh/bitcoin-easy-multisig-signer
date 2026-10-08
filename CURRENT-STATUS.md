@@ -21,21 +21,27 @@ private refs behind; each publish refusal is pinned to its own branch and
 its own exit; the dispatcher's run id reaches its check through the
 environment rather than through shell text; the container proof image is
 digest-pinned; every SBOM records the toolchain that built it; and the
-source archive ships `signing-key.asc`. Every fix is held by a test
+source archive ships `signing-key.asc`, and the release credentials are
+environment-scoped (CT-97), recoverable only by re-deriving them with
+`scripts/provision-release-credentials.sh`. Every fix is held by a test
 demonstrated able to fail, and `releases/PATCH-0.6.8.md` is the evidence
 record and the round trip of every finding the cycle-4 report carried.
 **0.6.8 is not published.** The cycle-5 audit runs on this revision first,
 against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
 cycle-4 plan carried verbatim with the target revision moved to commit
-`45076d7106811f10e4651fbdb8b4eedcccf26e49` and section 9 left unsigned for the owner; then a signed,
-notarized `publish=false` candidate and the owner hardware walkthrough gate
-promotion. The last open item, **CT-97**, is fixed at the repository level: the
+`383623a9ae4e64383e12ef2d9d69248db2f3f39a` and section 9 left unsigned for
+the owner, because adding `scripts/provision-release-credentials.sh` moved
+the freeze past the 07 OCT 2026 signature; then a signed, notarized
+`publish=false` candidate and the owner hardware walkthrough gate promotion.
+The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`
 environments, each deployable only from `main`, so a dispatch at a historical tag
-cannot read them. The owner's remaining step is the value move — re-enter the
-five secrets in those environments and delete the repository-level copies;
-`scripts/check-release-credentials.sh` refuses until that is done, and
-`SIGNING.md` carries the steps.
+cannot read them. Four of the five values are already environment-scoped and gone
+from the repository level; `MAC_APP_SPECIFIC_PASSWORD` is the only one left,
+because Apple shows it once and only the owner can create it. The recovery path is
+scripted (`scripts/provision-release-credentials.sh`), and
+`scripts/check-release-credentials.sh` refuses until that last copy is gone;
+`SIGNING.md` carries the master copy behind each credential.
 
 The prior release, **0.6.7**, is the Color Team cycle-3 build-process
 remediation: the retired per-platform workflows are deleted from every
