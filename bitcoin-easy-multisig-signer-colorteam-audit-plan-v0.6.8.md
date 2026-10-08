@@ -87,13 +87,15 @@ the pins the repository actually carries. A pin that cannot fail is a finding.
 
 **Target revision:** the 0.6.8 audit-remediation commit on `main` — the commit that
 carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan, commit
-**`REPLACE-AT-FREEZE`**. Nothing in
+**`5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`**. Nothing in
 this revision is published, and nothing is tagged: the cycle-5 grade comes first, then
 a signed and notarized `publish=false` candidate, then the owner hardware walkthrough,
-then a `publish=true` dispatch from the same commit. Fill this line with that commit —
-`git rev-parse HEAD` on the frozen checkout, or `git log -1 --format=%H` for the commit
-`git log -1 --format=%h -- version.py` names — in place of the `REPLACE-AT-FREEZE`
-token in this line, before signing section 9. The panel audits that commit and the tree it names, byte-for-byte.
+then a `publish=true` dispatch from the same commit. This commit is the frozen revision
+the owner signs in section 9 — `git log -1 --format=%h -- version.py` names it. Only
+documentation commits that record this plan and its own revision may sit on top of it
+(the cycle-`v0.6.7` plan was recorded the same way, after its tag); a change to code,
+tests or workflows moves this line with it and the freeze starts again. The panel audits
+that commit and the tree it names, byte-for-byte.
 
 **Out of scope:**
 
@@ -135,7 +137,7 @@ the audit is void.** Different identifiers establish different runs, not differe
 - **Repository:** `cjtsh/bitcoin-easy-multisig-signer`
 - **Revision surveyed:** `main` at the Color Team cycle-4 audit-remediation commits,
   after the `v0.6.7` publication and before any 0.6.8 tag exists. The audit target is
-  **the 0.6.8 audit-remediation commit**; its hash is recorded in section 0 at freeze,
+  **the 0.6.8 audit-remediation commit**; its hash is recorded in section 0,
   and that commit — not this sentence — is the revision the panel is bound to. The plan
   is carried verbatim from the signed cycle-`v0.6.7` plan with only the revision moved
   (section 0 preamble). The agent provenance table in section 0 is the provenance of
@@ -346,8 +348,8 @@ passed. Two things the owner must settle at signing:
   from tag `v0.6.7` to the **0.6.8 audit-remediation commit**. The scope continues to
   name the unified `.github/workflows/build-candidate.yml` pipeline, its one
   CI-generated `SHA256SUMS`, its GPG signature and its Sigstore attestations. That
-  commit's hash is filled into section 0 at freeze, before signature, in place of
-  `REPLACE-AT-FREEZE`. (Same transcription.)
+  commit's hash is recorded in section 0 for the owner's signature. (Same
+  transcription.)
 - *Section 0 preamble (owner-directed, before signing):* the cycle-4 Color Team report
   is available to the referee for fix verification; specialist lanes run without it.
   The repository's earlier AI audit reports stay excluded as inputs. (Same
@@ -365,8 +367,8 @@ ratifies them for this cycle).*
 
 1. **Revision pinning:** pin the 0.6.8 audit-remediation commit on `main` exactly — the
    commit that carries `version.py` at `0.6.8`, `releases/PATCH-0.6.8.md` and this plan.
-   It is not tagged until a CLEARED grade is promoted, so the commit hash is filled into
-   section 0 at freeze, before signature.
+   It is not tagged until a CLEARED grade is promoted, so the commit itself is the pin —
+   section 0 names `5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`.
 2. **Ranking:** all five assets are mission-critical. Funds first; credentials second
    because their loss is equivalent to loss of funds; privacy fifth but not optional —
    a breach path against any asset is at least CONDITIONAL.
@@ -397,9 +399,10 @@ handed to the panel with this line blank, and no acceptance is invented for the 
 - **Decision:** ______________________
 - **Date:** ______________________
 
-**Sign-off.** *Before signing: freeze the 0.6.8 audit-remediation commit, fill that
-commit's hash into the section 0 target-revision line in place of `REPLACE-AT-FREEZE`,
-complete the CT-97 decision above, then sign the two lines below.*
+**Sign-off.** *Before signing: confirm that section 0 names commit `5effcf5c8764`
+as the frozen revision, complete the CT-97 decision above, then sign the two lines
+below. The signature ratifies the scope and the revision together; if either moves,
+this section is void and the plan is re-signed.*
 
 - **Signed:** ______________________
 - **Date:** ______________________

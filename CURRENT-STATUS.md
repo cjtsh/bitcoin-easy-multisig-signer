@@ -26,9 +26,10 @@ demonstrated able to fail, and `releases/PATCH-0.6.8.md` is the evidence
 record and the round trip of every finding the cycle-4 report carried.
 **0.6.8 is not published.** The cycle-5 audit runs on this revision first,
 against `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` — the
-cycle-4 plan carried verbatim with the target revision moved to this commit
-and section 9 left unsigned for the owner; then a signed, notarized
-`publish=false` candidate and the owner hardware walkthrough gate promotion. One item is left to the owner — **CT-97**:
+cycle-4 plan carried verbatim with the target revision moved to commit
+`5effcf5c8764b16f9e640095bb7b8d62aa65f4e3` and section 9 left unsigned for the owner; then a signed,
+notarized `publish=false` candidate and the owner hardware walkthrough gate
+promotion. One item is left to the owner — **CT-97**:
 historical tags still dispatch workflows frozen at those tags with today's
 repository secret names, held back only by the release already existing. It
 cannot be fixed from this revision without moving a published tag, which

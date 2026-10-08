@@ -39,10 +39,9 @@ answered in code and in the round-trip ledger
 (`releases/PATCH-0.6.8.md` is the evidence record; every ID the cycle-4
 report carried is accounted for). The cycle-5 plan is
 `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
-cycle-4 plan carried verbatim with the target revision moved to this
-0.6.8 commit, its section 0 commit hash left as `REPLACE-AT-FREEZE` until
-the freeze, and its section 9 left **unsigned** for the owner — no
-acceptance and no signature is invented for it. The auditor writes the
+cycle-4 plan carried verbatim with the target revision moved to the
+0.6.8 remediation commit `5effcf5c8764b16f9e640095bb7b8d62aa65f4e3`, and its section 9 left **unsigned**
+for the owner — no acceptance and no signature is invented for it. The auditor writes the
 lock and the index row for cycle 5, not this repository's authors. One item remains an owner decision, **CT-97**: historical tags
 still dispatch workflows frozen at those tags with today's repository
 secret names, gated only by the release already existing. It cannot be
