@@ -783,6 +783,94 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertIn("refusing: a non-main ref carries a publish-capable workflow", out)
             self.assertIn("runs-gh-release", out)
 
+    def test_the_sweep_refuses_a_permission_it_cannot_read(self):
+        """Cycle-5 adversarial pass: a spelling the parse cannot read is not a
+        read-only token.
+
+        `permissions: *w`, a merge key `<<: *w` and a quoted key
+        `"contents": write` are all real write grants to a YAML parser and all
+        three read as nothing to a line scanner. The previous revision returned
+        each of them as read-only, so a branch carrying one passed the sweep
+        while holding `contents: write` — the audit's CT-73 class, still open.
+        The rule is now inverted: anything the parse cannot resolve to a known
+        read-only value is an offender.
+        """
+        blocks = {
+            "alias": "    permissions: *w\n",
+            "merge-key": "    permissions:\n      <<: *w\n",
+            "quoted-key": "    permissions:\n      \"contents\": write\n",
+        }
+        for label, block in blocks.items():
+            with self.subTest(spelling=label):
+                workflow = (
+                    "name: sneaky\n"
+                    "on: workflow_dispatch\n"
+                    "permissions:\n"
+                    "  contents: read\n"
+                    "x-w: &w\n"
+                    "  contents: write\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    + block
+                    + "    steps:\n"
+                    "      - run: echo ok\n"
+                )
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._repo(repo)
+                    self._write(repo, "build-candidate.yml", self.CLEAN)
+                    self._commit(repo, "main")
+                    self._branch(repo, "sneaky")
+                    self._write(repo, "build-candidate.yml", workflow)
+                    self._commit(repo, "sneaky")
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertNotEqual(
+                        result.returncode, 0,
+                        f"the sweep accepted a {label} permission block:\n{out}")
+                    self.assertIn("unreadable-token-permissions", out)
+                    self.assertIn(
+                        "refusing: a non-main ref carries a publish-capable "
+                        "workflow", out)
+
+    def test_the_sweep_refuses_a_publisher_split_across_a_continuation(self):
+        """`gh \\` + newline + `release create` is one command to bash and two
+        lines to a substring match, so the word list missed it.
+
+        The permission block here is plainly read-only, so only the publisher
+        patterns can refuse it — this pins the continuation join, not the
+        permission parse.
+        """
+        workflow = (
+            "name: sneaky\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps:\n"
+            "      - run: |\n"
+            "          gh \\\n"
+            "            release create v9 --target main\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "sneaky")
+            self._write(repo, "build-candidate.yml", workflow)
+            self._commit(repo, "sneaky")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a continued publisher:\n{out}")
+            self.assertIn("runs-gh-release", out)
+
     def test_the_sweep_refuses_the_retired_per_platform_workflow_names(self):
         """Refusal half: the file NAME is enough, even with no markers.
 
@@ -1118,6 +1206,74 @@ class PublishPathSweepTests(unittest.TestCase):
         )
         self._assert_reason(self._run_one_branch("evil", body),
                             "calls-a-release-workflow")
+
+    def test_the_sweep_refuses_a_remote_reusable_workflow_under_any_name(self):
+        """The callee's name proves nothing: the sweep cannot read it.
+
+        The cycle-5 attacker called
+        `other-org/ci/.github/workflows/publish-package.yml@main` with
+        `secrets: inherit`. The first rule refused only a callee whose path
+        contained "release", so a publisher called `publish-package.yml`
+        passed. The rule is the repository boundary now: a `uses:` that points
+        into another repository is refused whatever it is called.
+        """
+        for callee in (
+            "other-org/ci/.github/workflows/publish-package.yml@main",
+            "other-org/ci/.github/workflows/release.yml@main",
+            "someone/personal/.github/workflows/anything.yml@v1",
+        ):
+            with self.subTest(callee=callee):
+                body = self._recipe("reuse", f"uses: {callee}")
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "calls-a-release-workflow")
+
+    def test_the_sweep_does_not_mistake_an_action_or_a_local_callee(self):
+        """False-positive half of the repository-boundary rule.
+
+        `actions/checkout@v4` is an action — `owner/repo@ref`, no path — and a
+        local `./.github/workflows/x.yml` callee is a file the sweep already
+        reads on this ref, so neither is an unreadable publisher.
+        """
+        for step in ("uses: actions/checkout@v4",
+                     "uses: ./.github/workflows/helper.yml@main"):
+            with self.subTest(step=step):
+                body = self._recipe("not-a-callee", step)
+                result = self._run_one_branch("clean", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, out)
+
+    def test_the_sweep_refuses_the_rest_api_through_the_api_url_context(self):
+        """`${{ github.api_url }}` is the documented REST-API URL.
+
+        The attacker used it with the workflow's own `github.token`, so no
+        secret and no `contents:` grant were needed. The vocabulary named only
+        `api.github.com` and `$GITHUB_API_URL`, and the sweep said "ok".
+        """
+        body = self._recipe(
+            "api-url",
+            'run: curl -X POST -H "Authorization: Bearer '
+            '${{ github.token }}" '
+            '"${{ github.api_url }}/repos/${{ github.repository }}/releases"',
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "talks-to-the-rest-api")
+
+    def test_the_sweep_normalizes_shell_spellings_of_one_command(self):
+        """`gh release` in the spellings bash treats as identical.
+
+        The cycle-5 attacker showed all of these returning "ok" against the
+        patch that closed only the backslash continuation: the publisher
+        vocabulary is substring-matched, and `gh  release` (a whitespace run)
+        and `gh "release"` (quoting) are one invocation to the shell and
+        different strings to a substring match.
+        """
+        for step in ('run: gh  release create v9 --notes x',
+                     'run: gh "release" create v9 --notes x',
+                     "run: gh 'rel'\"ease\" create v9 --notes x"):
+            with self.subTest(step=step):
+                body = self._recipe("spelling", step)
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "runs-gh-release")
 
     def test_a_comment_that_names_a_write_grant_is_not_an_offender(self):
         """The false-positive half: prose is not a grant in either direction."""

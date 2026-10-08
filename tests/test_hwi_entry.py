@@ -11,6 +11,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -312,6 +313,109 @@ class HwiEntryTests(unittest.TestCase):
                     sys.modules.pop("usb1", None)
                 else:
                     sys.modules["usb1"] = old_usb1
+
+
+    def test_a_library_swapped_between_the_check_and_the_load_is_refused(self):
+        """CT-92's check-then-load window (cycle-5 adversarial pass).
+
+        `_refuse_unless_regular` verifies a descriptor and closes it; the call
+        that follows re-opens the path. The attacker swapped the verified file
+        for a payload in that window and the loader received it. The identity
+        is compared after the load now, so the handle is discarded before usb1
+        is ever handed it.
+        """
+        usb1 = self._stub_usb1()
+        bundled = {"win32": ("libusb-1.0.dll",),
+                   "darwin": ("libusb-1.0.0.dylib", "libusb-1.0.dylib"),
+                   }.get(sys.platform, ("libusb-1.0.so.0",))
+        with tempfile.TemporaryDirectory() as folder:
+            for name in bundled:
+                (Path(folder) / name).write_bytes(b"synthetic library")
+            target = str(Path(folder) / bundled[-1])
+
+            def swap_and_load(path):
+                Path(path).write_bytes(
+                    b"attacker payload, longer than the bytes this build shipped")
+                return "attacker-handle"
+
+            with patch.object(sys, "frozen", True, create=True), patch.object(
+                sys, "_MEIPASS", folder, create=True
+            ), patch("ctypes.CDLL", side_effect=swap_and_load) as loader:
+                with self.assertRaisesRegex(
+                        RuntimeError, "not a regular file in this app"):
+                    load_hwi_entry(usb1)
+            loader.assert_called_once_with(target)
+            usb1.loadLibrary.assert_not_called()
+
+    def test_the_libusb_preflight_refuses_a_fifo_without_blocking(self):
+        """A named pipe is not a library, and opening one never returns.
+
+        The cycle-5 adversarial pass planted a FIFO at the bundled name: the
+        descriptor check called `os.open(O_RDONLY)` and blocked forever, so the
+        preflight hung instead of refusing. The refusal now comes from the
+        directory entry, before any open. The call runs on a daemon thread so a
+        regression shows up as a failed assertion rather than a hung suite.
+        """
+        if not hasattr(os, "mkfifo"):  # pragma: no cover - Windows
+            self.skipTest("this platform has no mkfifo")
+
+        class Context:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def getDeviceList(self, *, skip_on_error):  # noqa: N802
+                return []
+
+        class Libusb:
+            _name = "/nowhere/libusb"
+
+        class Libusb1:
+            libusb = Libusb()
+
+        usb1 = types.ModuleType("usb1")
+        usb1.USBErrorNotFound = type("USBErrorNotFound", (Exception,), {})
+        usb1.USBDeviceHandle = type("Handle", (), {
+            "releaseInterface": lambda self, interface: None})
+        usb1.USBContext = Context
+        usb1.libusb1 = Libusb1()
+        module = load_hwi_entry(usb1)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            expected = folder / module._usb_names[-1]
+            os.mkfifo(expected)
+            usb1.libusb1.libusb._name = str(expected)
+            old_usb1 = sys.modules.get("usb1")
+            sys.modules["usb1"] = usb1
+            outcome = {}
+
+            def attempt():
+                try:
+                    outcome["value"] = module._check_libusb()
+                except BaseException as error:  # noqa: BLE001 - reported below
+                    outcome["error"] = error
+
+            try:
+                with patch.object(sys, "frozen", True, create=True), patch.object(
+                    sys, "_MEIPASS", folder, create=True
+                ):
+                    worker = threading.Thread(target=attempt, daemon=True)
+                    worker.start()
+                    worker.join(5)
+                    self.assertFalse(
+                        worker.is_alive(),
+                        "the preflight blocked on the FIFO instead of refusing it",
+                    )
+            finally:
+                if old_usb1 is None:
+                    sys.modules.pop("usb1", None)
+                else:
+                    sys.modules["usb1"] = old_usb1
+            self.assertIsInstance(outcome.get("error"), RuntimeError)
+            self.assertIn("loaded a library outside this app",
+                          str(outcome["error"]))
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ _usb_names = _bundled_usb_names()
 _NOT_REGULAR = "The bundled USB library is not a regular file in this app."
 
 
-def _refuse_unless_regular(path: Path) -> None:
+def _refuse_unless_regular(path: Path) -> os.stat_result:
     """Refuse anything at `path` that is not this build's own regular file.
 
     CT-92: the directory the bootloader extracts into is writable by this user,
@@ -38,7 +38,21 @@ def _refuse_unless_regular(path: Path) -> None:
     regular file (`S_ISREG`) whose link count is one. A hard link has
     `st_nlink > 1` by definition, so it is refused here before any loader is
     handed the path.
+
+    The `lstat` first is not redundant. `O_NOFOLLOW` is `0` on Windows, so the
+    open alone would follow a link there; and opening a FIFO blocks forever, so
+    a named pipe planted at the bundled name would hang the preflight instead
+    of refusing it. Both are decided from the directory entry, before any open.
+
+    It returns the descriptor's `stat_result` so a caller can re-check the same
+    identity after a load (see `_identity_holds`).
     """
+    try:
+        link_info = os.lstat(path)
+    except OSError as error:
+        raise RuntimeError(_NOT_REGULAR) from error
+    if stat.S_ISLNK(link_info.st_mode) or not stat.S_ISREG(link_info.st_mode):
+        raise RuntimeError(_NOT_REGULAR)
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -50,19 +64,46 @@ def _refuse_unless_regular(path: Path) -> None:
         os.close(descriptor)
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise RuntimeError(_NOT_REGULAR)
+    return info
+
+
+def _identity_holds(info: os.stat_result, path: Path) -> bool:
+    """True while the file at `path` is still the one the descriptor showed.
+
+    CT-92's check-then-load window (cycle-5 adversarial pass): the path is
+    verified and the descriptor closed, then `ctypes.CDLL` re-opens the path. A
+    swap in between loads bytes that were never verified. The window cannot be
+    closed entirely from Python -- `dlopen` re-resolves the name -- so the
+    identity (device, inode, size, mtime) is compared again after the load and
+    the library is never *used* unless it still matches.
+    """
+    try:
+        now = os.lstat(path)
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(now.st_mode)
+        and now.st_nlink == 1
+        and (now.st_dev, now.st_ino, now.st_size, now.st_mtime_ns)
+        == (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+    )
 
 
 if getattr(sys, "frozen", False):
     bundled = [Path(sys._MEIPASS) / name for name in _usb_names]
     if not all(path.is_file() for path in bundled):
         raise RuntimeError("The bundled USB library is missing; the signer helper cannot start.")
-    for path in bundled:
-        _refuse_unless_regular(path)
+    checked = {path: _refuse_unless_regular(path) for path in bundled}
     # usb1 exposes an explicit loader. Bind its first load to the verified
     # bundle path; preloading a differently named library does not stop usb1
     # from finding a second copy installed on the machine later.
     import usb1
     _libusb_handle = ctypes.CDLL(str(bundled[-1]))
+    # The path was verified before the load; verify the same file is still
+    # there before the handle is handed to usb1. A swap here means the loaded
+    # bytes are not the bytes that were checked, so the handle is discarded.
+    if not all(_identity_holds(info, path) for path, info in checked.items()):
+        raise RuntimeError(_NOT_REGULAR)
     if not usb1.loadLibrary(_libusb_handle):
         raise RuntimeError("The USB stack loaded a library outside this app.")
 

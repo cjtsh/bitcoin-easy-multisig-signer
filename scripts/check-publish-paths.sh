@@ -1,5 +1,20 @@
 #!/usr/bin/env bash
-# Refuse a second publish path on any ref.
+# Refuse a second publish path on any remote BRANCH.
+#
+# Scope (cycle-5 adversarial pass). The sweep enumerates branch refs only
+# (`+refs/heads/*`), which is what the header claimed before the attacker read
+# it as "any ref" and showed a tag-only `contents: write` + `gh release`
+# workflow returning "ok". Tags are deliberately out of scope, and the reason is
+# not that a tag's workflow cannot run: it is that
+#   - a tag can only be created by someone who can already push a workflow, and
+#   - every historical tag carries the publisher text that shipped with it, so
+#     including tags would refuse this repository's own v0.6.x tags.
+# The control for a tag ref is CT-97's environment scope, not this sweep: every
+# release credential lives in an environment whose deployment branch policy
+# allows `main` only (`scripts/check-release-credentials.sh`), so a job that
+# declares one cannot start on a tag and a tag run has no signing key. The
+# default-token path (`contents: write` with no secret) is the residual, and it
+# is disclosed in `releases/PATCH-0.6.8.md` rather than silently assumed away.
 #
 # Why this exists: the cycle-3 audit graded the repository BLOCKED because
 # .github/workflows/build-windows.yml and build-linux.yml were still live on
@@ -21,12 +36,19 @@
 #     `permissions:` mapping is PARSED (see below), or
 #   - run a publisher by any of the names the Actions surface offers:
 #     `gh release`, `gh api`, `gh api graphql`, `api.github.com`,
-#     `uploads.github.com`, `$GITHUB_API_URL`, `actions/github-script`, a
-#     camelCase REST release call such as `createRelease`, a third-party
-#     release action such as `action-gh-release`, or a reusable workflow whose
-#     path names a release (`uses: …release…@…`).
+#     `uploads.github.com`, `$GITHUB_API_URL`, `${{ github.api_url }}`,
+#     `actions/github-script`, a camelCase REST release call such as
+#     `createRelease`, a third-party release action such as
+#     `action-gh-release`, or a `uses:` of a workflow in ANOTHER repository
+#     (any name — the callee cannot be read from this checkout).
 # Only the default branch (main) may carry one. Comments in a recipe that
 # merely name the retired files are not publishers and are not flagged.
+#
+# The publisher patterns run on a NORMALIZED body (cycle-5 adversarial pass):
+# comments stripped, `\`-continuations joined, quotes removed and runs of
+# space/tab squeezed, so `gh  release`, `gh "release"` and `gh \`+newline+
+# `release` are one spelling to the match. The `permissions:` parse runs before
+# that normalization because it needs the real line shape.
 #
 # CT-73: the first version of this list was `contents: write` and
 # `gh release`, and the cycle-4 audit walked past it with `gh api`, a REST
@@ -51,10 +73,11 @@
 # Both directions are now closed the same way: comments are stripped before
 # ANY decision (a comment is not code), and the token grant comes from the
 # `permissions:` mapping being parsed, never from the text. The parse is
-# deliberately conservative in both directions — any mapping that grants a
-# writable token is an offender no matter what a duplicate `permissions:` key
-# says afterwards, because YAML's last-wins reading is not something a release
-# gate should bet on.
+# deliberately conservative in both directions — a `contents: write` (or
+# `write-all`) mapping is an offender no matter what a duplicate
+# `permissions:` key says afterwards, because YAML's last-wins reading is not
+# something a release gate should bet on. Other writable scopes (`issues:
+# write`, `pull-requests: write`) cannot create a release and are not grants.
 #
 # FAIL CLOSED. The first version of this script read each workflow body with
 # `git show ref:path 2>/dev/null || true` and matched it with `grep`. On the
@@ -65,6 +88,15 @@
 #     because the object id is not a path and cannot be mangled;
 #   - a body that cannot be read is itself an offender (`unreadable-workflow`),
 #     never a pass;
+#   - a `permissions:` construct the parser cannot read is an offender
+#     (`unreadable-token-permissions`), because a construct this sweep cannot
+#     read is not a read-only token. The pre-audit adversarial pass walked past
+#     the parsed-mapping version with a YAML alias (`permissions: *w`), a merge
+#     key (`<<: *w`) and a quoted key (`"contents": write`), each of which a
+#     YAML parser resolves to a real `contents: write` grant while a lexical
+#     reader sees nothing;
+#   - command continuations are joined before the publisher vocabulary runs, so
+#     a `gh \` split across a line break is read as `gh release`;
 #   - matching is `[[ ]]` under nocasematch, with no external tool whose
 #     absence could turn a refusal into silence.
 #
@@ -122,6 +154,59 @@ strip_comments() {
     done
 }
 
+# CT-73 follow-up (cycle-5 adversarial pass): a shell line continuation is one
+# command to bash and two lines to a substring match. `gh \` newline `release
+# create` is the same invocation as `gh release create` and slipped past every
+# publisher pattern below. The publisher checks run on the joined body; the
+# permissions parse still needs the real line shape and runs on `clean`.
+#
+# Pure bash, for the same reason as everything else here: an external tool that
+# is missing must not be able to turn a refusal into silence.
+squash_continuations() {
+    local line pending=""
+    while IFS= read -r line; do
+        if [ -n "$pending" ]; then
+            line="${pending}${line#"${line%%[![:space:]]*}"}"
+            pending=""
+        fi
+        case "$line" in
+            *\\)
+                # Drop the trailing backslash AND the whitespace before it, so
+                # the join is `gh release` and not `gh  release`: a doubled
+                # space is a different string to a substring match, which is
+                # how the continuation slipped past the patterns to begin with.
+                pending="${line%\\}"
+                pending="${pending%"${pending##*[![:space:]]}"} "
+                continue
+                ;;
+        esac
+        printf '%s\n' "$line"
+    done
+    if [ -n "$pending" ]; then
+        printf '%s\n' "$pending"
+    fi
+    return 0
+}
+
+# Cycle-5 adversarial pass (attacker finding 4): bash collapses runs of
+# whitespace and concatenates quoted with unquoted text, so `gh  release`,
+# `gh "release"` and `gh 're'lease` are all the same invocation as
+# `gh release` while every publisher pattern below is a substring match. The
+# attacker's fixture showed all three returning "ok". Fold them to the single
+# spelling the vocabulary is written against.
+#
+# Quotes are removed and runs of space/tab are squeezed to one. Newlines are
+# deliberately left alone: `calls_a_remote_reusable_workflow` matches per line,
+# and squeezing `[:space:]` would collapse the whole body into one line.
+normalize_command_text() {
+    local line
+    while IFS= read -r line; do
+        line="${line//\"/}"
+        line="${line//\'/}"
+        printf '%s\n' "$line"
+    done | tr -s ' \t' ' '
+}
+
 # CT-73: what the token may do, read from the parsed `permissions:` mapping.
 #
 # Handles every spelling YAML allows here: `permissions: read-all` and
@@ -130,9 +215,17 @@ strip_comments() {
 # (`contents : write`), quoted (`contents: "write"`) or indented any depth
 # (top level or per job). A duplicate `permissions:` key is not valid YAML and
 # GitHub's last-wins parse of it is not something this gate will bet a release
-# on, so ANY mapping that grants a writable token wins over any other.
+# on, so a `contents: write` (or `write-all`) mapping wins over any other.
 #
-# stdout is one of: write-all | contents-write | read-only | absent
+# FAIL CLOSED (cycle-5 adversarial pass): a spelling this parser cannot read is
+# not a read-only value. `permissions: *w`, a merge key `<<: *w` and a quoted
+# key `"contents": write` are all real write grants to YAML and all three read
+# as nothing here, so any unreadable construct returns `unrecognized` and the
+# caller treats it as an offender. Adding one spelling per audit round is the
+# arms race that lost cycle 5; refusing what cannot be read ends it.
+#
+# stdout is one of: write-all | contents-write | unrecognized | read-only |
+# absent
 permissions_verdict() {
     local -a lines=()
     local line
@@ -140,7 +233,8 @@ permissions_verdict() {
         lines+=("${line%$'\r'}")
     done
 
-    local saw_readonly=0 i n child child_indent child_trim indent value key
+    local saw_readonly=0 unrecognized=0 i n child child_indent child_trim
+    local indent value key
     for (( i=0; i<${#lines[@]}; i++ )); do
         line="${lines[i]}"
         if [[ "$line" =~ ^([[:space:]]*)permissions[[:space:]]*:(.*)$ ]]; then
@@ -174,6 +268,12 @@ permissions_verdict() {
                             case "$key:$value" in
                                 "contents:write") printf 'contents-write\n'; return 0 ;;
                             esac
+                            # A readable scope whose value is not in the
+                            # vocabulary is not a read-only scope. Fail closed.
+                            case "$value" in
+                                "read"|"read-all"|"none"|"write") ;;
+                                *) unrecognized=1 ;;
+                            esac
                             continue
                         fi
                         # A bare `write-all` (optionally a `- ` sequence item) is
@@ -190,6 +290,13 @@ permissions_verdict() {
                                 ;;
                             "read-all"|"read"|"none"|"{}")
                                 saw_readonly=1
+                                ;;
+                            *)
+                                # `<<: *w`, `contents: *w`, a nested mapping, or
+                                # any other child this parser cannot read. It is
+                                # a scope it cannot prove read-only, so it is not
+                                # a pass: fail closed.
+                                unrecognized=1
                                 ;;
                         esac
                     done
@@ -211,15 +318,33 @@ permissions_verdict() {
                     if [[ "$value" =~ (^|[[:space:]{,])write-all([[:space:]},]|$) ]]; then
                         printf 'write-all\n'; return 0
                     fi
-                    if [[ "$value" =~ [A-Za-z0-9_.-]+[[:space:]]*: ]]; then
+                    if [[ "$value" == *"*"* || "$value" == *"<<"* ]]; then
+                        # An alias or merge key brings in scopes that live
+                        # somewhere this sweep cannot see. Fail closed.
+                        unrecognized=1
+                    elif [[ "$value" =~ [A-Za-z0-9_.-]+[[:space:]]*: ]]; then
                         saw_readonly=1
+                    else
+                        # `permissions: {…}` that is not a mapping at all.
+                        unrecognized=1
                     fi
+                    ;;
+                *)
+                    # `permissions: *w` is a YAML alias and resolves to a real
+                    # mapping elsewhere in the file; any other value is a
+                    # spelling this parse cannot resolve to read-only. Both fail
+                    # closed rather than silently counting as nothing.
+                    unrecognized=1
                     ;;
             esac
         fi
     done
 
-    if [ "$saw_readonly" -eq 1 ]; then
+    # An unreadable construct outranks a read-only one: a file that says both
+    # `contents: read` and `permissions: *w` has not shown a read-only token.
+    if [ "$unrecognized" -eq 1 ]; then
+        printf 'unrecognized\n'
+    elif [ "$saw_readonly" -eq 1 ]; then
         printf 'read-only\n'
     else
         printf 'absent\n'
@@ -227,18 +352,34 @@ permissions_verdict() {
 }
 
 # CT-102: a reusable workflow hides its publisher behind `uses:`, and the sweep
-# cannot read the callee. A called workflow whose path names a release is a
-# publish path this gate refuses to assume is harmless.
+# cannot read the callee. The first revision refused a callee whose path named a
+# release (`…/release.yml@main`); the cycle-5 attacker called
+# `other-org/ci/.github/workflows/publish-package.yml@main` with
+# `secrets: inherit` and the sweep said `ok`, because a publisher can be named
+# anything. The rule is inverted, as everywhere else here: a `uses:` that points
+# at a workflow in ANOTHER repository is unreadable from this checkout, so it is
+# refused whatever it is called, rather than assumed harmless.
 #
-# Matched one line at a time on the comment-stripped body. `.` matches a
-# newline in bash's ERE, so a whole-body `uses:.*release.*@` pairs an unrelated
-# `uses: actions/upload-artifact@…` line with the word "release" anywhere else
-# in the file — it flagged this repository's own windows-inputs.yml branches.
-calls_a_release_workflow() {
-    local line
+# Remote reusable-workflow form: `owner/repo/path/to/workflow.yml@ref` — two or
+# more slashes before the `@`. `actions/checkout@v4` (one slash, an action) and
+# `docker://…` (no `@`) do not match. A local `./.github/workflows/x.yml@ref`
+# is fine: the sweep reads every workflow file on the ref, so the callee is in
+# scope already.
+#
+# Matched one line at a time. `.` matches a newline in bash's ERE, so a
+# whole-body `uses:.*@` pairs an unrelated `uses: actions/upload-artifact@…`
+# line with a `uses:` further down the file.
+calls_a_remote_reusable_workflow() {
+    local line value
     while IFS= read -r line; do
-        if [[ "$line" =~ ^[[:space:]]*(-[[:space:]]+)?uses:.*release.*@ ]]; then
-            return 0
+        if [[ "$line" =~ ^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*([^[:space:]#]+) ]]; then
+            value="${BASH_REMATCH[2]}"
+            case "$value" in
+                ./*) continue ;;
+            esac
+            if [[ "$value" == */*/*@* ]]; then
+                return 0
+            fi
         fi
     done
     return 1
@@ -319,7 +460,22 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
                 report "$branch" "$path" "grants-write-all"
                 continue
                 ;;
+            unrecognized)
+                # A `permissions:` construct this sweep cannot read (a YAML
+                # alias, a merge key, a quoted key, anything unrecognised) is
+                # not a read-only token. Refusing it is the whole point: the
+                # previous revision let `permissions: *w` grant contents: write
+                # while reading as nothing here.
+                report "$branch" "$path" "unreadable-token-permissions"
+                continue
+                ;;
         esac
+
+        # CT-73 follow-up: the publisher patterns below are substring matches,
+        # and `gh \` + newline + `release` is the same command split across two
+        # lines. Reassign `clean` to the continuation-joined form now that the
+        # permissions parse (which needs the real line shape) has run.
+        clean="$(printf '%s\n' "$clean" | squash_continuations | normalize_command_text)"
 
         if [[ "$clean" == *"gh release"* ]]; then
             report "$branch" "$path" "runs-gh-release"
@@ -341,7 +497,8 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
             report "$branch" "$path" "uploads-release-asset-by-rest"
             continue
         fi
-        if [[ "$clean" == *"api.github.com"* || "$clean" == *'$GITHUB_API_URL'* ]]; then
+        if [[ "$clean" == *"api.github.com"* || "$clean" == *'$GITHUB_API_URL'* \
+              || "$clean" == *"github.api_url"* ]]; then
             report "$branch" "$path" "talks-to-the-rest-api"
             continue
         fi
@@ -370,11 +527,11 @@ for ref in $(git for-each-ref --format='%(refname)' "${AUDIT_REMOTE_REFS}"); do
             fi
         done
         # CT-102: a reusable workflow hides its publisher behind `uses:`. A
-        # called workflow that names a release is a publish path the sweep
-        # cannot read, so it fails closed rather than assuming the callee is
-        # read-only. Matched on the stripped body, so the comments in this
-        # repository that discuss release workflows are not offenders.
-        if printf '%s\n' "$clean" | calls_a_release_workflow; then
+        # callee in another repository cannot be read from here, so it fails
+        # closed whatever it is named. Matched on the stripped body, so the
+        # comments in this repository that discuss release workflows are not
+        # offenders.
+        if printf '%s\n' "$clean" | calls_a_remote_reusable_workflow; then
             report "$branch" "$path" "calls-a-release-workflow"
             continue
         fi

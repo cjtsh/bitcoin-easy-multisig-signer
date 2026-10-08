@@ -49,11 +49,12 @@ archive — verified by the person downloading, not by the running app. The
 sides; do not describe the Windows helper as verified by a signature.
 
 An Authenticode certificate for `hwi.exe`, or moving the sidecar out of the
-user-writable directory, would change this column. **Owner decision, open as of
-2026-10-08.** Both options are owner-side calls, recorded in the cycle-5
-remediation ledger (`releases/PATCH-0.6.8.md`) under CT-105 rather than taken
-unilaterally; until one is chosen, the Windows helper's identity is
-self-asserted and this document says so.
+user-writable directory, would change this column. It was put to the owner as a
+business choice rather than an agent call, and the **decision taken 2026-10-08 is
+to keep Windows unsigned**: ship with the SmartScreen instructions, the
+GPG-signed `SHA256SUMS` and the Sigstore attestation that already exist, and
+revisit a code-signing certificate only if the project ever wants one. Until
+then the Windows helper's identity is self-asserted, and this document says so.
 
 ## The one release pipeline
 
@@ -124,6 +125,11 @@ protected environments, each deployable only from `main`:
 | `release-signing` | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | `main` only, no human gate |
 | `apple-signing` | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD`, `MAC_NOTARY_KEY_P8_BASE64` | `main` only, no human gate |
 
+The deployment rules were verified against live GitHub settings on 2026-10-08
+(`gh api`, transcript in `releases/PATCH-0.6.8.md`); the repository pins only the
+job-level `environment:` declaration, so a later change to the environment's
+branch policy or reviewers would invalidate this without changing the tree.
+
 `.github/workflows/build-candidate.yml` declares the environment on the job that
 needs it: `macos` → `apple-signing`, `checksums` → `release-signing`.
 
@@ -142,9 +148,11 @@ check prints a `note:` for a referenced name that is absent, so the gap is
 visible without blocking the release. A name that is referenced and *unwatched*
 is the thing that went wrong for a cycle; a name that is referenced and absent
 is a configuration the owner chose. The GPG
-step already runs only under `if: ${{ inputs.publish }}` and the Apple steps only
-under `if: ${{ inputs.notarize }}`, so a candidate build never enters either
-environment.
+step runs only under `if: ${{ inputs.publish }}` and the Apple steps only under
+`if: ${{ inputs.notarize }}`, so a `publish=false` run skips the steps that read
+the secrets. It still enters the environment: `environment:` is a job key and
+those jobs carry no job-level `if:` (CT-106). What denies a non-main ref is the
+environment's own `main`-only deployment rule, not the step gate.
 
 Neither environment declares a required reviewer or a wait timer, by design:
 publishing must start on its own so any agent team the owner authorises can cut a
@@ -153,7 +161,7 @@ release. A required reviewer would not add a second pair of eyes anyway — with
 it — while giving a release a way to stall. The ref rule below is the control
 that does the work. A repository-level secret is handed to a job on **any** ref,
 so without this a dispatch at a historical tag would run that tag's own frozen
-workflow text with today's signing keys; all 66 tags from `v0.1.0` on carry a
+workflow text with today's signing keys; all 58 tags from `v0.1.0` on carry a
 dispatchable `build-candidate.yml` and the pre-0.6.4 ones lack the
 default-branch guard. Tags are immutable history and cannot be repaired, so the
 fix is a rule about which ref a run is on: an old tag never declares the
@@ -183,8 +191,9 @@ Rules:
   changes, or if any other workflow file names a credential at all.
 - `scripts/provision-release-credentials.sh` is the only supported way to move a
   credential value. It re-derives each one from its master copy and sets it with
-  `gh secret set` on standard input, so no value ever reaches a shell history,
-  argv, a log, or a chat transcript.
+  `gh secret set` on standard input, so no value reaches GitHub through a shell
+  history, a log or a transcript; the two local-tool argv windows noted below are
+  the exception.
 
 ### The master copy behind each secret
 
@@ -204,9 +213,11 @@ certificate:
 
 `scripts/provision-release-credentials.sh` is the whole recovery. It re-derives
 every credential the machine can, sets it in the right environment, and finishes
-by running the standing check. It never prints a value and never puts one in argv
-(argv is visible to `ps`): values move file → GitHub on standard input, inside a
-mode-700 temporary directory that is scrubbed on exit.
+by running the standing check. It never prints a value. Values reach GitHub on
+standard input; two local tools on this path (`security export -P`, `notarytool
+store-credentials --password`) take a secret as an argument and offer no other
+form, so those argv windows exist and are pinned (CT-107). The working copies
+live in a mode-700 temporary directory that is scrubbed on exit.
 
 ```bash
 # everything this Mac can rebuild, then prove the control is armed

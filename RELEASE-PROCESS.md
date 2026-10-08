@@ -169,7 +169,7 @@ signing credentials live in the `release-signing` and `apple-signing`
 environments, each deployable only from `main`, and each job that names a
 credential declares its environment. A repository secret reaches a job on **any**
 ref, so a dispatch at a historical tag would run that tag's frozen workflow text
-with today's signing keys; every tag from `v0.1.0` on carries a dispatchable
+with today's signing keys; all 58 tags from `v0.1.0` on carry a dispatchable
 `build-candidate.yml` and the pre-0.6.4 ones lack the default-branch guard.
 Tags are immutable, so the protection is a rule about which ref a run is on, and
 it holds for tags that do not exist yet. Run
@@ -194,7 +194,9 @@ maintainer's GnuPG keyring, exports `MAC_CERT_P12_BASE64` plus a fresh
 `MAC_APP_SPECIFIC_PASSWORD` from a hidden prompt or a file, takes
 `MAC_NOTARY_KEY_P8_BASE64` from `--notary-key-file` when the App Store Connect
 API-key notary route is in use, and then deletes whatever repository-level copies
-remain (`--prune`). It never prints a value and
-never passes one in argv, and it finishes by running the check above. GitHub
+remain (`--prune`). It never prints a value and no value reaches GitHub through a
+shell history, a log or a transcript; `gh secret set` receives it on standard
+input and the two local-tool argv windows noted in `SIGNING.md` are the
+exception. It finishes by running the check above. GitHub
 cannot return a secret's value to anyone, so a lost environment secret is a
 re-run of that script, not a new certificate.

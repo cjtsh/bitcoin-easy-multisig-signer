@@ -98,6 +98,9 @@ class CredentialWorld:
     def __init__(self):
         self.repository_secrets = []  # names still at repository level
         self.missing_environments = set()
+        # Endpoints whose fixture is withheld, so `gh api` fails for them and
+        # the check's own read-error arm is exercised rather than assumed.
+        self.missing_fixtures = set()
         # Human gates that would stop a release starting on its own. The honest
         # configuration has none: the owner asked for a path any agent team can
         # run, so the check refuses a required reviewer or a wait timer.
@@ -130,6 +133,10 @@ class CredentialWorld:
     def write(self, folder: pathlib.Path) -> None:
         folder.mkdir(parents=True, exist_ok=True)
         for path, payload in self._endpoints():
+            if path in self.missing_fixtures:
+                # Withheld on purpose: the fake `gh` exits 1 for it, which is
+                # how a real API read failure reaches the check.
+                continue
             (folder / f"{path.replace('/', '_')}.json").write_text(
                 json.dumps(payload), encoding="utf-8"
             )
@@ -336,6 +343,169 @@ class ReleaseCredentialCheckTests(unittest.TestCase):
         result = self.run_check(world)
         self.assertEqual(result.returncode, 1)
         self.assertIn("no environment named apple-signing", result.stderr)
+
+    def test_a_missing_branch_policy_is_refused(self):
+        """The main-only rule is the control for a tag dispatch (CT-97).
+
+        An environment with no deployment branch policy at all is not the same
+        as `main`-only: any ref, including a tag, may deploy into it. The
+        audit's cycle-5 referee found this arm armed but unpinned, so a later
+        edit could have dropped the refusal without a test going red.
+        """
+        world = CredentialWorld()
+        world.policies["apple-signing"] = []
+        result = self.run_check(world)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("does not allow deployments from the main branch alone", result.stderr)
+        self.assertIn("found: none", result.stderr)
+        self.assertIn("apple-signing", result.stderr)
+
+    def test_a_non_main_branch_policy_is_refused(self):
+        """A writable branch policy is not `main`-only either."""
+        world = CredentialWorld()
+        world.policies["apple-signing"] = ["develop branch"]
+        result = self.run_check(world)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("found: develop branch", result.stderr)
+
+    def test_an_unreadable_policy_endpoint_is_refused(self):
+        """A platform that will not answer is not a platform that answered yes.
+
+        The reference caches the read error by withholding the fixture, which
+        makes the fake `gh` exit 1 the way a real API failure does.
+        """
+        world = CredentialWorld()
+        world.missing_fixtures = {
+            f"repos/{REPO}/environments/apple-signing/deployment-branch-policies"
+        }
+        result = self.run_check(world)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "could not read the deployment branch policies of the apple-signing environment",
+            result.stderr,
+        )
+
+    def test_a_workflow_set_that_names_no_release_credential_is_refused(self):
+        """With nothing to watch the check would pass vacuously.
+
+        A check that cannot fail is not a check, so an empty watched set is
+        itself a refusal. This is the guard an auditor can otherwise satisfy by
+        pointing the script at a directory that contains no workflow at all.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "plain.yml").write_text(
+                "name: plain\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    steps:\n"
+                "      - run: echo ok\n",
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("proves nothing", result.stderr)
+        self.assertIn("names a release credential", result.stderr)
+
+    def test_a_bracket_spelled_secret_is_derived(self):
+        """`secrets['NAME']` is the same context spelled differently.
+
+        The derivation accepted the bracket form but nothing pinned it, so
+        narrowing the pattern to the dot form would have silently stopped
+        watching a name spelled this way. The environment here deliberately
+        holds the real release names, so the refusal can only come from the
+        bracket name having been derived.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "bracket.yml").write_text(
+                "name: bracket\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  publish:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets['FOO'] }}\"\n",
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "which no job that declares release-signing references", result.stderr
+        )
+        self.assertIn("FOO", result.stderr)
+        self.assertNotIn("proves nothing", result.stderr)
+
+    def test_a_workflow_level_env_is_refused(self):
+        """T2: the walk begins at `jobs:`, so a name above it was invisible.
+
+        `env:` at workflow level supports the `secrets` context, so a name
+        there is live on every ref while no job was seen to use it. It is now
+        reported as a name with no scope, which is a refusal.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "hostile_env.yml").write_text(
+                "name: hostile\n"
+                "on: workflow_dispatch\n"
+                "env:\n"
+                "  PAT: ${{ secrets.RELEASE_PAT }}\n"
+                "jobs:\n"
+                "  decoy:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: apple-signing\n"
+                "    steps:\n"
+                "      - run: echo ok\n",
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("cannot attribute to a job", result.stderr)
+        self.assertIn("RELEASE_PAT", result.stderr)
+        self.assertIn("hostile_env.yml names the release credential RELEASE_PAT", result.stderr)
+
+    def test_a_quoted_job_key_is_refused(self):
+        """A spelling this parser cannot read must fail closed, not vanish."""
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "quoted.yml").write_text(
+                "name: quoted\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                '  "publish":\n'
+                "    runs-on: ubuntu-24.04\n"
+                "    environment: release-signing\n"
+                "    steps:\n"
+                "      - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("cannot attribute to a job", result.stderr)
+        self.assertIn("GPG_PRIVATE_KEY", result.stderr)
+
+    def test_a_four_space_indented_job_is_refused(self):
+        """Same rule for an indent the two-space job parser does not accept."""
+        with tempfile.TemporaryDirectory() as temporary:
+            workflows = pathlib.Path(temporary)
+            (workflows / "indented.yml").write_text(
+                "name: indented\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "    publish:\n"
+                "      runs-on: ubuntu-24.04\n"
+                "      environment: release-signing\n"
+                "      steps:\n"
+                "        - run: echo \"${{ secrets.GPG_PRIVATE_KEY }}\"\n",
+                encoding="utf-8",
+            )
+            result = self.run_check(CredentialWorld(), workflows)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("cannot attribute to a job", result.stderr)
+        self.assertIn("GPG_PRIVATE_KEY", result.stderr)
 
     def test_the_check_changes_nothing(self):
         """It is a read-only verifier; a check that mutates the platform would

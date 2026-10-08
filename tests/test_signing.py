@@ -334,6 +334,33 @@ class FinalizeTests(unittest.TestCase):
                   + bytes([0x52, 0xAE]))
         self.assertEqual(parse_multisig_script(honest), (2, [first, second]))
 
+    def test_a_script_with_a_non_compressed_key_push_is_refused(self):
+        """A 33-byte push is not automatically a compressed public key.
+
+        Flipping the 0x02/0x03 prefix to 0x04 gives different bytes for a point
+        that is still on the curve, so the byte-for-byte duplicate gate cannot
+        see that the same key was named twice; on the unfixed code the script
+        parsed and only failed later, inside signature verification. The honest
+        script above is the control that proves the refusal is about the
+        encoding, not the multisig shape.
+        """
+        first = bytes.fromhex(
+            "031561fd0d8902f69e80743be75bfac83ec3ddf6607ce2d2f8526bb0991925e0ee")
+        second = bytes.fromhex(
+            "0241ea5cb48ecc741308624baf221aa4e3057447056e4fa48749572714abff29f1")
+        hybrid = b"\x04" + first[1:]
+        mutated = (bytes([0x52]) + b"\x21" + first + b"\x21" + hybrid
+                   + bytes([0x52, 0xAE]))
+        with self.assertRaisesRegex(SigningError, "not a compressed public key"):
+            parse_multisig_script(mutated)
+        # The same bytes with a valid prefix still parse, so the refusal is the
+        # encoding and not the push length.
+        self.assertEqual(
+            parse_multisig_script(bytes([0x52]) + b"\x21" + first + b"\x21" + second
+                                  + bytes([0x52, 0xAE])),
+            (2, [first, second]),
+        )
+
     def test_a_duplicate_key_input_cannot_reach_complete_with_one_signature(self):
         """End-to-end shape (CT-72): one device approval must not satisfy a quorum.
 

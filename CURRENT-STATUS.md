@@ -69,7 +69,11 @@ The last open item, **CT-97**, is fixed at the repository level: the
 release credentials are scoped to the `release-signing` and `apple-signing`
 environments, each deployable only from `main` and declaring no human gate, so a
 dispatch at a historical tag cannot read them and a promotion never pauses for a
-person. All five stored values are environment-scoped and the repository-level
+person. The deployment rules were verified against live GitHub settings on
+2026-10-08 (`gh api`, transcript in `releases/PATCH-0.6.8.md`); the repository
+pins only the job-level `environment:` declaration, so a later change to the
+environment's branch policy or reviewers would invalidate this without changing
+the tree. All five stored values are environment-scoped and the repository-level
 secret list is empty; the last one, `MAC_APP_SPECIFIC_PASSWORD`, which no machine
 here can re-derive, was moved on 2026-10-08 without owner action by sealing it to a
 key held only locally. The check now derives its watched names from the workflow

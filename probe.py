@@ -588,23 +588,66 @@ def _hwi_payload_check_script() -> str:
     The package roots arrive in ``sys.argv``: under ``-S`` the child has no
     site-packages, and the roots are the directories this interpreter actually
     imports from, not whatever a meta-path hook would claim (CT-90).
+
+    Every file under the package is judged, not only the ``.py`` files. A
+    ``.pyc`` the interpreter would load is code that no literal in
+    ``HWI_PAYLOAD_MANIFEST`` covers, and CPython trusts the timestamp and size
+    in its header before it trusts the body, so a forged header is enough to
+    make an attacker's marshal run. A bytecode file that validates against the
+    recorded source -- the same compile the interpreter would itself have
+    written -- is that interpreter's own artifact and is tolerated, and so is
+    any file the import machinery cannot load (``.pyi``, ``py.typed``, ``.ui``,
+    ``.rules``, ``.md``). An unverifiable bytecode file, or any other loadable
+    suffix, fails the tree. A bytecode file whose header is stale is inert:
+    CPython ignores it and recompiles the verified source.
     """
     return (
-        "import hashlib, pathlib, sys\n"
+        "import hashlib, importlib.util, marshal, pathlib, sys\n"
         f"manifest = {HWI_PAYLOAD_MANIFEST!r}\n"
+        "LOADABLE = ('.py', '.pyc', '.pyo', '.so', '.pyd', '.dll', '.dylib')\n"
         "def digest(path):\n"
         "    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()\n"
+        "def bytecode_is_the_recorded_source(rel, path, root):\n"
+        "    parent = pathlib.PurePosixPath(rel).parent\n"
+        "    if parent.name != '__pycache__':\n"
+        "        return False\n"
+        "    source_rel = (parent.parent\n"
+        "                  / (path.name.split('.')[0] + '.py')).as_posix()\n"
+        "    if source_rel not in manifest:\n"
+        "        return False\n"
+        "    data = path.read_bytes()\n"
+        "    if len(data) < 16 or data[:4] != importlib.util.MAGIC_NUMBER:\n"
+        "        return False\n"
+        "    if data[4:8] != bytes(4):\n"
+        "        return False\n"
+        "    source = root / source_rel\n"
+        "    stat = source.stat()\n"
+        "    if (int.from_bytes(data[8:12], 'little') != int(stat.st_mtime) & 0xffffffff\n"
+        "            or int.from_bytes(data[12:16], 'little') != stat.st_size & 0xffffffff):\n"
+        "        return True\n"
+        "    code = compile(source.read_bytes(), str(source), 'exec', dont_inherit=True)\n"
+        "    return marshal.dumps(code) == data[16:]\n"
         "roots = sys.argv[1:]\n"
         "if not roots:\n"
         "    raise SystemExit(3)\n"
         "for root in roots:\n"
         "    root_path = pathlib.Path(root)\n"
-        "    found = {path.relative_to(root_path).as_posix(): path\n"
-        "             for path in root_path.rglob('*.py') if path.is_file()}\n"
+        "    files = [path for path in root_path.rglob('*') if path.is_file()]\n"
+        "    found = {path.relative_to(root_path).as_posix(): path for path in files\n"
+        "             if path.relative_to(root_path).as_posix() in manifest}\n"
         "    if set(found) != set(manifest):\n"
         "        raise SystemExit(2)\n"
         "    for name, path in sorted(found.items()):\n"
         "        if digest(path) != manifest[name]:\n"
+        "            raise SystemExit(2)\n"
+        "    for path in files:\n"
+        "        rel = path.relative_to(root_path).as_posix()\n"
+        "        if rel in manifest:\n"
+        "            continue\n"
+        "        if path.suffix in ('.pyc', '.pyo'):\n"
+        "            if not bytecode_is_the_recorded_source(rel, path, root_path):\n"
+        "                raise SystemExit(2)\n"
+        "        elif path.suffix.lower() in LOADABLE:\n"
         "            raise SystemExit(2)\n"
         "for name, path in sorted(found.items()):\n"
         "    print(name + ' ' + str(path) + ' ' + manifest[name])\n"
@@ -744,8 +787,17 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
     # else is a standalone binary whose own bytes are what we pin.
     if len(argv) >= 2:
         verified = _verify_hwi_payload()
+        # Re-walk the package immediately before the exec below. Re-reading the
+        # recorded files catches a rewrite of any of them; only a second walk
+        # catches a file *added* after the first one, which the recorded pairs
+        # cannot name (CT-90).
+        if _verify_hwi_payload() != verified:
+            raise ProbeError(_HWI_WRONG_DIGEST)
     else:
         verified = _verify_hwi_bytes(path)
+    # Then re-read every recorded file, so the argv below runs only if those
+    # bytes are still the bytes that were hashed (CT-90).
+    _require_unchanged(verified)
     try:
         result = subprocess.run(
             [*argv, "--version"],
@@ -761,7 +813,6 @@ def _verify_hwi_identity(path: str, command: list[str] | None = None) -> None:
     first_line = output.strip().splitlines()[0].strip() if output.strip() else ""
     if result.returncode != 0 or first_line not in _HWI_VERSION_LINES:
         raise ProbeError(_HWI_NOT_THE_RELEASE)
-    _require_unchanged(verified)
     _verified_hwi_files[path] = verified
     _verified_hwi_paths.add(path)
 

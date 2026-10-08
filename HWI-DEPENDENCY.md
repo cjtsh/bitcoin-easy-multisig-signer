@@ -91,10 +91,11 @@ byte check that the helper does not get a vote in:
   same check against the locked build environment in all three build jobs
   (`scripts/check-hwi-payload.py`), so the accept half is exercised against
   real hwi bytes rather than fixture bytes only (CT-112). The check child and
-  the helper are separate processes, so the parent reads every file the child
-  reported once more immediately before it spawns the helper
-  (`_require_unchanged`); a swap written into that window is refused rather
-  than run (CT-90).
+  the helper are separate processes, so the parent re-reads every file the child
+  reported immediately before it spawns the helper (`_require_unchanged`); a swap
+  written between the check and that re-read is refused rather than run, and the
+  version-probe exec itself is the residual window, so the identity is cached
+  only after it succeeds (CT-90).
 - **An explicitly named helper** (`--hwi /path/to/hwi`) must carry its own
   `hwi.sha256`. Without one it is refused before it is executed.
 

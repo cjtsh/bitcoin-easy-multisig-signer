@@ -84,6 +84,18 @@ REFUSAL="refusing: the release credentials are not environment-scoped"
 # watched even if a human would call it a comment, and over-watching fails
 # closed. `tests/test_release_credentials.py` asserts this derivation is exactly
 # what PyYAML gives for the same files, so the two cannot drift apart silently.
+#
+# FAIL CLOSED (cycle-5 adversarial pass): the structured walk only reads what it
+# can place under a job, and the attacker put a live credential in the
+# WORKFLOW-LEVEL `env:` block above `jobs:` — never read — so the repository
+# sweep below never refused a live repository copy of it. Every reference that
+# survives comment stripping is now compared against the attributed set; one
+# the walk did not place is emitted with no environment (`<unattributed>`),
+# which the caller refuses. A quoted job key or an unusual `jobs:` indent is
+# therefore a refusal, not silence.
+#
+# A `secrets.NAME` in a COMMENT is not live and is not watched: comment
+# stripping runs on both paths, so prose cannot widen or narrow this set.
 credential_scope() {
   python3 -c '
 import os, re, sys
@@ -156,6 +168,20 @@ def environment(body):
     return ""
 
 
+def live_references(text):
+    """Every `secrets.…` occurrence that survives comment stripping.
+
+    The structured walk only reads lines it can place under a job in the
+    `jobs:` block. This is the whole-file safety net: a reference the walk
+    cannot attribute is still live, and is reported with no environment.
+    """
+    found = []
+    for line in text.splitlines():
+        for match in SECRET.finditer(strip_comment(line)):
+            found.append(match.group(1) or match.group(2))
+    return found
+
+
 rows = []
 if os.path.isdir(directory):
     for entry in sorted(os.listdir(directory)):
@@ -163,12 +189,24 @@ if os.path.isdir(directory):
             continue
         with open(os.path.join(directory, entry), encoding="utf-8") as handle:
             text = handle.read()
+        attributed = set()
         for job, body in jobs(text):
             where = environment(body) or "-"
             for line in body:
                 for found in SECRET.finditer(line):
-                    rows.append((found.group(1) or found.group(2), where,
-                                 entry + ":" + job))
+                    name = found.group(1) or found.group(2)
+                    attributed.add(name)
+                    rows.append((name, where, entry + ":" + job))
+        # FAIL CLOSED (cycle-5 adversarial pass): every live reference that the
+        # walk above did NOT place in a job is reported with no environment,
+        # which is a refusal. The attacker named a credential only in the
+        # WORKFLOW-LEVEL `env:` block above `jobs:`, which the old walk never
+        # read, and showed that a quoted job key or an unusual `jobs:` indent
+        # was invisible the same way. A name this check cannot attribute is now
+        # an unscoped name, not silence.
+        for name in live_references(text):
+            if name not in attributed:
+                rows.append((name, "-", entry + ":<unattributed>"))
 for name, where, source in sorted(set(rows)):
     print(name + "\t" + where + "\t" + source)
 ' "$WORKFLOWS_DIR" | tr -d '\r'
@@ -207,14 +245,22 @@ report() {
 # above) keeps a Python failure visible through the pipe.
 names_from() {
   python3 -c 'import json, sys
-rows = json.load(sys.stdin).get(sys.argv[1]) or []
+try:
+    payload = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+rows = payload.get(sys.argv[1]) or []
 print("\n".join(sorted(row.get("name", "") for row in rows)))' "$1" | tr -d '\r'
 }
 
 # Print "<name> <type>" for each deployment branch policy on stdin.
 policy_lines() {
   python3 -c 'import json, sys
-rows = json.load(sys.stdin).get("branch_policies") or []
+try:
+    payload = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+rows = payload.get("branch_policies") or []
 print("\n".join(sorted("%s %s" % (row.get("name"), row.get("type")) for row in rows)))' | tr -d '\r'
 }
 
@@ -223,7 +269,11 @@ print("\n".join(sorted("%s %s" % (row.get("name"), row.get("type")) for row in r
 # release cannot start on its own, so either one is an offender here.
 gate_lines() {
   python3 -c 'import json, sys
-rules = json.load(sys.stdin).get("protection_rules") or []
+try:
+    payload = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+rules = payload.get("protection_rules") or []
 gates = []
 for rule in rules:
     kind = rule.get("type")
@@ -269,7 +319,9 @@ fi
 # 1a. A credential named by a job with no environment is reachable on every ref.
 while IFS=$'\t' read -r name environment source; do
   [[ -n "$name" ]] || continue
-  if [[ "$environment" == "-" ]]; then
+  if [[ "$environment" == "-" && "$source" == *":<unattributed>" ]]; then
+    report "${source%:<unattributed>} names the release credential $name somewhere this check cannot attribute to a job (a workflow-level env: block, a quoted job key, or a jobs: block it cannot read); a name with no scope reaches a job on every ref, so it is refused rather than assumed harmless"
+  elif [[ "$environment" == "-" ]]; then
     report "$source names the release credential $name in a job that declares no environment; a repository secret reaches that job on every ref, including every historical tag — put the value in an environment and declare it on the job"
   elif [[ ! "$environment" =~ ^[A-Za-z0-9._-]+$ ]]; then
     report "$source names $name inside an environment this check cannot parse ($environment); a name that cannot be read cannot be scoped"

@@ -17,7 +17,9 @@ import contextlib
 import hashlib
 import importlib.util
 import io
+import marshal
 import os
+import py_compile
 import re
 import subprocess
 import sys
@@ -554,6 +556,119 @@ class HwiIdentityPins(unittest.TestCase):
                 with self.assertRaisesRegex(
                         ProbeError, "does not match its recorded digest"):
                     probe._verify_hwi_payload([str(root)])
+
+    def test_a_planted_bytecode_file_is_refused(self):
+        """CT-90: a `.pyc` is code, and its header is attacker-writable.
+
+        CPython trusts the timestamp and size in a bytecode header before it
+        trusts the body, so an attacker can compile their own module, graft the
+        genuine source's mtime and size onto it, and have the interpreter load
+        bytes no literal in the manifest covers. The check recompiles the
+        recorded source and refuses a body that is not that compile.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            stat = source.stat()
+            header = (
+                importlib.util.MAGIC_NUMBER
+                + bytes(4)
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
+            )
+            attackers = marshal.dumps(
+                compile(b"# attacker bytecode\n", "commands.py", "exec"))
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(header + attackers)
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_the_interpreters_own_bytecode_is_accepted(self):
+        """The other half: bytecode the interpreter itself wrote is not an attack.
+
+        A pip install, and every signing session, leaves `__pycache__` behind.
+        Refusing all of it would refuse the genuine tree on the second run, so
+        a bytecode file that validates against the recorded source is allowed
+        and the boundary is measured here rather than assumed.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            py_compile.compile(
+                str(root / "hwilib" / "commands.py"),
+                cfile=str(cache / "commands.cpython-312.pyc"),
+                doraise=True)
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                verified = probe._verify_hwi_payload([str(root)])
+            self.assertEqual(
+                [Path(path).name for path, _ in verified],
+                ["__init__.py", "_cli.py", "commands.py"])
+
+    def test_bytecode_without_a_recorded_source_is_refused(self):
+        """A legacy `.pyc` next to no source is importable and unpinned."""
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            (root / "hwilib" / "planted.pyc").write_bytes(b"# not bytecode\n")
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_a_data_file_added_to_the_package_is_not_an_offender(self):
+        """The real tree ships 34 non-Python files; they cannot become code.
+
+        hwilib 3.2.0 carries `.pyi`, `py.typed`, `.ui`, `.rules` and `.md`
+        files. The tree pin judges files the import machinery can load, so the
+        boundary is a loadable suffix, not every file that is not a `.py`.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            (root / "hwilib" / "py.typed").write_text("", encoding="utf-8")
+            udev = root / "hwilib" / "udev"
+            udev.mkdir()
+            (udev / "20-hw1.rules").write_text("", encoding="utf-8")
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                verified = probe._verify_hwi_payload([str(root)])
+            self.assertEqual(len(verified), 3)
+
+    def test_a_file_added_between_the_walks_is_refused(self):
+        """CT-90: the re-walk before the exec catches an added module.
+
+        Re-reading the recorded files cannot see a file that was not recorded
+        when the first walk ran, so the tree is walked again immediately before
+        the helper is executed.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            path = str(root / "hwilib")
+            real = probe._verify_hwi_payload
+            calls = {"n": 0}
+
+            def add_a_module_between_the_walks(*args, **kwargs):
+                result = real(*args, **kwargs)
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    (root / "hwilib" / "planted.py").write_text(
+                        "# added after the first walk\n", encoding="utf-8")
+                return result
+
+            version = f"hwi {EXPECTED_HWI_VERSION}"
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True), \
+                    patch.object(probe, "_hwi_package_roots",
+                                 return_value=[str(root / "hwilib")]), \
+                    patch.object(probe, "_verify_hwi_payload",
+                                 side_effect=add_a_module_between_the_walks):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    _verify_hwi_identity(
+                        path,
+                        [sys.executable, "-I", "-P", "-c",
+                         f"print({version!r})"])
+            self.assertNotIn(path, probe._verified_hwi_paths)
 
     def test_the_ci_payload_check_runs_the_app_check_and_fails_closed(self):
         """CT-112: the accept half needs a path that CI actually executes.

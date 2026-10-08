@@ -81,6 +81,15 @@ def parse_multisig_script(script: bytes) -> tuple[int, list[bytes]]:
         key = data[i + 1:i + 34]
         if len(key) != 33:
             raise SigningError("A public key in the witness script is malformed.")
+        if key[0] not in (0x02, 0x03):
+            # A 33-byte push is not necessarily a compressed point. Changing the
+            # 0x02/0x03 prefix byte yields different bytes for the same point of
+            # interest, so a duplicate could hide from the byte-for-byte check
+            # below and only fail later, inside signature verification. This is
+            # the object that actually spends, so the encoding is refused here.
+            raise SigningError(
+                "A public key in the witness script is not a compressed public key."
+            )
         keys.append(key)
         i += 34
     if i >= len(data) or data[i] not in _OP_1_TO_16:
