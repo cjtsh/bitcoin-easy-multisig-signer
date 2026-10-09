@@ -1,3 +1,5 @@
+> **Audit reset, 2026-10-09:** Color Team 1.3-era plans, reports, and audit-site files were removed from the active audit tree because unbounded hypothetical requirements produced an unproductive audit loop. A fresh Color Team 1.5 survey and owner-signed plan are pending. This does not clear any prior finding or authorize publication. See [AUDIT-RESET-2026-10-09.md](AUDIT-RESET-2026-10-09.md) and archived Git history. Historical notes below are retained as engineering context, not instructions for the new surveyor.
+
 # Current handoff — Bitcoin Easy Signer
 
 **Source revision 0.6.8 is the Color Team cycle-4 audit
