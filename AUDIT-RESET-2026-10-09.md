@@ -1,0 +1,11 @@
+# Why the historical audit files were removed from the active tree
+
+**Date:** 2026-10-09 · **Software revision:** 0.6.8 · **Audit framework transition:** Color Team 1.3.x → 1.5
+
+The earlier Color Team audit framework had a **methodology defect**: its survey and grading instructions could turn an open-ended series of hypothetical external compromises and unproven scenarios into recurring mandatory audit obligations. In practice this caused repeated audit cycles, especially around build and publication infrastructure, without a clear stopping condition. The framework was revised in 1.4 to require bounded, testable security requirements, explicit attacker capabilities and trust boundaries, and a finite adjudication process; 1.5 additionally requires a public, evidence-linked security statement.
+
+To give the new independent surveyor a fresh examination of the **unchanged application revision 0.6.8**, historical plans, locks, reports, and old public audit PDFs were removed from the active audit input tree. They were **not erased from Git history**: the pre-cleanup state is preserved on branch `archive/pre-v1.5-audit-cleanup-0.6.8` and in earlier commits and tags. Historical results remain historical evidence, not current approval. This reset does not assert that old findings were false, that vulnerabilities were fixed, or that 0.6.8 passed an audit. In particular, previously demonstrated transaction, helper, and release-path issues must be independently checked; no unresolved security concern is waived by this housekeeping change.
+
+The next surveyor should independently inspect source, tests, dependencies, build scripts, workflow permissions, published artifacts, and user-facing safety claims under the Color Team 1.5 framework. The owner will review and sign a new scope before a separate audit team runs it. The resulting report must identify what was verified, what was not, and whether any release is ready for public use. **Until then, do not describe 0.6.8 as audited, cleared, or approved for release.**
+
+This is an audit-methodology and documentation reset, **not** a change to Bitcoin signing code or a deletion of the historical record. For traceability, see the archive branch and the [Color Team framework changelog](https://github.com/cjtsh/ai-color-team-audit-framework/blob/main/CHANGELOG.md).
