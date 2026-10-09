@@ -431,6 +431,25 @@ class HwiIdentityPins(unittest.TestCase):
         # The file the old pin did not reach, and that the entry point imports.
         self.assertIn("commands.py", HWI_PAYLOAD_MANIFEST)
 
+    def test_the_pinned_hwi_release_is_the_one_the_manifest_records(self):
+        """Pin the release the version gate names to the bytes it checks.
+
+        `HWI_PAYLOAD_MANIFEST` was recorded from hwi 3.2.0 and the accepted
+        identity lines are built out of `EXPECTED_HWI_VERSION`; the user-facing
+        messages name it too. Changing the constant alone would make the app
+        describe one release while hashing the bytes of another: it would refuse
+        the genuine helper whose self-report matches the pinned tree, and could
+        believe a planted helper that merely reports the newly named version
+        while the tree digest still covers the old release. The value is the
+        release the manifest was recorded from, so it is not free to drift.
+        """
+        self.assertEqual(EXPECTED_HWI_VERSION, "3.2.0")
+        self.assertEqual(probe._HWI_VERSION_LINES, {
+            "hwi 3.2.0",
+            "hwi.exe 3.2.0",
+            "hwi_entry.py 3.2.0",
+        })
+
     def test_the_check_child_runs_without_site_support(self):
         """CT-90: `-I` leaves `site` running, so a `.pth` hook still executes.
 

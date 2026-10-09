@@ -75,9 +75,23 @@ the allowed ref's tip, so it can tell an inherited file apart from the branch's 
 the YAML parser kept as a second belt for `main`'s own shared workflows. The allowlist is read
 from `main` only and can never waive a publish-capable change, because the parser never consults
 it. On a branch dispatch the sweep necessarily runs that branch's copy of the script, so its
-verdict is only as trustworthy as the branch; publication is separately refused unless the ref is
-`main`, and every credential is scoped to the main-only environments. On 2026-10-08 the fourteen
+verdict is only as trustworthy as the branch; a branch that rewrites the workflow file removes the
+guard itself, which is why the binding controls are platform-side — a tag ruleset on `v*` and tight
+write access — alongside the fact that every credential is scoped to the main-only environments. On 2026-10-08 the fourteen
 stale non-main branches were deleted, so `origin` now carries `main` alone.
+
+**Round 16 answers three parser classes and records one limit that no repository code can remove.**
+A job-level explicit `permissions` key whose value sits on the next line, a `permissions` key
+spelled with YAML escapes, and a low-indent continuation inside `jobs:` that lowered the measured
+job indent (`JOBS_JOBID_INDENT`) each hid a write grant from the sweep; the round-16 patch fixes
+all three and pins them with new tests, and it also pins the allowlist's exact-field rule and
+`probe.py`'s `EXPECTED_HWI_VERSION`, neither of which had a mutation-resistant test. Referee C's
+critical finding is not a code defect and stands: a `workflow_dispatch` run executes the
+dispatched ref's own copy of the workflow file, so a branch that rewrites it removes the guard and
+can create an unsigned release page with the job's built-in token. The binding controls are
+platform-side — a tag ruleset on `v*` and tight write access — and `PHASE-HANDOFF.md` records them
+as an owner decision that is not done. The recorded live claim remains vacuous by construction,
+and this is a measurement of this revision, not a final verdict.
 
 The signed, notarized `publish=false` candidate for the frozen cycle-5
 revision is green: run 37783584533 at `1a5e9bf` (documentation only on top of

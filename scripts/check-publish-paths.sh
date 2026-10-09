@@ -1002,6 +1002,48 @@ _ambiguously_placed_jobs_key() {
     fi
     return 1
 }
+
+# Referee E (round 16): a line that continues a quoted scalar, a block scalar
+# body, or an open flow collection is DATA, not structure. `_locate_jobs_key`
+# already skipped quoted scalars and block scalars while hunting for the
+# `jobs:` key, but it then measured the block with raw indentation, so a
+# continuation at a low indent lowered the job-id column and the real job line
+# at the true column fell out of the job-declaration protection — its whole
+# body, including a real `permissions:` write, was stripped as if it were data.
+# This scanner reports the carried quote state (LCS_QUOTE) and flow depth
+# (LCS_DEPTH) after one line. `$2` is the quote char carried in, `$3` the flow
+# depth carried in. It follows the same node-position rule for opening a quote
+# as `_qs_line_open_quote`.
+_line_node_state() {
+    local s="$1" i=0 n ch prev=":" q="${2:-}"
+    n=${#s}
+    LCS_DEPTH="${3:-0}"
+    while [ "$i" -lt "$n" ]; do
+        ch="${s:i:1}"
+        if [ -n "$q" ]; then
+            if [ "$q" = '"' ] && [ "$ch" = '\' ]; then i=$((i + 2)); continue; fi
+            if [ "$q" = "'" ] && [ "$ch" = "'" ] && [ "${s:i+1:1}" = "'" ]; then i=$((i + 2)); continue; fi
+            [ "$ch" = "$q" ] && q=""
+            i=$((i + 1))
+            continue
+        fi
+        case "$ch" in
+            '"'|"'")
+                case "$prev" in
+                    ""|":"|"-"|"["|"{"|",") q="$ch" ;;
+                esac
+                prev="$ch"
+                ;;
+            '{'|'[') LCS_DEPTH=$((LCS_DEPTH + 1)); prev="$ch" ;;
+            '}'|']') [ "$LCS_DEPTH" -gt 0 ] && LCS_DEPTH=$((LCS_DEPTH - 1)); prev="$ch" ;;
+            ' '|$'\t') ;;
+            *) prev="$ch" ;;
+        esac
+        i=$((i + 1))
+    done
+    LCS_QUOTE="$q"
+}
+
 _locate_jobs_key() {
     JOBS_I=-1
     JOBS_INDENT=0
@@ -1093,24 +1135,57 @@ _locate_jobs_key() {
         JOBS_FLOW_END=$(_strip_flow_close_line "$JOBS_I")
         return 0
     fi
+    # The job-id column is the indentation of the FIRST structural child of the
+    # block: in a valid block mapping every job key sits at that one column, and
+    # the first child cannot be a continuation. The old minimum-over-all-lines
+    # heuristic let any low-indent continuation move the column (referee E's 30
+    # fixtures), and a continuation at column 0 also truncated the block so a
+    # later job's body was stripped. Both the block-end and job-id scans now
+    # skip continuation lines: a line inside a quoted scalar, a block scalar
+    # body, or an open flow collection is DATA, not structure. A construct that
+    # leaves no readable structural child fails closed.
+    local flow=0 saw_child=0
+    in_q=""
+    in_bs=0
+    bs_indent=0
     for (( n=JOBS_I + 1; n<${#SS[@]}; n++ )); do
         l2="${SS[n]}"
         [ -n "${l2//[[:space:]]/}" ] || continue
         ind="${l2%%[![:space:]]*}"
+        if [ "$in_bs" -eq 1 ]; then
+            [ "${#ind}" -gt "$bs_indent" ] && continue
+            in_bs=0
+        fi
+        if [ -n "$in_q" ]; then
+            _line_node_state "$l2" "$in_q" "$flow"
+            in_q="$LCS_QUOTE"
+            flow="$LCS_DEPTH"
+            continue
+        fi
+        if [ "$flow" -gt 0 ]; then
+            _line_node_state "$l2" "" "$flow"
+            in_q="$LCS_QUOTE"
+            flow="$LCS_DEPTH"
+            continue
+        fi
         if [ "${#ind}" -le "$JOBS_INDENT" ]; then
             JOBS_BLOCK_END=$n
             break
         fi
-    done
-    for (( n=JOBS_I + 1; n<JOBS_BLOCK_END; n++ )); do
-        l2="${SS[n]}"
-        [ -n "${l2//[[:space:]]/}" ] || continue
-        ind="${l2%%[![:space:]]*}"
-        if [ "$JOBS_JOBID_INDENT" -lt 0 ] || [ "${#ind}" -lt "$JOBS_JOBID_INDENT" ]; then
+        if [ "$saw_child" -eq 0 ]; then
             JOBS_JOBID_INDENT=${#ind}
+            saw_child=1
         fi
+        if [[ "$l2" =~ $pat_bs ]]; then
+            in_bs=1
+            bs_indent=${#ind}
+            continue
+        fi
+        _line_node_state "$l2" "" 0
+        in_q="$LCS_QUOTE"
+        flow="$LCS_DEPTH"
     done
-    if [ "$JOBS_JOBID_INDENT" -lt 1 ]; then
+    if [ "$saw_child" -eq 0 ] || [ "$JOBS_JOBID_INDENT" -lt 1 ]; then
         JOBS_UNREADABLE=1
         JOBS_I=-1
     fi
@@ -1442,9 +1517,20 @@ permissions_verdict() {
         # line, after `- `, or after `{`/`,`) so a Python snippet inside a
         # `run:` block that happens to hold a `"\x7f"` literal — which the
         # repository's own build workflow does — is not read as a key.
+        # Round 16: an explicit key on its own line (`? 'permissions'`,
+        # `? "permiss\u0069ons"`) has no colon to require and may carry an
+        # escape, so the explicit-key test accepts the single-quoted literal and
+        # an escaped quoted key.
+        # Round 17: the test is now the `?` INDICATOR itself, not the key text.
+        # YAML may split that key across lines with a quoted line continuation
+        # (`? "permis\` / `      sions"`), which this line-at-a-time reader
+        # cannot rejoin; no line then holds complete `permissions` text, the job
+        # read as declaring nothing, and a real write token passed. Triggering on
+        # the indicator makes an explicit key anywhere in the scanned region fail
+        # closed whether or not its text resolves on its own line.
         local pat_escaped_key='(^[[:space:]]*(-[[:space:]]+)?|[{,][[:space:]]*)["][^"]*\\[uUxX][0-9A-Fa-f]+[^"]*["][[:space:]]*:'
-        local pat_explicit_key='^[[:space:]]*\?[[:space:]]*["]?permissions'
-        if [[ "$line" =~ $pat_escaped_key ]] || [[ "$line" =~ $pat_explicit_key ]]; then
+        local pat_explicit_indicator='^[[:space:]]*\?([[:space:]]|$)'
+        if [[ "$line" =~ $pat_escaped_key ]] || [[ "$line" =~ $pat_explicit_indicator ]]; then
             unrecognized=1
         fi
         # A quoted key is the same key to YAML. The cycle-6 referee put

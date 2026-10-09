@@ -2666,6 +2666,301 @@ class PublishPathSweepTests(unittest.TestCase):
             "ok: no non-main branch carries a publish-capable workflow "
             "differing from main's", out)
 
+    # -- Round 16: referee E's parser evasions. ------------------------------
+    #
+    # A from-scratch referee built 856 fixtures and found 56 workflows that
+    # grant a write token yet print the ok line. They are three spellings: a
+    # single-quoted explicit key, an escaped double-quoted explicit key, and a
+    # real job after a low-indent scalar or flow continuation. The last is
+    # structural -- the continuation lowered the jobs job-id column, the job
+    # line was no longer a declaration, and because its id was one of the
+    # stripped data keys the job and its `permissions:` block were deleted
+    # from the text the parser judges. All three now fail closed.
+
+    def test_the_sweep_refuses_a_single_quoted_explicit_permissions_key(self):
+        """`? 'permissions'` on its own line is the permissions key.
+
+        PyYAML reads the single-quoted explicit key as the word, so the job
+        really grants whatever value follows. The explicit-key reader accepted
+        a double quote or the bare word only, so this spelling was invisible
+        and the read-only top-level grant covered it.
+        """
+        for key in ("'permissions'", "&a 'permissions'"):
+            for value in ("write-all", "{contents: write}"):
+                body = (
+                    "name: quoted-explicit\n"
+                    "on: [push]\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-latest\n"
+                    f"    ? {key}\n"
+                    f"    : {value}\n"
+                    "    steps:\n"
+                    "      - run: echo hi\n"
+                )
+                with self.subTest(key=key, value=value):
+                    self._assert_reason(self._run_one_branch("evil", body),
+                                        "unreadable-token-permissions")
+
+    def test_the_sweep_refuses_an_escaped_explicit_permissions_key(self):
+        """`? "permiss\\u0069ons"` is the permissions key after parsing.
+
+        A double-quoted key may encode any character of the word, and may
+        carry a key property before the quote. PyYAML decodes every one of
+        these spellings to `permissions`, so the value line really grants
+        write; the reader cannot resolve an escape, so each is refused.
+        """
+        keys = (
+            r'"permiss\u0069ons"',
+            r'&a "permiss\u0069ons"',
+            r'!!str "permiss\u0069ons"',
+            r'"permiss\x69ons"',
+            r'&a "permiss\x69ons"',
+            r'!!str "permiss\x69ons"',
+            r'"permiss\U00000069ons"',
+            r'&a "permiss\U00000069ons"',
+            r'!!str "permiss\U00000069ons"',
+            r'"\u0070ermissions"',
+            r'&a "\u0070ermissions"',
+            r'!!str "\u0070ermissions"',
+        )
+        for key in keys:
+            for value in ("write-all", "{contents: write}"):
+                body = (
+                    "name: escaped-explicit\n"
+                    "on: [push]\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-latest\n"
+                    f"    ? {key}\n"
+                    f"    : {value}\n"
+                    "    steps:\n"
+                    "      - run: echo hi\n"
+                )
+                with self.subTest(key=key, value=value):
+                    self._assert_reason(self._run_one_branch("evil", body),
+                                        "unreadable-token-permissions")
+
+    def test_the_sweep_reads_a_job_after_a_low_indent_scalar_continuation(self):
+        """A continuation must not collapse the jobs job-id column.
+
+        `name: "a` / ` b"` is one scalar at indent 4, but its continuation
+        line sits at indent 1. Taking the minimum indent over the jobs block
+        made that the job-id column, so the real job at indent 2 was not
+        protected; because its id was a stripped data key (`run`, `env`,
+        `name`, ...), the job line and its whole body -- including the real
+        write -- were deleted. The job-id column now comes from the first
+        structural child of `jobs:`.
+        """
+        for job in ("run", "env", "name", "with", "if", "shell"):
+            for cont in ('    name: "a\n b"', "    name: 'a\n b'",
+                         '    name: "a\n\tb"'):
+                body = (
+                    "name: low-indent\n"
+                    "on: [push]\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    f"  {job}:\n"
+                    "    runs-on: x\n"
+                    "    permissions:\n"
+                    "      contents: write\n"
+                    f"{cont}\n"
+                )
+                with self.subTest(job=job, continuation=cont):
+                    self._assert_reason(self._run_one_branch("evil", body),
+                                        "grants-contents-write")
+
+    def test_the_sweep_reads_a_job_after_a_low_indent_flow_continuation(self):
+        """The continuation may be a flow collection, not a scalar.
+
+        `env: {` / ` a: 1}` is one flow mapping whose continuation line sits at
+        indent 1; it used to collapse the job-id column the same way. The
+        block-end and job-id scans now carry the flow depth across lines.
+        """
+        variants = (
+            ("env: {", " a: 1}"),
+            ("env: {", " A: 1}"),
+            ("env: {A: 1,", " B: 2}"),
+        )
+        for job in ("run", "env", "name"):
+            for opener, closer in variants:
+                body = (
+                    "name: flow-cont\n"
+                    "on: [push]\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    f"  {job}:\n"
+                    "    runs-on: x\n"
+                    "    permissions:\n"
+                    "      contents: write\n"
+                    f"    {opener}\n"
+                    f"{closer}\n"
+                )
+                with self.subTest(job=job, continuation=(opener, closer)):
+                    self._assert_reason(self._run_one_branch("evil", body),
+                                        "grants-contents-write")
+
+    def test_the_sweep_refuses_a_write_after_a_column_zero_quote_continuation(
+            self):
+        """A continuation at column 0 is still a continuation.
+
+        The quote opens after `runs-on: ` and closes on the next line at
+        column 0. If the scanner loses the open quote -- or lets the space
+        after the colon overwrite the character before it -- that line looks
+        like the end of the jobs block, the block is truncated, and the real
+        job `name:` together with its write is stripped. The open quote and
+        the character before it are now carried across lines.
+        """
+        body = (
+            "name: quote-cont\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build:\n"
+            '    runs-on: "x\n'
+            'y"\n'
+            "  name:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-contents-write")
+
+    def test_the_sweep_refuses_a_write_after_a_column_zero_flow_continuation(
+            self):
+        """A flow collection continued at column 0 does not end the block."""
+        body = (
+            "name: flow-col0\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: x\n"
+            "    env: {\n"
+            "A: 1}\n"
+            "  name:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-contents-write")
+
+    def test_the_sweep_reads_a_low_indent_continuation_but_stays_fail_closed(
+            self):
+        """The continuation handling must not refuse a read-only workflow.
+
+        A read-only job whose scalar body continues at a lower indent is still
+        read-only, and a write job whose id is not a stripped data key is still
+        a write. Both directions are asserted so the skip cannot be satisfied
+        by simply refusing everything.
+        """
+        read_only = (
+            "name: read-only-cont\n"
+            "on: [push]\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: x\n"
+            "    permissions: read\n"
+            '    name: "a\n b"\n'
+        )
+        result = self._run_one_branch("evil", read_only)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn(
+            "ok: no non-main branch carries a publish-capable workflow "
+            "differing from main's", out)
+
+        write_named_build = (
+            "name: write-cont\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: x\n"
+            "    permissions:\n"
+            "      contents: write\n"
+            '    name: "a\n b"\n'
+        )
+        self._assert_reason(self._run_one_branch("evil", write_named_build),
+                            "grants-contents-write")
+
+    # -- Round 17: an explicit key split by a line continuation. -------------
+    #
+    # A double-quoted YAML scalar may be continued on the next line, so the
+    # indicator `? "permis\` and the continuation `      sions"` together spell
+    # `permissions`; PyYAML reads the value on the following `:` line as that
+    # job's permissions. The round-16 explicit-key pattern still needed the whole
+    # word (or an escape) on the indicator line, so this spelling matched
+    # nothing, the job read as declaring no permissions, and the read-only
+    # top-level grant covered it. The reader now fails closed on the `?`
+    # indicator itself, whether or not its key text resolves on the line.
+
+    def test_the_sweep_refuses_an_explicit_key_split_by_a_line_continuation(
+            self):
+        r"""`? "permis\` + `      sions"` is the permissions key after parsing.
+
+        Both the job-level and the workflow-level spellings are real write
+        grants to PyYAML, so both must be refused; a plain read-only file must
+        still print the ok line, so the rule cannot be satisfied by refusing
+        everything.
+        """
+        for indicator in ('    ? "permis\\\n      sions"\n',
+                          '    ? "permiss\\\n      ions"\n'):
+            for value in ("write-all", "{contents: write}"):
+                body = (
+                    "name: split-explicit\n"
+                    "on: [push]\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-latest\n"
+                    + indicator
+                    + f"    : {value}\n"
+                    "    steps:\n"
+                    "      - run: echo hi\n"
+                )
+                with self.subTest(indicator=indicator, value=value):
+                    self._assert_reason(self._run_one_branch("evil", body),
+                                        "unreadable-token-permissions")
+
+        top_level = (
+            "name: split-explicit-top\n"
+            "on: [push]\n"
+            '? "permis\\\n'
+            '  sions"\n'
+            ": write-all\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: echo hi\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", top_level),
+                            "unreadable-token-permissions")
+
+        read_only = (
+            "name: plain-read-only\n"
+            "on: [push]\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    permissions: read\n"
+            "    steps:\n"
+            "      - run: echo hi\n"
+        )
+        result = self._run_one_branch("evil", read_only)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn(
+            "ok: no non-main branch carries a publish-capable workflow "
+            "differing from main's", out)
+
     def test_the_sweep_refuses_a_callee_hidden_behind_a_tag_or_anchor(self):
         """A `uses:` whose first token is `&`, `*` or `!` is refused.
 
@@ -4014,6 +4309,55 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertIn(
                 f"added {self._ACTION_PATH} branch-changes-workflow-file", out)
             self.assertNotIn("ok:", out)
+
+    def test_the_sweep_refuses_an_allowlist_line_with_a_fourth_field(self):
+        """Pin referee C's allowlist-exactness rule: three fields, no more.
+
+        A waiver names exactly `<branch> <path> <blob-oid>`. `read` fills a
+        fourth variable from any trailing token, and `[ -z "$allow_extra" ] ||
+        continue` refuses the whole line when one is present. Drop that rule and
+        the first three fields still match, so an edited `.github/actions` path
+        is waived and the sweep prints ok while the branch carries a file main
+        never reviewed. The second half proves the same line without the extra
+        field still waives, so the refusal is about the extra field alone.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._repo(folder)
+            self._write(folder, "ci.yml", self.CLEAN)
+            self._write_action(folder, self._READONLY_ACTION)
+            self._commit(folder, "main")
+            self._branch(folder, "topic")
+            self._write_action(folder, self._BENIGN_ACTION)
+            self._commit(folder, "topic changes the action")
+            oid = self._blob_oid(folder, "topic", self._ACTION_PATH)
+
+            # Four fields: the trailing EXTRA fills allow_extra, so the line is
+            # not a waiver and the identity arm still refuses the change.
+            self._switch(folder, "main")
+            self._write_allowlist(
+                folder, [f"topic {self._ACTION_PATH} {oid} EXTRA"])
+            self._commit(folder, "four-field waiver")
+            self._switch(folder, "topic")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            self.assertIn(
+                f"topic {self._ACTION_PATH} branch-changes-workflow-file", out)
+            self.assertNotIn("ok:", out)
+
+            # Positive half: exactly three fields is the documented waiver.
+            self._switch(folder, "main")
+            self._write_allowlist(folder, [f"topic {self._ACTION_PATH} {oid}"])
+            self._commit(folder, "exact waiver")
+            self._switch(folder, "topic")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, out)
+            self.assertNotIn("branch-changes-workflow-file", out)
+            self.assertIn(
+                "ok: no non-main branch carries a publish-capable workflow "
+                "differing from main's", out)
 
     def test_the_sweep_refuses_a_symlinked_allowlist(self):
         """F6: the allowlist must be a regular file (mode 100644).

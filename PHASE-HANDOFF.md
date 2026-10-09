@@ -64,20 +64,23 @@ the workflow text (CT-97, which is how `MAC_NOTARY_KEY_P8_BASE64` was missed);
 the Windows helper's identity is documented as self-asserted rather than claimed
 to sit inside a signature (CT-105); and a hard link is refused as well as a
 symlink (CT-92). `releases/PATCH-0.6.8.md` carries the round and its
-break-and-watch evidence; on the frozen tree the suite is `Ran 749 tests in 277.295s` — **OK**
+break-and-watch evidence; on the frozen revision the suite is `Ran 759 tests in 310.097s` — **OK**
 (738 on the round-10 tree, 710 on the cycle-10 tree, 707 on the cycle-9 tree,
-693 on the third-wave tree, 681 on the wave-2 tree, 666 at `f79203c`), with
-104 sweep, 47 credential-file, 59 `HwiIdentityPins` and 83 hardening-file
-cases; `bash -n` is clean, the workflow YAML
+693 on the third-wave tree, 681 on the wave-2 tree and 666 at `f79203c`), with
+113 sweep, 47 credential-file, 60 `HwiIdentityPins` and 84 hardening-file cases; `bash -n` is clean, the workflow YAML
 parses, and all ten `tests/ui_*.cjs` scripts exit 0. An
 independent re-audit of `f79203c` filed eight bypasses; the round in front
 of you closes them plus five more flow spellings a self-attack found, a third wave
 closed the holes the next attack left, and the
-same ledger carries those rounds. Two items remain owner
+same ledger carries those rounds. Three items remain owner
 decisions, not agent calls: whether the Windows helper gets an Authenticode
-signature or its sidecar moves out of the writable directory (CT-105), and
+signature or its sidecar moves out of the writable directory (CT-105);
 whether the human gate on `release-signing` is restored or that environment
-moves onto a publish-only job (CT-97/CT-106).
+moves onto a publish-only job (CT-97/CT-106); and whether the platform-side
+controls referee C's critical finding requires are put in place — a tag ruleset
+on `v*` and tight write access — because a `workflow_dispatch` run executes the
+dispatched ref's own copy of the workflow file, a branch that rewrites it
+removes the guard, and no in-repository change can prevent that (not done).
 
 The cycle-5 plan is
 `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`: the
