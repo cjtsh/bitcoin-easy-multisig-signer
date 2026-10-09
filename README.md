@@ -1,7 +1,6 @@
-# Bitcoin Easy Signer
+# Audit reset notice
 
-**Source revision 0.6.8 is the Color Team cycle-4 audit remediation.** The cycle-4 audit of the `v0.6.7` tree graded it ⛔ BLOCKED: one lane proved its own failure state — the source-mode hardware-helper payload check could be made to *pass* while substituted code ran inside it (CT-90) — and Red found a wallet file that displays as an honest 2-of-2 while one device approval finalizes it (CT-72). Version 0.6.8 answers that ledger in code; `releases/PATCH-0.6.8.md` is the evidence record and the round trip of every finding the cycle-4 report carried. The manual publication prohibition and the deleted out-of-gate v0.6.5 Windows release stand: supported binaries live only on the version's own release page, under one `SHA256SUMS`.
-
+**A fresh independent Color Team 1.5 audit is pending for source revision 0.6.8. No current audit clearance is claimed.** Historical audit artifacts were removed from this active branch because the prior framework's open-ended scope and grading methodology caused recurring speculative audit obligations. The previous record remains preserved in Git history and the archival branch. See [the audit-reset explanation](AUDIT-RESET-2026-10-09.md). This reset does not establish that earlier demonstrated vulnerabilities were resolved.
 
 PROJECT HOMEPAGE: https://bitcoineasysigner.com/ (GitHub Pages with HTTPS)
 
