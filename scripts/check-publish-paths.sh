@@ -880,10 +880,24 @@ _jobs_key_kind() {
 # scalar (`name: "start` / `jobs:` / `end"`), where YAML lets the continuation
 # sit at indent 0, and the line is text, not a key. Finding the real key needs
 # the cross-line quote state. A quote opens a scalar only in NODE POSITION —
-# after `:`/`-`/`[`/`{`/`,` or at the start of the scalar — so an apostrophe
+# after `:`/`-`/`?`/`[`/`{`/`,` or at the start of the scalar — so an apostrophe
 # inside a plain scalar (`name: Bob's job`) is not a quote and must not put the
 # scanner into a state that skips every later line. Inside `"…"` a backslash
 # escapes the next character; inside `'…'` a doubled `''` is an escaped quote.
+#
+# Round 20: `?` is the YAML explicit-key indicator and it begins a key node
+# exactly as `-` begins a block entry, so a quote that follows it opens the
+# scalar. Referee H's H-1 payloads (`? "a` in block position, `{? "a}` in flow
+# position, each continued on a column-0 line) took the default arm here, the
+# quote never opened, the continuation ended the `jobs:` block and the second
+# job's `permissions: contents: write` was stripped as scalar data. The `?`
+# reaches this rule only in key or flow position -- the property-token scan
+# breaks at whitespace/flow/quote, and a plain scalar's interior `?` takes the
+# default arm -- so the rule is "the last significant character is a node
+# position indicator", not a list of payload spellings. Where the position is
+# undecidable the scanner errs toward opening the quote: an over-tracked quote
+# keeps the block open and makes the sweep refuse (fail closed), while an
+# untracked quote is the false ok.
 #
 # Round 19: a node PROPERTY is node position too. `name: !!str "a` begins a
 # quoted scalar after a tag; `&anc "a` and `! "a` do the same, and a tagged KEY
@@ -907,78 +921,37 @@ _jobs_key_kind() {
 # caller's carried state as $2: a line that continues a multi-line quoted scalar
 # must not be re-scanned from scratch (its opener is on an earlier line, so a
 # fresh scan would see no quote and drop the state).
+# Cycle-6 (round 21): ONE node-position rule for both scanners.
+#
+# Rounds 18-20 tried to decide "may a quote open here?" from the previous
+# CHARACTER. That is not enough: `name: a?"b` is the plain scalar `a?"b` to
+# PyYAML -- the `?` is scalar content and the `"` cannot open a scalar -- but a
+# previous-character test saw `?` and opened a quote. The quote state then
+# desynced, a column-0 continuation ended the `jobs:` block, and a job's
+# `contents: write` was stripped as scalar data (referee I's regression class).
+#
+# The rule is node position, computed from INDICATOR BOUNDEDNESS, the way a YAML
+# reader does it:
+#   * at line start, or after whitespace/a separator/a value indicator, the
+#     reader is at a node position (`ps=0`);
+#   * an indicator (`-`, `?`, `:`, `,`) only ENDS the current node when it is
+#     itself bounded -- followed by whitespace, end of line, or a flow
+#     delimiter; an unbounded one is plain-scalar content;
+#   * inside a plain scalar (`ps=1`) every quote is content; only a bounded `:`
+#     (or a flow `,`) returns to a node position;
+#   * a node property (`&name`, `*name`, `!`, `!!str`, `!<uri>`) is consumed as
+#     one token at a node position and leaves the reader AT a node position, so
+#     `&a "x` and `!!str "a` still open (F-1);
+#   * `?` is node position only when bounded (`? "a`, `{? "a}`), never inside a
+#     scalar (`a?"b`).
+# The same function serves both scanners, so they cannot disagree about what is
+# data and what is structure.
 _qs_line_open_quote() {
-    local s="$1" i=0 n ch prev="" prop=""
-    n=${#s}
-    QS_OUT="${2:-}"
-    while [ "$i" -lt "$n" ]; do
-        ch="${s:i:1}"
-        if [ -n "$QS_OUT" ]; then
-            if [ "$QS_OUT" = '"' ] && [ "$ch" = '\' ]; then
-                i=$((i + 2))
-                continue
-            fi
-            if [ "$QS_OUT" = "'" ] && [ "$ch" = "'" ] \
-                && [ "${s:i+1:1}" = "'" ]; then
-                i=$((i + 2))
-                continue
-            fi
-            [ "$ch" = "$QS_OUT" ] && QS_OUT=""
-            i=$((i + 1))
-            continue
-        fi
-        case "$ch" in
-            '"'|"'")
-                case "$prev" in
-                    ""|":"|"-"|"["|"{"|",") QS_OUT="$ch" ;;
-                    *) [ -n "$prop" ] && QS_OUT="$ch" ;;
-                esac
-                prev="$ch"
-                prop=""
-                ;;
-            '&'|'!'|'*')
-                # Consume the node property as one token: a tag (`!`, `!!str`,
-                # `!foo:bar`, `!<tag:yaml.org,2002:str>`), an anchor (`&name`)
-                # or an alias (`*name`). Valid YAML lets a tag suffix and a
-                # verbatim tag URI carry `:` and `?`, so the scan stops only at
-                # whitespace, a flow delimiter or a quote -- never at `:`/`?`.
-                # PyYAML rejects `&a:b` and `&a?b`, so no anchor or alias name a
-                # parser accepts is split here, and reading a longer property
-                # only ever opens more quotes, which is the safe direction (an
-                # untracked quote was the round-19 false ok).
-                prev="$ch"
-                prop=1
-                i=$((i + 1))
-                if [ "$ch" = '!' ] && [ "${s:i:1}" = '<' ]; then
-                    # A verbatim tag `!<...>` is one token through the closing
-                    # `>`. Its URI may contain `,` as well as `:` -- the standard
-                    # spelling `!<tag:yaml.org,2002:str>` does -- so no break
-                    # inside it is safe.
-                    while [ "$i" -lt "$n" ]; do
-                        ch="${s:i:1}"
-                        i=$((i + 1))
-                        if [ "$ch" = '>' ]; then
-                            prev='>'
-                            break
-                        fi
-                    done
-                    continue
-                fi
-                while [ "$i" -lt "$n" ]; do
-                    ch="${s:i:1}"
-                    case "$ch" in
-                        ' '|$'\t'|'['|']'|'{'|'}'|','|'"'|"'") break ;;
-                    esac
-                    prev="$ch"
-                    i=$((i + 1))
-                done
-                continue
-                ;;
-            ' '|$'\t') ;;
-            *) prev="$ch"; prop="" ;;
-        esac
-        i=$((i + 1))
-    done
+    _line_node_state "$1" "${2:-}" "${3:-0}" "${4:-0}" "${5:--1}"
+    QS_OUT="$LCS_QUOTE"
+    QS_DEPTH="$LCS_DEPTH"
+    QS_PS="$LCS_PS"
+    QS_IND="$LCS_IND"
 }
 
 # Cycle-9 addendum (defeat 4): a plain YAML file holds exactly one document. A
@@ -991,7 +964,7 @@ _qs_line_open_quote() {
 # Document markers are only markers at column 0 and outside a multi-line quoted
 # scalar (the same context `_locate_jobs_key` tracks).
 has_multiple_documents() {
-    local line in_q="" seen=0
+    local line in_q="" flow=0 seen=0 pps=0 pind=-1
     while IFS= read -r line; do
         line="${line%$'\r'}"
         if [ -z "$in_q" ]; then
@@ -1009,8 +982,11 @@ has_multiple_documents() {
                 *) seen=1 ;;
             esac
         fi
-        _qs_line_open_quote "$line" "$in_q"
+        _qs_line_open_quote "$line" "$in_q" "$flow" "$pps" "$pind"
         in_q="$QS_OUT"
+        flow="$QS_DEPTH"
+        pps="$QS_PS"
+        pind="$QS_IND"
     done
     return 1
 }
@@ -1028,7 +1004,7 @@ has_multiple_documents() {
 # here-string so it runs in the CURRENT shell and can set AMBIG_DECOY.
 _ambiguously_placed_jobs_key() {
     AMBIG_DECOY=0
-    local line in_q="" keytext saw_decoy=0 decoy_body=0 real_plain=0
+    local line in_q="" flow=0 keytext saw_decoy=0 decoy_body=0 real_plain=0 pps=0 pind=-1
     while IFS= read -r line; do
         line="${line%$'\r'}"
         if [ -n "$in_q" ]; then
@@ -1037,8 +1013,11 @@ _ambiguously_placed_jobs_key() {
             elif [ "$decoy_body" -eq 0 ]; then
                 [[ "$line" =~ ^[[:space:]]+[^[:space:]] ]] && decoy_body=1
             fi
-            _qs_line_open_quote "$line" "$in_q"
+            _qs_line_open_quote "$line" "$in_q" "$flow" "$pps" "$pind"
             in_q="$QS_OUT"
+            flow="$QS_DEPTH"
+            pps="$QS_PS"
+            pind="$QS_IND"
             continue
         fi
         if [ "$saw_decoy" -eq 1 ] && [ "$real_plain" -eq 0 ]; then
@@ -1050,8 +1029,11 @@ _ambiguously_placed_jobs_key() {
                     ;;
             esac
         fi
-        _qs_line_open_quote "$line" "$in_q"
+        _qs_line_open_quote "$line" "$in_q" "$flow" "$pps" "$pind"
         in_q="$QS_OUT"
+        flow="$QS_DEPTH"
+        pps="$QS_PS"
+        pind="$QS_IND"
     done
     if [ "$saw_decoy" -eq 1 ] \
         && { [ "$real_plain" -eq 1 ] || [ "$decoy_body" -eq 0 ]; }; then
@@ -1068,75 +1050,226 @@ _ambiguously_placed_jobs_key() {
 # continuation at a low indent lowered the job-id column and the real job line
 # at the true column fell out of the job-declaration protection — its whole
 # body, including a real `permissions:` write, was stripped as if it were data.
-# This scanner reports the carried quote state (LCS_QUOTE) and flow depth
+# This scanner reports the carried quote state (LCS_QUOTE) and flow
 # (LCS_DEPTH) after one line. `$2` is the quote char carried in, `$3` the flow
 # depth carried in. It follows the same node-position rule for opening a quote
 # as `_qs_line_open_quote`, including the round-19 node-property rule: any node
 # property a YAML reader accepts — a tag (`!`, `!!str`, `!foo:bar`,
 # `!<tag:yaml.org,2002:str>`), an anchor (`&name`), an alias (`*name`), or a
 # combination such as `&a !!str` — immediately before the opening quote still
-# opens it (F-1).
+# opens it (F-1), and the round-20 rule that the explicit-key indicator `?` is
+# node position too (`{? "a}`, H-1 flow form).
 _line_node_state() {
-    local s="$1" i=0 n ch prev=":" q="${2:-}" prop=""
+    local s="$1" i=0 n ch q="${2:-}" ps=0 ws=1 sep=0 ind=-1
+    local pps="${4:-0}" pind="${5:--1}" TAB=$'\t'
+    # `base` is the indentation of the ENCLOSING BLOCK COLLECTION -- the column
+    # pyyaml's `scan_plain` measures a continuation line against. `scan_plain`
+    # computes `indent = self.indent + 1`, and `self.indent` is the block
+    # mapping/sequence indent last established by a real `key:`/`- ` line; it
+    # does NOT advance on a continuation line. A line indented past it continues
+    # the plain scalar, so a quote there is data. Carrying the node line's base
+    # unchanged across the whole run is what makes the SECOND and later
+    # same-indent continuation lines behave like the first; the round-21 defect
+    # was comparing against the immediately previous line's indent, which a
+    # same-indent continuation resets to itself. `base` is -1 at the document
+    # root, where `self.indent` is -1 and `scan_plain` uses `indent = 0`, so a
+    # column-0 line can still continue a root-level plain scalar.
+    local base="$pind" carried=0
     n=${#s}
     LCS_DEPTH="${3:-0}"
     while [ "$i" -lt "$n" ]; do
         ch="${s:i:1}"
+        case "$ch" in ' '|"$TAB") i=$((i + 1)); continue ;; esac
+        break
+    done
+    if [ "$i" -ge "$n" ]; then
+        # A blank or whitespace-only line cannot open or close a scalar, so it
+        # neither ends nor advances a plain scalar.
+        LCS_QUOTE="$q"
+        LCS_PS=0
+        [ -n "$q" ] || LCS_PS="$pps"
+        LCS_IND="$base"
+        return 0
+    fi
+    ind="$i"
+    # A comment-only line is where `scan_plain` stops: `scan_plain_spaces`
+    # returns, and the caller's `self.peek() == '#'` test breaks the loop, so
+    # the plain scalar ends here and the comment cannot open a node. It is not a
+    # block entry, so it leaves the enclosing-collection indent alone. A `#`
+    # after a token is a trailing comment, handled by the `ws` test below.)
+    if [ -z "$q" ] && [ "${s:i:1}" = '#' ]; then
+        LCS_QUOTE="$q"
+        LCS_PS=0
+        LCS_IND="$base"
+        return 0
+    fi
+    # A plain scalar continues onto a following line whose column is past the
+    # ENCLOSING COLLECTION's indent (pyyaml's `scan_plain`: `indent =
+    # self.indent+1`, and the scalar ends only when `self.column < indent`), and
+    # a quote on such a line is data, not an opener. Carrying `pps`/`base` across
+    # the whole run is what makes every same-indent continuation line behave
+    # like the first. A line at or below the enclosing indent starts a new node.
+    if [ -z "$q" ] && [ "$pps" -eq 1 ] && [ "$ind" -gt "$base" ]; then
+        ps=1
+        carried=1
+    fi
+    while [ "$i" -lt "$n" ]; do
+        ch="${s:i:1}"
+        # Inside a quoted scalar: only the closing quote (respecting escapes and
+        # the single-quote doubling rule) changes the state. Everything else,
+        # quotes included, is data.
         if [ -n "$q" ]; then
-            if [ "$q" = '"' ] && [ "$ch" = '\' ]; then i=$((i + 2)); continue; fi
-            if [ "$q" = "'" ] && [ "$ch" = "'" ] && [ "${s:i+1:1}" = "'" ]; then i=$((i + 2)); continue; fi
-            [ "$ch" = "$q" ] && q=""
+            if [ "$q" = '"' ] && [ "$ch" = '\' ]; then i=$((i + 2)); ws=0; continue; fi
+            if [ "$q" = "'" ] && [ "$ch" = "'" ] && [ "${s:i+1:1}" = "'" ]; then i=$((i + 2)); ws=0; continue; fi
+            if [ "$ch" = "$q" ]; then q=""; ps=0; fi
+            ws=0
             i=$((i + 1))
             continue
         fi
         case "$ch" in
+            ' '|"$TAB") ws=1; i=$((i + 1)); continue ;;
+        esac
+        # `#` starts a comment only where a token may start: at line start or
+        # after whitespace. `a#b` is one plain scalar, so the check is bounded.
+        if [ "$ws" -eq 1 ] && [ "$ch" = '#' ]; then break; fi
+        # Is the FOLLOWING character a break for a plain scalar? pyyaml's
+        # `scan_plain` ends a scalar at whitespace/EOL, at a `:` followed by
+        # whitespace/EOL, and -- in flow context only -- at `,?[]{}` and at a
+        # `:` followed by `,[]{}`. `"` and `'` are NOT break characters: a quote
+        # inside a plain scalar is data.
+        sep=0
+        if [ $((i + 1)) -ge "$n" ]; then sep=1
+        else case "${s:i+1:1}" in ' '|"$TAB") sep=1 ;; esac
+        fi
+        case "$ch" in
             '"'|"'")
-                case "$prev" in
-                    ""|":"|"-"|"["|"{"|",") q="$ch" ;;
-                    *) [ -n "$prop" ] && q="$ch" ;;
-                esac
-                prev="$ch"
-                prop=""
+                if [ "$ps" -eq 0 ]; then q="$ch"; fi
+                ws=0
                 ;;
             '&'|'!'|'*')
-                # Same node-property rule as `_qs_line_open_quote`: the two
-                # scanners must open the same quote on the same line or the
-                # stripper and the locator disagree about what is data. A tag
-                # suffix or verbatim URI may hold `:`/`?`, so the token runs to
-                # whitespace, a flow delimiter or a quote; a verbatim `!<...>`
-                # tag may also hold `,`, so it is one token through its `>`.
-                prev="$ch"
-                prop=1
-                i=$((i + 1))
-                if [ "$ch" = '!' ] && [ "${s:i:1}" = '<' ]; then
-                    while [ "$i" -lt "$n" ]; do
-                        ch="${s:i:1}"
-                        i=$((i + 1))
-                        if [ "$ch" = '>' ]; then
-                            prev='>'
-                            break
-                        fi
-                    done
+                if [ "$ps" -eq 0 ]; then
+                    # A node property is one token and leaves the reader at a
+                    # node position. A tag suffix or verbatim URI may carry
+                    # `:`/`?`/`,`, so the token ends only at whitespace, a flow
+                    # delimiter or a quote.
+                    i=$((i + 1))
+                    if [ "$ch" = '!' ] && [ "${s:i:1}" = '<' ]; then
+                        while [ "$i" -lt "$n" ]; do
+                            ch="${s:i:1}"
+                            i=$((i + 1))
+                            if [ "$ch" = '>' ]; then break; fi
+                        done
+                    else
+                        while [ "$i" -lt "$n" ]; do
+                            ch="${s:i:1}"
+                            case "$ch" in
+                                ' '|"$TAB"|'['|']'|'{'|'}'|','|'"'|"'") break ;;
+                            esac
+                            i=$((i + 1))
+                        done
+                    fi
+                    ws=0
                     continue
                 fi
-                while [ "$i" -lt "$n" ]; do
-                    ch="${s:i:1}"
-                    case "$ch" in
-                        ' '|$'\t'|'['|']'|'{'|'}'|','|'"'|"'") break ;;
-                    esac
-                    prev="$ch"
-                    i=$((i + 1))
-                done
-                continue
+                ps=1; ws=0
                 ;;
-            '{'|'[') LCS_DEPTH=$((LCS_DEPTH + 1)); prev="$ch" ;;
-            '}'|']') [ "$LCS_DEPTH" -gt 0 ] && LCS_DEPTH=$((LCS_DEPTH - 1)); prev="$ch" ;;
-            ' '|$'\t') ;;
-            *) prev="$ch"; prop="" ;;
+            '{'|'[')
+                if [ "$ps" -eq 0 ] || [ "$LCS_DEPTH" -gt 0 ]; then
+                    LCS_DEPTH=$((LCS_DEPTH + 1))
+                    ps=0
+                else
+                    # Block-context `[`/`{` inside a plain scalar is content
+                    # (`a["c` is the plain scalar `a["c`).
+                    ps=1
+                fi
+                ws=0
+                ;;
+            '}'|']')
+                if [ "$LCS_DEPTH" -gt 0 ]; then
+                    LCS_DEPTH=$((LCS_DEPTH - 1))
+                    ps=0
+                else
+                    ps=1
+                fi
+                ws=0
+                ;;
+            ',')
+                # A flow separator ends a plain scalar and returns to a node
+                # position; in block context a comma is plain content.
+                if [ "$LCS_DEPTH" -gt 0 ]; then ps=0; else ps=1; fi
+                ws=0
+                ;;
+            ':')
+                if [ "$ps" -eq 0 ]; then
+                    if [ "$LCS_DEPTH" -gt 0 ]; then
+                        ps=0
+                    elif [ "$sep" -eq 1 ]; then
+                        ps=0
+                    else
+                        ps=1
+                    fi
+                elif [ "$sep" -eq 1 ]; then
+                    ps=0
+                elif [ "$LCS_DEPTH" -gt 0 ]; then
+                    case "${s:i+1:1}" in
+                        ','|'['|']'|'{'|'}') ps=0 ;;
+                        *) ps=1 ;;
+                    esac
+                else
+                    ps=1
+                fi
+                ws=0
+                ;;
+            '-')
+                # A block sequence entry only at a node position, bounded by
+                # whitespace/EOL. Inside a plain scalar it is content
+                # (`a - "b` is one plain scalar); in flow there is no entry
+                # indicator.
+                if [ "$ps" -eq 0 ] && [ "$LCS_DEPTH" -eq 0 ] && [ "$sep" -eq 1 ]; then
+                    ps=0
+                else
+                    ps=1
+                fi
+                ws=0
+                ;;
+            '?')
+                # An explicit-key indicator at a node position in flow, or in
+                # block when bounded by whitespace/EOL. Inside a block plain
+                # scalar it is content (`a?"b` is the plain scalar `a?"b`).
+                if [ "$LCS_DEPTH" -gt 0 ]; then
+                    ps=0
+                elif [ "$ps" -eq 0 ] && [ "$sep" -eq 1 ]; then
+                    ps=0
+                else
+                    ps=1
+                fi
+                ws=0
+                ;;
+            *)
+                ps=1; ws=0
+                ;;
         esac
+        # A real block-collection entry -- a `:` bounded by whitespace/EOL in
+        # block context, or a `- ` entry indicator -- establishes the indent a
+        # later plain scalar is measured against, exactly as pyyaml's
+        # `add_indent(self.column)` does when it tokenizes that entry. A plain
+        # scalar CARRIED in from an earlier line (`carried`) is a continuation
+        # of that earlier node even when the line holds a `:`; it must not raise
+        # the base, because a raised base would let the next continuation fall
+        # below it and be misread as a new node (under-tracking -> a quote opens
+        # where there is none -> false ok). Leaving the base alone there keeps
+        # the carry open, which fails closed.
+        if [ "$LCS_DEPTH" -eq 0 ] && [ "$sep" -eq 1 ] && [ "$ps" -eq 0 ] \
+            && [ "$carried" -eq 0 ]; then
+            case "$ch" in
+                ':'|'-'|'?') base="$ind" ;;
+            esac
+        fi
         i=$((i + 1))
     done
     LCS_QUOTE="$q"
+    LCS_PS="$ps"
+    LCS_IND="$base"
 }
 
 _locate_jobs_key() {
@@ -1149,7 +1282,7 @@ _locate_jobs_key() {
     JOBS_UNREADABLE=0
     local n line ind kind keykey tail cand=0 start=0 in_bs=0 bs_indent=0 m l2 cline
     local pat_bs='^[[:space:]]*(-[[:space:]]+)?[^:]+:[[:space:]]*[|>][0-9+-]*[[:space:]]*$'
-    local in_q=""
+    local in_q="" flowq=0 pps=0 pind=-1
     for (( n=0; n<${#SS[@]}; n++ )); do
         line="${SS[n]}"
         [ -n "${line//[[:space:]]/}" ] || continue
@@ -1161,8 +1294,11 @@ _locate_jobs_key() {
         # Cycle-12: a line inside a multi-line quoted scalar is DATA, not a key.
         # Skip it whole and keep tracking the quote until it closes.
         if [ -n "$in_q" ]; then
-            _qs_line_open_quote "$line" "$in_q"
+            _qs_line_open_quote "$line" "$in_q" "$flowq" "$pps" "$pind"
             in_q="$QS_OUT"
+            flowq="$QS_DEPTH"
+            pps="$QS_PS"
+            pind="$QS_IND"
             continue
         fi
         # A block scalar header opens a body; its lines are data, not keys.
@@ -1172,8 +1308,11 @@ _locate_jobs_key() {
             continue
         fi
         # Does THIS line open a quoted scalar that continues past its end?
-        _qs_line_open_quote "$line" "$in_q"
+        _qs_line_open_quote "$line" "$in_q" "$flowq" "$pps" "$pind"
         in_q="$QS_OUT"
+        flowq="$QS_DEPTH"
+        pps="$QS_PS"
+        pind="$QS_IND"
         [ "${#ind}" -eq 0 ] || continue
         start=$n
         tail=""
@@ -1239,7 +1378,7 @@ _locate_jobs_key() {
     # skip continuation lines: a line inside a quoted scalar, a block scalar
     # body, or an open flow collection is DATA, not structure. A construct that
     # leaves no readable structural child fails closed.
-    local flow=0 saw_child=0
+    local flow=0 saw_child=0 pps=0 pind=-1
     in_q=""
     in_bs=0
     bs_indent=0
@@ -1252,15 +1391,19 @@ _locate_jobs_key() {
             in_bs=0
         fi
         if [ -n "$in_q" ]; then
-            _line_node_state "$l2" "$in_q" "$flow"
+            _line_node_state "$l2" "$in_q" "$flow" "$pps" "$pind"
             in_q="$LCS_QUOTE"
             flow="$LCS_DEPTH"
+            pps="$LCS_PS"
+            pind="$LCS_IND"
             continue
         fi
         if [ "$flow" -gt 0 ]; then
-            _line_node_state "$l2" "" "$flow"
+            _line_node_state "$l2" "" "$flow" "$pps" "$pind"
             in_q="$LCS_QUOTE"
             flow="$LCS_DEPTH"
+            pps="$LCS_PS"
+            pind="$LCS_IND"
             continue
         fi
         if [ "${#ind}" -le "$JOBS_INDENT" ]; then
@@ -1276,9 +1419,11 @@ _locate_jobs_key() {
             bs_indent=${#ind}
             continue
         fi
-        _line_node_state "$l2" "" 0
+        _line_node_state "$l2" "" 0 "$pps" "$pind"
         in_q="$LCS_QUOTE"
         flow="$LCS_DEPTH"
+        pps="$LCS_PS"
+        pind="$LCS_IND"
     done
     if [ "$saw_child" -eq 0 ] || [ "$JOBS_JOBID_INDENT" -lt 1 ]; then
         JOBS_UNREADABLE=1

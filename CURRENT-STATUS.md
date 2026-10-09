@@ -100,12 +100,36 @@ continuation of a job's `name:` end the `jobs:` block early, so the body of the 
 its `contents: write` grant — was stripped as scalar data and the sweep printed the ok line. The
 class is pre-existing: it reproduces on revisions before round 16. The readers now consume a node
 property as one token and a property before the opening quote opens it, with the escape and doubling
-branches pinned against mutants. On this revision the full suite is `Ran 764 tests in 308.429s` —
-**OK** and `tests/test_workflow_config.py` alone is `Ran 177 tests in 141.472s` — **OK**; referee F's
+branches pinned against mutants. On this revision the full suite is `Ran 773 tests in 335.106s` —
+**OK** and `tests/test_workflow_config.py` alone is `Ran 186 tests in 167.674s` — **OK**; referee F's
 reproducer refuses, its 18-case probe reports `FALSE OK COUNT: 0`, and its five variants v15–v19 are
 all refused, while referee E's corpus and referee B's differential harness stay at `DEFECTS=0`. The
 recorded live claim remains vacuous by construction, and this is a measurement of this revision, not
 a final verdict.
+
+**Round 20 adds the explicit-key indicator to the reader's node-position set.** An independent
+referee defeated the round-19 reader with a false ok: the YAML explicit-key indicator `?`
+immediately before an opening quote (`? "a`, continued at column zero by `b"`) left the quote
+unopened, so the column-zero continuation ended the `jobs:` block and a later job's
+`contents: write` grant was stripped as scalar data. The class is pre-existing — it reproduces on
+the round-19 commit `91aedfaef33ea9e3762fc36b95463bca1b345678` and on `bf3ba57` before round 19 —
+and the repair put `?` in the node-position set of both of that revision's quote-opening scanners
+(`_qs_line_open_quote()` and `_line_node_state()`), so the rule refused that round's shapes rather
+than one payload spelling at a time. The reader remains a bounded parser that fails closed, not a YAML
+implementation, and this is a measurement of this revision, not a final verdict.
+
+**Rounds 21 and 22 replace the per-character quote rule with a plain-scalar state machine.** An
+independent referee's fuzz measured 214 false oks on the pushed round-19 revision and 24 on the
+round-20 script, and its 12 regressions were one shape: `name: a?"b` is the plain scalar `a?"b` to
+PyYAML, but a previous-character test opened a quote. The repair computes node position from indicator
+boundedness, the way PyYAML's `scan_plain`/`check_value` do, with one rule serving both scanners, and
+then carries the plain scalar's base indent across its continuation lines so a run of same-indent
+continuations no longer resets it (the parent's `r21-minDup.yml`, 150 bytes, md5
+`7f58c4341f41ff3ae1b65608f1a022a3`). On the frozen bytes the generators measure 0 false oks where the
+round-20 tree measured 460 and the round-21 tree 70 (1500 documents). The reader remains a bounded
+lexical approximation that fails closed, not a YAML implementation, and the class is not claimed
+closed — each of the last four rounds was defeated on a new quoting shape. This is a measurement of
+this revision, not a final verdict.
 
 The signed, notarized `publish=false` candidate for the frozen cycle-5
 revision is green: run 37783584533 at `1a5e9bf` (documentation only on top of

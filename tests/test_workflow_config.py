@@ -16,6 +16,7 @@ dependency); CI installs it for the source job so the checks do run there.
 The sweep tests do not need PyYAML: they run the script itself.
 """
 
+import hashlib
 import pathlib
 import re
 import subprocess
@@ -640,6 +641,126 @@ class ToolchainPinTests(unittest.TestCase):
                       "the source archive must ship requirements-piptools.lock")
         self.assertIn("requirements-piptools.txt", script,
                       "the source archive must ship the lock's input file")
+
+
+def _yaml(*rows: str) -> str:
+    """Join workflow rows with newlines (a trailing newline included)."""
+    return "\n".join(rows) + "\n"
+
+
+def _continuation_run_shapes():
+    """Round-22 fixtures: a plain scalar continued by a run of lines.
+
+    PyYAML's scanner keeps a plain scalar open while the next line's column
+    is greater than the ENCLOSING block collection's indent (scanner.py:
+    `indent = self.indent + 1`). A `"`, `!`, `&` or `-` on such a line is
+    scalar content, not an indicator, so the job declared after the scalar
+    still exists and its `permissions:` grant still counts.
+
+    Round 21 carried the plain-scalar state against the PREVIOUS physical
+    line's indent, so a run of two or more continuation lines reset the
+    state: the `"` opened a quote, the following job was swallowed as
+    scalar text, and its write grant was stripped as data -- the sweep
+    then printed its ok line.
+
+    Each entry is (name, refusal reason, writing document, grant line,
+    read-only replacement for that line). The twin must stay clean.
+    """
+    return (
+        (
+            'same_indent_run',
+            'grants-contents-write',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  aaa:',
+                '    runs-on: x', '      "a', '      "a', '    name: "x', 'y"', '  run:',
+                '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'single_continuation',
+            'grants-contents-write',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  aaa:',
+                '    runs-on: x', '      "a', '    name: "x', 'y"', '  run:', '    permissions:',
+                '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'tagged_name_two_jobs',
+            'grants-write-all',
+            _yaml(
+                'name: fz8434', 'on: [push]', 'permissions: {}', 'jobs:', '  if:', '    runs-on: x',
+                '  test:', '    runs-on: x', '      "a\\{\\', '      "a\\{\\', '    name: !<tag:yaml.org,2002:str> "x',
+                '      deeper: 1', 'y"', '  run:', '    runs-on: x', '    if: ${{ x }}',
+                '    permissions:', '      contents: write-all',
+            ),
+            '      contents: write-all',
+            '      contents: read-all',
+        ),
+        (
+            'flow_scope_two_jobs',
+            'grants-writable-token-scope',
+            _yaml(
+                'on: [push]', 'permissions: {}', 'jobs:', '  with:', '    runs-on: x',
+                '      "]\\', '      "]\\', '    name: "x', 'permissions: read-all"',
+                '  working]directory:', '    runs-on: x', '        ][*', '    name: {A: 1, B: [2, 3]}',
+                '    with:', '      x: 1', '  build:', '    runs-on: x', '    if: ${{ x }}',
+                '  run:', '    runs-on: x', '    name: {a: {b: [c, {d: e}]}}', '    permissions: {packages: write}',
+            ),
+            '    permissions: {packages: write}',
+            '    permissions: {packages: read}',
+        ),
+        (
+            'backslash_and_tag',
+            'grants-contents-write',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  aaa:',
+                '    runs-on: x', '      "a\\', '      "a', '    name: !<tag:yaml.org,2002:str> "x',
+                '"', '  run:', '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'bang_and_anchor',
+            'grants-contents-write',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  aaa:',
+                '    runs-on: x', '      ! "x', '      &a "x', '    name: "x', 'y"',
+                '  run:', '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'comment_mid_run',
+            'grants-contents-write',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  aaa:',
+                '    runs-on: x', "      'a", '      !<tag:yaml.org,2002:str> "x', '      ',
+                '      # c', '      # c', '    name: !<tag:yaml.org,2002:str> "x', '        : 1',
+                '"', '  run:', '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'dash_and_tag_anchor',
+            'grants-contents-write',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  aaa:',
+                '    runs-on: x', '      - x', '      ! "x', '      !<tag:yaml.org,2002:str> "x',
+                '      &a "x', '    name: &a "x', 'y"', '  run:', '    permissions:',
+                '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+    )
 
 
 class PublishPathSweepTests(unittest.TestCase):
@@ -2994,11 +3115,17 @@ class PublishPathSweepTests(unittest.TestCase):
         inside a single-quoted scalar -- the same escape, one quote character
         over. Advancing one character instead of two at either branch closes the
         quote early, truncates the block at the column-0 continuation, and turns
-        the sweep back into a false ok. Both are pinned in the same shape as the
-        tag case, with the tag attached, because the truncation needs BOTH the
-        tracked quote (the escape branch) and the tracked node property: the
-        tag-only case is the method above, the escape-only case is the method
-        below, and each mutant is caught by exactly one of the two.
+        the sweep back into a false ok.
+
+        Round-20 mutant map (escape sites 1119 and 1120 of `_line_node_state`
+        advanced by one): breaking ONLY those two branches turns all four
+        escape spellings -- with and without the tag -- into false oks. The tag
+        is therefore not what makes the escape branch load-bearing: the method
+        below, which carries no tag, breaks under the same mutant. The two
+        methods overlap on purpose as a cross-check of the job-block scanner;
+        they are not a partition. (An earlier revision of this docstring said
+        "each mutant is caught by exactly one of the two"; that was wrong, and
+        the measurement above is the correction.)
         """
         header = (
             "name: fx\n"
@@ -3167,6 +3294,457 @@ class PublishPathSweepTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0,
                                  f"the sweep refused a read-only branch:\n{out}")
                 self.assertNotIn("refusing:", out)
+
+    # -- Round 20: the `?` explicit-key indicator as node position. ---------
+    #
+    # Referee H's H-1: `? "a` -- the explicit-key indicator followed by an
+    # opening quote -- is node position for the quoted scalar, but the round-19
+    # scanners only opened a quote after `:`/`-`/`[`/`{`/`,` or a node property
+    # (`!`, `&`, `*`), so the `?` took the default arm. The column-0
+    # continuation `b"` then read as the end of the `jobs:` block, the second
+    # job fell past the truncated bound, and `permissions: contents: write` was
+    # stripped as a scalar body. PyYAML reads the grant, so the sweep was a
+    # false ok in both the block spelling (payload A) and the flow spelling
+    # `name: {? "a}` (payload B).
+    #
+    # Round 20 adds `?` to the node-position set in `_qs_line_open_quote` and
+    # `_line_node_state`, exactly as `-` already was. The set is now the full
+    # YAML indicator set for this position, so the class is closed by the rule
+    # rather than one payload spelling at a time. A `?` that cannot begin a key
+    # node (`name: a?b`, `name: ?foo`, `"a?b"`) still does not open a quote,
+    # which is what keeps a read-only job clean.
+
+    def test_the_sweep_refuses_a_write_after_an_explicit_key_indicator(self):
+        r"""`? "a` in key position is node position, in block and flow form.
+
+        The node after the `?` is a quoted scalar that continues at column 0.
+        Only a tracked quote keeps the second job inside the `jobs:` block, so
+        the write is found only when the `?` is treated as node position. Both
+        referee-H payloads are here (block and flow), with the quoted-key
+        spelling of payload A that the referee did not report.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        for label, middle in (
+            # referee-H payload A: the `?` opens a block mapping key.
+            ("block-explicit-key",
+             '    name:\n'
+             '      ? "a\n'
+             'b"\n'),
+            # the same shape with the key on one line.
+            ("block-explicit-key-inline",
+             '    ? "a\n'
+             'b"\n'),
+            # referee-H payload B: the `?` opens the first key of a flow
+            # mapping, so the continuation cls the flow mapping too.
+            ("flow-explicit-key",
+             '    name: {? "a}\n'
+             'b": 1}\n'),
+            # a quoted key after the `?`.
+            ("block-quoted-key",
+             '    name:\n'
+             '      ? "a\n'
+             'b": 1}\n'),
+        ):
+            body = header + middle + footer
+            with self.subTest(explicit_key=label):
+                self._assert_refused_named(body, "grants-contents-write")
+
+    def _pyyaml_job_write(self, body: str) -> bool:
+        """True when PyYAML reads a job-level write from this workflow body.
+
+        The sweep's contract is "refuse exactly the files a YAML reader sees a
+        job-level write in", so the round-20 tests check that predicate rather
+        than pinning a list of verdicts. `setup.py` installs PyYAML for this
+        suite; the guard keeps the assertion honest if it is missing.
+        """
+        self.assertIsNotNone(yaml, "PyYAML is required for this differential")
+        data = yaml.safe_load(body)
+        if not isinstance(data, dict):
+            return False
+        jobs = data.get("jobs")
+        if not isinstance(jobs, dict):
+            return False
+        for job in jobs.values():
+            if not isinstance(job, dict):
+                continue
+            perms = job.get("permissions")
+            if perms is not None and "write" in str(perms):
+                return True
+        return False
+
+    def test_the_sweep_refuses_the_modeled_explicit_key_spellings(self):
+        """The `?`-position class, modelled from PyYAML rather than spellings.
+
+        Each body puts the `?`-before-a-quote construct in a different job
+        shape: a flow mapping value, a block sequence entry, a flow sequence
+        entry, a nested flow mapping, and a value after a plain scalar. The
+        expected verdict is computed from PyYAML, so a spelling the attack
+        corpus did not contain is still covered by the rule.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        write_footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        read_footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: read\n"
+        )
+        for label, middle in (
+            ("flow-mapping-value",
+             '    name: {? "a}\n'
+             'b": 1}\n'),
+            ("block-sequence-entry",
+             "    name:\n"
+             "      - ? \"a\n"
+             'b"\n'),
+            ("flow-sequence-entry",
+             '    name: [? "a}\n'
+             'b"]\n'),
+            ("nested-flow-mapping",
+             '    name: {x: {? "a}\n'
+             'b": 1}}\n'),
+            ("explicit-key-in-flow-map",
+             '    name: {? "a}\n'
+             'b": 1}\n'),
+        ):
+            write_body = header + middle + write_footer
+            read_body = header + middle + read_footer
+            with self.subTest(explicit_key=label):
+                self.assertTrue(self._pyyaml_job_write(write_body),
+                                "fixture drift: the modelled write body no "
+                                f"longer grants a write to PyYAML ({label})")
+                self._assert_refused_named(write_body, "grants-contents-write")
+                # The read-only twin: whatever the reader makes of the `?`
+                # key, both jobs are read-only, so the ok line must print.
+                self.assertFalse(self._pyyaml_job_write(read_body),
+                                 "fixture drift: the read-only twin grants a "
+                                 f"write to PyYAML ({label})")
+                result = self._run_one_branch("feature", read_body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep refused a read-only twin:\n{out}")
+                self.assertNotIn("refusing:", out)
+
+    def test_the_sweep_leaves_a_question_mark_inside_a_scalar_clean(self):
+        """A `?` that cannot begin a key node is a plain scalar character.
+
+        `name: a?b`, a trailing `?`, a quoted `?`, and a `?` with no following
+        space are all read by PyYAML as a plain scalar value, so the round-20
+        node-position rule must not open a quote, and the read-only job must
+        print the ok line. This is the negative control for the `?` rule: it
+        fails if the rule becomes a blanket refusal of anything holding a `?`.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: read\n"
+        )
+        for label, middle in (
+            ("interior", "    name: a?b\n"),
+            ("trailing", "    name: a? \n"),
+            ("quoted", '    name: "a?b"\n'),
+            ("no-space", "    name: ?foo\n"),
+            ("spaced", "    name: a ? b\n"),
+        ):
+            body = header + middle + footer
+            with self.subTest(question_mark=label):
+                result = self._run_one_branch("feature", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep refused a read-only job:\n{out}")
+                self.assertNotIn("refusing:", out)
+
+    # -- Round 21: a quote inside a plain scalar is data, not an opener. -----
+    #
+    # Referee I's defeat 4: the round-20 rule opened a quote whenever the
+    # previous character was a node-position indicator (`:`/`-`/`?`/`[`/`{`/
+    # `,`) or the last character of a node property token. That is wrong inside
+    # a plain scalar: in `name: a?"b` the `?` is scalar content, so a YAML
+    # reader reads `a?"b` as one plain scalar and the `"` opens nothing. Round
+    # 20 opened the quote anyway; the quote state then desynced at the next
+    # genuine quote, the column-0 line that closed the wrong quote read as the
+    # end of the `jobs:` block, and a later job's `permissions: contents:
+    # write` was stripped as scalar data -- a false ok on a real write.
+    #
+    # Round 21 replaces the lone previous-character test with a plain-scalar
+    # state machine: a quote opens only at a node position, and a plain scalar
+    # continues onto a more-indented following line, so a quote on such a line
+    # is data too. Node properties (`!`, `&`, `*`) still establish node
+    # position and the bounded explicit-key indicator `? "a` still opens a key
+    # node, so the round-19 and round-20 fixes stay.
+
+    _R21_HEADER = (
+        "on: [push]\n"
+        "permissions: read-all\n"
+        "jobs:\n"
+        "  bbb:\n"
+    )
+
+    def _r21_body(self, middle, grant):
+        """A two-job workflow: the first job holds `middle`, the second the grant."""
+        return (
+            self._R21_HEADER + middle
+            + "  run:\n"
+            + "    permissions:\n"
+            + "      contents: " + grant + "\n"
+        )
+
+    def test_the_sweep_refuses_a_quote_inside_a_plain_scalar(self):
+        r"""A quote after a middle-of-scalar indicator opens nothing.
+
+        `a?"c`, `a-"c`, `a:"c`, `a,"c`, `a["c` and `a{"c` are each one plain
+        scalar to a YAML reader (`"` is not a plain-scalar break character), so
+        the quote must not enter the scanner's quote state. The workflow then
+        keeps its column-0 `b": 1}` pairing, the second job stays inside the
+        `jobs:` block, and its `permissions: contents: write` is refused. The
+        read-only twin proves the test is about the grant and not a blanket
+        refusal of anything holding a quote.
+        """
+        read_footer = "  run:\n    permissions:\n      contents: read\n"
+        for label, indicator in (("question", "?"), ("dash", "-"),
+                                 ("colon", ":"), ("comma", ","),
+                                 ("bracket", "["), ("brace", "{")):
+            middle = (
+                "    name: a" + indicator + '"c\n'
+                "        :b<{.-!&*[\n"
+                '    name: {? "a}\n'
+                'b": 1}\n'
+            )
+            write = self._r21_body(middle, "write")
+            read = self._R21_HEADER + middle + read_footer
+            with self.subTest(indicator=label):
+                self.assertTrue(
+                    self._pyyaml_job_write(write),
+                    f"fixture drift: the write body is not a write to PyYAML "
+                    f"({label})")
+                self._assert_refused_named(write, "grants-contents-write")
+                self.assertFalse(
+                    self._pyyaml_job_write(read),
+                    f"fixture drift: the read-only twin grants a write "
+                    f"({label})")
+                result = self._run_one_branch("feature", read)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep refused a read-only twin:\n{out}")
+                self.assertNotIn("refusing:", out)
+
+    def test_the_sweep_refuses_the_round_21_referee_corpus_shapes(self):
+        r"""Every false-ok family in referee I's corpus, read by the sweep.
+
+        The bodies are the corpus files verbatim (the critical one pinned by
+        md5); the read-only twin is the same body with the grant spelled read.
+        Round 20 printed the ok line for every write body below, so this is
+        the RED-then-GREEN pin for the regression and for the shapes that were
+        false oks on both rounds 19 and 20.
+        """
+        z00125_regress = (
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  bbb:\n"
+            '    name: a?"b\n'
+            "        :b<{.-!&*[\n"
+            '    name: {? "a}\n'
+            'b": 1}\n'
+            "  run:\n"
+            "    permissions:\n"
+            '      contents: "write"\n'
+        )
+        self.assertEqual(
+            hashlib.md5(z00125_regress.encode()).hexdigest(),
+            "cf2302e8ab970030d7eb012c344e4577",
+            "fixture drift: z00125-regress is no longer byte-for-byte")
+        z00125_min = (
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  bbb:\n"
+            '    name: a?"b\n'
+            '    name: {? "a}\n'
+            'b": 1}\n'
+            "  run:\n"
+            "    permissions:\n"
+            '      contents: "write"\n'
+        )
+        z00953 = (
+            "name: fz9843\n"
+            "on: [push]\n"
+            "permissions: {}\n"
+            "jobs:\n"
+            "  working-directory:\n"
+            "    runs-on: x\n"
+            '        "\n'
+            "  bbb:\n"
+            "    runs-on: x\n"
+            "        [><<?,\\&\n"
+            '    name: &a "x\n'
+            'y"\n'
+            "  env:\n"
+            "    runs-on: x\n"
+            "    &b:\n"
+            "  run:\n"
+            "    runs-on: x\n"
+            '    name: a?"b\n'
+            "    permissions:\n"
+            "      contents : write\n"
+        )
+        z00814 = (
+            "name: fz8434\n"
+            "on: [push]\n"
+            "permissions: {}\n"
+            "jobs:\n"
+            "  if:\n"
+            "    runs-on: x\n"
+            "  test:\n"
+            "    runs-on: x\n"
+            '      "a\\{\\\n'
+            '    name: !<tag:yaml.org,2002:str> "x\n'
+            'y"\n'
+            "  run:\n"
+            "    runs-on: x\n"
+            "    if: ${{ x }}\n"
+            "    permissions:\n"
+            "      contents: write-all\n"
+        )
+        z00347 = (
+            "name: fz3316\n"
+            "on: [push]\n"
+            "permissions: {}\n"
+            "jobs:\n"
+            "  with:\n"
+            "    runs-on: x\n"
+            '      "]\\\n'
+            '    name: "x\n'
+            'permissions: read-all"\n'
+            "  working-directory:\n"
+            "    runs-on: x\n"
+            "        ][*\n"
+            "    name: {A: 1, B: [2, 3]}\n"
+            "    with:\n"
+            "      x: 1\n"
+            "  build:\n"
+            "    runs-on: x\n"
+            "    if: ${{ x }}\n"
+            "  run:\n"
+            "    runs-on: x\n"
+            "    name: {a: {b: [c, {d: e}]}}\n"
+            "    permissions: {packages: write}\n"
+        )
+        z00437 = (
+            "name: fz4268\n"
+            "on: [push]\n"
+            "permissions: read\n"
+            "jobs:\n"
+            "  name:\n"
+            "    runs-on: x\n"
+            "  build:\n"
+            "    runs-on: x\n"
+            "      !?*-|\"<']\n"
+            "    name:\n"
+            '      ? "a\n'
+            'b"\n'
+            '    name: "a#b"\n'
+            "  env:\n"
+            "    runs-on: x\n"
+            '        "-]#&|#}\n'
+            "    name: {A: 1, B: [2, 3]}\n"
+            "  run:\n"
+            "    runs-on: x\n"
+            "    permissions:\n"
+            "      packages: write\n"
+        )
+        for label, write, reason, old, new in (
+            ("z00125-regress", z00125_regress, "grants-contents-write",
+             'contents: "write"', 'contents: "read"'),
+            ("z00125-min", z00125_min, "grants-contents-write",
+             'contents: "write"', 'contents: "read"'),
+            ("z00953", z00953, "grants-contents-write",
+             "contents : write", "contents : read"),
+            ("z00814", z00814, "grants-write-all",
+             "contents: write-all", "contents: read"),
+            ("z00347", z00347, "grants-writable-token-scope",
+             "{packages: write}", "{packages: read}"),
+            ("z00437", z00437, "grants-writable-token-scope",
+             "      packages: write", "      packages: read"),
+        ):
+            read = write.replace(old, new)
+            with self.subTest(corpus=label):
+                self.assertNotEqual(write, read,
+                                    f"fixture drift: no grant to flip ({label})")
+                self.assertTrue(
+                    self._pyyaml_job_write(write),
+                    f"fixture drift: the corpus body is not a write to PyYAML "
+                    f"({label})")
+                self._assert_refused_named(write, reason)
+                self.assertFalse(
+                    self._pyyaml_job_write(read),
+                    f"fixture drift: the read-only twin grants a write "
+                    f"({label})")
+                result = self._run_one_branch("feature", read)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep refused a read-only twin:\n{out}")
+                self.assertNotIn("refusing:", out)
+
+    def test_the_sweep_leaves_a_mid_scalar_quote_clean(self):
+        r"""A quote that is plain-scalar content never opens a quote.
+
+        The plain-scalar state machine must not become a blanket refusal: a
+        quote in a read-only job's `name:` value is plain content, so the ok
+        line prints. The positive control keeps the bounded `? "a` opener
+        refusing, so the carry rule cannot suppress a real key node.
+        """
+        read_footer = "  run:\n    permissions:\n      contents: read\n"
+        for label, middle in (
+            ("question", '    name: a?"b\n'),
+            ("dash", '    name: a-"c\n'),
+            ("colon", '    name: a:"c\n'),
+            ("comma", '    name: a,"c\n'),
+            ("bracket", '    name: a["c\n'),
+            ("brace", '    name: a{"c\n'),
+            ("after-letter", '    name: a-b"c\n'),
+            ("after-letter-colon", '    name: a:b"c\n'),
+            ("after-letter-comma", '    name: a,b"c\n'),
+        ):
+            body = self._R21_HEADER + middle + read_footer
+            with self.subTest(mid_scalar=label):
+                result = self._run_one_branch("feature", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep refused a read-only job:\n{out}")
+                self.assertNotIn("refusing:", out)
+        control = self._r21_body('    name:\n      ? "a\nb"\n', "write")
+        self._assert_refused_named(control, "grants-contents-write")
+
     # -- Round 17: an explicit key split by a line continuation. -------------
     #
     # A double-quoted YAML scalar may be continued on the next line, so the
@@ -4668,6 +5246,124 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertIn(
                 f"topic {self._ACTION_PATH} unreadable-allowlist", out)
             self.assertNotIn("ok:", out)
+
+
+    def _build_continuation_branch(self, folder, body, label):
+        self._repo(folder)
+        self._write(folder, "build-candidate.yml", self.CLEAN)
+        self._commit(folder, "main")
+        self._branch(folder, "evil")
+        self._write(folder, "build-candidate.yml", body)
+        self._commit(folder, "evil " + label)
+
+    def test_a_run_of_continuation_lines_cannot_hide_a_write_grant(self):
+        """Round 22: the plain-scalar carry must use the block indent.
+
+        Every document below is read by PyYAML as carrying a job-level write
+        grant that is declared *after* a plain scalar continued by a run of
+        lines. The sweep must reach the `permissions:` mapping and refuse;
+        printing the ok line is a false ok.
+        """
+        for name, reason, body, _grant, _read in _continuation_run_shapes():
+            with self.subTest(shape=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._build_continuation_branch(repo, body, name)
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertNotEqual(
+                        result.returncode, 0,
+                        f"{name}: the sweep accepted a publishing branch:\n{out}")
+                    self.assertNotIn(
+                        "ok:", out,
+                        f"{name}: the sweep reported a publish-capable "
+                        f"branch clean:\n{out}")
+                    self.assertIn(
+                        "evil .github/workflows/build-candidate.yml " + reason,
+                        out,
+                        f"{name}: wrong refusal reason:\n{out}")
+
+    def test_the_read_only_twin_of_a_continuation_run_stays_clean(self):
+        """The carry must not over-refuse: the same shape with a read grant.
+
+        A base-indent carry that is too wide keeps the plain scalar open, but
+        with a read-only grant the document is clean and the sweep must still
+        print its ok line. This is the guard against fixing the false ok by
+        refusing everything with a continuation line.
+        """
+        for name, _reason, body, grant, read in _continuation_run_shapes():
+            with self.subTest(shape=name):
+                twin = body.replace("\n" + grant + "\n",
+                                    "\n" + read + "\n")
+                self.assertNotEqual(
+                    twin, body,
+                    f"{name}: fixture must flip its grant line")
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._build_continuation_branch(repo, twin, name)
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertEqual(
+                        result.returncode, 0,
+                        f"{name}: read-only twin was refused:\n{out}")
+                    self.assertIn(
+                        "ok: no non-main branch carries a publish-capable "
+                        "workflow differing from main's", out)
+
+    def test_the_pinned_continuation_payloads_are_unchanged(self):
+        """Pin the round-22 payloads by md5 and by the PyYAML reading.
+
+        `same_indent_run` is the 150-byte minimal payload from the audit
+        brief (md5 7f58c4341f41ff3ae1b65608f1a022a3); the other entries
+        match the parent's fuzz fixtures (CRIT-133, CRIT-1062), the mirror
+        single-continuation twin and four rk shapes. A silent edit to a row
+        would weaken the regression without failing either test above, and
+        the oracle assertion below records *why* each one must be refused.
+        """
+        pinned = {
+            "same_indent_run": "7f58c4341f41ff3ae1b65608f1a022a3",
+            "single_continuation": "d230081fc97cafa9eac17215ad939a42",
+            "tagged_name_two_jobs": "5dc92615d80a94dc1cad8aef809186d1",
+            "flow_scope_two_jobs": "b847196472dd928f13a12e474abd64fa",
+            "backslash_and_tag": "09b5c9b59082fa388058d93ab8141786",
+            "bang_and_anchor": "c1b48cee712563e52c9b244a84a2cc2c",
+            "comment_mid_run": "a17e3df45ade6ffd3cb87b6d34767c62",
+            "dash_and_tag_anchor": "f9c65281f59eb2d3ba7ca4cf06948edd",
+        }
+        shapes = {
+            name: (body, reason)
+            for name, reason, body, _grant, _read in _continuation_run_shapes()
+        }
+        self.assertEqual(sorted(shapes), sorted(pinned))
+        for name, (body, _reason) in shapes.items():
+            self.assertEqual(
+                hashlib.md5(body.encode("utf-8")).hexdigest(), pinned[name],
+                f"{name}: payload bytes drifted from the pinned fixture")
+        if yaml is None:  # pragma: no cover - depends on the environment
+            return
+        for name, (body, reason) in shapes.items():
+            jobs = (yaml.safe_load(body) or {}).get("jobs", {})
+            write_jobs = [
+                job_id
+                for job_id, job in jobs.items()
+                if isinstance(job, dict)
+                and (
+                    job.get("permissions") == "write-all"
+                    or (
+                        isinstance(job.get("permissions"), dict)
+                        and any(
+                            str(value).lower() in ("write", "write-all")
+                            for value in job["permissions"].values()
+                        )
+                    )
+                )
+            ]
+            self.assertTrue(
+                write_jobs,
+                f"{name}: PyYAML no longer reads a job-level write grant "
+                f"({reason}); the fixture or the library has drifted")
 
 
 class SweepFailClosedPins(unittest.TestCase):

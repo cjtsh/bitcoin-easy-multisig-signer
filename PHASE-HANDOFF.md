@@ -58,17 +58,20 @@ lock (CT-90); the publish sweep parses `permissions:` and strips comments before
 any decision, decides each branch question by comparing blob oids against
 the merge base and the allowed ref's tip with an allowlist read only from
 `main` (CT-73/CT-102, extended in cycle 13 by the identity arm, in round 14
-by the `permissions`-key node-property peel and in round 19 by teaching the quoted-scalar reader
-node properties so a column-zero continuation can no longer end the `jobs:` block early), and on 2026-10-08 the fourteen
+by the `permissions`-key node-property peel, in round 19 by teaching the quoted-scalar reader
+node properties, in round 20 by adding the explicit-key indicator `?` to that node-position set in both
+quote-opening scanners, and in rounds 21 and 22 by replacing the per-character quote rule with a
+plain-scalar state machine that carries the scalar's base indent (see `releases/PATCH-0.6.8.md`); the
+19, 20, 21 and 22 repairs refuse the measured payloads, and the reader is not claimed closed), and on 2026-10-08 the fourteen
 stale non-main branches were deleted so `origin` now carries `main` alone; the credential check derives its watched names from
 the workflow text (CT-97, which is how `MAC_NOTARY_KEY_P8_BASE64` was missed);
 the Windows helper's identity is documented as self-asserted rather than claimed
 to sit inside a signature (CT-105); and a hard link is refused as well as a
 symlink (CT-92). `releases/PATCH-0.6.8.md` carries the round and its
-break-and-watch evidence; on the frozen revision the suite is `Ran 764 tests in 308.429s` — **OK**
-(759 on the round-17 tree, 738 on the round-10 tree, 710 on the cycle-10 tree, 707 on the cycle-9 tree,
+break-and-watch evidence; on the frozen revision the suite is `Ran 773 tests in 335.106s` — **OK**
+(767 on the round-20 tree, 764 on the round-19 tree, 759 on the round-17 tree, 738 on the round-10 tree, 710 on the cycle-10 tree, 707 on the cycle-9 tree,
 693 on the third-wave tree, 681 on the wave-2 tree and 666 at `f79203c`), with
-118 sweep, 47 credential-file, 60 `HwiIdentityPins` and 84 hardening-file cases; `bash -n` is clean, the workflow YAML
+127 sweep, 47 credential-file, 60 `HwiIdentityPins` and 84 hardening-file cases; `bash -n` is clean, the workflow YAML
 parses, and all ten `tests/ui_*.cjs` scripts exit 0. An
 independent re-audit of `f79203c` filed eight bypasses; the round in front
 of you closes them plus five more flow spellings a self-attack found, a third wave
