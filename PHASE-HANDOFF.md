@@ -14,7 +14,7 @@ payload check could be made to *pass* while substituted code ran inside it
 console fix and of the Linux AppImage remains in this file's history and
 in `releases/`; those port builds are superseded by the unified pipeline.
 
-## Current stop point — 0.6.8 answered cycle 4, cycle 5 graded it BLOCKED, and the classes are now fixed
+## Current stop point — 0.6.8 answered cycle 4, cycle 5 graded it BLOCKED, and each following round repaired a class the last attack defeated
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
@@ -61,22 +61,25 @@ the merge base and the allowed ref's tip with an allowlist read only from
 by the `permissions`-key node-property peel, in round 19 by teaching the quoted-scalar reader
 node properties, in round 20 by adding the explicit-key indicator `?` to that node-position set in both
 quote-opening scanners, and in rounds 21 and 22 by replacing the per-character quote rule with a
-plain-scalar state machine that carries the scalar's base indent (see `releases/PATCH-0.6.8.md`); the
-19, 20, 21 and 22 repairs refuse the measured payloads, and the reader is not claimed closed), and on 2026-10-08 the fourteen
+plain-scalar state machine that carries the scalar's base indent, and in round 23 by computing a
+block scalar's owning column so an empty scalar under a sequence entry cannot swallow the next job
+(see `releases/PATCH-0.6.8.md`); the
+19, 20, 21, 22 and 23 repairs refuse the measured payloads, and the reader is not claimed closed), and on 2026-10-08 the fourteen
 stale non-main branches were deleted so `origin` now carries `main` alone; the credential check derives its watched names from
 the workflow text (CT-97, which is how `MAC_NOTARY_KEY_P8_BASE64` was missed);
 the Windows helper's identity is documented as self-asserted rather than claimed
 to sit inside a signature (CT-105); and a hard link is refused as well as a
 symlink (CT-92). `releases/PATCH-0.6.8.md` carries the round and its
-break-and-watch evidence; on the frozen revision the suite is `Ran 773 tests in 335.106s` — **OK**
-(767 on the round-20 tree, 764 on the round-19 tree, 759 on the round-17 tree, 738 on the round-10 tree, 710 on the cycle-10 tree, 707 on the cycle-9 tree,
+break-and-watch evidence; on the frozen revision the suite is `Ran 777 tests in 360.053s` — **OK**
+(773 on the round-22 tree, 767 on the round-20 tree, 764 on the round-19 tree, 759 on the round-17 tree, 738 on the round-10 tree, 710 on the cycle-10 tree, 707 on the cycle-9 tree,
 693 on the third-wave tree, 681 on the wave-2 tree and 666 at `f79203c`), with
-127 sweep, 47 credential-file, 60 `HwiIdentityPins` and 84 hardening-file cases; `bash -n` is clean, the workflow YAML
+131 sweep, 47 credential-file, 60 `HwiIdentityPins` and 84 hardening-file cases; `bash -n` is clean, the workflow YAML
 parses, and all ten `tests/ui_*.cjs` scripts exit 0. An
-independent re-audit of `f79203c` filed eight bypasses; the round in front
-of you closes them plus five more flow spellings a self-attack found, a third wave
-closed the holes the next attack left, and the
-same ledger carries those rounds. Three items remain owner
+independent re-audit of `f79203c` filed eight bypasses; the rounds since have
+repaired them plus five more flow spellings a self-attack found, a third wave
+repaired the holes the next attack left, and further adversarial rounds each
+defeated the reader again on a new shape; the
+same ledger carries every round and never declares the class closed. Three items remain owner
 decisions, not agent calls: whether the Windows helper gets an Authenticode
 signature or its sidecar moves out of the writable directory (CT-105);
 whether the human gate on `release-signing` is restored or that environment

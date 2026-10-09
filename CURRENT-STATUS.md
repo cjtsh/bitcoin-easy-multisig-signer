@@ -39,16 +39,18 @@ BLOCKED**: 0 Critical, 1 High, 4 Medium, 10 Low, 5 Info, with Red (CT-72),
 Orange (CT-73) and Copper (CT-90) each independently forcing the grade. The
 report is published on `main` for anyone to read.
 
-**The tree in front of you is the second cycle-6 remediation round.** The first
+**The tree in front of you is the cycle-6 remediation rounds.** The first
 cycle-6 round answered the cycle-5 grade above; an independent re-audit of that
-round's commit, `f79203c`, then filed eight bypasses, and this round closes them
-and the five further flow-style spellings a self-attack on the first fix found;
-a third wave then closed the holes the next attack left — a genuine compiled
+round's commit, `f79203c`, then filed eight bypasses, and the rounds since have
+repaired them and the five further flow-style spellings a self-attack on the first fix found;
+a third wave then repaired the holes the next attack left — a genuine compiled
 `hwilib` that was refused as altered, a `.pyc` added after a warm verdict, a
 local action the sweep could not read, two flow spellings it over-refused, and
 an environment holding a watched credential that no workflow ever named.
 Where cycle 4 closed the
-*demonstrations* the audit had used, this round closes the *classes*:
+*demonstrations* the audit had used, the round that followed set out to repair the *classes*;
+five later adversarial rounds each defeated the reader again on a new shape, so the ledger records
+what the reader now refuses rather than asserting that a class has been closed:
 a duplicate signer key is now refused by key material — public point plus
 chain code — so re-spelling it under another network version or another
 origin fingerprint changes nothing, and a compiled witness script that names
@@ -100,9 +102,9 @@ continuation of a job's `name:` end the `jobs:` block early, so the body of the 
 its `contents: write` grant — was stripped as scalar data and the sweep printed the ok line. The
 class is pre-existing: it reproduces on revisions before round 16. The readers now consume a node
 property as one token and a property before the opening quote opens it, with the escape and doubling
-branches pinned against mutants. On this revision the full suite is `Ran 773 tests in 335.106s` —
-**OK** and `tests/test_workflow_config.py` alone is `Ran 186 tests in 167.674s` — **OK**; referee F's
-reproducer refuses, its 18-case probe reports `FALSE OK COUNT: 0`, and its five variants v15–v19 are
+branches pinned against mutants. On this revision the full suite is `Ran 777 tests in 360.053s` —
+**OK** and `tests/test_workflow_config.py` alone is `Ran 190 tests` — **OK**; referee F's
+reproducer refuses, its 17-case probe reports `FALSE OK COUNT: 0`, and its five variants v15–v19 are
 all refused, while referee E's corpus and referee B's differential harness stay at `DEFECTS=0`. The
 recorded live claim remains vacuous by construction, and this is a measurement of this revision, not
 a final verdict.
@@ -130,6 +132,25 @@ round-20 tree measured 460 and the round-21 tree 70 (1500 documents). The reader
 lexical approximation that fails closed, not a YAML implementation, and the class is not claimed
 closed — each of the last four rounds was defeated on a new quoting shape. This is a measurement of
 this revision, not a final verdict.
+
+**Round 23 repairs the sequence-entry block scalar.** An independent referee (J) defeated the
+round-22 bytes: a job whose `name:` is a sequence entry introducing an *empty* block scalar, continued
+at the entry's content column by a line that opens a quote and closes it at column zero, followed by a
+second job granting `contents: write`. The empty scalar carries no body to PyYAML, but the round-22
+reader modelled the entry's indentation on the dash column, treated the `? "k` opener as
+block-scalar content and ended the `jobs:` block at the column-zero closer, so the later job's
+`permissions: contents: write` was stripped as scalar data and the sweep printed its ok line. The
+repair computes the column PyYAML uses as a block scalar's indent — the column of the block
+collection that owns the scalar, which for `      - key: |` is the entry's content column (8), not the
+dash column (6) — in `_bs_header_col()` (`scripts/check-publish-paths.sh:1376`); a `local` declaration
+defect in the first version of that helper made every non-dash header report column 0, and an
+independent 1500-document corpus caught exactly one false OK from it (`rk01073`), now fixed. Against
+the round-22 commit the four new tests are `Ran 4 tests` — `FAILED (failures=6)`, one per shape; on
+the frozen bytes they are GREEN, `PublishPathSweepTests` holds 131, and referee J's generator measures
+`FALSE-OK=0` where the failed revision gave 60 of 60. The reader remains a bounded lexical
+approximation that fails closed, not a YAML implementation, and the class is not claimed closed —
+each of the last five rounds was defeated on a new shape. This is a measurement of this revision, not
+a final verdict.
 
 The signed, notarized `publish=false` candidate for the frozen cycle-5
 revision is green: run 37783584533 at `1a5e9bf` (documentation only on top of

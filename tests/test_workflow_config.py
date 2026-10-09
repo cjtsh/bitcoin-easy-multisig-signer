@@ -763,6 +763,131 @@ def _continuation_run_shapes():
     )
 
 
+def _round23_shapes():
+    """Round-23 fixtures: the entry content column and the empty block scalar.
+
+    PyYAML's block-collection rules do not use the dash column: after a `- `
+    entry the enclosing mapping's indent is the entry's CONTENT column, so a
+    key at that column is a sibling of the entry's key and not a continuation
+    of it. When the entry's value is a block-scalar header (`|`, `>`, `|-`)
+    whose following lines are not indented deeper than that mapping, the
+    scalar is EMPTY and those lines are ordinary keys -- including a `?` key
+    whose quoted scalar runs to a column-0 closer.
+
+    The sweep modelled the entry's indentation on the dash column, ended the
+    `jobs:` block at the closer, and dropped the job declared after it; the
+    document still carries a job-level write grant that PyYAML and Ruby Psych
+    both read. Every shape below is a false ok on the pre-round-23 revision.
+
+    Each entry is (name, writing document, grant line, read-only replacement
+    for that line). The read-only twin must stay clean: once the block scalar
+    is read as EMPTY, the sweep follows the `?` key's quote across its
+    continuation and finds no write grant, so precision is preserved as well
+    as soundness.
+    """
+    return (
+        (
+            'e1_t6_id',
+            _yaml(
+                'permissions:', '  contents: read', 'jobs:', '  d0:', '    env:',
+                '      - name: x', '        ? "k', 'b"', '        : 1', '  run:',
+                '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'e2_two_jobs_sq',
+            _yaml(
+                'permissions: read-all', 'jobs:', '  d0:', '    env:', '      - name: x',
+                "        ? 'k", "b'", '        : 1', '  run:', '    permissions:',
+                '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'e3_comment_close',
+            _yaml(
+                'permissions: read-all', 'jobs:', '  d0:', '    env:', '      - name: x',
+                '        ? "k', 'b" # note', '        : 1', '  shell:', '    permissions:',
+                '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'b1_av00000',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions:', '  contents: read', 'jobs:',
+                '  d0:', '    if:', '      - key: |', '        key: x', '        ? &a "k',
+                'b"', '  run:', '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'b2_folded_wd',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  d0:',
+                '    env:', '      - key: >', '        key: x', '        ? "k', 'b"',
+                '  working-directory:', '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+        (
+            'b3_chomp_name',
+            _yaml(
+                'name: fz', 'on: [push]', 'permissions: read-all', 'jobs:', '  d0:',
+                '    env:', '      - key: |-', '        key: x', '        ? "k', 'b"',
+                '  name:', '    permissions:', '      contents: write',
+            ),
+            '      contents: write',
+            '      contents: read',
+        ),
+    )
+
+
+def _round23_clean_controls():
+    """Read-only workflows the sweep must NOT refuse.
+
+    `n01` puts the `?` and a spanning quote INSIDE a real block scalar (the
+    content is indented deeper than the entry's mapping); `n02` is the same
+    entry with a block scalar PyYAML reads as EMPTY, so its `?` key really
+    does own the column-0 continuation; `n03` is a `run: |` shell body with a
+    quote spanning lines. All three are read-only, so all three stay clean.
+    They are the guard against closing the false ok by refusing every document
+    that contains a quote, and `n02` in particular is the read-only twin of
+    the exploit family: the repair must read it, not refuse it.
+    """
+    return (
+        (
+            'n01_deep_block_scalar',
+            _yaml(
+                'name: fx', 'on: [push]', 'permissions:', '  contents: read', 'jobs:',
+                '  d0:', '    env:', '      - key: |', '          ? "k', '          b"',
+                '  run:', '    runs-on: x',
+            ),
+        ),
+        (
+            'n02_shallow_block_scalar',
+            _yaml(
+                'name: fx', 'on: [push]', 'permissions:', '  contents: read', 'jobs:',
+                '  d0:', '    env:', '      - key: |', '        ? "k', '        b"',
+                '  run:', '    runs-on: x',
+            ),
+        ),
+        (
+            'n03_shell_body_quote',
+            _yaml(
+                'name: fx', 'on: [push]', 'permissions:', '  contents: read', 'jobs:',
+                '  d0:', '    runs-on: x', '    run: |', '      echo "hi', '      there"',
+            ),
+        ),
+    )
+
+
 class PublishPathSweepTests(unittest.TestCase):
     """CT-48: a second publish path must not survive on any ref.
 
@@ -5364,6 +5489,152 @@ class PublishPathSweepTests(unittest.TestCase):
                 write_jobs,
                 f"{name}: PyYAML no longer reads a job-level write grant "
                 f"({reason}); the fixture or the library has drifted")
+
+    def test_a_sequence_entry_write_grant_cannot_hide_behind_the_block_end(self):
+        """Round 23: the entry content column must not end the jobs block.
+
+        PyYAML puts the entry's mapping key at the CONTENT column, so the
+        column-0 closer that ends the payload's quoted scalar is not a
+        structural line and the job declared after it still exists. A sweep
+        that models the dash column loses that job and prints the ok line over
+        a workflow PyYAML reads as publishing.
+        """
+        for name, body, _grant, _read in _round23_shapes():
+            with self.subTest(shape=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._build_continuation_branch(repo, body, name)
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertNotEqual(
+                        result.returncode, 0,
+                        f"{name}: the sweep accepted a publishing branch:\n{out}")
+                    self.assertNotIn(
+                        "ok:", out,
+                        f"{name}: the sweep reported a publish-capable "
+                        f"branch clean:\n{out}")
+                    self.assertIn(
+                        "evil .github/workflows/build-candidate.yml", out,
+                        f"{name}: the offender was not named:\n{out}")
+
+    def test_the_read_only_twins_of_the_round_23_shapes_stay_clean(self):
+        """The repair reads the family exactly; it does not refuse it wholesale.
+
+        Flipping the grant line to `contents: read` leaves the same empty
+        block scalar, the same `?` key and the same column-0 continuation, so
+        a sweep that simply refused every such document would pass the
+        soundness test above while destroying precision. The read-only twin
+        must exit 0 and print the ok line: the reader follows the quote, ends
+        the `jobs:` block where the structure really ends, and finds no grant.
+        """
+        for name, body, grant, read in _round23_shapes():
+            with self.subTest(shape=name):
+                twin = body.replace("\n" + grant + "\n", "\n" + read + "\n")
+                self.assertNotEqual(twin, body, f"{name}: fixture must flip its grant line")
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._build_continuation_branch(repo, twin, name)
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertEqual(
+                        result.returncode, 0,
+                        f"{name}: the read-only twin was refused:\n{out}")
+                    self.assertIn(
+                        "ok: no non-main branch carries a publish-capable "
+                        "workflow differing from main's", out)
+
+    def test_block_scalars_with_quotes_stay_accepted(self):
+        """A block scalar's content is data, whatever it looks like.
+
+        A `?` key or a spanning quote INSIDE a real block scalar is data, and
+        a `run: |` shell body with an unbalanced-looking quote is ordinary
+        GitHub Actions. These must stay clean, and so must the empty-scalar
+        read-only twin (`n02`), which this repair now reads rather than
+        refuses.
+        """
+        for name, body in _round23_clean_controls():
+            with self.subTest(shape=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = pathlib.Path(tmp)
+                    self._build_continuation_branch(repo, body, name)
+
+                    result = self._run_sweep(repo)
+                    out = result.stdout + result.stderr
+                    self.assertEqual(
+                        result.returncode, 0,
+                        f"{name}: a clean block scalar was refused:\n{out}")
+                    self.assertIn(
+                        "ok: no non-main branch carries a publish-capable "
+                        "workflow differing from main's", out)
+
+    def test_the_pinned_round_23_payloads_are_unchanged(self):
+        """Pin the round-23 payloads by md5 and by the PyYAML reading.
+
+        `e1_t6_id` is the payload referee J used to fail `f4ca17b` (md5
+        7dc2144cab73d94cd9bdb66d40f846ed); `b1_av00000` is the parent's
+        canonical block-scalar reproducer (md5 98017bdabe4353e46de08d93a747b4b0).
+        A silent edit to a row would weaken the regression without failing the
+        tests above, and the oracle assertion records *why* each one must be
+        refused.
+        """
+        pinned = {
+            "e1_t6_id": "7dc2144cab73d94cd9bdb66d40f846ed",
+            "e2_two_jobs_sq": "feb35dd4993535f9dfebd0bd58360854",
+            "e3_comment_close": "d945c126c336b350a95307ae7163f468",
+            "b1_av00000": "98017bdabe4353e46de08d93a747b4b0",
+            "b2_folded_wd": "50a9bad5c412a71505156c7de8a68c05",
+            "b3_chomp_name": "b85867213d1209419b53387071c0e776",
+        }
+        shapes = {name: (body, grant) for name, body, grant, _read in _round23_shapes()}
+        controls = {name: body for name, body in _round23_clean_controls()}
+        self.assertEqual(sorted(shapes), sorted(pinned))
+        for name, (body, _grant) in shapes.items():
+            self.assertEqual(
+                hashlib.md5(body.encode("utf-8")).hexdigest(), pinned[name],
+                f"{name}: payload bytes drifted from the pinned fixture")
+        for name, control_md5 in (
+            ("n01_deep_block_scalar", "15ea7c03ca3621ab3b3c13e6de92b6f2"),
+            ("n02_shallow_block_scalar", "a44a764897a7b40f325e63de77d5726f"),
+            ("n03_shell_body_quote", "c81b7e845f0d4e51f0613a63dbc93b4c"),
+        ):
+            self.assertEqual(
+                hashlib.md5(controls[name].encode("utf-8")).hexdigest(),
+                control_md5, f"{name}: clean control bytes drifted")
+        if yaml is None:  # pragma: no cover - depends on the environment
+            return
+        for name, (body, _grant) in shapes.items():
+            jobs = (yaml.safe_load(body) or {}).get("jobs", {})
+            write_jobs = [
+                job_id
+                for job_id, job in jobs.items()
+                if isinstance(job, dict)
+                and (
+                    job.get("permissions") == "write-all"
+                    or (
+                        isinstance(job.get("permissions"), dict)
+                        and any(
+                            str(value).lower() in ("write", "write-all")
+                            for value in job["permissions"].values()
+                        )
+                    )
+                )
+            ]
+            self.assertTrue(
+                write_jobs,
+                f"{name}: PyYAML no longer reads a job-level write grant; "
+                f"the fixture or the library has drifted")
+        for name, body in controls.items():
+            jobs = (yaml.safe_load(body) or {}).get("jobs", {})
+            grants = [
+                job_id for job_id, job in jobs.items()
+                if isinstance(job, dict) and isinstance(job.get("permissions"), dict)
+                and any(str(v).lower() in ("write", "write-all")
+                        for v in job["permissions"].values())
+            ]
+            self.assertFalse(
+                grants, f"{name}: the clean control must not carry a write grant")
 
 
 class SweepFailClosedPins(unittest.TestCase):

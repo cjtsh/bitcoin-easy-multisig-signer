@@ -1092,6 +1092,70 @@ _line_node_state() {
         return 0
     fi
     ind="$i"
+    # Round 23: a block sequence entry's content column.
+    #
+    # pyyaml's `fetch_block_entry` calls `add_indent(self.column)`, and for a
+    # `- ` entry the column that ends up in `self.indent` is the column of the
+    # entry CONTENT: for `      - name: x` the dash sits at 6 and the mapping
+    # pyyaml opens (BlockMappingStartToken/KeyToken at 5,8 -- verified) has
+    # indent 8. A plain scalar on that line is therefore measured against 9, not
+    # against the dash column 6, so a following line at column 8 STARTS A NODE.
+    # Round 22 raised `base` to the line's leading indent (`ind`) here, which for
+    # that line is 6: the column-8 line `        ? "k` then passed the carry test
+    # below, its `?` never returned to node position, the quote never opened, the
+    # column-0 closer ended the `jobs:` block, and `strip_scalar_bodies` deleted
+    # the second job's `permissions:` body as data -- referee payload t6 read the
+    # file as job-less and exited 0 while PyYAML gave job `run` `contents: write`.
+    #
+    # The column is computed from characters, never from a list of payload
+    # spellings, and it is computed for the WHOLE line before the walk starts, so
+    # a `-` later in the line cannot move it:
+    #   * only the FIRST significant character counts, so the `-` in a plain
+    #     scalar (`name: a - b`) is never an entry indicator;
+    #   * the indicator must be a bare `-` followed by whitespace or EOL (`-x`
+    #     and `--` are plain scalars to pyyaml, not entries);
+    #   * a bare `-` closes out the ENTRY, and the column after it is where the
+    #     entry's own node begins, so `-` at EOL measures against `column+1`,
+    #     which is exactly what pyyaml's `scan_plain` (indent = self.indent + 1)
+    #     compares against;
+    #   * only spaces are skipped after the dash: a tab is not a clean
+    #     `self.column`, so the comparison is left at the column just past the
+    #     dash, which can only make the reader MORE willing to treat the next
+    #     line as a new node (fail closed), never less.
+    #
+    # Round 23 addendum: the entry test is UNCONDITIONAL. A depth comparison here
+    # (`ind <= base + 1`) is wrong on both sides: it is false for the ordinary
+    # `    env:` / `      - name: x` nesting (ind 6, base 4, threshold 5) so the
+    # dash never raises the base and t6 survives, and it is true for a `- ` that
+    # pyyaml has already swallowed as plain-scalar content. What actually decides
+    # whether pyyaml tokenizes a block entry is whether `unwind_indent(column)`
+    # popped back to a column at or below `self.indent`; a depth test on the
+    # enclosing base cannot see `self.indent`, so it is not used. The entry's
+    # content column below is used wherever the old code raised `base` to the
+    # line indent, which is the model correction that closes t6.
+    local bounded_entry=0 ecol=-1
+    if [ "${s:i:1}" = "-" ] \
+        && { [ "${s:i+1:1}" = " " ] || [ "${s:i+1:1}" = "$TAB" ] || [ $((i + 1)) -eq "$n" ]; }; then
+        bounded_entry=1
+        ecol=$((i + 1))
+        while [ "$ecol" -lt "$n" ] && [ "${s:ecol:1}" = " " ]; do ecol=$((ecol + 1)); done
+        # The entry indicator RESTARTS the node position, so a plain scalar left
+        # open by the previous line does not continue here and the carry test
+        # below must not run: whichever indentation pyyaml had open before, the
+        # `-` was tokenized at THIS column. Suppressing the carry is what lets
+        # `?`/`:`/a quote on this line be read as node syntax again.
+        #
+        # `pps` is deliberately NOT cleared. Referee I's already-refused rk15
+        # payloads contain `- x` lines that pyyaml swallowed as plain-scalar
+        # CONTENT (`    runs-on: x` / `      - x` / `      &a "x`): clearing
+        # `pps` there makes the reader treat the content line as an entry, the
+        # NEXT line closes the scalar, and the victim job's `permissions:` body
+        # is deleted -- 18 false OKs on rk15 and 2 on rk300 zero on neither.
+        # Leaving `pps` set keeps every carried scalar open through the line,
+        # which fails closed on that whole family. Measured: with this line
+        # present rk15 is 18 false OKs; absent, 0.
+        carried=0
+    fi
     # A comment-only line is where `scan_plain` stops: `scan_plain_spaces`
     # returns, and the caller's `self.peek() == '#'` test breaks the loop, so
     # the plain scalar ends here and the comment cannot open a node. It is not a
@@ -1218,6 +1282,24 @@ _line_node_state() {
                 else
                     ps=1
                 fi
+                # Round 23: a key with NO value cannot extend a plain scalar.
+                # `    env:` and `  jobs:` end the line after their `:`; the old
+                # `ps=0`/`ps=1` answer still fed the carry test below, so the NEXT
+                # line -- a `- ` entry deeper than the open collection -- was read
+                # as a same-indent plain-scalar continuation and its entry column
+                # never raised the base. That is exactly referee payload t6's
+                # first line of the block, and it is why the entry test could not
+                # see the mapping the `-` opens. A `:` in block context whose rest
+                # of line is empty, whitespace or a comment has no node value, so
+                # there is nothing for the following line to continue: `ps` goes to
+                # 0 and the entry indicator on the next line is read as an entry.
+                # A value on the line (`name: x`), a quote, a flow collection or
+                # a block-scalar indicator (`|`/`>`) keeps the old answer.
+                if [ "$ps" -eq 1 ] && [ "$LCS_DEPTH" -eq 0 ] && [ "$sep" -eq 1 ]; then
+                    local rest="${s:i+1}"
+                    rest="${rest#"${rest%%[![:space:]]*}"}"
+                    if [ -z "$rest" ] || [ "${rest:0:1}" = '#' ]; then ps=0; fi
+                fi
                 ws=0
                 ;;
             '-')
@@ -1261,15 +1343,108 @@ _line_node_state() {
         # the carry open, which fails closed.
         if [ "$LCS_DEPTH" -eq 0 ] && [ "$sep" -eq 1 ] && [ "$ps" -eq 0 ] \
             && [ "$carried" -eq 0 ]; then
+            # Round 23: a `- ` entry raises the base to the entry's CONTENT
+            # column, which is where pyyaml's `add_indent(self.column)` put the
+            # enclosing collection (see the `bounded_entry` computation above);
+            # `base="$ind"` here is what referee payload t6 defeated. On such a
+            # line the entry's mapping IS the collection the bounded `:` inside
+            # it settles, so both indicators raise to the content column. Any
+            # other line keeps its leading column: an explicit `?` key is a key
+            # of the same mapping, so its sibling scopes belong at that column.
             case "$ch" in
                 ':'|'-'|'?') base="$ind" ;;
             esac
+            if [ "$bounded_entry" -eq 1 ] && { [ "$ch" = '-' ] || [ "$ch" = ':' ]; }; then
+                base="$ecol"
+            fi
         fi
         i=$((i + 1))
     done
     LCS_QUOTE="$q"
     LCS_PS="$ps"
     LCS_IND="$base"
+}
+
+# The column pyyaml uses as `self.indent` for a block-scalar header's content
+# rule: the indent of the block collection that OWNS the scalar. For a mapping
+# entry `    key: |` that is the key's own column; for a sequence entry that
+# opens a mapping, `      - key: |`, it is the entry's content column (8), NOT
+# the dash column (6) -- pyyaml then requires content at >= 9 while the entry's
+# sibling keys sit at 8, so the scalar is EMPTY and those siblings are nodes.
+# An entry whose node IS the scalar (`- |`) keeps the dash column, because its
+# parent is the sequence.
+_bs_header_col() {
+    local l="$1" rest dash=0
+    # The indent must be computed on its own line: inside a single `local`
+    # statement `${l%%...}` is expanded before `l` is assigned, so `ind` came
+    # out empty and every mapping header returned column 0. That made
+    # `_bs_indent_scan` read a `runs-on: |` body as content (rk01073) and
+    # truncated the jobs block. Keep the two statements separate.
+    local ind="${l%%[![:space:]]*}"
+    if [[ "$l" =~ ^([[:space:]]*-[[:space:]]+)(.*)$ ]]; then
+        dash="${#BASH_REMATCH[1]}"
+        rest="${BASH_REMATCH[2]}"
+        if [[ "$rest" =~ ^[A-Za-z_][A-Za-z0-9_.-]*[[:space:]]*: ]]; then
+            printf '%s' "$dash"
+            return 0
+        fi
+    fi
+    printf '%s' "${#ind}"
+}
+
+# Working out a block scalar's content indent exactly as pyyaml does.
+#
+# `scan_block_scalar` computes `min_indent = self.indent + 1` (the indent of the
+# ENCLOSING block collection plus one, not the header's own column) and then, if
+# no explicit increment digit is given, `indent = max(min_indent, max_indent)`
+# where `max_indent` is the greatest indentation of the lines it peeks over. The
+# scalar's content is then exactly the lines at that indent. This helper returns
+# the indent the block scalar's content must sit at in `BS_INDENT` and the index
+# of the first line that is NOT content in `BS_END`.
+#
+# Two cases matter for this gate:
+#   * the payload family (referee J / the parent's av/av2 corpora). The header is
+#     an entry at column 6, so the entry's mapping -- and the enclosing
+#     collection `min_indent = self.indent + 1` measures -- sits at 8; the body
+#     lines are written at 8 too, i.e. exactly the enclosing mapping's column.
+#     8 < 9, so pyyaml sees NO content at all: the scalar value is empty and the
+#     `key: x` / `? &a "k` lines are sibling keys of the SAME mapping. The old
+#     `[ "${#ind}" -gt "$bs_indent" ]` test used the header's own indent and
+#     treated every deeper-or-equal line as body, so those sibling keys were
+#     swallowed as scalar text and the victim job's body was dropped.
+#   * an ordinary `run: |` shell script. Its first body line is deeper than the
+#     header's column and the whole script sits at that one indent, so
+#     `BS_INDENT` is that script column and `BS_END` is the first line that
+#     dedents back to the enclosing mapping. Nothing about plain text is
+#     refused; only the lines genuinely inside the scalar are skipped.
+_bs_indent_scan() {
+    local hdr_idx="$1" hdr_col="$2"
+    local i line ind first=1 bs=0
+    BS_INDENT=$((hdr_col + 1))
+    BS_END=${#SS[@]}
+    for (( i=hdr_idx + 1; i<${#SS[@]}; i++ )); do
+        line="${SS[i]}"
+        if [ -z "${line//[[:space:]]/}" ]; then continue; fi
+        ind="${line%%[![:space:]]*}"
+        if [ "$first" -eq 1 ]; then
+            if [ "${#ind}" -le "$hdr_col" ]; then
+                # No content line at all: the scalar is empty and this line is
+                # the next node. Leaving BS_INDENT at hdr_col+1 keeps the scalar
+                # empty, which is what pyyaml read.
+                BS_END=$i
+                return 0
+            fi
+            first=0
+            bs="${#ind}"
+            BS_INDENT="$bs"
+            continue
+        fi
+        if [ "${#ind}" -lt "$bs" ]; then
+            BS_END=$i
+            return 0
+        fi
+    done
+    BS_END=${#SS[@]}
 }
 
 _locate_jobs_key() {
@@ -1288,7 +1463,7 @@ _locate_jobs_key() {
         [ -n "${line//[[:space:]]/}" ] || continue
         ind="${line%%[![:space:]]*}"
         if [ "$in_bs" -eq 1 ]; then
-            [ "${#ind}" -gt "$bs_indent" ] && continue
+            [ "$n" -lt "$bs_end" ] && continue
             in_bs=0
         fi
         # Cycle-12: a line inside a multi-line quoted scalar is DATA, not a key.
@@ -1304,7 +1479,9 @@ _locate_jobs_key() {
         # A block scalar header opens a body; its lines are data, not keys.
         if [[ "$line" =~ $pat_bs ]]; then
             in_bs=1
-            bs_indent=${#ind}
+            _bs_indent_scan "$n" "$(_bs_header_col "$line")"
+            bs_indent="$BS_INDENT"
+            bs_end="$BS_END"
             continue
         fi
         # Does THIS line open a quoted scalar that continues past its end?
@@ -1382,14 +1559,27 @@ _locate_jobs_key() {
     in_q=""
     in_bs=0
     bs_indent=0
+    bs_end=0
     for (( n=JOBS_I + 1; n<${#SS[@]}; n++ )); do
         l2="${SS[n]}"
         [ -n "${l2//[[:space:]]/}" ] || continue
         ind="${l2%%[![:space:]]*}"
+        # A line inside a block scalar's content is DATA, not structure: skip it
+        # whole until the scalar's content indent ends. `bs_end` comes from
+        # `_bs_indent_scan`, which applies pyyaml's own `max(self.indent+1,
+        # max_indent)` rule -- using the header's own column here was the av/av2
+        # defect, because an entry header at column 6 encloses a mapping at 8 and
+        # pyyaml then sees the column-8 sibling keys as NO content at all.
         if [ "$in_bs" -eq 1 ]; then
-            [ "${#ind}" -gt "$bs_indent" ] && continue
+            [ "$n" -lt "$bs_end" ] && continue
             in_bs=0
         fi
+        # A line inside a multi-line quoted scalar is DATA too, even at column 0.
+        # This must run BEFORE the jobs-block-end test: the column-0 `b"` that
+        # closes the payload's quoted scalar is not a structural line, and
+        # treating it as the end of the jobs block truncates the scan exactly
+        # where the victim job's body begins (the 6b62cc33 revision did this and
+        # turned t6 back into a false OK).
         if [ -n "$in_q" ]; then
             _line_node_state "$l2" "$in_q" "$flow" "$pps" "$pind"
             in_q="$LCS_QUOTE"
@@ -1416,7 +1606,9 @@ _locate_jobs_key() {
         fi
         if [[ "$l2" =~ $pat_bs ]]; then
             in_bs=1
-            bs_indent=${#ind}
+            _bs_indent_scan "$n" "$(_bs_header_col "$l2")"
+            bs_indent="$BS_INDENT"
+            bs_end="$BS_END"
             continue
         fi
         _line_node_state "$l2" "" 0 "$pps" "$pind"
@@ -1504,7 +1696,20 @@ strip_scalar_bodies() {
             # has no trailing space for the fold's structure test to see).
             if [ -n "$trimmed" ]; then
                 case "$trimmed" in
-                    "|"*|">"*) ;;
+                    "|"*|">"*)
+                        # A block-scalar VALUE's body is skipped with pyyaml's own
+                        # content-indent rule, NOT with `ind > base`. The naive
+                        # test ate the sibling keys of the entry's mapping in the
+                        # av/av2 family: the header sits at the content column
+                        # (8 here) while the mapping's own members sit at that SAME
+                        # column, so every one of them was deleted as "body" and
+                        # the surviving `?` key opened a quote that swallowed the
+                        # victim job. `_bs_indent_scan` returns the exact end of
+                        # the real body (equal to `i + 1` when the scalar is empty).
+                        _bs_indent_scan "$i" "$(_bs_header_col "$line")"
+                        i="$BS_END"
+                        continue
+                        ;;
                     *) i=$((i + 1)); continue ;;
                 esac
             fi
