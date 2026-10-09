@@ -535,8 +535,10 @@ def _hwi_path(executable: str) -> str:
 # processing entirely. `-S` also drops site-packages from a child's own
 # `sys.path`, which is why each child's search path is handed over explicitly:
 # the check child receives the package roots as arguments, and the helper
-# receives a `-c` bootstrap that inserts the verified roots first and this
-# interpreter's own site-packages after them (see `_helper_command`).
+# receives a `-c` bootstrap that appends the verified roots AFTER its own
+# entries -- never before them: a verified root's parent IS the site directory,
+# so prepending it would let a file beside the pinned package shadow a
+# standard-library module inside the helper (see `_helper_command`).
 _HWI_CHECK_FLAGS = ("-I", "-S", "-P")
 
 # The helper runs under that same strict isolation: what the check child hashed
@@ -580,25 +582,38 @@ def _hwi_payload_check_command(script: str, roots: list[str]) -> list[str]:
 # helper's own arguments -- arrives as a real argv element, never interpolated
 # into this text, so a path containing quotes or spaces cannot change what
 # runs. argv layout: [entry, directory count, *directories, *helper args].
+#
+# The directories are APPENDED, never prepended. A verified root is a
+# `hwilib` package directory, so the directory that has to be importable is
+# its PARENT -- in an installed environment, site-packages itself. Prepending
+# that directory put every other file in it ahead of the interpreter's own
+# modules, so a planted `<site-packages>/ctypes.py` ran attacker code inside
+# the helper that had just passed the identity check. Appending keeps the
+# standard library and the bundled extension modules first.
 _HWI_HELPER_BOOTSTRAP = (
     "import runpy, sys\n"
     "entry = sys.argv[1]\n"
     "directories = int(sys.argv[2])\n"
-    "sys.path[:0] = sys.argv[3:3 + directories]\n"
+    "sys.path.extend(sys.argv[3:3 + directories])\n"
     "sys.argv = [entry, *sys.argv[3 + directories:]]\n"
     "runpy.run_path(entry, run_name='__main__')\n"
 )
 
 
 def _hwi_helper_search_dirs(roots: list[str]) -> list[str]:
-    """The helper's ``sys.path``: verified roots first, site-packages after.
+    """The helper's ``sys.path`` additions: the verified tree, then site-packages.
 
-    Each root is a ``hwilib`` package directory, so the entry that has to lead
-    the helper's search path is its parent. This interpreter's own
-    site-packages directories follow, because ``-S`` removed them from the
-    child and the helper still needs every dependency that is not part of the
-    pinned tree. A directory that is not on the verified list can therefore
-    never precede the pinned tree.
+    Each root is a ``hwilib`` package directory, so the entry that has to be
+    importable is its parent -- in an installed environment, site-packages
+    itself, which ``-S`` removed from the child and which also holds every
+    dependency the pinned tree imports. The bootstrap APPENDS these
+    directories after the interpreter's own entries, so the standard library
+    and the bundled extension modules always win and nothing here can shadow
+    them. What the pin still does not cover is the rest of site-packages: a
+    substituted dependency (``typing_extensions``, say) is executed by the
+    helper. That is a disclosed residual rather than a fixable one here,
+    because the pin exists to pin ``hwilib``'s own bytes and writing
+    site-packages already means writing the interpreter's environment.
     """
     directories: list[str] = []
     for root in roots:
@@ -619,9 +634,10 @@ def _helper_command(entry: str, search_dirs: list[str]) -> list[str]:
     The helper runs under the same strict isolation as the payload check
     (``-I -S -P``), so ``site`` never starts and no ``.pth`` file can slip a
     directory ahead of the pinned tree after the check has passed. ``-S`` also
-    means the child has no site-packages of its own, so the bootstrap inserts
-    the search path explicitly -- verified roots first, then this
-    interpreter's site-packages -- and hands the entry point the argv it would
+    means the child has no site-packages of its own, so the bootstrap appends
+    the search path explicitly -- the verified roots' parents, then this
+    interpreter's site-packages -- after the interpreter's own entries, and
+    hands the entry point the argv it would
     have seen as a script. Every path and argument travels as a real argv
     value, never string-interpolated into the ``-c`` program.
     """
@@ -710,6 +726,8 @@ def _hwi_payload_check_script() -> str:
         "    # is not enough: `code.replace(co_consts=...)` keeps co_code and the\n"
         "    # line table identical while swapping 1 for 1.0 or True, and\n"
         "    # `1.0 == True == 1`, so a pyc that is not the compiled source passed.\n"
+        "    # A float or complex constant also goes through repr, because\n"
+        "    # `0.0 == -0.0` while the two are not the same constant.\n"
         "    if hasattr(item, 'co_code'):\n"
         "        return ('code',\n"
         "                item.co_argcount, item.co_posonlyargcount,\n"
@@ -725,6 +743,8 @@ def _hwi_payload_check_script() -> str:
         "        return tuple(fingerprint(const) for const in item)\n"
         "    if isinstance(item, frozenset):\n"
         "        return frozenset(fingerprint(const) for const in item)\n"
+        "    if isinstance(item, (float, complex)):\n"
+        "        return (type(item).__name__, repr(item))\n"
         "    return (type(item).__name__, item)\n"
         "def bytecode_is_the_recorded_source(rel, path, root):\n"
         "    parent = pathlib.PurePosixPath(rel).parent\n"
@@ -737,13 +757,21 @@ def _hwi_payload_check_script() -> str:
         "    data = path.read_bytes()\n"
         "    if len(data) < 16 or data[:4] != importlib.util.MAGIC_NUMBER:\n"
         "        return False\n"
-        "    if data[4:8] != bytes(4):\n"
-        "        return False\n"
         "    source = root / source_rel\n"
-        "    stat = source.stat()\n"
-        "    if (int.from_bytes(data[8:12], 'little') != int(stat.st_mtime) & 0xffffffff\n"
-        "            or int.from_bytes(data[12:16], 'little') != stat.st_size & 0xffffffff):\n"
-        "        return True\n"
+        "    # PEP 552: 0 is a timestamp pyc, 1 and 3 are hash-based (the 8 bytes\n"
+        "    # at 8:16 are the source hash, not a timestamp or a size). Any other\n"
+        "    # flag is a shape this reader does not know and must refuse.\n"
+        "    flags = int.from_bytes(data[4:8], 'little')\n"
+        "    if flags not in (0, 1, 3):\n"
+        "        return False\n"
+        "    if flags == 0:\n"
+        "        stat = source.stat()\n"
+        "        if (int.from_bytes(data[8:12], 'little') != int(stat.st_mtime) & 0xffffffff\n"
+        "                or int.from_bytes(data[12:16], 'little') != stat.st_size & 0xffffffff):\n"
+        "            return True\n"
+        "    # A hash-based pyc never takes the stale shortcut above: the\n"
+        "    # interpreter uses it without consulting the source's timestamp, so\n"
+        "    # its body has to be proved equal to the compiled source below.\n"
         "    # Compare the code by value, not the recorded filename and not the\n"
         "    # marshal bytes: pip installs a wheel from a staging directory and\n"
         "    # the compiler writes THAT path into the pyc (cycle-6 referee E),\n"

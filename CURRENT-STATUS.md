@@ -14,12 +14,12 @@ twice under two origin fingerprints is refused at parse; the payload check
 locates the pinned library files and hashes them without executing them, in a
 check child that runs `-I -S -P` (no site-packages, no `.pth` hooks, no user
 site), and the helper now runs under the same strict isolation with the verified
-package roots and this interpreter's own site-packages re-inserted as its search
-path; a cached helper identity
+package roots and this interpreter's own site-packages appended to its search
+path after the interpreter's own entries; a cached helper identity
 is re-hashed before it is believed; the two public reference feeds require
 the session token and the token comparison is total for every header value;
 the publish-path sweep recognizes REST and third-party publishers, requires
-a read-only token from any non-main ref carrying a workflow, and leaves no
+a read-only token from any non-main branch carrying a workflow, and leaves no
 private refs behind; each publish refusal is pinned to its own branch and
 its own exit; the dispatcher's run id reaches its check through the
 environment rather than through shell text; the container proof image is
@@ -57,7 +57,7 @@ payload check pins all 115 `.py` files of the tree as literals, runs its
 check child with `-I -S -P` so a site-packages `.pth` cannot execute inside
 it, hands that child the package roots as argv because `-S` removes the name
 it could otherwise resolve, compares the whole set in both directions, spawns the helper under the same
-`-I -S -P` isolation with those roots re-inserted ahead of site-packages, and
+`-I -S -P` isolation with those roots appended after the interpreter's own entries, and
 runs against the real lock in every prepared build environment (CT-90); the
 publish-path sweep strips comments before any decision and judges the token
 grant from a parsed `permissions:` mapping, so a spaced key is a write grant
@@ -67,6 +67,17 @@ is how `MAC_NOTARY_KEY_P8_BASE64` was being missed (CT-97); the Windows
 helper's trust model is stated honestly rather than claimed away (CT-105);
 and a hard link is refused, not only a symlink (CT-92). `releases/PATCH-0.6.8.md`
 carries the round in full, including what is *not* closed.
+
+**The publish-path sweep now decides the branch question by bytes, and its live claim is
+vacuous by construction.** The sweep compares each non-main branch's blob object ids under
+`.github/workflows/` and `.github/actions/` against both the merge base it shares with `main` and
+the allowed ref's tip, so it can tell an inherited file apart from the branch's own change, with
+the YAML parser kept as a second belt for `main`'s own shared workflows. The allowlist is read
+from `main` only and can never waive a publish-capable change, because the parser never consults
+it. On a branch dispatch the sweep necessarily runs that branch's copy of the script, so its
+verdict is only as trustworthy as the branch; publication is separately refused unless the ref is
+`main`, and every credential is scoped to the main-only environments. On 2026-10-08 the fourteen
+stale non-main branches were deleted, so `origin` now carries `main` alone.
 
 The signed, notarized `publish=false` candidate for the frozen cycle-5
 revision is green: run 37783584533 at `1a5e9bf` (documentation only on top of

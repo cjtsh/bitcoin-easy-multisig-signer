@@ -684,9 +684,85 @@ class PublishPathSweepTests(unittest.TestCase):
         subprocess.run(["git", "branch", "-q", "-D", name], cwd=folder,
                        check=True, capture_output=True, text=True)
 
-    def _run_sweep(self, folder: pathlib.Path):
+    def _run_sweep_raw(self, folder: pathlib.Path):
         return run_bash_file(ROOT / "scripts" / "check-publish-paths.sh",
                              str(folder), cwd=folder, timeout=60)
+
+    def _git_out(self, folder: pathlib.Path, *args: str) -> str:
+        """Run git and return stdout; empty when the command answers "no"."""
+        proc = subprocess.run(["git", *args], cwd=folder,
+                              capture_output=True, text=True)
+        return proc.stdout if proc.returncode == 0 else ""
+
+    def _switch(self, folder: pathlib.Path, name: str) -> None:
+        subprocess.run(["git", "switch", "-q", name], cwd=folder,
+                       check=True, capture_output=True, text=True)
+
+    def _blob_oid(self, folder: pathlib.Path, rev: str, path: str) -> str:
+        return self._git_out(folder, "rev-parse", f"{rev}:{path}").strip()
+
+    @staticmethod
+    def _allowlist_body(lines) -> str:
+        return "# branch path blob-oid\n" + "".join(f"{line}\n"
+                                                    for line in lines)
+
+    def _write_allowlist(self, folder: pathlib.Path, lines) -> None:
+        path = folder / ".github" / "publish-sweep-allowlist.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self._allowlist_body(lines), encoding="utf-8",
+                        newline="\n")
+
+    def _allowlist_lines(self, folder: pathlib.Path):
+        """Every <branch> <path> <oid> this fixture needs waived."""
+        lines = []
+        for branch in self._git_out(
+                folder, "for-each-ref", "--format=%(refname:short)",
+                "refs/heads").split():
+            if branch == "main":
+                continue
+            base = self._git_out(folder, "merge-base", "main", branch).strip()
+            if not base:
+                continue
+            tree = self._git_out(folder, "ls-tree", "-r", branch, "--",
+                                 ".github/workflows", ".github/actions")
+            for row in tree.splitlines():
+                meta, _, path = row.partition("\t")
+                oid = meta.split()[-1]
+                at_base = self._git_out(
+                    folder, "rev-parse", "-q", "--verify",
+                    f"{base}:{path}").strip()
+                if at_base != oid:
+                    lines.append(f"{branch} {path} {oid}")
+        return lines
+
+    def _allowlist_every_branch(self, folder: pathlib.Path) -> None:
+        """Waive this fixture's own workflow/action changes on main.
+
+        A fixture that exists to exercise the PARSER deliberately rewrites a
+        workflow on a branch, which the round-10 identity arm refuses. The
+        waiver is computed from the fixture's refs exactly as a real user
+        would, so every expectation written before round 10 keeps its meaning.
+        The tests that exercise the identity arm itself call _run_sweep_raw.
+        """
+        lines = self._allowlist_lines(folder)
+        if not lines:
+            return
+        head = self._git_out(folder, "rev-parse", "--abbrev-ref",
+                             "HEAD").strip()
+        self._switch(folder, "main")
+        path = folder / ".github" / "publish-sweep-allowlist.txt"
+        body = self._allowlist_body(lines)
+        if not (path.exists()
+                and path.read_text(encoding="utf-8") == body):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8", newline="\n")
+            self._commit(folder, "sweep-fixture allowlist")
+        if head and head != "main":
+            self._switch(folder, head)
+
+    def _run_sweep(self, folder: pathlib.Path):
+        self._allowlist_every_branch(folder)
+        return self._run_sweep_raw(folder)
 
     CLEAN = (
         "name: ok\n"
@@ -740,7 +816,7 @@ class PublishPathSweepTests(unittest.TestCase):
             out = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted a publishing branch:\n{out}")
-            self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
+            self.assertIn("1 non-main branch carries a publish-capable workflow",
                           out)
             self.assertIn("evil", out)
             self.assertIn("build-candidate.yml", out)
@@ -780,7 +856,7 @@ class PublishPathSweepTests(unittest.TestCase):
             out = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted a gh-release branch:\n{out}")
-            self.assertIn("refusing: a non-main branch carries a publish-capable workflow", out)
+            self.assertIn("1 non-main branch carries a publish-capable workflow", out)
             self.assertIn("runs-gh-release", out)
 
     def test_the_sweep_refuses_a_permission_it_cannot_read(self):
@@ -832,7 +908,7 @@ class PublishPathSweepTests(unittest.TestCase):
                         f"the sweep accepted a {label} permission block:\n{out}")
                     self.assertIn("unreadable-token-permissions", out)
                     self.assertIn(
-                        "refusing: a non-main branch carries a publish-capable "
+                        "1 non-main branch carries a publish-capable "
                         "workflow", out)
 
     def test_the_sweep_refuses_a_publisher_split_across_a_continuation(self):
@@ -1050,7 +1126,7 @@ class PublishPathSweepTests(unittest.TestCase):
             out = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0,
                                 f"the sweep accepted build-windows.yml:\n{out}")
-            self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
+            self.assertIn("1 non-main branch carries a publish-capable workflow",
                           out)
             self.assertIn("windows-port", out)
             self.assertIn("build-windows.yml", out)
@@ -1076,7 +1152,7 @@ class PublishPathSweepTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0,
                              f"the sweep refused a clean repo:\n{out}")
             self.assertNotIn("refusing:", out)
-            self.assertIn("ok: no non-main branch carries a publish-capable workflow", out)
+            self.assertIn("ok: no non-main branch carries a publish-capable workflow differing from main's", out)
 
     def test_the_sweep_forgets_a_branch_that_was_deleted_on_the_remote(self):
         """A ghost ref left over from a previous fetch is a false accusation."""
@@ -1125,7 +1201,7 @@ class PublishPathSweepTests(unittest.TestCase):
             self._commit(repo, "evil")
 
             result = self._run_sweep(repo)
-            self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
+            self.assertIn("1 non-main branch carries a publish-capable workflow",
                           result.stderr)
             self.assertEqual(result.returncode, 1)
 
@@ -1210,7 +1286,7 @@ class PublishPathSweepTests(unittest.TestCase):
         out = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0,
                             f"the sweep accepted {reason}:\n{out}")
-        self.assertIn("refusing: a non-main branch carries a publish-capable workflow",
+        self.assertIn("1 non-main branch carries a publish-capable workflow",
                       out)
         self.assertIn(branch, out)
         self.assertIn(reason, out)
@@ -1859,7 +1935,7 @@ class PublishPathSweepTests(unittest.TestCase):
         out = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0,
                          f"the sweep blamed a comment:\n{out}")
-        self.assertIn("ok: no non-main branch carries a publish-capable workflow",
+        self.assertIn("ok: no non-main branch carries a publish-capable workflow differing from main's",
                       out)
 
     def test_a_comment_that_names_a_publisher_is_not_an_offender(self):
@@ -1879,7 +1955,7 @@ class PublishPathSweepTests(unittest.TestCase):
         out = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0,
                          f"the sweep read a command out of a comment:\n{out}")
-        self.assertIn("ok: no non-main branch carries a publish-capable workflow",
+        self.assertIn("ok: no non-main branch carries a publish-capable workflow differing from main's",
                       out)
 
     def test_a_uses_line_that_only_mentions_release_is_not_a_callee(self):
@@ -1993,6 +2069,1983 @@ class PublishPathSweepTests(unittest.TestCase):
                         f"{name} spells out {phrase!r}, one of the sweep's own "
                         f"matcher patterns; the comment reads as a publisher")
 
+    def test_the_sweep_reads_a_quoted_permissions_key_in_an_inline_job(self):
+        """Cycle-8 BYPASS 1: a quoted key inside a flow mapping is a grant.
+
+        Audit I's `wf/A_quoted_inline.yml` put the job's token in a flow
+        mapping whose key was quoted:
+        `build: {..., "permissions": {contents: write}, ...}`. PyYAML resolves
+        that to a real `contents: write` and GitHub grants the write token, but
+        the inline-flow pattern's left boundary did not accept a quote, so the
+        sweep printed the ok line. The unquoted control is refused. The
+        harmless `x-permissions` fixture stays green: `-` is still not a left
+        boundary, so a key that merely ENDS in `permissions` is not the key.
+        """
+        body = (
+            "name: quoted inline\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            '  build: {"runs-on": "ubuntu-24.04",'
+            ' "permissions": {contents: write}, steps: [{run: "echo hi"}]}\n'
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-contents-write")
+        harmless = (
+            "name: harmless\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build: {runs-on: ubuntu-24.04,"
+            " with: {x-permissions: {contents: write}},"
+            ' steps: [{run: "echo hi"}]}\n'
+        )
+        result = self._run_one_branch("evil", harmless)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep read `x-permissions` as a grant:\n{out}")
+
+    def test_the_sweep_reads_every_writable_scope_as_a_grant(self):
+        """Cycle-8 BYPASS 2: `packages: write` and `id-token: write` publish.
+
+        The token arm treated every scope except `contents` as read-only, so
+        `{contents: read, packages: write}` with a `docker push ghcr.io/...`
+        and `{contents: read, id-token: write}` with an OIDC `npm publish` both
+        printed the ok line (audit I's `wf3/P1`…`P3`). The sweep cannot know
+        which scope an action needs in order to publish, so any `key: write` —
+        block form or flow form — is a grant.
+        """
+        block_packages = self._recipe(
+            "packages", "run: docker push ghcr.io/owner/image:tag",
+            permissions="  contents: read\n  packages: write\n")
+        block_idtoken = self._recipe(
+            "oidc", "run: npm publish",
+            permissions="  contents: read\n  id-token: write\n")
+        flow = (
+            "name: flow-write\n"
+            "on: workflow_dispatch\n"
+            "permissions: {contents: read, packages: write}\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: echo hi\n"
+        )
+        for scope, body in (("packages-write", block_packages),
+                            ("id-token-write", block_idtoken),
+                            ("flow-packages-write", flow)):
+            with self.subTest(scope=scope):
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "grants-writable-token-scope")
+
+    def test_the_sweep_names_the_release_actions_the_audit_used(self):
+        """Cycle-8: the release actions a demonstrated audit walked past.
+
+        Audit I's `wf4/J1` (`eregon/publish-release@v1`), `J3`
+        (`marvinpinto/action-automatic-releases@latest`) and `J7`
+        (`release-drafter/release-drafter@v6`) name no substring of the old
+        five-entry vocabulary, so a job with a read-only token plus one of them
+        printed the ok line. The token arm is the guarantee, not this list, but
+        the list must name the publishers a demonstrated audit used. Each of
+        these is an ACTION, not a reusable workflow, so only the name list
+        catches it.
+        """
+        for action in ("eregon/publish-release@v1",
+                       "marvinpinto/action-automatic-releases@latest",
+                       "release-drafter/release-drafter@v6",
+                       "goreleaser/goreleaser-action@v6",
+                       "pypa/gh-action-pypi-publish@release/v1"):
+            with self.subTest(action=action):
+                body = self._recipe(f"publishes with {action}", f"uses: {action}")
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "runs-release-action")
+
+    def test_the_sweep_does_not_read_uses_text_echoed_inside_a_run_block(self):
+        """Cycle-8 OVER-REFUSAL: a `uses:` echoed by a shell script is data.
+
+        Audit I's `wf4/J4` had a `run: |` block whose body merely echoes the
+        text `uses: owner/repo/.github/workflows/publish.yml@main`; the sweep
+        refused it `calls-a-release-workflow`. A `uses:` inside the literal body
+        of a non-`uses` key is data, not a callee. The positive half is that a
+        real `uses: |` block scalar — where the callee IS the value — is still
+        refused, so the fix does not simply stop reading literal blocks.
+        """
+        echoed = (
+            "name: harmless doc\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  doc:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: |\n"
+            '          echo "uses: owner/repo/.github/workflows/publish.yml@main"\n'
+        )
+        result = self._run_one_branch("evil", echoed)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep read echoed `uses:` text as a callee:\n{out}")
+        self.assertIn(
+            "ok: no non-main branch carries a publish-capable workflow differing from main's", out)
+        hidden = (
+            "name: hidden callee\n"
+            "on: workflow_dispatch\n"
+            "permissions:\n"
+            "  contents: read\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - uses: |\n"
+            "          owner/repo/.github/workflows/publish.yml@main\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", hidden),
+                            "calls-a-release-workflow")
+
+    def test_the_sweep_accepts_the_dollar_local_reusable_workflow_spelling(self):
+        """Cycle-8 OVER-REFUSAL: `$/` is a same-repository worklow call.
+
+        GitHub documents `$/.github/workflows/{filename}` as the recommended
+        same-repository, same-commit spelling of a reusable-workflow call (not
+        available on GHES, and it must not carry an `@{ref}`). Audit I's
+        `wf4/J5` used it and the sweep refused it as a remote callee even
+        though it reads that exact file. It is handled exactly like `./`: the
+        workflow-file shape passes and any other `$/` target fails closed as an
+        unread local action.
+        """
+        body = self._recipe(
+            "dollar-local", "uses: $/.github/workflows/build-candidate.yml")
+        result = self._run_one_branch("evil", body)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0,
+                         f"the sweep refused a `$/` reusable workflow:\n{out}")
+        self.assertIn(
+            "ok: no non-main branch carries a publish-capable workflow differing from main's", out)
+        other = self._recipe("dollar-action", "uses: $/.github/actions/publish")
+        self._assert_reason(self._run_one_branch("evil", other),
+                            "calls-a-local-action")
+
+    def test_the_sweep_ok_line_never_covers_a_grant_it_can_read(self):
+        """Cycle-8 fix 6: the ok line and the header comments are true.
+
+        Audit I printed the ok line for a quoted inline `permissions` mapping,
+        for `packages: write`/`id-token: write`, and for three named release
+        actions. Fixing the parses is what makes the ok line true; this test
+        drives those dangerous bodies through the sweep and asserts the ok line
+        is never the last word, then pins the corrected header wording that
+        used to claim other writable scopes were harmless.
+        """
+        script = (ROOT / "scripts" / "check-publish-paths.sh").read_text(
+            encoding="utf-8")
+        self.assertNotIn("Other writable scopes", script)
+        self.assertIn("EVERY `key: write`", script)
+        self.assertIn("The token arm is the GUARANTEE", script)
+        dangerous = (
+            ("quoted-inline-contents", (
+                "name: quoted inline\n"
+                "on: workflow_dispatch\n"
+                "permissions: read-all\n"
+                "jobs:\n"
+                '  build: {"runs-on": "ubuntu-24.04",'
+                ' "permissions": {contents: write},'
+                ' steps: [{run: "echo hi"}]}\n')),
+            ("packages-write", self._recipe(
+                "packages", "run: docker push ghcr.io/owner/image:tag",
+                permissions="  contents: read\n  packages: write\n")),
+            ("id-token-write", self._recipe(
+                "oidc", "run: npm publish",
+                permissions="  contents: read\n  id-token: write\n")),
+            ("unlisted-release-action", self._recipe(
+                "drafter", "uses: release-drafter/release-drafter@v6")),
+        )
+        for name, body in dangerous:
+            with self.subTest(case=name):
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0,
+                                    f"the ok line covered {name}:\n{out}")
+                self.assertIn("1 non-main branch carries a "
+                              "publish-capable workflow", out)
+                self.assertNotIn("ok: no non-main branch", out)
+
+    # -- Cycle 9: a construct the parser cannot classify is REFUSED. ---------
+    #
+    # Every earlier revision recognised dangerous SPELLINGS one at a time, so a
+    # YAML spelling it had not been shown walked past the sweep as read-only.
+    # The cycle-9 referee defeated the parsed-mapping reader with a tag, an
+    # anchor or a quote between a scope key and its value, and defeated the
+    # callee reader with a `uses:` whose first token was an anchor or a tag.
+    # The fix is not more spellings: a flow `permissions:` mapping is decided
+    # member by member, a member whose value does not resolve to a known verb
+    # makes the whole mapping unreadable, and a `uses:` value that starts with
+    # `&`, `*` or `!` is refused. Both readers now also require KEY POSITION,
+    # which repairs the over-refusals asserted in the same tests below.
+
+    def test_the_sweep_refuses_a_write_grant_hidden_by_a_tag_anchor_or_quote(self):
+        """The cycle-9 flow evasions, each of which printed `ok` before.
+
+        The first block spells the grant at top level; the last body hides it in
+        a job-level inline mapping of an otherwise read-all file. The whole-file
+        `!<tag:...>` spellings report `unreadable-token-permissions` because the
+        tag URI carries the comma and colon the flow reader splits members on.
+        Either verdict is a refusal: the sweep never prints the ok line.
+        """
+        cases = (
+            ("tag-hides-only-contents",
+             "permissions: {contents: !!str write}", "grants-contents-write"),
+            ("anchor-hides-only-contents",
+             "permissions: {contents: &a write}", "grants-contents-write"),
+            ("uri-tag-hides-only-contents",
+             "permissions: {contents: !<tag:yaml.org,2002:str> write}",
+             "unreadable-token-permissions"),
+            ("tag-hides-contents-next-to-read-issues",
+             "permissions: {issues: read, contents: !!str write}",
+             "grants-contents-write"),
+            ("anchor-hides-contents-next-to-read-issues",
+             "permissions: {issues: read, contents: &a write}",
+             "grants-contents-write"),
+            ("double-quoted-key-and-value",
+             "permissions: {issues: read, \"contents\" : \"write\"}",
+             "grants-contents-write"),
+            ("single-quoted-key-and-value",
+             "permissions: {issues: read, 'contents' : 'write'}",
+             "grants-contents-write"),
+            ("uri-tag-hides-contents-next-to-read-issues",
+             "permissions: {issues: read, contents: !<tag:yaml.org,2002:str> write}",
+             "unreadable-token-permissions"),
+        )
+        for label, permissions, reason in cases:
+            with self.subTest(case=label):
+                body = (
+                    "name: flow-evasion\n"
+                    "on: workflow_dispatch\n"
+                    f"{permissions}\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    steps:\n"
+                    "      - run: echo hi\n"
+                )
+                self._assert_reason(self._run_one_branch("evil", body), reason)
+        # A read-all top level does not cover a job whose inline mapping hides
+        # the same quoted write.
+        inline = (
+            "name: inline-evasion\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build: {\"runs-on\": \"ubuntu-24.04\","
+            " \"permissions\": {issues: read, \"contents\" : write},"
+            " steps: [{run: \"echo hi\"}]}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", inline),
+                            "grants-contents-write")
+
+    # -- Round 11 (referee B): the `permissions` KEY carries a node property. --
+    #
+    # `&p permissions: write-all`, `? !!str permissions`, `? &p permissions` and
+    # `!!str permissions:` are all the key `permissions` in YAML. The readers
+    # matched the key lexically, so the property characters between the key and
+    # the colon made the line invisible: a real write grant walked past both
+    # readers and the sweep printed ok. The property is now peeled from the key
+    # position — anchor, tag, anchor+tag in either order, `!<uri>` and an
+    # explicit `?` marker — before either reader classifies the line. A key whose
+    # value still does not resolve to a known verb fails closed; an anchored key
+    # never invents coverage.
+
+    def test_the_sweep_refuses_a_write_grant_hidden_by_a_permissions_key_node_property(
+            self):
+        """The round-11 referee's eight anchored/tagged-key evasions, all ok before.
+
+        Every body declares a read-only grant so the reason it reports is the
+        hidden write, never the read-only requirement. The explicit `?` forms do
+        not resolve lexically, so they fail closed as unreadable; either verdict
+        is a refusal and the sweep never prints the ok line.
+        """
+        cases = (
+            ("anchor-job-scalar",
+             "name: attacker-1\n"
+             "on: [push, workflow_dispatch]\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    &p permissions: write-all\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+            ("anchor-job-block",
+             "name: attacker-2\n"
+             "on: [push, workflow_dispatch]\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    &p permissions:\n"
+             "      contents: write\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-contents-write"),
+            ("explicit-anchor",
+             "name: attacker-3\n"
+             "on: [push, workflow_dispatch]\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    ? &p permissions\n"
+             "    : write-all\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "unreadable-token-permissions"),
+            ("explicit-tag",
+             "name: attacker-4\n"
+             "on: [push, workflow_dispatch]\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    ? !!str permissions\n"
+             "    : write-all\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "unreadable-token-permissions"),
+            ("anchor-block-scalar",
+             "name: attacker-5\n"
+             "on: [push, workflow_dispatch]\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    &p permissions: |\n"
+             "      write-all\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "unreadable-token-permissions"),
+            ("anchor-top-write",
+             "name: attacker-6\n"
+             "on: [push, workflow_dispatch]\n"
+             "&p permissions: write-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+            ("explicit-anchor-tag",
+             "name: attacker-7\n"
+             "on: [push, workflow_dispatch]\n"
+             '"permissions": read-all\n'
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    ? &p !!str permissions\n"
+             "    : write-all\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "unreadable-token-permissions"),
+            ("explicit-anchor-top",
+             "name: attacker-8\n"
+             "on: [push, workflow_dispatch]\n"
+             "? &p permissions\n"
+             ": write-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "unreadable-token-permissions"),
+            ("tag-top-bare",
+             "name: top-tag-bare\n"
+             "on: [push, workflow_dispatch]\n"
+             "!!str permissions: write-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+            ("uri-tag-top-bare",
+             "name: top-uritag-bare\n"
+             "on: [push, workflow_dispatch]\n"
+             "!<tag:yaml.org,2002:str> permissions: write-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+            ("anchor-then-tag-top",
+             "name: top-anchor-tag\n"
+             "on: [push, workflow_dispatch]\n"
+             "&p !!str permissions: write-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+            ("tag-then-anchor-top",
+             "name: top-tag-anchor\n"
+             "on: [push, workflow_dispatch]\n"
+             "!!str &p permissions: write-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+            ("tag-job-bare",
+             "name: job-tag-bare\n"
+             "on: [push, workflow_dispatch]\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    !!str permissions: write-all\n"
+             "    steps:\n"
+             "      - run: echo hi\n",
+             "grants-write-all"),
+        )
+        for label, body, reason in cases:
+            with self.subTest(case=label):
+                self._assert_reason(self._run_one_branch("evil", body), reason)
+
+    def test_the_sweep_leaves_a_read_only_permissions_key_with_a_node_property_clean(
+            self):
+        """An anchored/tagged read-only key is read, not refused.
+
+        The peeling must be matched by the coverage proof too: the every-job
+        body carries no top-level token, so it is clean only because each job's
+        `&q permissions: read` is recognised as a declaration, and the `&j jobs:`
+        body is clean only because the property is peeled from the jobs locator.
+        """
+        cases = (
+            ("plain-read-all",
+             "name: plain-read\n"
+             "on: workflow_dispatch\n"
+             "permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    steps:\n"
+             "      - run: echo ok\n"),
+            ("anchored-top-read-all",
+             "name: top-anchor-read\n"
+             "on: [push, workflow_dispatch]\n"
+             "&p permissions: read-all\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    steps:\n"
+             "      - run: echo ok\n"),
+            ("anchored-every-job-read",
+             "name: job-anchor-read\n"
+             "on: [push, workflow_dispatch]\n"
+             "jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    &q permissions: read\n"
+             "    steps:\n"
+             "      - run: echo ok\n"
+             "  test:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    &q permissions: read\n"
+             "    steps:\n"
+             "      - run: echo ok\n"),
+            ("anchored-jobs-key",
+             "name: jobs-anchor\n"
+             "on: [push, workflow_dispatch]\n"
+             "&j jobs:\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo ok\n"),
+            ("anchored-permissions-at-job-indent",
+             "name: jobs-indent-anchor\n"
+             "on: [push, workflow_dispatch]\n"
+             "jobs:\n"
+             "  &p permissions: read-all\n"
+             "  build:\n"
+             "    runs-on: ubuntu-latest\n"
+             "    permissions: read\n"
+             "    steps:\n"
+             "      - run: echo ok\n"),
+        )
+        for label, body in cases:
+            with self.subTest(case=label):
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, f"{label}:\n{out}")
+                self.assertIn(
+                    "ok: no non-main branch carries a publish-capable workflow "
+                    "differing from main's", out)
+
+    def test_the_sweep_refuses_a_plain_write_all_permission(self):
+        """Control: the unanchored spelling still reports `grants-write-all`."""
+        body = (
+            "name: attacker-9\n"
+            "on: [push, workflow_dispatch]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    permissions: write-all\n"
+            "    steps:\n"
+            "      - run: echo hi\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", body),
+                            "grants-write-all")
+
+    def test_the_sweep_judges_a_permissions_key_node_property_inside_a_flow_mapping(
+            self):
+        """The flow reader peels the key property too.
+
+        A flow job whose `permissions` key is anchored must not hide a write,
+        and the read-only spelling must still be clean.
+        """
+        write = (
+            "name: flow-anchor-write\n"
+            "on: [push, workflow_dispatch]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build: {runs-on: ubuntu-latest, &p permissions: write-all,"
+            " steps: [{run: echo hi}]}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", write),
+                            "grants-write-all")
+        read = (
+            "name: flow-anchor-read\n"
+            "on: [push, workflow_dispatch]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build: {runs-on: ubuntu-latest, &p permissions: read-all,"
+            " steps: [{run: echo hi}]}\n"
+        )
+        result = self._run_one_branch("evil", read)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn(
+            "ok: no non-main branch carries a publish-capable workflow "
+            "differing from main's", out)
+
+    def test_the_sweep_reads_only_a_column_zero_jobs_key(self):
+        """`_locate_jobs_key`'s column-0 rule, pinned.
+
+        A `jobs:`-shaped key nested under another top-level key (`env:` here) is
+        not the workflow's jobs key. If the position rule were dropped the
+        locator would find two candidates, fail closed, and refuse this clean
+        body — so asserting the ok line here is the tripwire for that rule,
+        which survived the referee's earlier mutation matrix.
+        """
+        body = (
+            "name: jobs-position\n"
+            "on: [push, workflow_dispatch]\n"
+            "permissions: read-all\n"
+            "env:\n"
+            "  jobs: a-decoy-key-under-env\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    permissions: read\n"
+            "    steps:\n"
+            "      - run: echo hi\n"
+        )
+        result = self._run_one_branch("evil", body)
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn(
+            "ok: no non-main branch carries a publish-capable workflow "
+            "differing from main's", out)
+
+    def test_the_sweep_refuses_a_callee_hidden_behind_a_tag_or_anchor(self):
+        """A `uses:` whose first token is `&`, `*` or `!` is refused.
+
+        The cycle-9 referee put `uses: &a owner/repo/.github/workflows/w.yml@main`
+        — and the `!!str` and `!<tag:...>` spellings — on a read-all file and the
+        sweep printed ok, because the lexical reader took the anchor or tag as
+        the first token and matched no callee shape. The value now fails closed,
+        and a leading tag or anchor is stripped so the remainder is re-tested as
+        the remote callee it is.
+        """
+        for label, value in (
+            ("anchor", "&a o/r/.github/workflows/w.yml@main"),
+            ("tag", "!!str o/r/.github/workflows/w.yml@main"),
+            ("uri-tag",
+             "!<tag:yaml.org,2002:str> o/r/.github/workflows/w.yml@main"),
+        ):
+            with self.subTest(case=label):
+                body = (
+                    "name: hidden callee\n"
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  call:\n"
+                    f"    uses: {value}\n"
+                )
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "calls-a-release-workflow")
+
+    def test_the_sweep_reads_uses_only_in_key_position(self):
+        """Cycle-9 OVER-REFUSAL: a `uses:` inside a `with:`/`if:`/`env:` value.
+
+        `fold_block_scalars` joined a bare `with:`/`if:`/`env:` key onto the
+        step's own `uses:` line, so the reader saw the inner `uses:` and refused
+        an honest local-workflow call as a remote callee. The scalar key and its
+        value/body are now stripped before the callee reader, so only a `uses:`
+        in key position can name a callee. The outer callee is a local workflow
+        file the sweep reads, which is why the honest result is ok.
+        """
+        steps = (
+            ("with-block",
+             "      - uses: ./.github/workflows/local.yml@main\n"
+             "        with:\n"
+             "          uses: o/r/.github/workflows/w.yml@main\n"),
+            ("with-flow",
+             "      - uses: ./.github/workflows/local.yml@main\n"
+             "        with: {uses: o/r/.github/workflows/w.yml@main}\n"),
+            ("if-string",
+             "      - uses: ./.github/workflows/local.yml@main\n"
+             "        if: \"contains('x', 'uses: o/r/.github/workflows/w.yml@main')\"\n"),
+            ("env-string",
+             "      - uses: ./.github/workflows/local.yml@main\n"
+             "        env:\n"
+             "          FOO: \"uses: o/r/.github/workflows/w.yml@main\"\n"),
+        )
+        for label, step in steps:
+            with self.subTest(case=label):
+                body = (
+                    "name: honest local callee\n"
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    steps:\n"
+                    f"{step}"
+                )
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep read {label} as a callee:\n{out}")
+                self.assertIn(
+                    "ok: no non-main branch carries a publish-capable workflow differing from main's",
+                    out)
+
+    def test_the_sweep_does_not_read_key_shaped_text_in_a_scalar_value(self):
+        """Cycle-9 OVER-REFUSALS: `permissions:`-shaped data is not a grant.
+
+        A `permissions:` token inside the value or block body of a scalar key
+        (`run:`, `with:`, `if:`, `env:`, `name:`, `shell:`,
+        `working-directory:`) is data, not the job's token. The old reader took
+        it for one and refused honest workflows. The values and bodies are
+        stripped before the permissions reader; the publisher vocabulary still
+        sees them, which the last case proves by keeping `gh release` inside a
+        `run: |` body an offender.
+        """
+        cases = (
+            ("run-inline-braces",
+             "      - run: echo { permissions: write }\n"),
+            ("run-literal-permissions-block",
+             "      - run: |\n"
+             "          permissions:\n"
+             "            contents: write\n"),
+            ("run-literal-heredoc",
+             "      - run: |\n"
+             "          cat <<EOF\n"
+             "          permissions: write-all\n"
+             "          EOF\n"),
+            ("with-flow-note",
+             "      - run: echo hi\n"
+             "        with: {note: 'permissions: write'}\n"),
+            ("env-block-honest-value",
+             "      - run: echo hi\n"
+             "        env:\n"
+             "          NOTE: value\n"
+             "          permissions: write\n"),
+        )
+        for label, step in cases:
+            with self.subTest(case=label):
+                body = (
+                    "name: honest scalar\n"
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    steps:\n"
+                    f"{step}"
+                )
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep read {label} as a grant:\n{out}")
+                self.assertIn(
+                    "ok: no non-main branch carries a publish-capable workflow differing from main's",
+                    out)
+        # The positive half: stripping is for the permissions reader only. A
+        # `run: |` body that really runs `gh release` is still a publisher.
+        publishing = (
+            "name: still a publisher\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  rel:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: |\n"
+            "          gh release create v1\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", publishing),
+                            "runs-gh-release")
+
+    # -- Cycle 10: a job id is recognised by POSITION, not spelling. ----------
+    #
+    # The cycle-9 KEY-POSITION filter removed the value/body of `run:`, `with:`,
+    # `if:`, `env:`, `name:`, `shell:` and `working-directory:`, but a job id
+    # may be spelled exactly like one of those keys. The cycle-10 referee made
+    # `jobs: {env: {...}}` and `jobs:` + `  env:` — with a real `contents:
+    # write` or a real remote `uses:` inside — print the ok line, because the
+    # whole job body was dropped before either reader saw it. The exemption is
+    # scoped to the job-id indent inside the `jobs:` block.
+
+    JOB_ID_NAMES = (  # the seven scalar-key spellings that are also legal ids
+        "env", "run", "with", "if", "name", "shell", "working-directory",
+    )
+
+    def test_the_sweep_finds_a_write_grant_in_a_job_named_for_a_scalar_key(self):
+        """A job id spelled like a stripped scalar key must not hide its grant."""
+        block_job = (
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: write\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        for jobid in self.JOB_ID_NAMES:
+            with self.subTest(case=f"block-{jobid}"):
+                body = (
+                    "name: jobid\n"
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    f"  {jobid}:\n"
+                    f"{block_job}"
+                )
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "grants-contents-write")
+            with self.subTest(case=f"flow-{jobid}"):
+                body = (
+                    "name: jobid\n"
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    f"  {jobid}: {{permissions: {{contents: write}}, "
+                    "runs-on: ubuntu-24.04, steps: [{run: echo ok}]}\n"
+                )
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "grants-contents-write")
+        # Only the hidden job writes, and there is no top-level cover.
+        two_jobs = (
+            "name: two jobs\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  good:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: read\n"
+            "    steps: [{run: echo ok}]\n"
+            "  env:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: write\n"
+            "    steps: [{run: echo ok}]\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", two_jobs),
+                            "grants-contents-write")
+        # A whole-token grant, not just a scope.
+        write_all = (
+            "name: jobid write-all\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  name:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions: write-all\n"
+            "    steps: [{run: echo ok}]\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", write_all),
+                            "grants-write-all")
+
+    def test_the_sweep_finds_a_remote_callee_in_a_job_named_for_a_scalar_key(self):
+        """A job id spelled like a stripped scalar key must not hide a callee."""
+        job_level = (
+            "name: jobid callee\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  env:\n"
+            "    uses: other-org/ci/.github/workflows/publish-package.yml@main\n"
+            "    secrets: inherit\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", job_level),
+                            "calls-a-release-workflow")
+        step_level = (
+            "name: jobid step callee\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  env:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - uses: other-org/ci/.github/workflows/publish-package.yml@main\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", step_level),
+                            "calls-a-release-workflow")
+
+    def test_a_job_named_for_a_scalar_key_keeps_the_scalar_controls_honest(self):
+        """The job-id exemption must not revive the over-refusals it borders.
+
+        A job named `env`/`run`/`if` still carries honest scalar data, and
+        `gh release` inside a `run: |` body is still a publisher.
+        """
+        cases = (
+            ("job-env-holder-with-flow-note",
+             "jobs:\n"
+             "  env:\n"
+             "    runs-on: ubuntu-24.04\n"
+             "    env: {NOTE: \"permissions: write\"}\n"
+             "    steps:\n"
+             "      - run: echo ok\n"),
+            ("job-env-holder-run-literal",
+             "jobs:\n"
+             "  env:\n"
+             "    runs-on: ubuntu-24.04\n"
+             "    steps:\n"
+             "      - run: |\n"
+             "          permissions: write\n"),
+            ("job-run-holder-run-literal",
+             "jobs:\n"
+             "  run:\n"
+             "    runs-on: ubuntu-24.04\n"
+             "    steps:\n"
+             "      - run: |\n"
+             "          permissions: write-all\n"),
+            ("job-if-holder-if-string",
+             "jobs:\n"
+             "  if:\n"
+             "    runs-on: ubuntu-24.04\n"
+             "    steps:\n"
+             "      - run: echo hi\n"
+             "        if: \"${{ contains('x', 'permissions: write') }}\"\n"),
+        )
+        for label, jobs in cases:
+            with self.subTest(case=label):
+                body = (
+                    "name: honest jobid\n"
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    f"{jobs}"
+                )
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep read {label} as a grant:\n{out}")
+                self.assertIn(
+                    "ok: no non-main branch carries a publish-capable workflow differing from main's",
+                    out)
+        # The publisher vocabulary still sees a scalar body.
+        publishing = (
+            "name: still a publisher\n"
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  run:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: |\n"
+            "          gh release create v1\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", publishing),
+                            "runs-gh-release")
+
+
+    # -- Cycle 11: the `jobs:` locator reads KEYS, not data. ------------------
+    #
+    # A `jobs:`-shaped line inside a top-level block scalar (`name: |`,
+    # `run-name: |`, `defaults: …`) used to steal the locator: its block ended at
+    # the next column-0 line, the real job declaration was stripped, and a hidden
+    # grant or callee read as absent. A quoted top-level key (`"jobs":`) was not
+    # matched at all, to the same effect, and a `\"` inside a double-quoted flow
+    # scalar closed the quote early so the mapping on the next line was stripped.
+    # A key spelling this reader cannot resolve, two candidates, or a candidate
+    # with no job declarations now fail closed.
+
+    def test_the_sweep_ignores_a_decoy_jobs_line_inside_a_block_scalar(self):
+        """A `jobs:`-shaped line in a block scalar body is data, not the key."""
+        hidden_grant = (
+            "jobs:\n"
+            "  env:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: write\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        hidden_callee = (
+            "jobs:\n"
+            "  env:\n"
+            "    uses: other-org/ci/.github/workflows/publish-package.yml@main\n"
+            "    secrets: inherit\n"
+        )
+        hidden_writeall = (
+            "jobs:\n"
+            "  with: {runs-on: ubuntu-24.04, permissions: write-all, "
+            "steps: [{run: echo ok}]}\n"
+        )
+        decoys = (
+            ("name-literal", "name: |\n  jobs:\n"),
+            ("name-folded", "name: >\n  jobs:\n"),
+            ("run-name-literal", "run-name: |\n  jobs:\n"),
+            ("nested-env-literal", "env:\n  X: |\n    jobs:\n"),
+            ("defaults-shell-literal",
+             "defaults:\n  run:\n    shell: |\n      jobs:\n"),
+            ("deeper-indent", "name: |\n   jobs:\n"),
+        )
+        for label, decoy in decoys:
+            for kind, tail, reason in (
+                ("grant", hidden_grant, "grants-contents-write"),
+                ("callee", hidden_callee, "calls-a-release-workflow"),
+            ):
+                with self.subTest(case=f"{label}-{kind}"):
+                    body = (
+                        "on: workflow_dispatch\n"
+                        "permissions: read-all\n"
+                        f"{decoy}"
+                        f"{tail}"
+                    )
+                    self._assert_reason(self._run_one_branch("evil", body),
+                                        reason)
+            with self.subTest(case=f"{label}-write-all"):
+                body = (
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    f"{decoy}"
+                    f"{hidden_writeall}"
+                )
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "grants-write-all")
+
+    def test_the_sweep_reads_a_quoted_top_level_jobs_key(self):
+        """A quoted top-level key strips to `jobs`; an escaped spelling refuses."""
+        grant = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "{key}\n"
+            "  env:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    permissions:\n"
+            "      contents: write\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        for key in ('"jobs":', "'jobs':"):
+            with self.subTest(case=key):
+                self._assert_reason(
+                    self._run_one_branch("evil", grant.format(key=key)),
+                    "grants-contents-write")
+        # A quoted key over an honest read-only body must still sweep clean: a
+        # locator that missed the key fails closed on the same file.
+        honest = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "{key}\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: echo ok\n"
+        )
+        for key in ('"jobs":', "'jobs':"):
+            with self.subTest(case=f"{key}-read-only"):
+                result = self._run_one_branch("evil", honest.format(key=key))
+                out = result.stdout + result.stderr
+                self.assertEqual(
+                    result.returncode, 0,
+                    f"an honest quoted {key} workflow was refused:\n{out}")
+        # An escape spelling this reader cannot resolve is not read as job-less:
+        # the grant is still refused, and a read-only body fails closed.
+        self._assert_reason(
+            self._run_one_branch("evil", grant.format(key=r'"\u006ao\u0062s":')),
+            "grants-contents-write")
+        read_only = grant.format(key=r'"\u006ao\u0062s":').replace(
+            "contents: write", "contents: read")
+        self._assert_reason(self._run_one_branch("evil", read_only),
+                            "unreadable-token-permissions")
+
+    def test_the_sweep_walks_a_flow_jobs_mapping_with_an_escaped_quote(self):
+        """`\\"` does not close a double-quoted scalar; the mapping still counts."""
+        escaped_head = 'jobs: {build: {runs-on: "x\\", }}y"},\n'
+        grant = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            f"{escaped_head}"
+            "  env: {permissions: {contents: write}}}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", grant),
+                            "grants-contents-write")
+        callee = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            f"{escaped_head}"
+            "  env: {uses: other-org/ci/.github/workflows/publish-package.yml@main}}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", callee),
+                            "calls-a-release-workflow")
+        # The same exposure on the CONTINUATION line of an ordinary split flow.
+        split_grant = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs: {build: {runs-on: x},\n"
+            "  env: {permissions: {contents: write}}}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", split_grant),
+                            "grants-contents-write")
+        split_callee = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs: {build: {runs-on: x},\n"
+            "  env: {uses: other-org/ci/.github/workflows/publish-package.yml@main}}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", split_callee),
+                            "calls-a-release-workflow")
+
+    def test_the_sweep_does_not_read_a_quoted_scalar_as_a_permissions_key(self):
+        """`permissions` in a quoted VALUE is data; a quoted KEY is the token."""
+        for jobid in ("env", "name", "with"):
+            with self.subTest(case=jobid):
+                body = (
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    f"  {jobid}: {{runs-on: ubuntu-24.04, "
+                    'env: {NOTE: "permissions: write"}, '
+                    "steps: [{run: echo ok}]}\n"
+                )
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(
+                    result.returncode, 0,
+                    f"the sweep read the {jobid} note as a grant:\n{out}")
+                self.assertIn(
+                    "ok: no non-main branch carries a publish-capable workflow differing from main's",
+                    out)
+        quoted = (
+            "on: workflow_dispatch\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  build: {runs-on: ubuntu-24.04, "
+            '"permissions": {issues: read, "contents" : "write"}, '
+            "steps: [{run: echo ok}]}\n"
+        )
+        self._assert_reason(self._run_one_branch("evil", quoted),
+                            "grants-contents-write")
+
+    def test_the_sweep_scopes_a_scalar_body_and_the_jobs_block(self):
+        """A scalar-key body is data, and a column-0 key after `jobs:` ends the
+        block, so neither is a job declaration."""
+        # A `permissions:`-shaped body under `shell:` (or `name:`,
+        # `working-directory:`) is not the token — the key line and its deeper
+        # body are dropped. Dropping `shell` from the list must red this.
+        for key in ("name", "shell", "working-directory"):
+            with self.subTest(case=f"{key}-body"):
+                body = (
+                    "on: workflow_dispatch\n"
+                    "permissions: read-all\n"
+                    "jobs:\n"
+                    "  build:\n"
+                    "    runs-on: ubuntu-24.04\n"
+                    "    steps:\n"
+                    "      - run: echo ok\n"
+                    f"        {key}:\n"
+                    "          permissions: write\n"
+                )
+                result = self._run_one_branch("evil", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep read the {key} body as a grant:\n{out}")
+        # A top-level `env:` AFTER the jobs block runs to the file end; its flow
+        # value is data. A block-end bound of `-lt` (never true at indent 0)
+        # would exempt the line as a job declaration and read the write.
+        with self.subTest(case="post-jobs-top-level-key"):
+            body = (
+                "on: workflow_dispatch\n"
+                "permissions: read-all\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    steps: [{run: echo ok}]\n"
+                "env: {note: x, permissions: {contents: write}}\n"
+            )
+            result = self._run_one_branch("evil", body)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep read a top-level value as a grant:\n{out}")
+
+    def test_the_sweep_skips_a_jobs_decoy_inside_a_quoted_scalar(self):
+        """A `jobs:`-shaped line INSIDE a multi-line quoted scalar is text, and a
+        `jobs:` key carrying an anchor or a tag is still the key.
+
+        The locator used to adopt the decoy as its single candidate and delete
+        the real job ids, so a real grant or remote callee printed `ok`. When
+        the file's key location cannot be proven at all (a plain real key under
+        a bodyed decoy, or a decoy with no body) it is refused as
+        unclassifiable rather than trusted either way."""
+        dq = 'name: "start\njobs:\n  fake: true\nend"\n'
+        sq = "name: 'start\njobs:\n  fake: true\nend'\n"
+        runname = 'run-name: "build\njobs:\n  fake: true\ndone"\n'
+        head = "on: workflow_dispatch\npermissions: read-all\n"
+        callee = ("&j jobs:\n  shell:\n"
+                  "    uses: other-org/ci/.github/workflows/publish.yml@main\n")
+        grant = ("&j jobs:\n  env:\n    permissions:\n      contents: write\n")
+        cases = (
+            ("dq-decoy-anchored-callee", dq + head + callee,
+             "calls-a-release-workflow"),
+            ("dq-decoy-tagged-grant",
+             dq + head + grant.replace("&j", "!!str", 1),
+             "grants-contents-write"),
+            ("dq-decoy-anchored-grant", dq + head + grant,
+             "grants-contents-write"),
+            ("runname-decoy-anchored-grant", runname + head + grant,
+             "grants-contents-write"),
+            ("sq-decoy-anchored-callee", sq + head + callee,
+             "calls-a-release-workflow"),
+            ("no-decoy-anchored-callee",
+             "name: simple\n" + head + callee, "calls-a-release-workflow"),
+            ("no-decoy-plain-callee",
+             "name: simple\n" + head +
+             "jobs:\n  shell:\n"
+             "    uses: other-org/ci/.github/workflows/publish.yml@main\n",
+             "calls-a-release-workflow"),
+            # Unprovable key location: the decoy has a body but the real key is
+            # the bare `jobs`, so no presentation tells the two apart.
+            ("dq-decoy-plain-real-key",
+             dq + head +
+             "jobs:\n  shell:\n"
+             "    uses: other-org/ci/.github/workflows/publish.yml@main\n",
+             "unreadable-token-permissions"),
+            # Unprovable key location: the decoy carries no body, so even its
+            # shape is uninformative.
+            ("dq-decoy-no-body",
+             'name: "start\njobs:\nend"\n' + head + callee,
+             "unreadable-token-permissions"),
+        )
+        for name, body, reason in cases:
+            with self.subTest(case=name):
+                self._assert_reason(self._run_one_branch("evil", body), reason)
+
+        honest = (
+            ("anchored-honest",
+             "on: workflow_dispatch\npermissions: read-all\n&j jobs:\n"
+             "  build:\n    runs-on: ubuntu-24.04\n    permissions:\n"
+             "      contents: read\n    steps:\n      - run: echo ok\n"),
+            ("decoy-plain-honest",
+             dq + head +
+             "jobs:\n  build:\n    runs-on: ubuntu-24.04\n    permissions:\n"
+             "      contents: read\n    steps:\n      - run: echo ok\n"),
+            ("decoy-anchored-honest",
+             dq + head +
+             "&j jobs:\n  build:\n    runs-on: ubuntu-24.04\n    permissions:\n"
+             "      contents: read\n    steps:\n      - run: echo ok\n"),
+        )
+        for name, body in honest:
+            with self.subTest(case=name):
+                out = self._run_one_branch("evil", body)
+                self.assertEqual(
+                    out.returncode, 0,
+                    f"the sweep refused an honest {name}:\n"
+                    f"{out.stdout}{out.stderr}")
+
+    def test_the_sweep_decodes_yaml_escapes_in_a_double_quoted_value(self):
+        """`uses: "o/ci\\x2f.github\\x2fworkflows\\x2fp.yml@main"` is a remote
+        callee to YAML and GitHub, so the escapes are decoded before the callee
+        and publisher readers run. An escape the reader cannot decode is refused
+        rather than left standing as literal text."""
+        head = ("name: pwn\non: workflow_dispatch\npermissions: read-all\n"
+                "jobs:\n  build:\n    runs-on: ubuntu-24.04\n")
+        cases = (
+            ("hex-escape",
+             head + '    steps:\n      - uses: '
+                    '"other-org/ci\\x2f.github\\x2fworkflows'
+                    '\\x2fpublish-package.yml@main"\n'),
+            ("unicode-escape-flow",
+             "name: pwn\non: workflow_dispatch\npermissions: read-all\n"
+             "jobs: {build: {runs-on: ubuntu-24.04, steps: [{uses: "
+             '"other-org/ci\\u002f.github\\u002fworkflows'
+             '\\u002fpublish-package.yml@v1"}]}}\n'),
+            ("job-level-hex-escape",
+             "name: pwn\non: workflow_dispatch\npermissions: read-all\n"
+             'jobs:\n  call:\n    uses: "other-org/ci\\x2f.github'
+             '\\x2fworkflows\\x2fpublish-package.yml@main"\n'),
+            ("tagged-str-unicode-escape",
+             head + '    steps:\n      - uses: !!str '
+                    '"other-org/ci\\u002f.github\\u002fworkflows'
+                    '\\u002fpublish-package.yml@v2"\n'),
+            ("escaped-forward-slash",
+             head + '    steps:\n      - uses: "other-org/ci\\/.github'
+                    '\\/workflows\\/publish-package.yml@main"\n'),
+            ("leading-char-escape",
+             head + '    steps:\n      - uses: "\\u006fther-org/ci'
+                    '/.github/workflows/publish.yml@main"\n'),
+        )
+        for name, body in cases:
+            with self.subTest(case=name):
+                self._assert_reason(self._run_one_branch("evil", body),
+                                    "calls-a-release-workflow")
+        # An escape this reader does not decode is unknown, not literal.
+        self._assert_reason(
+            self._run_one_branch(
+                "evil",
+                head + '    steps:\n      - uses: "other-org/ci\\q.github'
+                       '\\qworkflows\\qpublish.yml@main"\n'),
+            "unreadable-escape-sequence")
+        # A quote inside a PLAIN scalar is data: a shell regex is not YAML
+        # escapes, and a known escape in a quoted `run:` value is honest.
+        honest = (
+            ("plain-scalar-backslash-regex",
+             head + '    steps:\n      - run: grep "\\d+" file.txt\n'),
+            ("quoted-run-known-escape",
+             head + '    steps:\n      - run: "echo one\\necho two"\n'),
+            ("uses-shaped-run-text",
+             head + '    steps:\n      - run: echo "uses: other-org/ci'
+                    '/.github/workflows/p.yml@main"\n'),
+        )
+        for name, body in honest:
+            with self.subTest(case=name):
+                out = self._run_one_branch("evil", body)
+                self.assertEqual(
+                    out.returncode, 0,
+                    f"the sweep refused an honest {name}:\n"
+                    f"{out.stdout}{out.stderr}")
+
+    def test_the_sweep_refuses_a_file_with_more_than_one_document(self):
+        """A second YAML document is a second workflow whose read-only token and
+        empty `jobs:` cannot be allowed to vouch for the first document's grant.
+        A single document with a leading `---` stays ok."""
+        self._assert_reason(
+            self._run_one_branch(
+                "evil",
+                "{'on': workflow_dispatch, permissions: {contents: read}, "
+                "jobs: {build: {runs-on: ubuntu-24.04, permissions: "
+                "{id-token: write}, steps: [{uses: actions/checkout@v4}]}}}\n"
+                "---\npermissions: read-all\njobs: {}\n"),
+            "unreadable-multiple-documents")
+        self._assert_reason(
+            self._run_one_branch(
+                "evil",
+                "---\nname: harmless\non: workflow_dispatch\n"
+                "permissions: read-all\njobs: {}\n---\n"
+                "permissions: read-all\njobs:\n  build:\n"
+                "    runs-on: ubuntu-24.04\n    permissions:\n"
+                "      contents: write\n    steps:\n      - run: echo pwn\n"),
+            "unreadable-multiple-documents")
+        out = self._run_one_branch(
+            "evil",
+            "---\nname: honest\non: workflow_dispatch\npermissions: read-all\n"
+            "jobs:\n  build:\n    runs-on: ubuntu-24.04\n"
+            "    steps:\n      - run: echo ok\n")
+        self.assertEqual(out.returncode, 0,
+                         f"a single document with a leading marker was refused:\n"
+                         f"{out.stdout}{out.stderr}")
+
+    def test_the_sweep_reads_a_quoted_permissions_key(self):
+        """`"permissions": read-all` is the same key as the bare spelling, so a
+        job that declares it read-only is covered, and a quoted key with a write
+        value is still a grant."""
+        plain_job = ("jobs:\n  build:\n    runs-on: ubuntu-24.04\n"
+                     "    %s\n    steps:\n      - run: echo ok\n")
+        honest = (
+            ("quoted-key-with-top-readall",
+             "on: workflow_dispatch\npermissions: read-all\n"
+             + plain_job % '"permissions": read-all'),
+            ("quoted-key-without-top-token",
+             "on: workflow_dispatch\n" + plain_job % '"permissions": read-all'),
+            ("bare-key-without-top-token",
+             "on: workflow_dispatch\n" + plain_job % "permissions: read-all"),
+        )
+        for name, body in honest:
+            with self.subTest(case=name):
+                out = self._run_one_branch("evil", body)
+                self.assertEqual(
+                    out.returncode, 0,
+                    f"the sweep refused an honest {name}:\n"
+                    f"{out.stdout}{out.stderr}")
+        self._assert_reason(
+            self._run_one_branch(
+                "evil", "on: workflow_dispatch\npermissions: read-all\n"
+                        + plain_job % '"permissions": write-all'),
+            "grants-write-all")
+
+    # ------------------------------------------------------------------
+    # Round 10: the decidable identity arm. These drive the sweep WITHOUT
+    # the fixture's own allowlist waiver, so the arm itself is under test.
+    # ------------------------------------------------------------------
+
+    WORKFLOW = ".github/workflows/build-candidate.yml"
+    ACTION = ".github/actions/build/action.yml"
+
+    def _identity_fixture(self, folder: pathlib.Path) -> None:
+        """main: a read-only workflow, a composite action and a README."""
+        self._repo(folder)
+        self._write(folder, "build-candidate.yml", self.CLEAN)
+        action = folder / ".github" / "actions" / "build" / "action.yml"
+        action.parent.mkdir(parents=True, exist_ok=True)
+        action.write_text(
+            "name: build\nruns:\n  using: composite\n  steps: []\n",
+            encoding="utf-8", newline="\n")
+        (folder / "README.md").write_text("fixture\n", encoding="utf-8",
+                                          newline="\n")
+        self._commit(folder, "main")
+
+    def test_the_sweep_refuses_a_branch_that_changes_a_workflow_or_action(
+            self):
+        """Blob oids decide; no YAML classification is involved."""
+        def edit_workflow(folder, _name):
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo edited"))
+
+        def add_workflow(folder, _name):
+            self._write(folder, "extra.yml", self.CLEAN)
+
+        def edit_action(folder, _name):
+            (folder / self.ACTION).write_text(
+                "name: build\nruns:\n  using: composite\n  steps:\n"
+                "    - run: echo edited\n", encoding="utf-8", newline="\n")
+
+        for label, mutate in (
+                ("modified workflow", edit_workflow),
+                ("added workflow", add_workflow),
+                ("modified action", edit_action)):
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                folder = pathlib.Path(tmp)
+                self._identity_fixture(folder)
+                self._branch(folder, "evil")
+                mutate(folder, "evil")
+                self._commit(folder, "change")
+                result = self._run_sweep_raw(folder)
+                out = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0, out)
+                self.assertIn("branch-changes-workflow-file", out)
+
+    def test_the_sweep_needs_no_allowlist_file(self):
+        """A missing allowlist is an empty list, not a crash and not a pass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo edited"))
+            self._commit(folder, "change")
+            self.assertFalse(
+                (folder / ".github" / "publish-sweep-allowlist.txt").exists())
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn("branch-changes-workflow-file", out)
+
+    def test_the_sweep_leaves_an_unchanged_branch_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_measures_against_the_merge_base_not_the_tip(self):
+        """A branch based on older main inherits content main already reviewed.
+
+        main moves on and REWRITES the workflow, so the branch's blob differs
+        from main's tip. The merge base still matches, and that is the
+        baseline; comparing to the tip would refuse reviewed inherited content.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "older")
+            self._switch(folder, "main")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo main moved on"))
+            self._commit(folder, "main moves on")
+            self._switch(folder, "older")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_permits_an_exactly_allowlisted_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo reviewed"))
+            self._commit(folder, "change")
+            oid = self._blob_oid(folder, "evil", self.WORKFLOW)
+            self._switch(folder, "main")
+            self._write_allowlist(folder, [f"evil {self.WORKFLOW} {oid}"])
+            self._commit(folder, "waiver")
+            self._switch(folder, "evil")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_refuses_an_allowlist_line_with_the_wrong_oid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo reviewed"))
+            self._commit(folder, "change")
+            self._switch(folder, "main")
+            self._write_allowlist(folder,
+                                  [f"evil {self.WORKFLOW} {'0' * 40}"])
+            self._commit(folder, "waiver")
+            self._switch(folder, "evil")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn("branch-changes-workflow-file", out)
+
+    def test_the_sweep_ignores_an_allowlist_written_on_the_branch(self):
+        """A branch cannot widen its own permission."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo self-served"))
+            self._commit(folder, "change")
+            oid = self._blob_oid(folder, "evil", self.WORKFLOW)
+            self._write_allowlist(folder, [f"evil {self.WORKFLOW} {oid}"])
+            self._commit(folder, "self-waiver")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn("branch-changes-workflow-file", out)
+
+    def test_the_sweep_ignores_a_deleted_workflow(self):
+        """A deletion adds no capability, so the identity arm leaves it alone."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            (folder / self.WORKFLOW).unlink()
+            self._commit(folder, "retire")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_allowlist_cannot_smuggle_a_publish_path(self):
+        """The parser never reads the allowlist, so a waiver cannot hide a grant."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml", self.PUBLISHING)
+            self._commit(folder, "publish")
+            oid = self._blob_oid(folder, "evil", self.WORKFLOW)
+            self._switch(folder, "main")
+            self._write_allowlist(folder, [f"evil {self.WORKFLOW} {oid}"])
+            self._commit(folder, "waiver")
+            self._switch(folder, "evil")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self._assert_reason(result, "grants-contents-write")
+            self.assertNotIn("branch-changes-workflow-file", out,
+                             "the parser's reason for a path must win over the "
+                             "identity arm's")
+
+        # The same change with no waiver at all: the parser refuses it and the
+        # identity arm must not pile a second reason onto the same path.
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml", self.PUBLISHING)
+            self._commit(folder, "publish")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self._assert_reason(result, "grants-contents-write")
+            self.assertNotIn("branch-changes-workflow-file", out,
+                             "a parser reason must win even with no waiver")
+
+    def test_the_sweep_handles_a_symlink_and_a_mode_only_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            path = folder / self.WORKFLOW
+            path.unlink()
+            path.symlink_to("target.yml")
+            self._commit(folder, "symlink")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn(self.WORKFLOW, out)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            (folder / self.WORKFLOW).chmod(0o755)
+            self._commit(folder, "mode only")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_identity_arm_end_to_end(self):
+        """Five divergent branches refused; three controls left clean."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+
+            def branch(name, mutate):
+                self._switch(folder, "main")
+                self._branch(folder, name)
+                mutate(folder, name)
+                self._commit(folder, name)
+
+            def edit(text):
+                return lambda f, _n: self._write(
+                    f, "build-candidate.yml",
+                    self.CLEAN.replace("echo ok", f"echo {text}"))
+
+            branch("b_modify", edit("one"))
+            branch("b_add", lambda f, _n: self._write(f, "extra.yml",
+                                                      self.CLEAN))
+            branch("b_action", lambda f, _n: (f / self.ACTION).write_text(
+                "name: build\nruns:\n  using: composite\n  steps:\n"
+                "    - run: echo two\n", encoding="utf-8", newline="\n"))
+            branch("b_rename", lambda f, _n: (f / self.WORKFLOW).rename(
+                f / ".github" / "workflows" / "renamed.yml"))
+            branch("b_wrongoid", edit("three"))
+            branch("b_allowed", edit("four"))
+
+            self._switch(folder, "main")
+            self._branch(folder, "b_identical")   # same commit as main
+            self._switch(folder, "main")
+            self._branch(folder, "b_delete")
+            (folder / self.WORKFLOW).unlink()
+            self._commit(folder, "delete")
+
+            allowed_oid = self._blob_oid(folder, "b_allowed", self.WORKFLOW)
+            self._switch(folder, "main")
+            self._write_allowlist(folder, [
+                f"b_allowed {self.WORKFLOW} {allowed_oid}",
+                f"b_wrongoid {self.WORKFLOW} {'0' * 40}",
+            ])
+            self._commit(folder, "allowlist")
+
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            for name in ("b_modify", "b_add", "b_action", "b_rename",
+                         "b_wrongoid"):
+                self.assertIn(name, out)
+            for name in ("b_allowed", "b_identical", "b_delete"):
+                self.assertNotIn(name, out)
+
+    # ------------------------------------------------------------------
+    # Round-10 addendum: a fork of main presents main's own reviewed bytes
+    # unchanged. That is not the branch's change, and refusing it failed
+    # every branch created from main -- with a refusal text that told the
+    # operator to delete the release workflow from their branch.
+    # ------------------------------------------------------------------
+
+    def _publishing_main(self, folder: pathlib.Path) -> None:
+        """main carries the publish-capable workflow, as the live repo does."""
+        self._repo(folder)
+        self._write(folder, "build-candidate.yml", self.PUBLISHING)
+        (folder / "README.md").write_text("fixture\n", encoding="utf-8",
+                                          newline="\n")
+        self._commit(folder, "main")
+
+    def test_the_sweep_leaves_a_fork_of_main_carrying_the_publisher_clean(self):
+        """A branch at main's own commit carries no change of its own."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._publishing_main(folder)
+            self._branch(folder, "feature-x")          # same commit as main
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, out)
+            self.assertIn(
+                "ok: no non-main branch carries a publish-capable workflow "
+                "differing from main's", out)
+
+    def test_the_sweep_still_refuses_a_stale_inherited_publisher(self):
+        """The parser's belt catches a stale file: its blob differs from main's
+        tip even though the branch never touched it. The identity arm stays
+        silent, because the blob equals the merge base."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._publishing_main(folder)
+            self._branch(folder, "stale")
+            self._switch(folder, "main")
+            self._write(folder, "build-candidate.yml", self.CLEAN)
+            self._commit(folder, "main retires the publisher")
+            self._switch(folder, "stale")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self._assert_reason(result, "grants-contents-write", branch="stale")
+            self.assertNotIn("branch-changes-workflow-file", out,
+                             "the stale file equals the merge base, so the "
+                             "identity arm must stay silent")
+
+    def test_the_sweep_leaves_a_stale_inherited_read_only_workflow_clean(self):
+        """The live-repo shape: audit-fixes-0.6.5, linux-port and windows-port
+        carry older read-only platform workflows and must stay clean."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._repo(folder)
+            self._write(folder, "build-candidate.yml", self.CLEAN)
+            (folder / "README.md").write_text("fixture\n", encoding="utf-8",
+                                              newline="\n")
+            self._commit(folder, "main v0")
+            self._branch(folder, "port")
+            self._switch(folder, "main")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo main v1"))
+            self._commit(folder, "main v1")
+            self._switch(folder, "port")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_leaves_a_change_equal_to_mains_tip_clean(self):
+        """The arm's second clause: adopting main's current bytes is not the
+        branch's own change."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "adopt")
+            self._switch(folder, "main")
+            tip = self.CLEAN.replace("echo ok", "echo main tip")
+            self._write(folder, "build-candidate.yml", tip)
+            self._commit(folder, "main tip")
+            self._switch(folder, "adopt")
+            self._write(folder, "build-candidate.yml", tip)
+            self._commit(folder, "adopt main's tip")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    def test_the_sweep_refuses_a_change_that_matches_neither_baseline(self):
+        """Neither inherited nor main's tip, so it is the branch's own change;
+        an exact read-only waiver is the only way through."""
+        def build(folder):
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml",
+                        self.CLEAN.replace("echo ok", "echo evil"))
+            self._commit(folder, "change")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            build(folder)
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn("branch-changes-workflow-file", out)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            build(folder)
+            oid = self._blob_oid(folder, "evil", self.WORKFLOW)
+            self._switch(folder, "main")
+            self._write_allowlist(folder, [f"evil {self.WORKFLOW} {oid}"])
+            self._commit(folder, "waiver")
+            self._switch(folder, "evil")
+            result = self._run_sweep_raw(folder)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + result.stderr)
+
+    # -- Addendum #3: the closing summary names each class it refused. -------
+    #
+    # The old banner claimed a publish-capable workflow for every offender and
+    # advised deleting "the file on the ref above". Once the identity arm can
+    # refuse a read-only rename, both statements are false for that branch, so
+    # each class is counted and summarised separately.
+
+    def test_the_summary_names_only_the_publish_capable_class(self):
+        """A parser refusal is a publish-capable workflow, not a CI change."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "evil")
+            self._write(folder, "build-candidate.yml", self.PUBLISHING)
+            self._commit(folder, "publish")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn(
+                "refusing: 1 non-main branch carries a publish-capable "
+                "workflow (1)", out)
+            self.assertNotIn("changed its CI definition", out)
+            self.assertIn("remove the grant on the branch above", out)
+            self.assertNotIn("Delete the file", out)
+
+    def test_the_summary_names_only_the_ci_change_class_for_a_rename(self):
+        """A read-only rename is an identity refusal. The summary must not call
+        it a publish-capable workflow, and the retired advice to delete the file
+        must not come back for it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "clean-rename")
+            subprocess.run(
+                ["git", "mv", self.WORKFLOW,
+                 ".github/workflows/renamed.yml"],
+                cwd=folder, check=True, capture_output=True, text=True)
+            self._commit(folder, "rename")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn(
+                "refusing: 1 non-main branch changed its CI definition "
+                "relative to the merge base with main (1)", out)
+            self.assertNotIn("publish-capable workflow", out)
+            self.assertNotIn("Delete the file", out)
+            self.assertIn("publish-sweep-allowlist.txt", out)
+
+    def test_the_summary_names_both_classes_when_both_are_present(self):
+        """One publish-capable branch plus one read-only rename: both classes,
+        both counts, both remedies, and one branch total."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._identity_fixture(folder)
+            self._branch(folder, "pub")
+            self._write(folder, "build-candidate.yml", self.PUBLISHING)
+            self._commit(folder, "publish")
+            self._switch(folder, "main")
+            self._branch(folder, "ren")
+            subprocess.run(
+                ["git", "mv", self.WORKFLOW,
+                 ".github/workflows/renamed.yml"],
+                cwd=folder, check=True, capture_output=True, text=True)
+            self._commit(folder, "rename")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, out)
+            self.assertIn(
+                "refusing: 1 non-main branch carries a publish-capable "
+                "workflow; 1 non-main branch changed its CI definition "
+                "relative to the merge base with main (2)", out)
+            self.assertIn("remove the grant on the branch above", out)
+            self.assertIn("publish-sweep-allowlist.txt", out)
+            self.assertNotIn("Delete the file", out)
+
+    # ------------------------------------------------------------------
+    # Round 12 (F1): the merge-base skip is granted ONLY for the paths the
+    # parser actually reads. It reads `.github/workflows` only, so an
+    # inherited `.github/actions` blob is this branch's CI definition. The
+    # live shape: main forks a job-level `contents: write` workflow that calls
+    # a composite publisher, then main rewrites ONLY the action to a benign
+    # body, leaving the workflow byte-identical. The old skip let a branch
+    # created before the rewrite keep the publisher and still print ok.
+    # ------------------------------------------------------------------
+
+    _PUB_WORKFLOW = (
+        "name: ci\n"
+        "on: workflow_dispatch\n"
+        "permissions:\n"
+        "  contents: read\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    permissions:\n"
+        "      contents: write\n"
+        "    steps:\n"
+        "      - uses: ./.github/actions/pub\n"
+    )
+    _PUB_ACTION = (
+        "name: pub\n"
+        "runs:\n"
+        "  using: composite\n"
+        "  steps:\n"
+        "    - run: gh release create v9 --notes stale\n"
+        "      shell: bash\n"
+        "      env:\n"
+        "        GH_TOKEN: ${{ github.token }}\n"
+    )
+    _BENIGN_ACTION = (
+        "name: pub\n"
+        "runs:\n"
+        "  using: composite\n"
+        "  steps:\n"
+        "    - run: echo fixed\n"
+        "      shell: bash\n"
+    )
+    _READONLY_ACTION = (
+        "name: pub\n"
+        "runs:\n"
+        "  using: composite\n"
+        "  steps:\n"
+        "    - run: echo reviewed\n"
+        "      shell: bash\n"
+    )
+    _ACTION_PATH = ".github/actions/pub/action.yml"
+
+    def _write_action(self, folder: pathlib.Path, body: str) -> None:
+        path = folder / self._ACTION_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8", newline="\n")
+
+    def _stale_action_fixture(self, folder: pathlib.Path) -> None:
+        """main A: a write-grant workflow calling a publishing composite action."""
+        self._repo(folder)
+        self._write(folder, "ci.yml", self._PUB_WORKFLOW)
+        self._write_action(folder, self._PUB_ACTION)
+        self._commit(folder, "A")
+        self._branch(folder, "old")
+        self._switch(folder, "main")
+        self._write_action(folder, self._BENIGN_ACTION)
+        self._commit(folder, "B rewrites only the action")
+        self._switch(folder, "old")
+
+    def test_the_sweep_refuses_an_inherited_action_that_is_not_mains_tip(self):
+        """F1: the branch's ci.yml equals main's tip, but its action publishes.
+
+        The parser reads `.github/workflows` only and skips ci.yml as
+        byte-identical to main's tip. The merge-base skip must therefore not
+        cover the action path: the blob is not main's own content, so it is
+        this branch's CI definition and dispatching it runs the stale
+        publisher.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._stale_action_fixture(folder)
+            workflow = self._git_out(folder, "rev-parse", "main:.github/workflows/ci.yml").strip()
+            branch_workflow = self._git_out(folder, "rev-parse", "old:.github/workflows/ci.yml").strip()
+            self.assertEqual(workflow, branch_workflow,
+                             "fixture: the workflow must be byte-identical to main's tip")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            self.assertIn(
+                f"old {self._ACTION_PATH} branch-changes-workflow-file", out)
+            self.assertNotIn("ok:", out,
+                             "the sweep may not print an ok line while the "
+                             "branch carries a stale publishing action")
+
+    def test_the_sweep_leaves_mains_own_action_clean(self):
+        """Control: adopting main's tip action verbatim is not a change."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._repo(folder)
+            self._write(folder, "ci.yml", self.CLEAN)
+            self._write_action(folder, self._READONLY_ACTION)
+            self._commit(folder, "main")
+            self._branch(folder, "adopt")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, out)
+            self.assertNotIn("branch-changes-workflow-file", out)
+            self.assertIn(
+                "ok: no non-main branch carries a publish-capable workflow "
+                "differing from main's", out)
+
+    def test_the_sweep_refuses_a_stale_inherited_read_only_action(self):
+        """Fail-closed direction: a stale inherited READ-ONLY action is refused
+        too. The remedy is merge/rebase or an exact allowlist line, because the
+        parser never reads action bodies."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._repo(folder)
+            self._write(folder, "ci.yml", self.CLEAN)
+            self._write_action(folder, self._READONLY_ACTION)
+            self._commit(folder, "A")
+            self._branch(folder, "inherited")
+            self._switch(folder, "main")
+            self._write_action(folder, self._BENIGN_ACTION)
+            self._commit(folder, "main moves the action on")
+            self._switch(folder, "inherited")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            self.assertIn(
+                f"inherited {self._ACTION_PATH} branch-changes-workflow-file",
+                out)
+            self.assertNotIn("ok:", out)
+
+            # The documented over-refusal is waived by one exact line on main.
+            oid = self._blob_oid(folder, "inherited", self._ACTION_PATH)
+            self._switch(folder, "main")
+            self._write_allowlist(folder, [f"inherited {self._ACTION_PATH} {oid}"])
+            self._commit(folder, "waiver")
+            self._switch(folder, "inherited")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, out)
+            self.assertNotIn("branch-changes-workflow-file", out)
+
+    def test_the_sweep_still_refuses_an_added_action(self):
+        """Keep the identity4 `e_action` shape: a newly ADDED action is refused
+        even though the parser does not read it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._repo(folder)
+            self._write(folder, "ci.yml", self.CLEAN)
+            self._commit(folder, "main")
+            self._branch(folder, "added")
+            self._write_action(folder, self._READONLY_ACTION)
+            self._commit(folder, "add an action")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            self.assertIn(
+                f"added {self._ACTION_PATH} branch-changes-workflow-file", out)
+            self.assertNotIn("ok:", out)
+
+    def test_the_sweep_refuses_a_symlinked_allowlist(self):
+        """F6: the allowlist must be a regular file (mode 100644).
+
+        `git cat-file blob` on a symlink returns the link target, not reviewed
+        file text, so a symlink committed at the allowlist path whose target
+        string happens to read as a valid waiver line must be refused
+        (`unreadable-allowlist`), never followed.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            self._repo(folder)
+            self._write(folder, "ci.yml", self.CLEAN)
+            self._write_action(folder, self._READONLY_ACTION)
+            self._commit(folder, "A")
+            self._branch(folder, "topic")
+            self._write_action(folder, self._BENIGN_ACTION)
+            self._commit(folder, "topic changes the action")
+            oid = self._blob_oid(folder, "topic", self._ACTION_PATH)
+            self._switch(folder, "main")
+            allowlist = folder / ".github" / "publish-sweep-allowlist.txt"
+            allowlist.parent.mkdir(parents=True, exist_ok=True)
+            allowlist.symlink_to(f"topic {self._ACTION_PATH} {oid}")
+            self._commit(folder, "allowlist as a symlink")
+            self._switch(folder, "topic")
+            result = self._run_sweep_raw(folder)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            self.assertIn(
+                f"topic {self._ACTION_PATH} unreadable-allowlist", out)
+            self.assertNotIn("ok:", out)
+
 
 class SweepFailClosedPins(unittest.TestCase):
     """The sweep must never turn a failure to read into "ok".
@@ -2062,6 +4115,71 @@ class SweepFailClosedPins(unittest.TestCase):
                       "not a phrase a comment can carry")
         self.assertIn("git ls-tree -r", code)
         self.assertNotIn('git show "${ref}:${path}"', code)
+
+    def test_the_sweep_refuses_a_shallow_clone(self):
+        """F7: with `--depth 1` there is no merge base, so the identity arm can
+        prove nothing. The sweep must state the precondition once and stop,
+        not read partial history as clean.
+
+        The behavioural half of the pin lives here because a shallow clone is
+        an environment, not a fixture the other sweep tests build.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            fixture = root / "fixture"
+            fixture.mkdir()
+
+            def git(*args: str) -> None:
+                subprocess.run(["git", *args], cwd=fixture, check=True,
+                               capture_output=True, text=True)
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.name", "sweep-fixture")
+            git("config", "user.email", "sweep-fixture@example.invalid")
+            git("config", "commit.gpgsign", "false")
+            workflows = fixture / ".github" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "build-candidate.yml").write_text(
+                "name: candidate\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    permissions:\n"
+                "      contents: read\n",
+                encoding="utf-8", newline="\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "main")
+            git("switch", "-q", "-c", "topic")
+            (workflows / "topic.yml").write_text(
+                "name: topic\n"
+                "on: workflow_dispatch\n"
+                "jobs:\n"
+                "  build:\n"
+                "    runs-on: ubuntu-24.04\n"
+                "    permissions:\n"
+                "      contents: read\n",
+                encoding="utf-8", newline="\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "topic")
+
+            clone = root / "clone"
+            subprocess.run(
+                ["git", "clone", "-q", "--depth", "1", "--branch", "topic",
+                 f"file://{fixture}", str(clone)],
+                check=True, capture_output=True, text=True)
+            is_shallow = subprocess.run(
+                ["git", "rev-parse", "--is-shallow-repository"], cwd=clone,
+                check=True, capture_output=True, text=True).stdout.strip()
+            self.assertEqual(is_shallow, "true",
+                             "fixture: the clone must really be shallow")
+            result = run_bash_file(ROOT / "scripts" / "check-publish-paths.sh",
+                                   str(fixture), cwd=clone, timeout=60)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, out)
+            self.assertIn("refusing: the repository is a shallow clone", out)
+            self.assertNotIn("ok:", out,
+                             "a shallow clone must never be read as clean")
 
 
 class GuardBodyPins(unittest.TestCase):

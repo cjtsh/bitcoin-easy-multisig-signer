@@ -676,23 +676,69 @@ class HwiIdentityPins(unittest.TestCase):
                         ProbeError, "does not match its recorded digest"):
                     probe._verify_hwi_payload([str(root)])
 
-    def test_a_bytecode_file_with_nonzero_flags_is_refused(self):
-        """A hash-based (PEP 552) pyc is a body the pin never recorded."""
+    def test_a_hash_flagged_bytecode_file_is_accepted_when_its_code_matches(self):
+        """PEP 552 hash-based pyc trees are legal; the body is what is pinned.
+
+        `compileall --invalidation-mode checked-hash`/`unchecked-hash` writes
+        flags 3/1 with the source hash where a timestamp pyc carries mtime and
+        size. Such a pyc never takes the stale shortcut -- the interpreter
+        uses it without consulting the source's timestamp -- so the walk has
+        to prove its body equals the compiled source. Refusing every nonzero
+        flag was a false refusal of a legitimate install (audit J).
+        """
         with tempfile.TemporaryDirectory() as folder:
             root, manifest = _written_package(folder)
             source = root / "hwilib" / "commands.py"
-            stat = source.stat()
-            header = (
-                importlib.util.MAGIC_NUMBER
-                + (1).to_bytes(4, "little")
-                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
-                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little")
-            )
             body = marshal.dumps(
                 compile(source.read_bytes(), str(source), "exec"))
             cache = root / "hwilib" / "__pycache__"
             cache.mkdir()
-            (cache / "commands.cpython-312.pyc").write_bytes(header + body)
+            for flags in (1, 3):
+                with self.subTest(flags=flags):
+                    (cache / "commands.cpython-312.pyc").write_bytes(
+                        importlib.util.MAGIC_NUMBER
+                        + flags.to_bytes(4, "little")
+                        + bytes(8)
+                        + body)
+                    with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest,
+                                    clear=True):
+                        verified = probe._verify_hwi_payload([str(root)])
+                    self.assertEqual(len(verified), 3)
+
+    def test_a_hash_flagged_bytecode_file_with_a_foreign_body_is_refused(self):
+        """The body, not the flag, is what the pin reads."""
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            recorded = compile(source.read_bytes(), str(source), "exec")
+            foreign = compile(b"VALUE = 'attacker'\n", str(source), "exec")
+            self.assertNotEqual(recorded.co_consts, foreign.co_consts)
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(
+                importlib.util.MAGIC_NUMBER
+                + (1).to_bytes(4, "little")
+                + bytes(8)
+                + marshal.dumps(foreign))
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_an_unknown_bytecode_invalidation_flag_is_refused(self):
+        """A flag this reader does not know is not a shape it can verify."""
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            body = marshal.dumps(
+                compile(source.read_bytes(), str(source), "exec"))
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(
+                importlib.util.MAGIC_NUMBER
+                + (2).to_bytes(4, "little")
+                + bytes(8)
+                + body)
             with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
                 with self.assertRaisesRegex(
                         ProbeError, "does not match its recorded digest"):
@@ -891,6 +937,50 @@ class HwiIdentityPins(unittest.TestCase):
             self.assertNotEqual(
                 tuple(type(item).__name__ for item in genuine.co_consts),
                 tuple(type(item).__name__ for item in retyped.co_consts))
+            cache = root / "hwilib" / "__pycache__"
+            cache.mkdir()
+            (cache / "commands.cpython-312.pyc").write_bytes(
+                header + marshal.dumps(retyped))
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                with self.assertRaisesRegex(
+                        ProbeError, "does not match its recorded digest"):
+                    probe._verify_hwi_payload([str(root)])
+
+    def test_a_bytecode_file_with_a_signed_zero_is_refused(self):
+        """CT-102: `0.0 == -0.0` is not enough to call two constants equal.
+
+        The type tag closed `1` vs `1.0`, but a float still compared by value
+        alone, so a pyc whose constant is negative zero passed. Floats and
+        complex numbers are compared through `repr` now. The fixture asserts
+        the equality it exploits before it plants the file, so a green run
+        cannot pass because the fixture stopped reproducing the defect.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            root, manifest = _written_package(folder)
+            source = root / "hwilib" / "commands.py"
+            source.write_text("VALUE = 0.0\n", encoding="utf-8")
+            manifest["commands.py"] = hashlib.sha256(
+                source.read_bytes()).hexdigest()
+            with patch.dict(probe.HWI_PAYLOAD_MANIFEST, manifest, clear=True):
+                self.assertEqual(
+                    len(probe._verify_hwi_payload([str(root)])), 3)
+            stat = source.stat()
+            header = (
+                importlib.util.MAGIC_NUMBER
+                + bytes(4)
+                + (int(stat.st_mtime) & 0xFFFFFFFF).to_bytes(4, "little")
+                + (stat.st_size & 0xFFFFFFFF).to_bytes(4, "little"))
+            genuine = compile(source.read_bytes(), str(source), "exec",
+                              dont_inherit=True)
+            retyped = genuine.replace(co_consts=tuple(
+                -item if isinstance(item, float) and item == 0.0 else item
+                for item in genuine.co_consts))
+            self.assertEqual(genuine.co_code, retyped.co_code)
+            self.assertEqual(genuine.co_linetable, retyped.co_linetable)
+            # `(0.0, None) == (-0.0, None)` -- the whole defect.
+            self.assertEqual(genuine.co_consts, retyped.co_consts)
+            self.assertNotEqual(
+                repr(genuine.co_consts), repr(retyped.co_consts))
             cache = root / "hwilib" / "__pycache__"
             cache.mkdir()
             (cache / "commands.cpython-312.pyc").write_bytes(
@@ -1212,12 +1302,17 @@ class HwiIdentityPins(unittest.TestCase):
             self.assertNotIn(str(decoy), fixed.stdout + fixed.stderr)
             self.assertEqual(command[6], str(entry))
 
-    def test_the_helper_search_path_puts_the_verified_roots_first(self):
-        """CT-90 (site hook): only the verified root may lead the helper path.
+    def test_the_helper_search_path_never_precedes_the_interpreter(self):
+        """CT-90 (stdlib shadowing): the pinned tree must not lead `sys.path`.
 
-        The `-c` bootstrap inserts the pinned tree first and the interpreter's
-        own site-packages after it, so a directory that is not on the verified
-        list can never precede the tree the payload check just hashed.
+        The argv carries every directory the helper needs, but the bootstrap
+        must APPEND them. A verified root is a `hwilib` package directory, so
+        the directory it contributes is its parent -- in an installed
+        environment, site-packages. Prepending that directory put every other
+        file in site-packages ahead of the interpreter's own modules, so a
+        planted `ctypes.py` ran attacker code inside the helper that had just
+        passed the identity check. Appending keeps the standard library and
+        the bundled extension modules first.
         """
         entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
         with patch.object(sys, "frozen", False, create=True), \
@@ -1237,14 +1332,69 @@ class HwiIdentityPins(unittest.TestCase):
                          ["/pinned", "/venv/lib", "/venv/plat"])
         self.assertEqual(directories, len(command) - 8)
         # The argv shape is only as strong as the bootstrap that consumes it:
-        # the roots have to be *prepended* by slice so nothing on the existing
-        # path can precede them. A future edit to `extend`, `append` or
-        # `insert` would keep this test's argv green while moving the verified
-        # tree behind a planted directory.
-        self.assertIn("sys.path[:0] =", probe._HWI_HELPER_BOOTSTRAP)
-        self.assertNotIn("extend", probe._HWI_HELPER_BOOTSTRAP)
-        self.assertNotIn("append", probe._HWI_HELPER_BOOTSTRAP)
-        self.assertNotIn("insert", probe._HWI_HELPER_BOOTSTRAP)
+        # the directories have to be *appended* so the interpreter's own
+        # entries -- the standard library, `lib-dynload` -- are consulted
+        # first. A future edit that prepends them by slice or `insert` would
+        # keep this test's argv green while letting a file in site-packages
+        # shadow a standard-library module inside the verified helper.
+        self.assertIn("sys.path.extend(", probe._HWI_HELPER_BOOTSTRAP)
+        self.assertNotIn("sys.path[:0]", probe._HWI_HELPER_BOOTSTRAP)
+        self.assertNotIn("insert(", probe._HWI_HELPER_BOOTSTRAP)
+
+    def test_a_search_directory_module_cannot_shadow_the_stdlib(self):
+        """CT-90 (stdlib shadowing): the search directories are appended.
+
+        The directory the helper has to import `hwilib` from is the pinned
+        package's parent -- in an installed environment, site-packages itself,
+        which also holds every dependency and can hold any module name. When
+        the bootstrap prepended it, a planted `ctypes.py` ran attacker code
+        inside the helper that had just passed the identity check. The spawn
+        below plants exactly that file: the standard library has to win, and
+        the prepending bootstrap is kept as the attacker's control so a green
+        run cannot pass for an unrelated reason.
+        """
+        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
+        with tempfile.TemporaryDirectory() as folder:
+            search = Path(folder) / "search"
+            package = _importable_package(str(search), "PINNED")
+            marker = Path(folder) / "shadow-ran"
+            (search / "ctypes.py").write_text(
+                "import pathlib\n"
+                "pathlib.Path(%r).write_text('ran')\n" % str(marker),
+                encoding="utf-8")
+
+            with patch.object(sys, "frozen", False, create=True), \
+                    patch.object(probe, "_hwi_package_roots",
+                                 return_value=[str(package / "hwilib")]), \
+                    patch.object(probe.sysconfig, "get_paths",
+                                 return_value={"purelib": str(search),
+                                               "platlib": str(search)}):
+                command = _hwi_command("hwi")
+            fixed = subprocess.run(
+                command, check=False, capture_output=True, text=True)
+            self.assertIn("PINNED", fixed.stdout, fixed.stderr)
+            self.assertFalse(
+                marker.exists(),
+                "a file in the search directory shadowed a standard-library "
+                "module inside the verified helper")
+
+            # Attacker's control: the prepending bootstrap this fix replaced
+            # has to lose to the shim, or the assertion above measures nothing.
+            old_bootstrap = (
+                "import runpy, sys\n"
+                "entry = sys.argv[1]\n"
+                "directories = int(sys.argv[2])\n"
+                "sys.path[:0] = sys.argv[3:3 + directories]\n"
+                "sys.argv = [entry, *sys.argv[3 + directories:]]\n"
+                "runpy.run_path(entry, run_name='__main__')\n")
+            old = subprocess.run(
+                [sys.executable, "-I", "-S", "-P", "-c", old_bootstrap,
+                 str(entry), "1", str(search)],
+                check=False, capture_output=True, text=True)
+            self.assertIn("PINNED", old.stdout, old.stderr)
+            self.assertTrue(
+                marker.exists(),
+                "the old prepending bootstrap must be shadowable")
 
     def test_a_swapped_sibling_module_does_not_inherit_a_cached_verdict(self):
         """CT-90 road 3: the cached verdict covers the tree, not two files.

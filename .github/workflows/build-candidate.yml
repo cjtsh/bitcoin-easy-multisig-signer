@@ -47,6 +47,11 @@ jobs:
       version: ${{ steps.read.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The publish-path sweep compares every branch's CI definition with the
+          # merge base it shares with main, so it needs the real commit graph
+          # rather than the single-commit default checkout.
+          fetch-depth: 0
       - name: Refuse a second publish path on any ref
         run: |
           set -euo pipefail
