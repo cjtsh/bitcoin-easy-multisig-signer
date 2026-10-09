@@ -73,8 +73,9 @@ vacuous by construction.** The sweep compares each non-main branch's blob object
 `.github/workflows/` and `.github/actions/` against both the merge base it shares with `main` and
 the allowed ref's tip, so it can tell an inherited file apart from the branch's own change, with
 the YAML parser kept as a second belt for `main`'s own shared workflows. The allowlist is read
-from `main` only and can never waive a publish-capable change, because the parser never consults
-it. On a branch dispatch the sweep necessarily runs that branch's copy of the script, so its
+from `main` only, and it suppresses the identity arm's refusal for exactly the branch, path and
+blob it names; the parser arm is independent of that file and decides only the shapes it can read,
+refusing what it cannot. On a branch dispatch the sweep necessarily runs that branch's copy of the script, so its
 verdict is only as trustworthy as the branch; a branch that rewrites the workflow file removes the
 guard itself, which is why the binding controls are platform-side — a tag ruleset on `v*` and tight
 write access — alongside the fact that every credential is scoped to the main-only environments. On 2026-10-08 the fourteen
@@ -92,6 +93,19 @@ can create an unsigned release page with the job's built-in token. The binding c
 platform-side — a tag ruleset on `v*` and tight write access — and `PHASE-HANDOFF.md` records them
 as an owner decision that is not done. The recorded live claim remains vacuous by construction,
 and this is a measurement of this revision, not a final verdict.
+
+**Round 19 repairs the node-property blind spot that defeated the round-17 reader.** A quote left
+untracked behind a node property (`!!str`, an anchor, a tag or a URI tag) let a column-zero
+continuation of a job's `name:` end the `jobs:` block early, so the body of the next job — including
+its `contents: write` grant — was stripped as scalar data and the sweep printed the ok line. The
+class is pre-existing: it reproduces on revisions before round 16. The readers now consume a node
+property as one token and a property before the opening quote opens it, with the escape and doubling
+branches pinned against mutants. On this revision the full suite is `Ran 764 tests in 308.429s` —
+**OK** and `tests/test_workflow_config.py` alone is `Ran 177 tests in 141.472s` — **OK**; referee F's
+reproducer refuses, its 18-case probe reports `FALSE OK COUNT: 0`, and its five variants v15–v19 are
+all refused, while referee E's corpus and referee B's differential harness stay at `DEFECTS=0`. The
+recorded live claim remains vacuous by construction, and this is a measurement of this revision, not
+a final verdict.
 
 The signed, notarized `publish=false` candidate for the frozen cycle-5
 revision is green: run 37783584533 at `1a5e9bf` (documentation only on top of

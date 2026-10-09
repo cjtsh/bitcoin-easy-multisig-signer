@@ -2888,6 +2888,285 @@ class PublishPathSweepTests(unittest.TestCase):
         self._assert_reason(self._run_one_branch("evil", write_named_build),
                             "grants-contents-write")
 
+    # -- Round 19: a node property before a quoted scalar. -------------------
+    #
+    # Referee F F-1: `name: !!str "a` (a tag, anchor or bare `!` between the
+    # key and the opening quote) did not open the quote, because the character
+    # before it was the last character of the property token and not one of
+    # the boundary characters. The column-0 continuation `b"` then read as the
+    # end of the `jobs:` block, the second job fell past the truncated bound,
+    # and its body -- `permissions: contents: write` -- was stripped as data.
+    # PyYAML (and libyaml, and Ruby Psych) read the grant, so the sweep was a
+    # false ok. The property tokens `!`/`!!`/`!<uri>`, `&name` and `*name` are
+    # node position, so the quote after one of them opens; the second job's id
+    # is a stripped-key spelling in every case, so the write is only found when
+    # the block bound is right.
+    #
+    # A later pass over the same rule found that the property token itself can
+    # carry the boundary characters: the standard verbatim tag
+    # `!<tag:yaml.org,2002:str>` holds both `:` and `,`, and a plain tag suffix
+    # such as `!foo:bar` holds `:`. Consuming the token to whitespace/flow/quote
+    # (and a `!<...>` verbatim tag through its `>`) makes the rule general over
+    # any property a YAML reader accepts, rather than a list of spellings.
+
+    def _assert_refused_named(self, body, reason, branch="evil"):
+        """Refused with the named reason and with no ok line on either stream.
+
+        `_assert_reason` already proves the refusal and the reason; round 19
+        additionally pins the absence of the success line, because the failure
+        mode referee F found was exactly a green `ok:` printed over a readable
+        grant.
+        """
+        result = self._run_one_branch(branch, body)
+        self._assert_reason(result, reason, branch=branch)
+        self.assertNotIn("ok: no non-main branch",
+                         result.stdout + result.stderr,
+                         "the sweep printed the ok line while refusing")
+
+    def test_the_sweep_refuses_a_write_after_a_node_property_and_column_zero(
+            self):
+        """A tag, anchor or alias before a quoted scalar is node position.
+
+        Every spelling a YAML reader accepts is covered: `!`, `!!str`, a
+        verbatim URI tag, a tag with a `:` in its suffix, an anchor, a tag after
+        an anchor, and a tagged key. The continuation is at column 0, so only a
+        tracked quote keeps the second job inside the `jobs:` block and its
+        `permissions: contents: write` away from the scalar-body stripper.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        variants = (
+            ("tag",
+             '    name: !!str "a\n'
+             'b"\n'),
+            ("anchor",
+             '    name: &anc "a\n'
+             'b"\n'),
+            ("bare-bang",
+             '    name: ! "a\n'
+             'b"\n'),
+            ("tag-single-quoted",
+             "    name: !!str 'a\n"
+             "b'\n"),
+            ("tagged-key",
+             '    run: !!str "a\n'
+             'b"\n'),
+            ("uri-tag",
+             '    name: !<tag:yaml.org,2002:str> "a\n'
+             'b"\n'),
+            ("uri-tag-after-anchor",
+             '    name: &x !<tag:yaml.org,2002:str> "a\n'
+             'b"\n'),
+            ("anchor-then-tag",
+             '    name: &x !!str "a\n'
+             'b"\n'),
+            ("tag-colon-suffix",
+             '    name: !foo:bar "a\n'
+             'b"\n'),
+            ("two-continuations",
+             '    name: !!str "a\n'
+             'b\n'
+             'c"\n'),
+        )
+        for label, middle in variants:
+            with self.subTest(node_property=label):
+                self._assert_refused_named(header + middle + footer,
+                                           "grants-contents-write")
+
+    def test_the_sweep_refuses_a_write_after_a_quote_escape_and_column_zero(
+            self):
+        """The escape branches inside a quoted scalar must keep their meaning.
+
+        `esc_dq` is a `\\"` inside a double-quoted scalar: the backslash escapes
+        the quote, so the scalar runs past the column-0 line `b"` and the second
+        job's write stays inside the `jobs:` block. `dbl_sq` is a doubled `''`
+        inside a single-quoted scalar -- the same escape, one quote character
+        over. Advancing one character instead of two at either branch closes the
+        quote early, truncates the block at the column-0 continuation, and turns
+        the sweep back into a false ok. Both are pinned in the same shape as the
+        tag case, with the tag attached, because the truncation needs BOTH the
+        tracked quote (the escape branch) and the tracked node property: the
+        tag-only case is the method above, the escape-only case is the method
+        below, and each mutant is caught by exactly one of the two.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        for label, middle in (
+            ("esc_dq",
+             '    name: !!str "a\\"\n'
+             'b"\n'),
+            ("dbl_sq",
+             "    name: !!str 'a''\n"
+             "b'\n"),
+        ):
+            body = header + middle + footer
+            with self.subTest(escape=label):
+                self._assert_refused_named(body, "grants-contents-write")
+
+    def test_the_sweep_refuses_a_write_after_a_quote_escape_alone(self):
+        """The escape branches also hold when the scalar carries no tag.
+
+        The same two escape forms without a node property. The quote is opened
+        by the ordinary `:` node position, so this is the control that says the
+        escape branches are exercised on their own: it is refused before and
+        after round 19, and it is kept here so that an escape branch that stops
+        advancing by two cannot hide behind the property rule.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        for label, middle in (
+            ("esc_dq",
+             '    name: "a\\"\n'
+             'b"\n'),
+            ("dbl_sq",
+             "    name: 'a''\n"
+             "b'\n"),
+        ):
+            body = header + middle + footer
+            with self.subTest(escape=label):
+                self._assert_refused_named(body, "grants-contents-write")
+
+    def test_the_sweep_still_refuses_the_node_property_negative_controls(
+            self):
+        """The control and the other boundary shapes must keep their verdicts.
+
+        `ctrl_twojobs_no_trunc` has the same two-job shape with no node
+        property, so nothing is truncated and the write must be refused for the
+        ordinary reason; it was already refused before round 19, and the
+        property rule must leave it that way. The block-scalar case keeps the
+        round-16 rule honest too: a `|` body is data and the body here is
+        shallower than the key, so a scanner that let the body line end the
+        `jobs:` block would drop the second job's write. A tagged job key and a
+        tagged job-level `permissions:` key are presentation on a key, not on
+        the scalar, and stay refused. All keep the honest
+        `grants-contents-write`, not a fail-closed stub reason.
+        """
+        control = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+            "    name: ordinary\n"
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        block_scalar = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+            "    env: |\n"
+            "      A: 1\n"
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        tagged_job_key = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  !!str aaa:\n"
+            "    runs-on: x\n"
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: write\n"
+        )
+        tagged_permissions_key = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+            "  run:\n"
+            "    !!str permissions:\n"
+            "      contents: write\n"
+        )
+        for label, body in (("negative-control", control),
+                            ("block-scalar-col0", block_scalar),
+                            ("tagged-job-key", tagged_job_key),
+                            ("tagged-permissions-key", tagged_permissions_key)):
+            with self.subTest(case=label):
+                self._assert_refused_named(body, "grants-contents-write")
+
+    def test_the_sweep_leaves_a_read_only_node_property_scalar_clean(self):
+        """The node-property rule must not over-refuse a read-only job.
+
+        The same spellings that a first pass missed -- the verbatim URI tag in
+        particular -- with `contents: read`. The sweep must exit 0 and print no
+        refusal, so the rule is a real reading of node position rather than a
+        blanket refusal of anything with a tag.
+        """
+        header = (
+            "name: fx\n"
+            "on: [push]\n"
+            "permissions: read-all\n"
+            "jobs:\n"
+            "  aaa:\n"
+            "    runs-on: x\n"
+        )
+        footer = (
+            "  run:\n"
+            "    permissions:\n"
+            "      contents: read\n"
+        )
+        for label, middle in (
+            ("uri-tag",
+             '    name: !<tag:yaml.org,2002:str> "a\n'
+             'b"\n'),
+            ("tag",
+             '    name: !!str "a\n'
+             'b"\n'),
+            ("anchor-then-tag",
+             '    name: &x !!str "a\n'
+             'b"\n'),
+        ):
+            body = header + middle + footer
+            with self.subTest(node_property=label):
+                result = self._run_one_branch("feature", body)
+                out = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0,
+                                 f"the sweep refused a read-only branch:\n{out}")
+                self.assertNotIn("refusing:", out)
     # -- Round 17: an explicit key split by a line continuation. -------------
     #
     # A double-quoted YAML scalar may be continued on the next line, so the

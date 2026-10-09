@@ -885,12 +885,30 @@ _jobs_key_kind() {
 # scanner into a state that skips every later line. Inside `"…"` a backslash
 # escapes the next character; inside `'…'` a doubled `''` is an escaped quote.
 #
+# Round 19: a node PROPERTY is node position too. `name: !!str "a` begins a
+# quoted scalar after a tag; `&anc "a` and `! "a` do the same, and a tagged KEY
+# (`run: !!str "a`) has the same token shape. Before this the character before
+# the opening quote was the last character of the property token (`r`), which is
+# not one of the boundary characters, so the quote never opened, the column-0
+# continuation `b"` was read as the end of the `jobs:` block, and a later job's
+# `permissions: contents: write` was stripped as data — a false ok (referee F
+# F-1). A tag (`!`, `!!`, `!<uri>`), anchor (`&name`) or alias (`*name`) token
+# now records that a node property just ended and the next quote — with only
+# spaces between — opens the scalar. The property token is any spelling the YAML
+# reader accepts: a tag suffix and a verbatim `!<uri>` may carry `:` and `?`
+# (`!foo:bar`, `!<tag:yaml.org,2002:str>`), so the token runs to whitespace, a
+# flow delimiter or a quote and never stops at a colon (round-19 follow-up: a
+# URI tag made the sweep a false ok again). No list of tag spellings is kept.
+# The mark is cleared by the next real
+# character, so `name: Bob's job` still has no quote; it is never set by a
+# `&`/`!`/`*` that the YAML reader would take as part of a plain scalar.
+#
 # Sets QS_OUT to the still-open quote character, or the empty string. Pass the
 # caller's carried state as $2: a line that continues a multi-line quoted scalar
 # must not be re-scanned from scratch (its opener is on an earlier line, so a
 # fresh scan would see no quote and drop the state).
 _qs_line_open_quote() {
-    local s="$1" i=0 n ch prev=""
+    local s="$1" i=0 n ch prev="" prop=""
     n=${#s}
     QS_OUT="${2:-}"
     while [ "$i" -lt "$n" ]; do
@@ -913,11 +931,51 @@ _qs_line_open_quote() {
             '"'|"'")
                 case "$prev" in
                     ""|":"|"-"|"["|"{"|",") QS_OUT="$ch" ;;
+                    *) [ -n "$prop" ] && QS_OUT="$ch" ;;
                 esac
                 prev="$ch"
+                prop=""
+                ;;
+            '&'|'!'|'*')
+                # Consume the node property as one token: a tag (`!`, `!!str`,
+                # `!foo:bar`, `!<tag:yaml.org,2002:str>`), an anchor (`&name`)
+                # or an alias (`*name`). Valid YAML lets a tag suffix and a
+                # verbatim tag URI carry `:` and `?`, so the scan stops only at
+                # whitespace, a flow delimiter or a quote -- never at `:`/`?`.
+                # PyYAML rejects `&a:b` and `&a?b`, so no anchor or alias name a
+                # parser accepts is split here, and reading a longer property
+                # only ever opens more quotes, which is the safe direction (an
+                # untracked quote was the round-19 false ok).
+                prev="$ch"
+                prop=1
+                i=$((i + 1))
+                if [ "$ch" = '!' ] && [ "${s:i:1}" = '<' ]; then
+                    # A verbatim tag `!<...>` is one token through the closing
+                    # `>`. Its URI may contain `,` as well as `:` -- the standard
+                    # spelling `!<tag:yaml.org,2002:str>` does -- so no break
+                    # inside it is safe.
+                    while [ "$i" -lt "$n" ]; do
+                        ch="${s:i:1}"
+                        i=$((i + 1))
+                        if [ "$ch" = '>' ]; then
+                            prev='>'
+                            break
+                        fi
+                    done
+                    continue
+                fi
+                while [ "$i" -lt "$n" ]; do
+                    ch="${s:i:1}"
+                    case "$ch" in
+                        ' '|$'\t'|'['|']'|'{'|'}'|','|'"'|"'") break ;;
+                    esac
+                    prev="$ch"
+                    i=$((i + 1))
+                done
+                continue
                 ;;
             ' '|$'\t') ;;
-            *) prev="$ch" ;;
+            *) prev="$ch"; prop="" ;;
         esac
         i=$((i + 1))
     done
@@ -1013,9 +1071,13 @@ _ambiguously_placed_jobs_key() {
 # This scanner reports the carried quote state (LCS_QUOTE) and flow depth
 # (LCS_DEPTH) after one line. `$2` is the quote char carried in, `$3` the flow
 # depth carried in. It follows the same node-position rule for opening a quote
-# as `_qs_line_open_quote`.
+# as `_qs_line_open_quote`, including the round-19 node-property rule: any node
+# property a YAML reader accepts — a tag (`!`, `!!str`, `!foo:bar`,
+# `!<tag:yaml.org,2002:str>`), an anchor (`&name`), an alias (`*name`), or a
+# combination such as `&a !!str` — immediately before the opening quote still
+# opens it (F-1).
 _line_node_state() {
-    local s="$1" i=0 n ch prev=":" q="${2:-}"
+    local s="$1" i=0 n ch prev=":" q="${2:-}" prop=""
     n=${#s}
     LCS_DEPTH="${3:-0}"
     while [ "$i" -lt "$n" ]; do
@@ -1031,13 +1093,46 @@ _line_node_state() {
             '"'|"'")
                 case "$prev" in
                     ""|":"|"-"|"["|"{"|",") q="$ch" ;;
+                    *) [ -n "$prop" ] && q="$ch" ;;
                 esac
                 prev="$ch"
+                prop=""
+                ;;
+            '&'|'!'|'*')
+                # Same node-property rule as `_qs_line_open_quote`: the two
+                # scanners must open the same quote on the same line or the
+                # stripper and the locator disagree about what is data. A tag
+                # suffix or verbatim URI may hold `:`/`?`, so the token runs to
+                # whitespace, a flow delimiter or a quote; a verbatim `!<...>`
+                # tag may also hold `,`, so it is one token through its `>`.
+                prev="$ch"
+                prop=1
+                i=$((i + 1))
+                if [ "$ch" = '!' ] && [ "${s:i:1}" = '<' ]; then
+                    while [ "$i" -lt "$n" ]; do
+                        ch="${s:i:1}"
+                        i=$((i + 1))
+                        if [ "$ch" = '>' ]; then
+                            prev='>'
+                            break
+                        fi
+                    done
+                    continue
+                fi
+                while [ "$i" -lt "$n" ]; do
+                    ch="${s:i:1}"
+                    case "$ch" in
+                        ' '|$'\t'|'['|']'|'{'|'}'|','|'"'|"'") break ;;
+                    esac
+                    prev="$ch"
+                    i=$((i + 1))
+                done
+                continue
                 ;;
             '{'|'[') LCS_DEPTH=$((LCS_DEPTH + 1)); prev="$ch" ;;
             '}'|']') [ "$LCS_DEPTH" -gt 0 ] && LCS_DEPTH=$((LCS_DEPTH - 1)); prev="$ch" ;;
             ' '|$'\t') ;;
-            *) prev="$ch" ;;
+            *) prev="$ch"; prop="" ;;
         esac
         i=$((i + 1))
     done

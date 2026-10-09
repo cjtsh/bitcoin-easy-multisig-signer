@@ -111,7 +111,7 @@ repository, says so in the open.
 | --- | --- | --- | --- |
 | CT-72 | High | Identity of a signer key | The duplicate gate compares **key material** — `(public point, chain code)` — instead of a base58 string, and `parse_multisig_script` independently refuses a compiled witness script naming one public key twice. Evidence: the four rows of `tests/test_probe.py` and the two `tests/test_signing.py` cases listed in the CT-72 row above, each demonstrated red against the previous source. |
 | CT-90 | Med | Whole-payload identity, interpreter isolation, verify-at-execution | `HWI_PAYLOAD_MANIFEST` records all 115 `.py` files of the pinned hwilib tree as literals in `probe.py` — not a digest read from `RECORD`, which the same writer who replaced the tree could rewrite. The check child runs `-I -S -P`, so a `.pth` in site-packages cannot execute inside it — `-I -P` alone does not stop site hooks — and since the second cycle-6 round the source-mode helper runs under the same `-I -S -P` isolation with the verified roots appended after the interpreter's own entries. Because `-S` removes site-packages from the child's path, the child cannot resolve `hwilib` by name at all; the parent passes the package roots as argv, and the child prints the manifest files it found and validated as `name path recorded-digest` triplets — not a list of every file it walked, which the whole-tree comparison then judges. The whole name set is compared in both directions, the CT-91 cache re-reads all of it, and `_require_unchanged()` reads every file the child reported a second time immediately before the spawn, so a deterministic swap written between the check and the exec is refused instead of inheriting a verdict about bytes that no longer exist. Every prepared build environment runs `scripts/check-hwi-payload.py` against the real hash-locked install before any signing material enters the job. Evidence: `tests/test_hardening_pins.py::HwiIdentityPins::test_the_ci_payload_check_runs_the_app_check_and_fails_closed`, `::test_the_check_child_cannot_run_a_pth_hook_planted_in_site_packages`, `::test_a_swapped_sibling_module_does_not_inherit_a_cached_verdict`, `::test_a_payload_swapped_between_the_check_and_the_spawn_is_refused`; `tests/test_workflow_config.py::test_each_prepared_build_environment_proves_its_hwilib_matches_the_pin`. Break-and-watch used a **genuine** `hwi==3.2.0` install: the previous source accepted a `commands.py` with one injected line (and an added `zz_extra.py`) while reporting two files verified; the current source refuses it. |
-| CT-73 + CT-102 | Med + Info | The sweep's decision procedure | `scripts/check-publish-paths.sh` now strips comments before **any** decision and decides the token grant from a parsed `permissions:` mapping: a spaced key (`contents : write`), a quoted flow mapping, a duplicate key, `write-all`, and a bare nested `write` are all read as the grants they are, while a comment naming a write grant is no longer an offender. The read-only proof comes from the mapping, never from body text. The rule is **fail-closed**: a `permissions:` construct the parser cannot read — a YAML alias (`permissions: *w`), a merge key (`<<: *w`), a quoted key (`"contents": write`), a nested mapping, a value outside the recognized vocabulary — is reported as `unreadable-token-permissions` and refused, rather than silently read as no grant. That closes the class instead of the three spellings a pre-audit adversarial pass demonstrated walking past the first version. Command continuations are joined before the publisher vocabulary runs, so a `gh \` split across a line break is read as `gh release`. The publisher vocabulary gained `gh api graphql`, `$GITHUB_API_URL`, `${{ github.api_url }}`, `actions/github-script`, camelCase REST release calls, and — in place of only callees whose path names a release — **any `uses:` into another repository**, because a remote workflow's text cannot be read from this checkout whichever name it carries; a first-party action (`actions/checkout@v4`), a local `./.github/workflows/…` callee and an action vendored under a path (`github/codeql-action/init@v3`) are not offenders — the rule keys on the GitHub-documented callee shape `{owner}/{repo}/.github/workflows/{file}@{ref}`, because a first revision keyed on "two or more slashes before an `@`" wrongly refused the subdirectory action and would have blocked a legitimate dispatch. Shell spellings of one command are normalized before matching (`gh  release`, `gh "release"`, `gh 'rel'"ease"`). Evidence: `PublishPathSweepTests`, to which the cycle-5 round added sixteen cases (the class held 18 at `bd0c0e8`, 28 at `fea859c`, 34 at `1ff0175`, 44 at `f79203c`, 53 at `c6df346` (the wave-3 tree), 63 at the cycle-9 tree and 66 in the cycle-10 round, and 113 on this revision) — its tests include `test_the_sweep_refuses_a_permission_it_cannot_read`, a `subTest` over the alias, the merge key and the quoted key, `test_the_sweep_refuses_a_publisher_split_across_a_continuation`, `test_the_sweep_normalizes_shell_spellings_of_one_command`, `test_the_sweep_refuses_a_remote_reusable_workflow_under_any_name`, `test_the_sweep_does_not_mistake_an_action_or_a_local_callee`, `test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee` and `test_the_sweep_refuses_the_rest_api_through_the_api_url_context`. Seven breaks of the original matchers were watched; each reddens the test named for it (an independent referee measured eight of the ten tests then present red against the previous script), and two of them also redden an older test that covers the same code path — removing the reusable-workflow call turns four red, including the pre-existing `test_the_sweep_refuses_a_reusable_release_workflow`, and loosening the `./*`/remote-callee boundary turns three red, including `test_a_uses_line_that_only_mentions_release_is_not_a_callee` — so "each reddens exactly its own named test" overstated it. The fail-closed arm was separately watched red, and the live `origin` sweep is still clean. **Scope, stated in the same open:** the sweep fetches branches only (`+refs/heads/*`), so a tag-only publish path is outside its reach; a tag's control is CT-97's environment scope, and the default-token residual is recorded under `## Documented residuals`. The sweep stays bash + git: `PublishPathSweepTests` deliberately does not gate it on PyYAML. **The third adversarial round.** An independent referee defeated the version above, and a second attacker then defeated the first rewrite, by hiding a grant or a callee inside YAML *presentation*: `permissions: {contents: !!str write}`, `{contents: &a write}`, `{contents: !<tag:yaml.org,2002:str> write}`, `{issues: read, contents: !!str write}`, `{issues: read, contents: &a write}`, an inline job "permissions": {issues: read, "contents" : write}` (and the top-level form), `{issues: read, "contents" : "write"}`, `'contents' : 'write'`, and the callee spellings `uses: &a o/r/.github/workflows/w.yml@main`, `uses: !!str o/r/…` and `uses: !<tag:yaml.org,2002:str> o/r/…` — every one printed the ok line while PyYAML resolves it to a real grant or a real callee. The rewrite makes the sweep a parser, not a word list, and a construct it cannot classify is **refused — never silently read as read-only** (`scripts/check-publish-paths.sh:60-132`). A flow `permissions:` mapping is taken apart member by member and each value has its YAML presentation — tags (`!!str`), anchors (`&a`), quotes, the space before the colon — stripped before the decision (`normalize_flow_value()` `:644`, `decide_flow_permissions()` `:699`); any value that does not resolve to `read`/`read-all`/`none`/`write`/`write-all` makes the mapping `unreadable-token-permissions`, and the old "some `key:` token ⇒ read-only" fallback is deleted. A `uses:` value starting with `&`, `*` or `!` is refused, with a leading tag or anchor stripped and the remainder re-tested as the callee (`calls_a_remote_reusable_workflow()` `:2081`). Both the permissions reader and the callee reader now require **key position**, and the value and block body of `run|with|if|env|name|shell|working-directory` are stripped (`strip_scalar_bodies()` `:1194`) before those two decisions only — the publisher vocabulary still reads literal bodies, so `gh release` inside `run: |` still refuses `runs-gh-release`. The same fix closed four over-refusals, which must stay `ok`: `- run: echo { permissions: write }`, `with: {note: 'permissions: write'}`, a `run: |` body holding a `permissions:`-shaped line, and a `uses:`-shaped value under `with:`/`if:`/`env:`. The nine flow spellings all refuse — seven as `grants-contents-write` and the two `!<tag:…>` URI spellings as `unreadable-token-permissions` — and the three callee spellings as `calls-a-release-workflow`. **Stated in the open:** this is a bash YAML reader that fails closed, so an unusual but honest workflow can also be refused. **The cycle-10 round** closed the job-id hole in the KEY-POSITION rule: a job id may legally be spelled `env`, `run`, `with`, `if`, `name`, `shell` or `working-directory`, and `strip_scalar_bodies()` had deleted a line whose first key was one of those spellings plus every deeper line, so a job declared `jobs: env:` lost its whole body before the permissions and callee readers ran. The header doctrine gained the bullet `a job id is recognised by its POSITION under the workflow jobs: key, never by its spelling` (`scripts/check-publish-paths.sh:96-107`); `strip_scalar_bodies()` (`:1194`) now computes the `jobs:` line, its block end and the job-id indent once and prints a job declaration verbatim, with a flow job's continuation protected by `_strip_flow_close_line()` (`:780`) and a `jobs: {…}` flow mapping protected whole (`:1222-1226`). The publisher pipeline is untouched, so `gh release` inside `run: |` still refuses. **The cycle-11 and cycle-12 rounds** (the cycle-10 fix defeated and repaired, then the cycle-11 fix defeated and repaired) are recorded in full in the two sections below, with the referee's fixture names, the surviving mutations and the kept over-refusals. **The cycle-13 round (the identity arm).** The sweep now refuses any non-main branch that adds or modifies a path under `.github/workflows/` or `.github/actions/` relative to its merge base with `main` (`scripts/check-publish-paths.sh:2683-2721`) unless the branch, path and blob oid are named exactly in `.github/publish-sweep-allowlist.txt` read from the allowed ref (`:2342-2368`, `:2373`), never from the branch under test; deletions add no publish capability and are clean; the parser never consults that file, so an allowlisted publish-capable change is still refused. The fail-closed reasons are `branch-changes-workflow-file` (`:2721-2722`), `unreadable-merge-base` (`:2685`), `unreadable-allowlist` (`:2715`) and `unreadable-branch-tree` (`:2725`), with a shallow clone (`:2417-2419`) and an unlistable allowed tree (`:2421-2423`) stated as global preconditions that name the remedy and end the run. The exact ok line is `ok: no non-main branch carries a publish-capable workflow differing from main's` (`:2780`). The tripwires are the 11 identity cases, the 5 tip-blob/fork cases and the 3 banner-class cases in `tests/test_workflow_config.py::PublishPathSweepTests` (`:3712`–`:4124`) plus `SweepFailClosedPins` (5 cases, `:4394`), each mutation-proven; named at least: `test_the_sweep_leaves_a_fork_of_main_carrying_the_publisher_clean` (`:3976`), `test_the_sweep_still_refuses_a_stale_inherited_publisher` (`:3989`), `test_the_sweep_leaves_a_stale_inherited_read_only_workflow_clean` (`:4008`), `test_the_sweep_leaves_a_change_equal_to_mains_tip_clean` (`:4028`), `test_the_sweep_refuses_a_change_that_matches_neither_baseline` (`:4046`) and `test_the_sweep_allowlist_cannot_smuggle_a_publish_path` (`:3851`). |
+| CT-73 + CT-102 | Med + Info | The sweep's decision procedure | `scripts/check-publish-paths.sh` now strips comments before **any** decision and decides the token grant from a parsed `permissions:` mapping: a spaced key (`contents : write`), a quoted flow mapping, a duplicate key, `write-all`, and a bare nested `write` are all read as the grants they are, while a comment naming a write grant is no longer an offender. The read-only proof comes from the mapping, never from body text. The rule is **fail-closed**: a `permissions:` construct the parser cannot read — a YAML alias (`permissions: *w`), a merge key (`<<: *w`), a quoted key (`"contents": write`), a nested mapping, a value outside the recognized vocabulary — is reported as `unreadable-token-permissions` and refused, rather than silently read as no grant. That closes the class instead of the three spellings a pre-audit adversarial pass demonstrated walking past the first version. Command continuations are joined before the publisher vocabulary runs, so a `gh \` split across a line break is read as `gh release`. The publisher vocabulary gained `gh api graphql`, `$GITHUB_API_URL`, `${{ github.api_url }}`, `actions/github-script`, camelCase REST release calls, and — in place of only callees whose path names a release — **any `uses:` into another repository**, because a remote workflow's text cannot be read from this checkout whichever name it carries; a first-party action (`actions/checkout@v4`), a local `./.github/workflows/…` callee and an action vendored under a path (`github/codeql-action/init@v3`) are not offenders — the rule keys on the GitHub-documented callee shape `{owner}/{repo}/.github/workflows/{file}@{ref}`, because a first revision keyed on "two or more slashes before an `@`" wrongly refused the subdirectory action and would have blocked a legitimate dispatch. Shell spellings of one command are normalized before matching (`gh  release`, `gh "release"`, `gh 'rel'"ease"`). Evidence: `PublishPathSweepTests`, to which the cycle-5 round added sixteen cases (the class held 18 at `bd0c0e8`, 28 at `fea859c`, 34 at `1ff0175`, 44 at `f79203c`, 53 at `c6df346` (the wave-3 tree), 63 at the cycle-9 tree and 66 in the cycle-10 round, and 113 on this revision) — its tests include `test_the_sweep_refuses_a_permission_it_cannot_read`, a `subTest` over the alias, the merge key and the quoted key, `test_the_sweep_refuses_a_publisher_split_across_a_continuation`, `test_the_sweep_normalizes_shell_spellings_of_one_command`, `test_the_sweep_refuses_a_remote_reusable_workflow_under_any_name`, `test_the_sweep_does_not_mistake_an_action_or_a_local_callee`, `test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee` and `test_the_sweep_refuses_the_rest_api_through_the_api_url_context`. Seven breaks of the original matchers were watched; each reddens the test named for it (an independent referee measured eight of the ten tests then present red against the previous script), and two of them also redden an older test that covers the same code path — removing the reusable-workflow call turns four red, including the pre-existing `test_the_sweep_refuses_a_reusable_release_workflow`, and loosening the `./*`/remote-callee boundary turns three red, including `test_a_uses_line_that_only_mentions_release_is_not_a_callee` — so "each reddens exactly its own named test" overstated it. The fail-closed arm was separately watched red, and the live `origin` sweep is still clean. **Scope, stated in the same open:** the sweep fetches branches only (`+refs/heads/*`), so a tag-only publish path is outside its reach; a tag's control is CT-97's environment scope, and the default-token residual is recorded under `## Documented residuals`. The sweep stays bash + git: `PublishPathSweepTests` deliberately does not gate it on PyYAML. **The third adversarial round.** An independent referee defeated the version above, and a second attacker then defeated the first rewrite, by hiding a grant or a callee inside YAML *presentation*: `permissions: {contents: !!str write}`, `{contents: &a write}`, `{contents: !<tag:yaml.org,2002:str> write}`, `{issues: read, contents: !!str write}`, `{issues: read, contents: &a write}`, an inline job "permissions": {issues: read, "contents" : write}` (and the top-level form), `{issues: read, "contents" : "write"}`, `'contents' : 'write'`, and the callee spellings `uses: &a o/r/.github/workflows/w.yml@main`, `uses: !!str o/r/…` and `uses: !<tag:yaml.org,2002:str> o/r/…` — every one printed the ok line while PyYAML resolves it to a real grant or a real callee. The rewrite makes the sweep a parser, not a word list, and a construct it cannot classify is **refused — never silently read as read-only** (`scripts/check-publish-paths.sh:60-132`). A flow `permissions:` mapping is taken apart member by member and each value has its YAML presentation — tags (`!!str`), anchors (`&a`), quotes, the space before the colon — stripped before the decision (`normalize_flow_value()` `:644`, `decide_flow_permissions()` `:699`); any value that does not resolve to `read`/`read-all`/`none`/`write`/`write-all` makes the mapping `unreadable-token-permissions`, and the old "some `key:` token ⇒ read-only" fallback is deleted. A `uses:` value starting with `&`, `*` or `!` is refused, with a leading tag or anchor stripped and the remainder re-tested as the callee (`calls_a_remote_reusable_workflow()` `2176`). Both the permissions reader and the callee reader now require **key position**, and the value and block body of `run|with|if|env|name|shell|working-directory` are stripped (`strip_scalar_bodies()` `1289`) before those two decisions only — the publisher vocabulary still reads literal bodies, so `gh release` inside `run: |` still refuses `runs-gh-release`. The same fix closed four over-refusals, which must stay `ok`: `- run: echo { permissions: write }`, `with: {note: 'permissions: write'}`, a `run: |` body holding a `permissions:`-shaped line, and a `uses:`-shaped value under `with:`/`if:`/`env:`. The nine flow spellings all refuse — seven as `grants-contents-write` and the two `!<tag:…>` URI spellings as `unreadable-token-permissions` — and the three callee spellings as `calls-a-release-workflow`. **Stated in the open:** this is a bash YAML reader that fails closed, so an unusual but honest workflow can also be refused. **The cycle-10 round** narrowed the job-id hole in the KEY-POSITION rule (round 19 later repaired the node-property blind spot recorded below): a job id may legally be spelled `env`, `run`, `with`, `if`, `name`, `shell` or `working-directory`, and `strip_scalar_bodies()` had deleted a line whose first key was one of those spellings plus every deeper line, so a job declared `jobs: env:` lost its whole body before the permissions and callee readers ran. The header doctrine gained the bullet `a job id is recognised by its POSITION under the workflow jobs: key, never by its spelling` (`scripts/check-publish-paths.sh:96-107`); `strip_scalar_bodies()` (`1289`) now computes the `jobs:` line, its block end and the job-id indent once and prints a job declaration verbatim, with a flow job's continuation protected by `_strip_flow_close_line()` (`:780`) and a `jobs: {…}` flow mapping protected whole (`1317-1321`). The publisher pipeline is untouched, so `gh release` inside `run: |` still refuses. **The cycle-11 and cycle-12 rounds** (the cycle-10 fix defeated and repaired, then the cycle-11 fix defeated and repaired) are recorded in full in the two sections below, with the referee's fixture names, the surviving mutations and the kept over-refusals. **The cycle-13 round (the identity arm).** The sweep now refuses any non-main branch that adds or modifies a path under `.github/workflows/` or `.github/actions/` relative to its merge base with `main` (`scripts/check-publish-paths.sh:2778-2816`) unless the branch, path and blob oid are named exactly in `.github/publish-sweep-allowlist.txt` read from the allowed ref (`2437-2463`, `2468`), never from the branch under test; deletions add no publish capability and are clean; the allowlist suppresses the identity arm's refusal for exactly the branch, path and blob it names, while the parser arm is independent of it and decides only the shapes it can read — a branch whose PyYAML resolves to `contents: write` printed the ok line whenever the parser lost the job body, which is why the round-19 reader repair below exists instead of a claim that the allowlist is harmless. The fail-closed reasons are `branch-changes-workflow-file` (`2816-2817`), `unreadable-merge-base` (`2780`), `unreadable-allowlist` (`2810`) and `unreadable-branch-tree` (`2820`), with a shallow clone (`2512-2514`) and an unlistable allowed tree (`2516-2518`) stated as global preconditions that name the remedy and end the run. The exact ok line is `ok: no non-main branch carries a publish-capable workflow differing from main's` (`2875`). The tripwires are the 11 identity cases, the 5 tip-blob/fork cases and the 3 banner-class cases in `tests/test_workflow_config.py::PublishPathSweepTests` (`3991`–`4403`) plus `SweepFailClosedPins` (5 cases, `4673`), each mutation-proven; named at least: `test_the_sweep_leaves_a_fork_of_main_carrying_the_publisher_clean` (`4255`), `test_the_sweep_still_refuses_a_stale_inherited_publisher` (`4268`), `test_the_sweep_leaves_a_stale_inherited_read_only_workflow_clean` (`4287`), `test_the_sweep_leaves_a_change_equal_to_mains_tip_clean` (`4307`), `test_the_sweep_refuses_a_change_that_matches_neither_baseline` (`4325`) and `test_the_sweep_allowlist_cannot_smuggle_a_publish_path` (`4130`). |
 | CT-97 | Med | The watched credential name set | `scripts/check-release-credentials.sh` derives its watched names from the workflow text — every `secrets.NAME` reference, partitioned by the environment each referencing job declares — instead of a hand-typed list of five. The sixth name, `MAC_NOTARY_KEY_P8_BASE64`, is covered the day it appears. The rule is one-directional exactness plus non-vacuity: an extra name is refused, an environment holding none of its own names is refused, and a referenced-but-absent name is reported as a `note:` rather than a refusal, because the workflow reads the notary key only on the optional notarize path while every required credential is guarded by `: "${NAME:?}"`. `--print-scope` prints the derived table so the next reader can see what the check believes. The cycle-5 adversarial pass then found the derivation **attributable-only**: it built its watched set from the structured `jobs()` walk, so a release credential named in a workflow-level `env:` block, under a quoted job key, or under a `jobs:` block indented past the literal `jobs:` line was never read, and the check reported the environment scope clean while a repository-level credential of that name existed. `live_references()` now scans the whole comment-stripped file and anything it cannot attribute to a job is refused as `<file> names the release credential <NAME> somewhere this check cannot attribute to a job`, so an unreadable spelling fails closed instead of disappearing. Evidence: `tests/support.py::workflow_credential_scope`, `tests/test_release_credentials.py` (29 tests when this row was written, 36 at `f79203c`, 47 on this revision — see the cycle-6 section — including a workflow-level `env:`, a quoted job key, a four-space `jobs:` block, a bracket-spelled `secrets['NAME']`, a missing branch policy, a non-`main` branch policy and an unreadable policy endpoint), `ReleaseCredentialScopePins`, and each refusal arm broken and watched red. |
 | CT-105 | Med | The Windows helper's trust model | The claim that a frozen build's sidecar "sits inside the signed bundle it authenticates" is true on macOS only. On Windows `hwi.exe` and `hwi.sha256` sit in the same user-writable directory and neither is signed, so the app's sidecar check there is a corruption check, not an identity check. That is now stated in `probe.py`, `scripts/build-sbom.py`, `HWI-DEPENDENCY.md` and a new `SIGNING.md` section, and pinned by `tests/test_hardening_pins.py::HwiIdentityPins::test_the_identity_docstring_does_not_claim_a_windows_signature`. Signing the Windows helper or moving the sidecar out of the writable directory was put to the owner as a business choice rather than an agent call; **the owner's decision, taken 2026-10-08, is to keep Windows unsigned (Option A)** — ship with the SmartScreen instructions, the GPG-signed `SHA256SUMS` and the Sigstore attestation that already exist — and to leave the sidecar beside `hwi.exe` with the identity limit stated in the open. A Windows code-signing certificate stays a future business option, not a gap this round leaves unfinished. |
 | CT-92 | Low | Link, not only symlink, and check-then-load | `scripts/hwi_entry.py` decides from the directory entry (`os.lstat`) before opening anything, then opens with `O_NOFOLLOW` and requires `fstat` to report a regular file with `st_nlink == 1`, and compares a `(st_dev, st_ino, st_size, st_mtime_ns)` identity after the load and before usb1 receives the handle. A hard link has no distinct path to resolve, so `is_symlink()` alone never saw it; the `lstat` arm is also what refuses a FIFO without blocking on `os.open` and what makes the link refusal work on Windows, where `O_NOFOLLOW` is `0`. Evidence: `tests/test_hwi_entry.py` plants **real** `os.link`/`os.symlink` links instead of monkeypatching `Path.is_symlink`; removing the descriptor's `st_nlink == 1` condition reddens **both** hardlink tests (an earlier draft of this row said "the hardlink test" singular) while the symlink test stays green; removing the post-load identity comparison reddens `test_a_library_swapped_between_the_check_and_the_load_is_refused`; removing the `lstat` guard makes `test_the_libusb_preflight_refuses_a_fifo_without_blocking` hang until its five-second thread join fails. |
@@ -603,38 +603,38 @@ W3- rows are those fixes.
 
 | # | Finding | What was wrong | Fix on this revision | Evidence |
 | --- | --- | --- | --- | --- |
-| E1a | The `permissions:` key had to be unquoted | `"permissions": write-all` on a job was read as no grant, so a publishing job passed as read-only | `permissions_verdict()` matches the key with `local pat_perm='^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$'` (`scripts/check-publish-paths.sh:1503`) and reports `grants-write-all` (`:2517`). The pattern is held in a variable because `/bin/bash` 3.2.57 rejects an inline `["\']?` class inside `[[ =~ ]]`, and `bash -n` does not catch it | `PublishPathSweepTests::test_the_sweep_refuses_a_quoted_permission_key` |
-| E1b | The publisher vocabulary was incomplete | `gh --repo owner/repo release create v1` and `gh -R owner/repo release create v1` named no token; the REST release calls were matched only in camelCase | `scripts/check-publish-paths.sh:2589-2591` refuses both `gh --repo … release` and `gh -R … release` as `runs-gh-release`; the loop at `:2623-2625` adds `create_release`, `update_release` and `upload_release_asset` to `calls-the-rest-release-api` | `test_the_sweep_refuses_a_publisher_written_with_the_repo_flag` |
+| E1a | The `permissions:` key had to be unquoted | `"permissions": write-all` on a job was read as no grant, so a publishing job passed as read-only | `permissions_verdict()` matches the key with `local pat_perm='^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$'` (`scripts/check-publish-paths.sh:1598`) and reports `grants-write-all` (`2612`). The pattern is held in a variable because `/bin/bash` 3.2.57 rejects an inline `["\']?` class inside `[[ =~ ]]`, and `bash -n` does not catch it | `PublishPathSweepTests::test_the_sweep_refuses_a_quoted_permission_key` |
+| E1b | The publisher vocabulary was incomplete | `gh --repo owner/repo release create v1` and `gh -R owner/repo release create v1` named no token; the REST release calls were matched only in camelCase | `scripts/check-publish-paths.sh:2684-2686` refuses both `gh --repo … release` and `gh -R … release` as `runs-gh-release`; the loop at `2718-2720` adds `create_release`, `update_release` and `upload_release_asset` to `calls-the-rest-release-api` | `test_the_sweep_refuses_a_publisher_written_with_the_repo_flag` |
 | E2 | A `uses:` the reader could not resolve fell through | `uses: *w` (alias/merge) and a folded `uses: >-` callee were read as no callee | `calls_a_remote_reusable_workflow()` refuses an alias/merge value and strips a leading `>`/`\|` indicator (plus an optional `-`/`+`) before taking the value, because YAML folding joins a folded scalar onto its indicator line | `test_the_sweep_refuses_a_uses_the_reader_cannot_resolve`, `test_the_sweep_refuses_a_folded_uses_callee` |
 | E4/E3 | The credential check read only page 1 | On a repository with more than one page of secrets a release credential could sit on page 2 unseen | `scripts/check-release-credentials.sh` passes `--paginate` at `:529` (repository secrets), `:567` (branch policies) and `:574` (environment secrets); each of the three readers drains back-to-back documents with `json.JSONDecoder().raw_decode` (`:385`/`:425`/`:455`) | `test_the_repository_read_asks_for_every_page`, `test_a_repository_secret_on_a_later_page_is_refused` |
-| CT-97b | A quoted job key was not a job | `  "leak":` merged its body into the previous job, so a credential it declared looked scoped when it was not | `JOB` (`scripts/check-release-credentials.sh:126`) accepts an optionally quoted job name | `test_a_quoted_job_key_is_read_as_its_own_job` (replacing cycle-5's `test_a_quoted_job_key_is_refused`) |
+| CT-97b | A quoted job key was not a job | `  "leak":` merged its body into the previous job, so a credential it declared looked scoped when it was not | `JOB` (`scripts/check-release-credentials.sh:126`) accepts an optionally quoted job name | `test_a_quoted_job_key_is_read_as_its_own_job` (replacing cycle-5's case for a quoted job key) |
 | CT-97c | The whole-file net compared names, not occurrences | A workflow-level `env:` repeating a name already seen inside a scoped job was reported as attributed | `live = Counter(live_references(text))` (`:330`) compares occurrences | `test_a_workflow_level_env_cannot_hide_behind_a_scoped_job`, `test_a_workflow_level_env_is_refused`, the over-refusing four-space-indent case (since replaced by `test_a_four_space_indented_job_is_read`; see R2-10) — one net, three reds |
-| CT-97d | Derived names and hostile answers | `secrets[format('{0}','NAME')]` was not derived; a list-shaped answer from a reader raised `AttributeError`; `name: Don't build # see ${{ secrets.X }}` was read as a reference | `format(...)` derives to `NAME`; a non-dict answer is a refusal with a reason; `strip_comment()` treats a quote as opening a scalar only where a token can begin | `test_a_bracket_expression_secret_is_derived` (since replaced by `test_a_bracket_expression_secret_is_refused_as_unreadable`; see R2-14), `test_a_list_shaped_secret_answer_is_a_refusal_with_a_reason`, `test_a_list_shaped_environment_answer_is_a_refusal_with_a_reason`, `test_an_apostrophe_does_not_turn_a_comment_into_a_reference` |
+| CT-97d | Derived names and hostile answers | `secrets[format('{0}','NAME')]` was not derived; a list-shaped answer from a reader raised `AttributeError`; `name: Don't build # see ${{ secrets.X }}` was read as a reference | `format(...)` derives to `NAME`; a non-dict answer is a refusal with a reason; `strip_comment()` treats a quote as opening a scalar only where a token can begin | the cycle-5 bracket-expression case (since replaced by `test_a_bracket_expression_secret_is_refused_as_unreadable`; see R2-14), `test_a_list_shaped_secret_answer_is_a_refusal_with_a_reason`, `test_a_list_shaped_environment_answer_is_a_refusal_with_a_reason`, `test_an_apostrophe_does_not_turn_a_comment_into_a_reference` |
 | B-A | The payload walk could step past a symlinked directory | `pathlib.rglob('*')` does not descend a symlinked directory, so a symlinked `__pycache__` was never opened | `_hwi_payload_check_script()` walks with `os.scandir` and `follow_symlinks=False` and refuses anything that is neither a regular file nor a directory | `test_a_symlinked_bytecode_directory_is_refused` (its attack body is real code, `MARKER = 'attacker'`, not a comment) |
 | B-C | Only the last package root was re-read | The check child printed only the last root's files, so `_require_unchanged` re-read only that root | Every root's files are printed and every `(path, digest)` pair returned, so an earlier root is re-read too | `test_every_root_is_reverified_before_the_spawn` |
-| E6 | `co_filename` was part of the bytecode identity | A genuine tree compiled by `pip install --target` from a staging directory was refused | The rule unmarshals (never executes) and compares `marshal.dumps(scrub(code))`, where `scrub` blanks `co_filename` recursively | `test_bytecode_compiled_at_another_path_is_accepted`, `test_a_bytecode_file_with_a_wrong_magic_is_refused`; `test_a_bytecode_file_with_nonzero_flags_is_refused` was replaced by W4-3's `test_an_unknown_bytecode_invalidation_flag_is_refused` when the third round stopped refusing legitimate hash flags |
-| — | The remote-callee rule over-refused | Cycle-5's matcher refused any `uses:` with two or more slashes before an `@`, which also refused ordinary subdirectory actions and container references | The rule is narrowed to the callee shapes GitHub documents — `*/.github/workflows/*` and a two-or-more-slash path ending `.yml`/`.yaml`, minus the local `./` form — so `github/codeql-action/analyze@v3` and `docker://ghcr.io/o/i@sha256:d` pass **by design** | `tests/test_workflow_config.py:1830` (`test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee`); the comment at `scripts/check-publish-paths.sh:2057-2063` |
-| R2-1 | A flow `permissions:` mapping split across lines | `permissions: {issues: read,` with `contents: write}` on the next line was folded as a mapping that never closed; the first scope read read-only and `contents: write` vanished | `permissions_verdict()` refuses a `{`-valued token with no `}` — `decide_flow_permissions()` reports `unrecognized` (`scripts/check-publish-paths.sh:699-744`) — and the branch reports `unreadable-token-permissions` (`:2537`) | `PublishPathSweepTests::test_the_sweep_refuses_a_flow_permission_mapping_split_across_lines` |
-| R2-2 | A flow-style job put its token mid-line | `publish: {runs-on: …, permissions: {contents: write}, …}` kept the key off line start, so the anchored pattern saw no grant while a separate job's `contents: read` covered the file | After the anchored miss, an opening brace at line start or after space/comma arms a mid-line read (`scripts/check-publish-paths.sh:1680-1681`); `contents: write` reports `grants-contents-write` (`:2513`) | `::test_the_sweep_refuses_a_flow_style_job_that_grants_write` |
-| R2-3 | Five more flow spellings of a write token | Attacking the fix above found a quoted job key, a flow mapping on the line after the key, a tagged `!!map {…}`, an escaped key (`"permiss\u0069ons"`), and the explicit-key `? permissions` / `: write-all` form each carrying a grant | The widened gate refuses the first three as `grants-contents-write` and the two key spellings it cannot resolve as `unreadable-token-permissions` (`scripts/check-publish-paths.sh:1680-1681`) | `::test_the_sweep_refuses_every_flow_spelling_of_a_write_token` |
-| R2-4 | The widened flow gate could over-refuse prose | A `run:` string echoing `"{permissions: write}"`, or the repository's own build step holding a `b"\x7fELF"` literal, sits on a brace-bearing line and could be read as a token | The gate keys on an opening brace where a flow mapping can begin, and the escaped-key rule keys on the quote being in a key position (`scripts/check-publish-paths.sh:1531`, `:1680-1681`); both files are accepted | `::test_prose_that_names_a_permission_is_not_a_grant` (the over-refusal control) |
-| R2-5 | A deeper `permissions:` covered a job that declared none | The coverage proof counted any deeper `permissions:` line — e.g. a variable `permissions: read` under `env:` — as the job's own token, so a file with an undeclared job read read-only | `_jobs_all_declare_permissions()` counts only a `permissions:` at the job's direct-child indent (`scripts/check-publish-paths.sh:1927`); an undeclared job leaves the file `partial` → `partial-token-permissions` (`:2546`) | `::test_a_deeper_permissions_key_does_not_cover_a_job` |
-| R2-6 | A block-indicator `uses:` hid its callee | `uses: \|`, `uses: \|2-` and `uses: >2-` put the callee on the next line; the indicator was read as the value, so the call passed | The indicator strip removes the whole run of signs and digits (`scripts/check-publish-paths.sh:2173-2175`) and an empty value is a refusal (`:2185`), so the callee is refused as `calls-a-release-workflow` | `::test_the_sweep_refuses_a_block_scalar_uses_that_hides_its_callee` |
-| R2-7 | A `uses:` the reader could not place | `call: {uses: …}`, `call: {"uses": …}`, `steps: [{uses: …}]` and the explicit-key `? uses` / `: …` form kept the key off line start, so a remote callee passed | `pat_uses` matches `uses:` anywhere a key can begin (`scripts/check-publish-paths.sh:2089`) and `pat_explicit_uses` refuses the split key (`:2094`); a local `./` callee and a subdirectory action still pass (`:2219-2223`, `:2233`) | `::test_the_sweep_refuses_a_callee_inside_a_flow_mapping` |
+| E6 | `co_filename` was part of the bytecode identity | A genuine tree compiled by `pip install --target` from a staging directory was refused | The rule unmarshals (never executes) and compares `marshal.dumps(scrub(code))`, where `scrub` blanks `co_filename` recursively | `test_bytecode_compiled_at_another_path_is_accepted`, `test_a_bytecode_file_with_a_wrong_magic_is_refused`; the cycle-5 nonzero-flags case was replaced by W4-3's `test_an_unknown_bytecode_invalidation_flag_is_refused` when the third round stopped refusing legitimate hash flags |
+| — | The remote-callee rule over-refused | Cycle-5's matcher refused any `uses:` with two or more slashes before an `@`, which also refused ordinary subdirectory actions and container references | The rule is narrowed to the callee shapes GitHub documents — `*/.github/workflows/*` and a two-or-more-slash path ending `.yml`/`.yaml`, minus the local `./` form — so `github/codeql-action/analyze@v3` and `docker://ghcr.io/o/i@sha256:d` pass **by design** | `tests/test_workflow_config.py:1830` (`test_the_sweep_does_not_mistake_a_subdirectory_action_for_a_callee`); the comment at `scripts/check-publish-paths.sh:2152-2158` |
+| R2-1 | A flow `permissions:` mapping split across lines | `permissions: {issues: read,` with `contents: write}` on the next line was folded as a mapping that never closed; the first scope read read-only and `contents: write` vanished | `permissions_verdict()` refuses a `{`-valued token with no `}` — `decide_flow_permissions()` reports `unrecognized` (`scripts/check-publish-paths.sh:699-744`) — and the branch reports `unreadable-token-permissions` (`2632`) | `PublishPathSweepTests::test_the_sweep_refuses_a_flow_permission_mapping_split_across_lines` |
+| R2-2 | A flow-style job put its token mid-line | `publish: {runs-on: …, permissions: {contents: write}, …}` kept the key off line start, so the anchored pattern saw no grant while a separate job's `contents: read` covered the file | After the anchored miss, an opening brace at line start or after space/comma arms a mid-line read (`scripts/check-publish-paths.sh:1775-1776`); `contents: write` reports `grants-contents-write` (`2608`) | `::test_the_sweep_refuses_a_flow_style_job_that_grants_write` |
+| R2-3 | Five more flow spellings of a write token | Attacking the fix above found a quoted job key, a flow mapping on the line after the key, a tagged `!!map {…}`, an escaped key (`"permiss\u0069ons"`), and the explicit-key `? permissions` / `: write-all` form each carrying a grant | The widened gate refuses the first three as `grants-contents-write` and the two key spellings it cannot resolve as `unreadable-token-permissions` (`scripts/check-publish-paths.sh:1775-1776`) | `::test_the_sweep_refuses_every_flow_spelling_of_a_write_token` |
+| R2-4 | The widened flow gate could over-refuse prose | A `run:` string echoing `"{permissions: write}"`, or the repository's own build step holding a `b"\x7fELF"` literal, sits on a brace-bearing line and could be read as a token | The gate keys on an opening brace where a flow mapping can begin, and the escaped-key rule keys on the quote being in a key position (`scripts/check-publish-paths.sh:1626`, `1775-1776`); both files are accepted | `::test_prose_that_names_a_permission_is_not_a_grant` (the over-refusal control) |
+| R2-5 | A deeper `permissions:` covered a job that declared none | The coverage proof counted any deeper `permissions:` line — e.g. a variable `permissions: read` under `env:` — as the job's own token, so a file with an undeclared job read read-only | `_jobs_all_declare_permissions()` counts only a `permissions:` at the job's direct-child indent (`scripts/check-publish-paths.sh:2022`); an undeclared job leaves the file `partial` → `partial-token-permissions` (`2641`) | `::test_a_deeper_permissions_key_does_not_cover_a_job` |
+| R2-6 | A block-indicator `uses:` hid its callee | `uses: \|`, `uses: \|2-` and `uses: >2-` put the callee on the next line; the indicator was read as the value, so the call passed | The indicator strip removes the whole run of signs and digits (`scripts/check-publish-paths.sh:2268-2270`) and an empty value is a refusal (`2280`), so the callee is refused as `calls-a-release-workflow` | `::test_the_sweep_refuses_a_block_scalar_uses_that_hides_its_callee` |
+| R2-7 | A `uses:` the reader could not place | `call: {uses: …}`, `call: {"uses": …}`, `steps: [{uses: …}]` and the explicit-key `? uses` / `: …` form kept the key off line start, so a remote callee passed | `pat_uses` matches `uses:` anywhere a key can begin (`scripts/check-publish-paths.sh:2184`) and `pat_explicit_uses` refuses the split key (`2189`); a local `./` callee and a subdirectory action still pass (`2314-2318`, `2328`) | `::test_the_sweep_refuses_a_callee_inside_a_flow_mapping` |
 | R2-8 | A `#` inside a word ended the line | `echo x#${{ secrets.NAME }}` is live in the shell GitHub runs, and stripping from any `#` hid the reference from the walk | `strip_comment()` treats `#` as a comment only at line start or after whitespace (`scripts/check-release-credentials.sh:142-149`) | `tests/test_release_credentials.py::test_a_hash_inside_a_word_does_not_hide_a_reference` |
 | R2-9 | A job key with whitespace before its colon was not a job | `  leak :` merged into the previous job's body, so its environment and its credential were attributed to the wrong job | `JOB` accepts whitespace around the colon (`scripts/check-release-credentials.sh:126`) | `::test_a_whitespace_before_a_job_colon_is_read` |
 | R2-10 | The job indent was hard-coded to two spaces | A four-space file was read as no jobs, so every live reference in it was unattributed and an honest file was refused | `jobs()` measures the job indent as the smallest indent in the `jobs:` block (`scripts/check-release-credentials.sh:157-197`) | `::test_a_four_space_indented_job_is_read` (REPLACED the over-refusing four-space-indent case) |
 | R2-11 | A YAML anchor made a job or an environment unreadable | `build: &b` and `environment: &env release-signing` kept the anchor text as the name, so the job or environment did not resolve | `JOB` allows a trailing anchor (`scripts/check-release-credentials.sh:126`) and `environment()` strips a leading anchor (`:251`) | `::test_a_yaml_anchor_does_not_hide_a_job_or_an_environment` |
 | R2-12 | A lowercase or single-bracket spelling escaped the watched name | `secrets.gpg_private_key` resolves the same API name (`GPG_PRIVATE_KEY`) but was compared literally, and a single quoted bracket name was not derived | `references()` uppercases every derived name (`scripts/check-release-credentials.sh:265`); a whole-literal bracket index is still a name (`:284-288`) | `::test_a_lowercase_secret_reference_is_matched_to_its_name`, `::test_a_single_literal_bracket_secret_is_still_derived` |
 | R2-13 | A reference split across lines was read as neither half | `secrets` newline `.NAME` / `["NAME"]` is one reference; the per-line walk saw neither half | `live_references()` strips comments per line, then joins the text before matching (`scripts/check-release-credentials.sh:296-306`) | `::test_a_reference_split_across_lines_is_still_live` |
-| R2-14 | An expression bracket index or an escaped dot form was read as a harmless name | `secrets[format('{0}_KEY','GPG_PRIVATE')]` was derived as the harmless `GPG_PRIVATE`, and `secrets.GP\u0047_PRIVATE_KEY` stopped at `GP`, so the real name was watched by nobody | `references()` returns `?unreadable` for a non-literal bracket index or an escaped/interpolated dot form (`scripts/check-release-credentials.sh:265`), and the caller refuses it (`:511`) | `::test_a_bracket_expression_secret_is_refused_as_unreadable` (REPLACED `test_a_bracket_expression_secret_is_derived`) |
+| R2-14 | An expression bracket index or an escaped dot form was read as a harmless name | `secrets[format('{0}_KEY','GPG_PRIVATE')]` was derived as the harmless `GPG_PRIVATE`, and `secrets.GP\u0047_PRIVATE_KEY` stopped at `GP`, so the real name was watched by nobody | `references()` returns `?unreadable` for a non-literal bracket index or an escaped/interpolated dot form (`scripts/check-release-credentials.sh:265`), and the caller refuses it (`:511`) | `::test_a_bracket_expression_secret_is_refused_as_unreadable` (which replaced the cycle-5 case that derived a bracket-expression secret) |
 | R2-15 | A `.pth` in site-packages could redirect the helper after the pin passed | The source-mode helper ran `-I -P`, which does not stop `site`, so a `.pth` could insert a tree ahead of the pinned one while the identity check still said PASS | The helper now runs `-I -S -P` under a fixed `-c` bootstrap that appends the verified package roots (`probe.py:593`, `sys.path.extend` at `:597`) after the interpreter's own entries, including its `purelib`/`platlib` (`probe.py:603`, `:631`, `:650`; flags at `:542`, `:548`) | `HwiIdentityPins::test_a_pth_in_site_packages_cannot_redirect_the_helper` (`tests/test_hardening_pins.py:1265`), `::test_the_helper_search_path_never_precedes_the_interpreter` (`:1324`), `::test_a_search_directory_module_cannot_shadow_the_stdlib` (`:1363`). An earlier draft of this row said the bootstrap inserted the roots first; the third audit round showed that ordering was itself the bug: the root's parent is site-packages, so the inserted directory led the standard library inside the helper |
 | W3-1 | A genuine `compileall` `.pyc` was refused | The child compared `marshal.dumps(scrub(code))`; `marshal` encodes string-interning/`FLAG_REF` state, so a real `pip`/`compileall`-written `__pycache__/client.cpython-312.pyc` compared unequal and the pinned tree was refused | The child's freshness test compares code objects by value through a recursive `fingerprint()` (`probe.py:722`), ending `return fingerprint(recorded) == fingerprint(code)` (`:788`); `co_filename` is normalised away and the format covers every code field plus `co_consts` recursively (code objects, tuples and frozensets recursed, everything else by value AND by type — see W3-9). A `.pyc` whose body is not the recorded source is still refused, proved in the same test | `HwiIdentityPins::test_a_genuine_compileall_bytecode_file_is_accepted` (`tests/test_hardening_pins.py:855`), `::test_a_missing_package_is_refused_as_not_installed` (`:1012`) |
 | W3-2 | A `.pyc` added after a warm verdict executed | `_cached_identity_holds` re-hashed only the recorded `(path, digest)` pairs, so a new compiled file inside the pinned package inherited a standing PASS | `_cached_identity_holds(path, payload=False)` re-runs the whole payload walk when `payload` is true, and `_verify_hwi_identity` (`probe.py:935`) passes it for the source-mode case (`probe.py:433`) | `::test_a_bytecode_file_added_after_a_warm_verdict_is_refused` (`:1088`), `::test_a_module_added_after_a_warm_verdict_is_not_believed` (`:1154`) |
-| W3-3 | A local action the sweep could not read could publish | A `./`-prefixed target was passed without reading it, so an unread local action could carry a publisher | `calls_a_remote_reusable_workflow()` passes a local `./` target only when it is `.github/workflows/*.yml\|*.yaml` (after stripping `@ref` and flow punctuation); any other local target fails closed with the new reason `calls-a-local-action`, reported through the caller (`scripts/check-publish-paths.sh:2081`, `:2203-2222`, `:2222`) | `test_the_sweep_refuses_a_local_action_it_does_not_read` (`tests/test_workflow_config.py:1852`) |
-| W3-4 | A flow `jobs:` map was over-refused | A flow-style `jobs: {…}` mapping that declared its own read-only token was read as no jobs and refused | `_flow_members` (`:1743`), `_flow_key_value` (`:1800`), `_flow_job_declares_permissions` (`:1839`), `_flow_jobs_mapping_covers` (`:1858`) and `_collect_flow` (`:1878`) read it; `_jobs_all_declare_permissions` (`:1927`, delegating `:1964`, per-job `:2001`) keeps the cycle-6 depth guard, so a `permissions:` nested under `env:`/`strategy:` still does not cover a job | `test_the_sweep_accepts_a_read_only_token_in_a_flow_style_job` (`tests/test_workflow_config.py:1562`) |
-| W3-5 | `with: {x-permissions: …}` was over-refused | The mid-line flow pattern matched `x-permissions` as a grant | `pat_perm` keeps the key in key position — `^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$` (`scripts/check-publish-paths.sh:1503`), capture group 2 — so the `x-permissions` spelling is not a grant | subTest in `test_prose_that_names_a_permission_is_not_a_grant` (`tests/test_workflow_config.py:1657`) |
-| W3-6 | The ok/refusal text overclaimed the sweep's scope | It said "non-main ref" while the sweep fetches heads only (`git fetch --no-tags … +refs/heads/*`, `scripts/check-publish-paths.sh:2268`), and the header did not say tags are out of scope by design | The header scope comment (`:4-18`), the refusal banner (`:2758-2775`) and the ok line (`:2780`) name a non-main **branch** (the sweep fetches heads only) and state that tags are out of scope by design, with tag-triggered credential use controlled by the environment branch policy; the ok line was tightened once more in the cycle-13 identity round, because a fork of `main` carries `main`'s own publish-capable file — the exact current string is quoted in the CT-73 + CT-102 row | the ok-line assertions across `tests/test_workflow_config.py` (`:1155`, `:1938`, `:1958`, `:2190`, `:2224`, `:2589`, `:2637`, `:2666`, `:2874`, `:2961`, `:3035`, `:3087`, `:3258`, `:3443`, `:3986`, `:4258`, `:4359`) |
+| W3-3 | A local action the sweep could not read could publish | A `./`-prefixed target was passed without reading it, so an unread local action could carry a publisher | `calls_a_remote_reusable_workflow()` passes a local `./` target only when it is `.github/workflows/*.yml\|*.yaml` (after stripping `@ref` and flow punctuation); any other local target fails closed with the new reason `calls-a-local-action`, reported through the caller (`scripts/check-publish-paths.sh:2176`, `2298-2317`, `2317`) | `test_the_sweep_refuses_a_local_action_it_does_not_read` (`tests/test_workflow_config.py:1852`) |
+| W3-4 | A flow `jobs:` map was over-refused | A flow-style `jobs: {…}` mapping that declared its own read-only token was read as no jobs and refused | `_flow_members` (`1838`), `_flow_key_value` (`1895`), `_flow_job_declares_permissions` (`1934`), `_flow_jobs_mapping_covers` (`1953`) and `_collect_flow` (`1973`) read it; `_jobs_all_declare_permissions` (`2022`, delegating `2059`, per-job `2096`) keeps the cycle-6 depth guard, so a `permissions:` nested under `env:`/`strategy:` still does not cover a job | `test_the_sweep_accepts_a_read_only_token_in_a_flow_style_job` (`tests/test_workflow_config.py:1562`) |
+| W3-5 | `with: {x-permissions: …}` was over-refused | The mid-line flow pattern matched `x-permissions` as a grant | `pat_perm` keeps the key in key position — `^([[:space:]]*)[^[:alnum:]_]*permissions[^[:alnum:]_]*[[:space:]]*:(.*)$` (`scripts/check-publish-paths.sh:1598`), capture group 2 — so the `x-permissions` spelling is not a grant | subTest in `test_prose_that_names_a_permission_is_not_a_grant` (`tests/test_workflow_config.py:1657`) |
+| W3-6 | The ok/refusal text overclaimed the sweep's scope | It said "non-main ref" while the sweep fetches heads only (`git fetch --no-tags … +refs/heads/*`, `scripts/check-publish-paths.sh:2363`), and the header did not say tags are out of scope by design | The header scope comment (`:4-18`), the refusal banner (`2853-2870`) and the ok line (`2875`) name a non-main **branch** (the sweep fetches heads only) and state that tags are out of scope by design, with tag-triggered credential use controlled by the environment branch policy; the ok line was tightened once more in the cycle-13 identity round, because a fork of `main` carries `main`'s own publish-capable file — the exact current string is quoted in the CT-73 + CT-102 row | the ok-line assertions across `tests/test_workflow_config.py` (`:1155`, `:1938`, `:1958`, `:2190`, `:2224`, `:2589`, `:2637`, `:2666`, `:2874`, `3240`, `3314`, `3366`, `3537`, `3722`, `4265`, `4537`, `4638`) |
 | W3-7 | An environment holding a watched credential but never named was never queried | The check audited only environments the workflow text named, so an undeclared `*` environment with an empty branch policy could deploy from a tag | A new section 3 (`scripts/check-release-credentials.sh:599`, API walk `:609`) pages `repos/$REPO/environments` and enforces main-only, no human gate and no wait timer on any environment that holds a watched name, named or not; one holding none (e.g. `github-pages`) is skipped before its policy is read, with its secrets still listed. `names_from` decode mode (`:399`), `encoded_env()` (`:409`), whitespace-safe declared stream (`:556-558`) requesting percent-encoded names (`*` → `%2A`). Refusal wording: "the <env> environment is not named by any workflow in $WORKFLOWS_DIR and holds the watched credential name(s) [<names>], but it <does not allow deployments from the main branch alone (found: none)>[ and declares a human gate (wait_timer(5))]; a tag dispatch could still name it, so it is refused rather than left unaudited" | `tests/test_release_credentials.py:421` (`test_an_undeclared_environment_holding_a_credential_is_refused`), `:450` (`test_an_undeclared_environment_holding_no_credential_is_ignored`, the `github-pages` control, must stay exit 0), `:471` (`test_an_undeclared_environment_with_a_human_gate_is_refused`) |
 | W3-8 | `environment: {name: x}` was mis-parsed | A flow mapping was read as its raw text, so the environment name did not resolve | `flow_name()` (`scripts/check-release-credentials.sh:199`), called from `environment()` (`:252`), reads `{name: x}` and `{name: x, url: …}`; a mapping with no name key falls back to its raw text as one environment, so no phantom names | `tests/test_release_credentials.py:870` (`test_a_flow_mapping_environment_is_read_as_its_name`), `:914` (`test_an_unnameable_flow_mapping_stays_one_environment`) |
 
@@ -677,8 +677,8 @@ tests are `test_a_hash_inside_a_word_does_not_hide_a_reference`,
 `test_a_lowercase_secret_reference_is_matched_to_its_name`,
 `test_a_single_literal_bracket_secret_is_still_derived`,
 `test_a_reference_split_across_lines_is_still_live` and
-`test_a_bracket_expression_secret_is_refused_as_unreadable` (replacing
-`test_a_bracket_expression_secret_is_derived`). Its `HwiIdentityPins` tests are
+`test_a_bracket_expression_secret_is_refused_as_unreadable` (replacing the
+cycle-5 case that derived it). Its `HwiIdentityPins` tests are
 `test_a_pth_in_site_packages_cannot_redirect_the_helper` and
 `test_the_helper_search_path_never_precedes_the_interpreter`.
 
@@ -724,7 +724,7 @@ Every row's `measured at` is this pass on the frozen tree with the audit interpr
 `tests/test_hardening_pins.py` `Ran 84 tests` — **OK**. The credential file went 42 → 47 across the
 third wave with no existing case rewritten; its second-round two replacements
 (the over-refusing four-space-indent case → `test_a_four_space_indented_job_is_read` and
-`test_a_bracket_expression_secret_is_derived` →
+the bracket-expression case →
 `test_a_bracket_expression_secret_is_refused_as_unreadable`) stand. The sweep class went 53 → 63 in
 the cycle-9 round, 63 → 66 in the cycle-10 round, and 66 → 94 across the cycle-11, cycle-12 and
 cycle-13 rounds (five rewrite cases, four more, then eleven identity, five tip-blob and three
@@ -843,7 +843,7 @@ callee check runs first — still a refusal.
 
 ### Verification of the cycle-10 adversarial round (job ids)
 
-The cycle-10 sweep round closed the job-id hole in the KEY-POSITION rule. A GitHub job id may legally
+The cycle-10 sweep round narrowed the job-id hole in the KEY-POSITION rule (round 19 later repaired the node-property blind spot recorded below). A GitHub job id may legally
 be spelled `env`, `run`, `with`, `if`, `name`, `shell` or `working-directory`, and
 `strip_scalar_bodies()` deleted any line whose first key was one of those spellings plus every
 deeper line. A workflow whose job was declared `jobs: env:` therefore had its whole body removed
@@ -857,11 +857,11 @@ ok-while-YAML-says-write cases, every one this class. The same hole hid
 named `env`.
 
 The fix is positional and fail-closed: `strip_scalar_bodies()`
-(`scripts/check-publish-paths.sh:1194`) computes the workflow `jobs:` line, its block end (the first
+(`scripts/check-publish-paths.sh:1289`) computes the workflow `jobs:` line, its block end (the first
 later non-blank line at indent ≤ the `jobs:` indent) and the job-id indent (the least indent
 between them) once, and prints a non-blank line at that indent verbatim; a flow job's continuation
 is protected by the new `_strip_flow_close_line()` (`:780`) and a `jobs: {…}` flow mapping protects
-its whole region (`:1222-1226`). Workflow-level `env:`, a job-level `env:` at indent 4 and step-level
+its whole region (`1317-1321`). Workflow-level `env:`, a job-level `env:` at indent 4 and step-level
 `run:`/`with:` are still stripped, and the publisher pipeline still reads literal bodies, so
 `gh release` in `run: |` still refuses. The header doctrine gained the bullet "a job id is
 recognised by its POSITION under the workflow `jobs:` key, never by its spelling"
@@ -870,11 +870,11 @@ recognised by its POSITION under the workflow `jobs:` key, never by its spelling
 Three new `PublishPathSweepTests` cases pin it:
 
 - `test_the_sweep_finds_a_write_grant_in_a_job_named_for_a_scalar_key`
-  (`tests/test_workflow_config.py:3119`) — seven ids × {block `permissions: {contents: write}`,
+  (`tests/test_workflow_config.py:3398`) — seven ids × {block `permissions: {contents: write}`,
   one-line flow job}, plus a two-job hidden case and a `write-all` job named `name`.
-- `test_the_sweep_finds_a_remote_callee_in_a_job_named_for_a_scalar_key` (`:3183`) — a job-level
+- `test_the_sweep_finds_a_remote_callee_in_a_job_named_for_a_scalar_key` (`3462`) — a job-level
   and a step-level remote `uses:` inside a job named `env`.
-- `test_a_job_named_for_a_scalar_key_keeps_the_scalar_controls_honest` (`:3209`) — honest controls
+- `test_a_job_named_for_a_scalar_key_keeps_the_scalar_controls_honest` (`3488`) — honest controls
   in jobs named `env`/`run`/`if` stay `ok`, and `gh release` in a `run: |` body is still an
   offender.
 
@@ -904,7 +904,7 @@ grant or a real remote callee:
   file's real `jobs:` was never located. Fixture `M2_quoted_jobs_key_grant.yml`.
 - **O1 — the over-refusal regression it introduced.** An exempted job-declaration line was printed
   verbatim, so a quoted `"permissions: write"` note inside it was read as a grant
-  (`grants-write-all`, `scripts/check-publish-paths.sh:2517`) where the previous revision printed ok.
+  (`grants-write-all`, `scripts/check-publish-paths.sh:2612`) where the previous revision printed ok.
   Fixture `O1_flow_note_on_jobdecl.yml`.
 - **Three mutations survived all 66 tests then present** — MT3 (`_strip_flow_close_line` always
   returning its start offset), MT4b (dropping `shell` from the scalar-key list) and MT6 (the block-end
@@ -914,28 +914,28 @@ grant or a real remote callee:
 The cycle-11 repair is positional and fail-closed. The header doctrine now states the rule outright
 (`scripts/check-publish-paths.sh:60-132`): a construct the parser cannot classify is refused. A job id
 is recognised by its POSITION under the one unambiguous top-level `jobs:` key (`_jobs_key_kind()`
-`:835`, `_locate_jobs_key()` `:1047`); block-scalar bodies are skipped while locating it
-(`strip_scalar_bodies()` `:1194`), quoted spellings are stripped, and a `\`-escaped spelling or two
+`:835`, `_locate_jobs_key()` `1142`); block-scalar bodies are skipped while locating it
+(`strip_scalar_bodies()` `1289`), quoted spellings are stripped, and a `\`-escaped spelling or two
 candidates is unreadable. When the locator cannot find a `jobs:` key it emits the sentinel
 `permissions: *sweep-cannot-locate-the-jobs-key` and hands both readers the UNSTRIPPED text, so a real
 grant is still reported as a grant and a job-less or ambiguous file refuses rather than reading as
 read-only. `_strip_flow_close_line()` (`:780`) now skips the character after a backslash inside a
 double-quoted scalar and returns a sentinel on an unbalanced flow, and `_flow_find_permissions()`
-(`:1324`) finds an inline `permissions` only in KEY position, so a quoted scalar in value position is
+(`1419`) finds an inline `permissions` only in KEY position, so a quoted scalar in value position is
 data while a quoted key or value is still read.
 
 Five new `PublishPathSweepTests` cases pin the repair, each red under its own mutation:
 `test_the_sweep_ignores_a_decoy_jobs_line_inside_a_block_scalar`
-(`tests/test_workflow_config.py:3287`), `test_the_sweep_reads_a_quoted_top_level_jobs_key` (`:3342`),
-`test_the_sweep_walks_a_flow_jobs_mapping_with_an_escaped_quote` (`:3388`),
-`test_the_sweep_does_not_read_a_quoted_scalar_as_a_permissions_key` (`:3425`) and
-`test_the_sweep_scopes_a_scalar_body_and_the_jobs_block` (`:3456`). The three previously surviving
+(`tests/test_workflow_config.py:3566`), `test_the_sweep_reads_a_quoted_top_level_jobs_key` (`3621`),
+`test_the_sweep_walks_a_flow_jobs_mapping_with_an_escaped_quote` (`3667`),
+`test_the_sweep_does_not_read_a_quoted_scalar_as_a_permissions_key` (`3704`) and
+`test_the_sweep_scopes_a_scalar_body_and_the_jobs_block` (`3735`). The three previously surviving
 mutations now redden named tests, the referee's fuzzer re-run gives `DEFECTS=0 OVER-REFUSALS=0`, and
 the 28-case job-id corpus, the 25-fixture audit-I corpus (byte-identical) and ten further fixtures all
 pass.
 
 **Behaviour change this round, documented not hidden:** a workflow file with no `jobs:` key, or an
-empty `jobs:` value, is now refused `unreadable-token-permissions` (`:2537`) where the previous revision
+empty `jobs:` value, is now refused `unreadable-token-permissions` (`2632`) where the previous revision
 printed ok. Both are invalid GitHub workflow syntax that can publish nothing, so the refusal is the
 fail-closed doctrine. **Residuals carried forward:** a flow member whose URI tag contains the flow
 splitter's comma or colon reports `unreadable-token-permissions` rather than a named grant (fail-closed);
@@ -960,30 +960,30 @@ The round-8 referee defeated the cycle-11 repair twice.
 
 The repair, all in `scripts/check-publish-paths.sh`:
 
-- quoted-scalar state is carried across lines (`_qs_line_open_quote()` `:892`, used by `_ambiguously_placed_jobs_key()` `:971` and the locator `:1047`, with the
-  branch-loop guard at `:2505`), so a `jobs:`-shaped line inside a multi-line quoted scalar cannot become the locator's
-  candidate; an ambiguous placement refuses (`unreadable-token-permissions` `:2537`);
+- quoted-scalar state is carried across lines (`_qs_line_open_quote()` `910`, used by `_ambiguously_placed_jobs_key()` `1029` and the locator `1142`, with the
+  branch-loop guard at `2600`), so a `jobs:`-shaped line inside a multi-line quoted scalar cannot become the locator's
+  candidate; an ambiguous placement refuses (`unreadable-token-permissions` `2632`);
 - the jobs-key reader strips a leading anchor or tag before comparing to `jobs` (`_jobs_key_kind()`
   `:835`), so `&j jobs:` and `!!str jobs:` are the key, not a decoy;
-- more than one document refuses (`has_multiple_documents()` `:935`, called `:2496`) and is reported
-  `unreadable-multiple-documents` (`:2497`) — GitHub runs one workflow per file, so a second document is
+- more than one document refuses (`has_multiple_documents()` `993`, called `2591`) and is reported
+  `unreadable-multiple-documents` (`2592`) — GitHub runs one workflow per file, so a second document is
   unclassifiable;
 - YAML double-quoted escapes (`\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\/`, `\\`, `\"`, `\ ` and the short
   escapes) are decoded (the addendum comment is at `:459-471`) before any callee or publisher decision;
-  an escape that cannot be decoded refuses `unreadable-escape-sequence` (`:2574`);
+  an escape that cannot be decoded refuses `unreadable-escape-sequence` (`2669`);
 - a quoted `"permissions"` key is read like the bare key (the KEY-position rule at
-  `_flow_find_permissions()` `:1324`, `pat_perm` `:1503`). This removed the real over-refusal the
+  `_flow_find_permissions()` `1419`, `pat_perm` `1598`). This removed the real over-refusal the
   referee flagged: a job-level `"permissions": read-all` with no top-level token reported
-  `partial-token-permissions` (`:2546`) while the bare spelling was clean.
+  `partial-token-permissions` (`2641`) while the bare spelling was clean.
 
 Four new `PublishPathSweepTests` cases pin it: `test_the_sweep_skips_a_jobs_decoy_inside_a_quoted_scalar`
-(`tests/test_workflow_config.py:3497`), `test_the_sweep_decodes_yaml_escapes_in_a_double_quoted_value`
-(`:3571`), `test_the_sweep_refuses_a_file_with_more_than_one_document` (`:3633`) and
-`test_the_sweep_reads_a_quoted_permissions_key` (`:3663`).
+(`tests/test_workflow_config.py:3776`), `test_the_sweep_decodes_yaml_escapes_in_a_double_quoted_value`
+(`3850`), `test_the_sweep_refuses_a_file_with_more_than_one_document` (`3912`) and
+`test_the_sweep_reads_a_quoted_permissions_key` (`3942`).
 
 **Kept over-refusals (deliberate, disclosed, unchanged):** `uses: ./.github/actions/x` is refused as
-`calls-a-local-action` (`scripts/check-publish-paths.sh:2222`) and the string `gh release` anywhere in a
-`run:` value refuses as `runs-gh-release` (`:2591`). These are the lexical belt's cost, not bugs.
+`calls-a-local-action` (`scripts/check-publish-paths.sh:2317`) and the string `gh release` anywhere in a
+`run:` value refuses as `runs-gh-release` (`2686`). These are the lexical belt's cost, not bugs.
 **Residuals:** code points below 32 and 127 are folded to a space inside decoded escapes (defensive; no
 fixture distinguishes it); two locator fixtures (`C2`/`C5`) refuse as unclassifiable rather than with a
 named reason, because they differ from an honest control only in the job body; a URI tag containing the
@@ -999,10 +999,10 @@ shared workflows — and a decidable arm decides the branch question by comparin
 
 **The invariant.** For every enumerated non-main branch B, let M be the merge base of the allowed ref
 (`main`) and B. Every path under `.github/workflows/` or `.github/actions/` that B adds or modifies
-relative to M is refused `branch-changes-workflow-file` (`scripts/check-publish-paths.sh:2721-2722`) unless
+relative to M is refused `branch-changes-workflow-file` (`scripts/check-publish-paths.sh:2816-2817`) unless
 the allowlist on the ALLOWED ref names exactly that branch, path and blob oid. Deletions are ignored — a
-deletion adds no publish capability. The allowlist is read from the allowed ref only (`:2342-2368`),
-never from the branch under test. Code: merge base `:2683`, per-path comparison `:2685-2721`.
+deletion adds no publish capability. The allowlist is read from the allowed ref only (`2437-2463`),
+never from the branch under test. Code: merge base `2778`, per-path comparison `2780-2816`.
 
 **Why the merge base and not `main`'s tip.** A branch based on an older `main` commit inherits reviewed
 `main` content; measuring against the current tip would refuse branches that changed nothing. Measured on
@@ -1018,33 +1018,34 @@ carries `.github/workflows/build-candidate.yml`, whose `main` copy holds `id-tok
 `contents: write`. A branch forked from `main` DOES carry it, and the sweep refused it
 (`feature-x .github/workflows/build-candidate.yml grants-writable-token-scope`) with the harmful advice
 "Delete the file on the ref above" — so every fork of `main` failed the check. Repaired by keying both
-belts on the allowed ref's tip blob (`git rev-parse -q --verify "$ALLOWED_REF:$path"`, `:2462`): the
-parser SKIPS a path whose branch blob oid equals the allowed ref's blob for that path (`:2463-2465`), and
+belts on the allowed ref's tip blob (`git rev-parse -q --verify "$ALLOWED_REF:$path"`, `2557`): the
+parser SKIPS a path whose branch blob oid equals the allowed ref's blob for that path (`2558-2560`), and
 the identity arm calls a path the branch's own change only when its blob differs from BOTH the
-merge-base blob AND the allowed tip blob AND is not exactly allowlisted (`:2707-2721`). Consequences: a
-STALE inherited publish-capable file is still refused by the parser (its blob differs from the tip); a
+merge-base blob AND the allowed tip blob AND is not exactly allowlisted (`2802-2816`). Consequences: a
+STALE inherited publish-capable file is refused on its own bytes (its blob differs from the tip); a
 stale inherited READ-ONLY file is clean (the live shape); a branch that adopts `main`'s tip content is
-clean; an allowlisted publish-capable change is still refused by the parser, because the parser never
-consults the allowlist — so the allowlist can never smuggle a publish path. Because a fork of `main` does
+clean; an allowlisted publish-capable change is refused only while the parser arm actually sees the
+grant — that arm does not read the allowlist, but it decides only the shapes it understands, and round 19
+repaired the reader after a node-property/column-zero payload hid a job body from it. Because a fork of `main` does
 carry a publish-capable file, the old ok text overclaimed; the current ok line is the one quoted in the
-CT-73 + CT-102 row (`:2780`), and the old string must not appear anywhere in this repository's markdown.
+CT-73 + CT-102 row (`2875`), and the old string must not appear anywhere in this repository's markdown.
 
 **Fail-closed.** A shallow clone is a global precondition: it states the remedy and ends the run
 (`refusing: the repository is a shallow clone, … Fetch the full history (checkout with fetch-depth: 0, or
-\`git fetch --unshallow\`) and re-run. (1)`, `:2417-2419`), as does an unlistable allowed tree
-(`:2421-2423`). Per branch, a missing merge base refuses `unreadable-merge-base` (`:2685`), an
-unreadable allowlist refuses `unreadable-allowlist` (`:2715`) and an unlistable branch tree refuses
-`unreadable-branch-tree` (`:2725`). A refusal with no single path at fault names `-` in the path column
-(`:2413-2417`, `:2685`, `:2725`) rather than a placeholder that looks like a file. The `version` job's
+\`git fetch --unshallow\`) and re-run. (1)`, `2512-2514`), as does an unlistable allowed tree
+(`2516-2518`). Per branch, a missing merge base refuses `unreadable-merge-base` (`2780`), an
+unreadable allowlist refuses `unreadable-allowlist` (`2810`) and an unlistable branch tree refuses
+`unreadable-branch-tree` (`2820`). A refusal with no single path at fault names `-` in the path column
+(`2508-2512`, `2780`, `2820`) rather than a placeholder that looks like a file. The `version` job's
 first checkout step sets `fetch-depth: 0` in `.github/workflows/build-candidate.yml:54`, with a comment
 saying why.
 
 **The allowlist.** `.github/publish-sweep-allowlist.txt` on `main`; blank lines and `#` comments are
 ignored; otherwise exactly `<branch> <path> <blob-oid>`; exact match only; a missing file means an empty
 list, not an error. It is empty today. The refusal text names the two remedies — merge or rebase the
-change onto `main` once reviewed, or commit an allowlist line on `main` (the banner at `:2758-2775`).
-`_allowlisted_change()` is `:2373`; a two-field, four-field, glob or stale-oid line is not a match because
-`[ -z "$allow_extra" ] || continue` (`:2380`). The parser never reads the file.
+change onto `main` once reviewed, or commit an allowlist line on `main` (the banner at `2853-2870`).
+`_allowlisted_change()` is `2468`; a two-field, four-field, glob or stale-oid line is not a match because
+`[ -z "$allow_extra" ] || continue` (`2475`). The parser never reads the file.
 
 **What the sweep is, and what contains the token it cannot see.** `build-candidate.yml` is `on: workflow_dispatch`. Its `version` job runs
 `bash scripts/check-publish-paths.sh origin` from the ref that was dispatched
@@ -1077,9 +1078,9 @@ caught by the identity arm (`branch-changes-workflow-file`) and re-judged by the
    the file on the ref above, then re-run.` For a branch that only renamed a read-only workflow
    (`r_rename_readonly .github/workflows/ci-renamed.yml branch-changes-workflow-file`) both statements
    were false. Corrected by tracking the parser and identity offender counts separately
-   (`PARSER_OFFENDERS=$((offenders - IDENTITY_OFFENDERS))` `:2759`), printing a class-specific summary
-   (`_publish_capable_clause()` `:2743`, `_ci_definition_clause()` `:2750`, assembled `:2760-2767`) and
-   attaching each remedy to its class (`:2772`, `:2775`), with the delete-the-file advice dropped. After
+   (`PARSER_OFFENDERS=$((offenders - IDENTITY_OFFENDERS))` `2854`), printing a class-specific summary
+   (`_publish_capable_clause()` `2838`, `_ci_definition_clause()` `2845`, assembled `2855-2862`) and
+   attaching each remedy to its class (`2867`, `2870`), with the delete-the-file advice dropped. After
    the split, a mixed corpus prints exactly `refusing: 1 non-main branch carries a publish-capable
    workflow; 1 non-main branch changed its CI definition relative to the merge base with main (2)`, one
    remedy per class, and no delete-the-file sentence; the identity-only case prints only the CI-change
@@ -1087,8 +1088,8 @@ caught by the identity arm (`branch-changes-workflow-file`) and re-judged by the
 2. Fail-closed refusals printed `.` as the path for a global precondition (a shallow clone, an unlistable
    allowed tree, a missing merge base, an unlistable branch tree), once per branch. Corrected: a global
    precondition is stated once with the remedy (`fetch the full history`, i.e. the checkout's
-   `fetch-depth: 0`, `:2417-2419`, `:2421-2423`), and a branch-level refusal with no single path uses `-`
-   in the path column (`:2413-2417`, `:2685`, `:2725`).
+   `fetch-depth: 0`, `2512-2514`, `2516-2518`), and a branch-level refusal with no single path uses `-`
+   in the path column (`2508-2512`, `2780`, `2820`).
 3. The fork-from-main false positive above was found the same way — by building a corpus rather than by
    reading the code. The lesson: each of these was found by an independent corpus, which is why the
    evidence below lists the corpora and their pre-fix baselines.
@@ -1104,7 +1105,8 @@ caught by the identity arm (`branch-changes-workflow-file`) and re-judged by the
   `.github/publish-sweep-allowlist.txt` itself is inert (`e_allowlist_edit`, the file is read from the
   allowed ref), while a zero-oid entry (`e_stale`), a glob path (`e_glob`), a fourth-field line
   (`e_extra`) and an added action (`e_action`) are refused; and an allowlisted `write-all` change is
-  still refused by the parser (`e_parser_wins` — the allowlist cannot smuggle a publish path).
+  refused on the parser's own reading (`e_parser_wins` — the allowlist cannot make a readable grant
+  clean).
 - `identity5`: 9 assertions — a fork identical to `main` (`g_fork`), a stale inherited read-only file
   (`g_oldreadonly`), a branch carrying `main`'s tip content (`g_copy_tip`) and an exactly-allowlisted
   read-only edit (`g_mod_allowlisted`) are clean; an un-allowlisted read-only edit (`g_mod_readonly`)
@@ -1127,25 +1129,25 @@ banner/remedy/ok text on BOTH sides (117 lines), with the single accepted reason
 
 The new unit tests and their mutation proofs: the five cycle-11 cases and four cycle-12 cases named
 above; the identity arm's 11 identity cases
-(`test_the_sweep_refuses_a_branch_that_changes_a_workflow_or_action` `tests/test_workflow_config.py:3712`,
-`test_the_sweep_needs_no_allowlist_file` `:3742`, `test_the_sweep_leaves_an_unchanged_branch_clean`
-`:3758`, `test_the_sweep_measures_against_the_merge_base_not_the_tip` `:3767`,
-`test_the_sweep_permits_an_exactly_allowlisted_change` `:3787`,
-`test_the_sweep_refuses_an_allowlist_line_with_the_wrong_oid` `:3804`,
-`test_the_sweep_ignores_an_allowlist_written_on_the_branch` `:3822`,
-`test_the_sweep_ignores_a_deleted_workflow` `:3839`,
-`test_the_sweep_allowlist_cannot_smuggle_a_publish_path` `:3851`,
-`test_the_sweep_handles_a_symlink_and_a_mode_only_change` `:3885`,
-`test_the_sweep_identity_arm_end_to_end` `:3909`); the 5 tip-blob/fork cases
-(`test_the_sweep_leaves_a_fork_of_main_carrying_the_publisher_clean` `:3976`,
-`test_the_sweep_still_refuses_a_stale_inherited_publisher` `:3989`,
-`test_the_sweep_leaves_a_stale_inherited_read_only_workflow_clean` `:4008`,
-`test_the_sweep_leaves_a_change_equal_to_mains_tip_clean` `:4028`,
-`test_the_sweep_refuses_a_change_that_matches_neither_baseline` `:4046`); and the 3 banner-class cases
-(`test_the_summary_names_only_the_publish_capable_class` `:4083`,
-`test_the_summary_names_only_the_ci_change_class_for_a_rename` `:4101`,
-`test_the_summary_names_both_classes_when_both_are_present` `:4124`), alongside the pre-existing
-`SweepFailClosedPins` (5 cases, `:4394`). Each was broken on a disposable copy and watched red, with the
+(`test_the_sweep_refuses_a_branch_that_changes_a_workflow_or_action` `tests/test_workflow_config.py:3991`,
+`test_the_sweep_needs_no_allowlist_file` `4021`, `test_the_sweep_leaves_an_unchanged_branch_clean`
+`4037`, `test_the_sweep_measures_against_the_merge_base_not_the_tip` `4046`,
+`test_the_sweep_permits_an_exactly_allowlisted_change` `4066`,
+`test_the_sweep_refuses_an_allowlist_line_with_the_wrong_oid` `4083`,
+`test_the_sweep_ignores_an_allowlist_written_on_the_branch` `4101`,
+`test_the_sweep_ignores_a_deleted_workflow` `4118`,
+`test_the_sweep_allowlist_cannot_smuggle_a_publish_path` `4130`,
+`test_the_sweep_handles_a_symlink_and_a_mode_only_change` `4164`,
+`test_the_sweep_identity_arm_end_to_end` `4188`); the 5 tip-blob/fork cases
+(`test_the_sweep_leaves_a_fork_of_main_carrying_the_publisher_clean` `4255`,
+`test_the_sweep_still_refuses_a_stale_inherited_publisher` `4268`,
+`test_the_sweep_leaves_a_stale_inherited_read_only_workflow_clean` `4287`,
+`test_the_sweep_leaves_a_change_equal_to_mains_tip_clean` `4307`,
+`test_the_sweep_refuses_a_change_that_matches_neither_baseline` `4325`); and the 3 banner-class cases
+(`test_the_summary_names_only_the_publish_capable_class` `4362`,
+`test_the_summary_names_only_the_ci_change_class_for_a_rename` `4380`,
+`test_the_summary_names_both_classes_when_both_are_present` `4403`), alongside the pre-existing
+`SweepFailClosedPins` (5 cases, `4673`). Each was broken on a disposable copy and watched red, with the
 restored file compared byte-identical (`cmp`).
 
 **The round-11 referees, and the round-14 repair that followed.**
@@ -1158,13 +1160,17 @@ reader. Each finding is recorded here as **fixed** or **disclosed**; none is cal
 - **F1 (critical, fixed).** The merge-base skip was too broad. A branch that kept a stale inherited
   publish-capable file under `.github/actions/` printed the ok line, because its blob was identical
   to `main`'s tip. The skip now applies only to the paths the parser itself reads
-  (`.github/workflows/*`): `identity_parser_reads` (`scripts/check-publish-paths.sh:2703-2706`) gates
-  the merge-base baseline (`:2707-2708`), with the rewritten doctrine at `:2692-2702`. Referee A's
+  (`.github/workflows/*`): `identity_parser_reads` (`scripts/check-publish-paths.sh:2798-2801`) gates
+  the merge-base baseline (`2802-2803`), with the rewritten doctrine at `2787-2797`. Referee A's
   own reproduction, `/tmp/refA/scratch/stale_action_check.sh`, now refuses
   `<branch> .github/actions/pub/action.yml branch-changes-workflow-file` and prints no ok line (the
-  frozen script printed a false ok; the fixed corpus is 3/3). Four tests pin it
-  (`tests/test_workflow_config.py:4219`, `:4244`, `:4261`, `:4295`), and removing the
-  `identity_parser_reads` guard reddens them.
+  frozen script printed a false ok; the fixed corpus is 3/3). Two tests pin it —
+  `test_the_sweep_refuses_an_inherited_action_that_is_not_mains_tip`
+  (`tests/test_workflow_config.py:4498`) and
+  `test_the_sweep_refuses_a_stale_inherited_read_only_action` (`:4540`) — and removing
+  the `identity_parser_reads` guard reddens both, while
+  `test_the_sweep_leaves_mains_own_action_clean` (`:4523`) and
+  `test_the_sweep_still_refuses_an_added_action` (`:4574`) stay green.
 - **F2 (critical, disclosed — not fixed).** The sweep step runs from the dispatched ref, so a branch
   dispatch executes the branch's own script copy and its verdict is only as trustworthy as the
   branch; the authoritative run is a dispatch from `main`. A branch that rewrites the workflow file
@@ -1189,22 +1195,22 @@ reader. Each finding is recorded here as **fixed** or **disclosed**; none is cal
   and `permissions::`. All five fail closed — the file is refused, never accepted — and the owner
   chose to disclose them rather than widen the gate in this round.
 - **F6 (minor, fixed).** A symlinked `.github/publish-sweep-allowlist.txt` was followed as if it were
-  file text. The tree entry must now be mode `100644` (`scripts/check-publish-paths.sh:2360`); any
-  other mode sets `ALLOWLIST_OK=0` (`:2364`) and the arm refuses `unreadable-allowlist` (`:2715`).
-  Pinned by `tests/test_workflow_config.py:4362`; the frozen script accepted the symlink (the
+  file text. The tree entry must now be mode `100644` (`scripts/check-publish-paths.sh:2455`); any
+  other mode sets `ALLOWLIST_OK=0` (`2459`) and the arm refuses `unreadable-allowlist` (`2810`).
+  Pinned by `tests/test_workflow_config.py:4641`; the frozen script accepted the symlink (the
   referee's two-case corpus goes 0/2 to 2/2).
 - **F7 (minor, fixed).** The shallow-clone precondition had no behavioural test.
-  `test_the_sweep_refuses_a_shallow_clone` (`tests/test_workflow_config.py:4463`) pins it inside
-  `SweepFailClosedPins`; deleting the precondition block (`scripts/check-publish-paths.sh:2417-2419`)
+  `test_the_sweep_refuses_a_shallow_clone` (`tests/test_workflow_config.py:4742`) pins it inside
+  `SweepFailClosedPins`; deleting the precondition block (`scripts/check-publish-paths.sh:2512-2514`)
   is red.
 
 **Referee B, the parser arm, and the round-14 repair.** A `permissions` KEY carrying a YAML node
 property — `&p permissions:`, `? !!str permissions`, `? &p permissions`, `? &p !!str permissions` —
 plus the explicit-key form hid a write-token grant, and the sweep printed the exact ok line while
 PyYAML read write: eight hand-crafted cases. Round 14 peels node properties before the key is
-compared, in one helper `_strip_key_props()` (`scripts/check-publish-paths.sh:1464`, doctrine at
-`:1456-1463`) used by `permissions_verdict()` (`:1508`), the flow reader (`:1395`), the jobs locator
-(`:1939`), the jobs exclusion (`:1994`) and the child-declaration reader (`:2033`); an explicit `?`
+compared, in one helper `_strip_key_props()` (`scripts/check-publish-paths.sh:1559`, doctrine at
+`1551-1558`) used by `permissions_verdict()` (`1603`), the flow reader (`1490`), the jobs locator
+(`2034`), the jobs exclusion (`2089`) and the child-declaration reader (`2128`); an explicit `?`
 marker is moved to the front of the key. Referee B's differential harness (1000 fixtures, 989 valid)
 went from `DEFECTS=59` against the frozen parser to
 `fixtures=1000 valid=989 gt_offenders=904 sweep_offenders=938 DEFECTS=0 OVER-REFUSALS=23`, and the
@@ -1213,7 +1219,7 @@ Five tests pin it (`tests/test_workflow_config.py:2357`, a write grant hidden by
 across 13 shapes; `:2521`, five read-only controls; `:2592`, a plain `write-all` control; `:2608`,
 the same key inside a flow mapping; `:2640`, the column-zero `jobs:` pin). Referee B also showed that
 the mutation `drop_jobs_key_position_rule` — the column-zero rule
-`[ "${#ind}" -eq 0 ] || continue` (`scripts/check-publish-paths.sh:1082`) — survived the suite;
+`[ "${#ind}" -eq 0 ] || continue` (`scripts/check-publish-paths.sh:1177`) — survived the suite;
 `test_the_sweep_reads_only_a_column_zero_jobs_key` (`tests/test_workflow_config.py:2640`) is the
 decoy that now reddens it.
 
@@ -1237,20 +1243,20 @@ names the test that reddens when the repair is broken:
 1. **A job-level explicit key whose value sits on the next line.** `? 'permissions'` on its own line
    followed by `contents: write` is the permissions key to PyYAML; the explicit-key reader accepted
    the quoted spelling as a literal word. The reader now peels key properties and resolves the
-   explicit-key forms before deciding (`_strip_key_props()` at `scripts/check-publish-paths.sh:1464`,
-   the peel at `:1508`, the pattern at `:1503`). Pinned by
+   explicit-key forms before deciding (`_strip_key_props()` at `scripts/check-publish-paths.sh:1559`,
+   the peel at `1603`, the pattern at `1598`). Pinned by
    `test_the_sweep_refuses_a_single_quoted_explicit_permissions_key` at
    `tests/test_workflow_config.py:2680`.
 2. **A `permissions` key spelled with YAML escapes.** `? "permiss\u0069ons"`, the `\x`/`\U` forms
    and a key property before the quote all decode to the word. The escape pattern
-   (`pat_escaped_key` at `scripts/check-publish-paths.sh:1531`) anchors the quote in key position
+   (`pat_escaped_key` at `scripts/check-publish-paths.sh:1626`) anchors the quote in key position
    rather than at line start. Pinned by
    `test_the_sweep_refuses_an_escaped_explicit_permissions_key` at
    `tests/test_workflow_config.py:2706`.
 3. **A low-indent continuation inside `jobs:` that collapsed the measured job-id column.** A scalar
    (`name: "a` / ` b"`) or a flow collection (`env: {` / ` a: 1}`) whose continuation line sits at a
    lower indent used to take the minimum over the whole block, lowering `JOBS_JOBID_INDENT` (set at
-   `scripts/check-publish-paths.sh:1176`, guarded at `:1188`, consumed at `:1214`) so that a job body
+   `scripts/check-publish-paths.sh:1271`, guarded at `1283`, consumed at `1309`) so that a job body
    and its `permissions:` fell out of the read. Pinned by
    `test_the_sweep_reads_a_job_after_a_low_indent_scalar_continuation` at
    `tests/test_workflow_config.py:2746` and
@@ -1259,13 +1265,14 @@ names the test that reddens when the repair is broken:
    `? "permis\` split as `sions"` is one key after parsing; the same reader had read the
    fragment as a literal. Pinned by
    `test_the_sweep_refuses_an_explicit_key_split_by_a_line_continuation` at
-   `tests/test_workflow_config.py:2902`.
+   `tests/test_workflow_config.py:3181`.
 
 A repair that reads more must not refuse more, so the same change set pins the read-only side: a
 continuation that is genuinely a continuation is still read
 (`test_the_sweep_reads_a_low_indent_continuation_but_stays_fail_closed` at
-`tests/test_workflow_config.py:2850`), and a continuation at column zero is still treated as a
-continuation rather than a block end
+`tests/test_workflow_config.py:2850`), and a column-zero continuation of a quoted scalar is a
+continuation when the reader knows a quote is open — including when a node property precedes the
+opening quote, the round-19 repair — while otherwise it ends the block and the locator fails closed
 (`test_the_sweep_refuses_a_write_after_a_column_zero_quote_continuation` at `:2805`,
 `test_the_sweep_refuses_a_write_after_a_column_zero_flow_continuation` at `:2831`). Referee C's two
 pin gaps are closed in the same round and named in the referee C paragraph below. Referee E's
@@ -1289,8 +1296,8 @@ token — a limit no in-repository change removes. The two pin gaps are the allo
 rule (`[ -z "$allow_extra" ] || continue`), which a mutation deleted with the suite still green,
 and `probe.py`'s `EXPECTED_HWI_VERSION`, which a mutation from `3.2.0` to `9.9.9` likewise
 survived; the round-16 addendum pins both — `[ -z "$allow_extra" ] || continue` at
-`scripts/check-publish-paths.sh:2380` (`test_the_sweep_refuses_an_allowlist_line_with_a_fourth_field`,
-`tests/test_workflow_config.py:4313`) and `probe.py:228`'s `EXPECTED_HWI_VERSION`
+`scripts/check-publish-paths.sh:2475` (`test_the_sweep_refuses_an_allowlist_line_with_a_fourth_field`,
+`tests/test_workflow_config.py:4592`) and `probe.py:228`'s `EXPECTED_HWI_VERSION`
 (`test_the_pinned_hwi_release_is_the_one_the_manifest_records`,
 `tests/test_hardening_pins.py:434`). Referee C ran ten mutations: nine were caught and only
 the allowlist deletion survived, and every file was restored byte-identically to the tree it
@@ -1320,6 +1327,61 @@ differential harness (`DEFECTS=0 OVER-REFUSALS=23`), referee A's generator (`DEF
 round-14 `KEYPROPS` gate (`12 pass, 0 fail`), `bash -n` over every shell script, `yaml.safe_load`
 over every workflow, and the ten `tests/ui_*.cjs` scripts (exit 0). This is the state of the
 evidence, not a verdict on it.
+
+### Verification of the round-19 sweep repair (the node-property blind spot)
+
+**The finding.** An independent referee (F) defeated the round-17 revision with a false OK, and
+referee G reproduced it. The payload is 138 bytes, md5 `466ae6250d4b5d39a05201cafda06b7c`: a job
+whose `name:` is `!!str "a`, continued at column zero by `b"`, followed by a second job granting
+`contents: write`. The round-17 script printed the ok line and exited 0 on that workflow.
+
+**The mechanism.** A node property in front of the opening quote left the quote untracked, so
+`_locate_jobs_key()` read the column-zero continuation as the end of the `jobs:` block and
+`strip_scalar_bodies()` stripped the second job's body — including its write grant — as scalar data,
+leaving only the top-level `read-all` for the permissions reader to see. The class is pre-existing:
+it reproduces on revisions before round 16, so no earlier round introduced it and no earlier round's
+claim was about it.
+
+**The repair.** The readers consume a node property as a single token — `!`, `!!x`, `!<uri>`, `&name`,
+`*name` and combinations — with `!<…>` read through its closing `>`, and a property immediately before
+the opening quote opens it, so the column-zero continuation is a continuation again. The quoted-scalar
+escape and doubling branches are pinned: mutants M5 (a backslash advances one character) and M8 (a
+doubled `''` advances one character) are CAUGHT. Mutants M4 and M7 are equivalent, because
+`JOBS_JOBID_INDENT` is assigned only when `${#ind} > JOBS_INDENT`, so it is always at least 1 whenever
+`saw_child` is 1.
+
+**The RED evidence.** Against the pre-round-19 script (`scripts/check-publish-paths.sh`, md5
+`324451255af8554502a5bacf0b2f7c30`, 2781 lines) with these tests in place,
+`test_the_sweep_refuses_a_write_after_a_node_property_and_column_zero` FAILED (failures=10) and
+`test_the_sweep_refuses_a_write_after_a_quote_escape_and_column_zero` FAILED (failures=2), while the
+three controls stayed OK.
+
+**The scope.** The reader is a bounded parser of the shapes GitHub workflows use and it fails closed
+on what it cannot read; it is not a YAML implementation, and no sentence here rests on it being
+unfoolable. The allowlist is independent of the parser arm and cannot make an unreadable construct
+visible to it.
+
+**Gates and corpora on this revision.** The full suite is `Ran 764 tests in 308.429s` — **OK**;
+`tests/test_workflow_config.py` alone is `Ran 177 tests in 141.472s` — **OK**; the hardening file is
+`Ran 84 tests in 5.977s` — **OK**. `PublishPathSweepTests` holds 118 cases and `SweepFailClosedPins`
+5. Referee E's fresh-clone corpus (856 fixtures) measures `fixtures=856 valid=760 gt_offenders=538
+sweep_offenders=715 DEFECTS=0 OVER-REFUSALS=64`, identically for the pre-round-19 and the fixed
+script; referee B's 1000-fixture differential harness measures `fixtures=1000 valid=989
+gt_offenders=904 sweep_offenders=938 DEFECTS=0 OVER-REFUSALS=23`. Referee F's reproducer against the
+fixed script prints `VERDICT: refused (exit 1)`, F's 18-case probe prints `FALSE OK COUNT: 0`, and
+F's five variants v15–v19 are all refused. The parent's own probes `/tmp/r19-check.sh` (13/13,
+`R19-CHECK: PASS`) and `/tmp/r19f-check.sh` (10/10, `R19F-CHECK: PASS`) pass.
+
+**The independent-verification trail.** Referee C (containment), referee D (style), referee E
+(corpus), referee F (the false OK, the mutants and the prose) and referee G (the claims audit) each
+closed as fixed, disclosed or out of scope. F-1, the node-property/column-zero false OK, is
+**fixed**; F-2, the escape and doubling mutants M5 and M8, is **fixed** by pinning, with M4 and M7
+recorded as equivalent; F-3, the prose claim that the allowlist left a publish-capable change
+auto-refused, was false and is corrected in this revision; G-2, the same overstatement and the
+"closed the job-id hole" wording, is **corrected**. Referee C's C1 — a branch dispatch runs the
+branch's own copy of the workflow file — remains **disclosed, not fixed**, and is a platform-side
+owner decision; referee D's four minor findings are corrected in this pass. This is what the round
+repaired; it is not a verdict that the parser has no further holes.
 
 ## Publication
 
