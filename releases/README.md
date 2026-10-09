@@ -1,3 +1,5 @@
+> **Audit reset, 2026-10-09:** Color Team 1.3-era plans, reports, and audit-site files were removed from the active audit tree because unbounded hypothetical requirements produced an unproductive audit loop. A fresh Color Team 1.5 survey and owner-signed plan are pending. This does not clear any prior finding or authorize publication. See [AUDIT-RESET-2026-10-09.md](../AUDIT-RESET-2026-10-09.md#why-the-historical-audit-files-were-removed-from-the-active-tree-RESET-2026-10-09.md) and archived Git history. Historical notes below are retained as engineering context, not instructions for the new surveyor.
+
 # Release records
 
 This folder holds the long-form evidence record for each version: the patch
@@ -23,7 +25,7 @@ links each version to the record below, and its prose sections quote them.
 
 | Record | Version | What it covers |
 | --- | --- | --- |
-| [`AUDIT-BASELINE-0.1.27.md`](AUDIT-BASELINE-0.1.27.md) | 0.1.x | Baseline audit of the Phase 1–4 work |
+| [`AUDIT-BASELINE-0.1.27.md`](../AUDIT-RESET-2026-10-09.md#why-the-historical-audit-files-were-removed-from-the-active-tree-BASELINE-0.1.27.md) | 0.1.x | Baseline audit of the Phase 1–4 work |
 | [`SECURITY-REVIEW-0.2.0.md`](SECURITY-REVIEW-0.2.0.md) | 0.2.0 | Hot-item security fixes; hardware signing was broken in this release |
 | [`PATCH-0.2.1.md`](PATCH-0.2.1.md) | 0.2.1 | HWI field-order repair; first confirmed Testnet4 payment |
 | [`PATCH-0.2.2.md`](PATCH-0.2.2.md) | 0.2.2 | One-payment-at-a-time confirmation wait |
@@ -33,7 +35,7 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.4.0.md`](PATCH-0.4.0.md) | 0.4.0 | Visual refresh; session-only payment receipt |
 | [`PATCH-0.4.1.md`](PATCH-0.4.1.md) | 0.4.1 | Signature-only signer-response import; longer signing window |
 | [`PATCH-0.4.2.md`](PATCH-0.4.2.md) | 0.4.2 | Three-minute device discovery and authorization waits |
-| [`PLAN-0.4.4.md`](PLAN-0.4.4.md) · [`AUDIT-DEEPSEEK-0.4.3.md`](AUDIT-DEEPSEEK-0.4.3.md) · [`AUDIT-ZAI-0.4.3.md`](AUDIT-ZAI-0.4.3.md) | 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices |
+| [`PLAN-0.4.4.md`](PLAN-0.4.4.md) · [`AUDIT-DEEPSEEK-0.4.3.md`](../AUDIT-RESET-2026-10-09.md#why-the-historical-audit-files-were-removed-from-the-active-tree-DEEPSEEK-0.4.3.md) · [`AUDIT-ZAI-0.4.3.md`](../AUDIT-RESET-2026-10-09.md#why-the-historical-audit-files-were-removed-from-the-active-tree-ZAI-0.4.3.md) | 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices |
 | [`PATCH-0.4.6.md`](PATCH-0.4.6.md) | 0.4.6 | Signature checklist after the first device signature |
 | [`PATCH-0.4.14.md`](PATCH-0.4.14.md) | 0.4.14 | Follow the BSMS quorum for wallets with up to three hardware keys |
 | [`PATCH-0.4.15.md`](PATCH-0.4.15.md) | 0.4.15 | Fix signed HWI/libusb loading; OneKey Classic 1S support; a cleared, unbroadcast mainnet dry run |
