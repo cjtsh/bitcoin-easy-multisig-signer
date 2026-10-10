@@ -18,7 +18,8 @@ from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
-from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
+from safe_http import Deadline, open_url as urlopen  # TLS-verified, no redirects, bounded
+from safe_http import read_bounded
 
 from embit import psbt, script, transaction
 from embit.base import EmbitError
@@ -33,6 +34,10 @@ from version import APP_VERSION
 from probe import ProbeError, WalletRecord
 
 EXPLORERS = {chain: config.explorer_url for chain, config in CHAIN_CONFIGS.items()}
+# Total budgets, not per-socket timeouts: CT-84 showed that a server dribbling
+# one byte just inside the socket timeout could hold a call open forever.
+BROADCAST_TIMEOUT_SECONDS = 20.0
+EXPLORER_TIMEOUT_SECONDS = 12.0
 GAP_LIMIT = 20
 MAX_INDEX = 100
 SATOSHI_DUST_FLOOR = 546
@@ -93,8 +98,10 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
         "Content-Type": "text/plain",
     })
     try:
-        with urlopen(request, timeout=20) as response:
-            body = response.read(4096).decode("ascii", "replace").strip()
+        deadline = Deadline(BROADCAST_TIMEOUT_SECONDS)
+        with urlopen(request, timeout=BROADCAST_TIMEOUT_SECONDS,
+                     deadline=deadline) as response:
+            body = read_bounded(response, 4096, deadline).decode("ascii", "replace").strip()
     except HTTPError as exc:
         try:
             detail = exc.read(2048).decode("utf-8", "replace").strip()
@@ -141,10 +148,12 @@ def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
     })
     for attempt in range(2):
         try:
-            with urlopen(request, timeout=12) as response:
+            deadline = Deadline(EXPLORER_TIMEOUT_SECONDS)
+            with urlopen(request, timeout=EXPLORER_TIMEOUT_SECONDS,
+                         deadline=deadline) as response:
                 if response.length is not None and response.length > 2_000_000:
                     raise WalletError("Explorer response is unexpectedly large.")
-                body = response.read(2_000_001)
+                body = read_bounded(response, 2_000_000, deadline)
             if len(body) > 2_000_000:
                 raise WalletError("Explorer response is unexpectedly large.")
             return body.decode("ascii") if text else json.loads(body)

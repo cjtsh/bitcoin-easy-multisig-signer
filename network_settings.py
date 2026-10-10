@@ -12,10 +12,14 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request
 
-from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
+from safe_http import Deadline, open_url as urlopen  # TLS-verified, no redirects, bounded
+from safe_http import read_bounded
 
 from network_config import NETWORKS
 from version import APP_VERSION
+
+# CT-84: a total budget for the verification call, not a per-socket timeout.
+VERIFY_TIMEOUT_SECONDS = 8.0
 
 
 class SettingsError(Exception):
@@ -130,10 +134,12 @@ def verify_esplora(chain: str, base_url: str) -> None:
                 base + f"/block-height/{height}",
                 headers={"User-Agent": f"EasyMultisig/{APP_VERSION}", "Accept": "text/plain"},
             )
-            with urlopen(request, timeout=8) as response:
+            deadline = Deadline(VERIFY_TIMEOUT_SECONDS)
+            with urlopen(request, timeout=VERIFY_TIMEOUT_SECONDS,
+                         deadline=deadline) as response:
                 if response.length is not None and response.length > 80:
                     raise SettingsError("Explorer returned an invalid block hash.")
-                body = response.read(81)
+                body = read_bounded(response, 80, deadline)
             found = body.decode("ascii").strip().lower()
             if not re.fullmatch(r"[0-9a-f]{64}", found):
                 raise SettingsError("Explorer did not return an Esplora block hash.")

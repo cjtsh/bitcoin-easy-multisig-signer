@@ -30,7 +30,8 @@ from urllib.request import Request
 from embit.networks import NETWORKS
 from embit.psbt import PSBT
 
-from safe_http import open_url as urlopen  # TLS-verified, never follows a redirect
+from safe_http import Deadline, open_url as urlopen  # TLS-verified, no redirects, bounded
+from safe_http import read_bounded
 
 from network_config import NETWORKS as CHAIN_CONFIGS, SECONDARY_EXPLORERS
 from network_settings import (
@@ -51,6 +52,8 @@ PRICE_URL = "https://mempool.space/api/v1/prices"
 PRICE_CACHE_SECONDS = 300
 FEES_URL = "https://mempool.space/api/v1/fees/recommended"
 FEES_CACHE_SECONDS = 120
+# CT-84: a total budget for each public-data fetch, not a per-socket timeout.
+PUBLIC_DATA_TIMEOUT_SECONDS = 7.0
 # Mainnet payments at or above this size always need the high-value confirmation,
 # independent of any remote BTC/USD quote. 0.1 BTC is 10,000,000 satoshis.
 LARGE_AMOUNT_SATS_FLOOR = 10_000_000
@@ -114,8 +117,10 @@ def fetch_btc_usd() -> dict:
         "Accept": "application/json",
     })
     try:
-        with urlopen(request, timeout=7) as response:
-            body = response.read(4097)
+        deadline = Deadline(PUBLIC_DATA_TIMEOUT_SECONDS)
+        with urlopen(request, timeout=PUBLIC_DATA_TIMEOUT_SECONDS,
+                     deadline=deadline) as response:
+            body = read_bounded(response, 4096, deadline)
         if len(body) > 4096:
             raise ValueError("oversized price response")
         data = json.loads(body)
@@ -140,8 +145,10 @@ def fetch_fee_rates() -> dict:
         "User-Agent": f"EasyMultisig/{APP_VERSION}", "Accept": "application/json",
     })
     try:
-        with urlopen(request, timeout=7) as response:
-            body = response.read(4097)
+        deadline = Deadline(PUBLIC_DATA_TIMEOUT_SECONDS)
+        with urlopen(request, timeout=PUBLIC_DATA_TIMEOUT_SECONDS,
+                     deadline=deadline) as response:
+            body = read_bounded(response, 4096, deadline)
         if len(body) > 4096:
             raise ValueError("oversized fee response")
         data = json.loads(body)
@@ -169,8 +176,10 @@ def fetch_mutinynet_fee_rates() -> dict:
                       headers={"User-Agent": f"EasyMultisig/{APP_VERSION}",
                                "Accept": "application/json"})
     try:
-        with urlopen(request, timeout=7) as response:
-            body = response.read(4097)
+        deadline = Deadline(PUBLIC_DATA_TIMEOUT_SECONDS)
+        with urlopen(request, timeout=PUBLIC_DATA_TIMEOUT_SECONDS,
+                     deadline=deadline) as response:
+            body = read_bounded(response, 4096, deadline)
         if len(body) > 4096:
             raise ValueError("oversized fee response")
         data = json.loads(body)
@@ -1016,11 +1025,10 @@ class LocalApp:
                     raise WalletError(
                         "The confirmed transaction is not the one prepared. Nothing was sent."
                     )
-                # CT-13: network pre-checks run before the session lock. They
+                # CT-13: the explorer pre-checks run before the session lock. They
                 # do not mutate prepared state, and holding the lock across a
-                # slow explorer would stall every other operation. The
-                # irreversible submit still runs under the lock so a concurrent
-                # refresh/import/settings edit cannot swap the payment mid-send.
+                # slow explorer would stall every other operation. The broadcaster
+                # read here is the one verified below and the one submitted to.
                 with state.lock:
                     broadcaster = state.servers[chain]["broadcaster"]
                     primary = state.servers[chain]["explorer"]
@@ -1041,36 +1049,52 @@ class LocalApp:
                 # genesis hash and ADDS a checkpoint when one exists, so the
                 # gate was withholding a check that is valid everywhere.
                 verify_esplora(chain, broadcaster)
+                # CT-13/CT-84: network I/O runs before the session lock. Holding
+                # the lock across a slow or withholding broadcaster stalled every
+                # other lock-taking endpoint, so the submit itself is made
+                # outside it: the reviewed payment is re-verified under a short
+                # critical section, the lock is released, and the outcome is
+                # recorded under a second critical section. A concurrent
+                # refresh/import therefore cannot swap *what is submitted* (the
+                # check below is the gate), and the outcome is attributed to the
+                # wallet that submitted it even if another wallet replaced it
+                # while the request was in flight.
                 with state.lock:
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The payment changed before broadcast.")
-                    try:
-                        sent = broadcast_transaction(
-                            final["raw_transaction_hex"], chain, broadcaster,
-                            mainnet_opt_in=(chain == "main"
-                                            and data.get("mainnet_opt_in") is True),
+                    submitting_wallet = wallet_identity(state.record, chain)
+                try:
+                    sent = broadcast_transaction(
+                        final["raw_transaction_hex"], chain, broadcaster,
+                        mainnet_opt_in=(chain == "main"
+                                        and data.get("mainnet_opt_in") is True),
+                    )
+                    if sent != txid:
+                        raise BroadcastOutcomeUnknown(
+                            "The server reported a different transaction ID. The result "
+                            "is unknown. Do not send again; check an explorer first."
                         )
-                        if sent != txid:
-                            raise BroadcastOutcomeUnknown(
-                                "The server reported a different transaction ID. The result "
-                                "is unknown. Do not send again; check an explorer first."
-                            )
-                    except BroadcastOutcomeUnknown:
-                        # The network request may have succeeded before its response
-                        # was lost. Retrying the reviewed payment is unsafe until a
-                        # person independently checks the expected txid.
-                        state.prepared = None
-                        state.scan = None
+                except BroadcastOutcomeUnknown:
+                    # The network request may have succeeded before its response
+                    # was lost. Retrying the reviewed payment is unsafe until a
+                    # person independently checks the expected txid.
+                    with state.lock:
+                        if state.prepared is payment:
+                            state.prepared = None
+                            state.scan = None
                         state.pending_broadcast_txid = txid
                         state.pending_broadcast_unknown = True
-                        state.pending_by_wallet[wallet_identity(state.record, chain)] = (txid, True)
-                        raise
-                    # The funds are spent now, so anything cached is stale.
-                    state.prepared = None
-                    state.scan = None
+                        state.pending_by_wallet[submitting_wallet] = (txid, True)
+                    raise
+                with state.lock:
+                    # The funds are spent now, so anything cached is stale -- but
+                    # only clear state that still describes this payment.
+                    if state.prepared is payment:
+                        state.prepared = None
+                        state.scan = None
                     state.pending_broadcast_txid = sent
                     state.pending_broadcast_unknown = False
-                    state.pending_by_wallet[wallet_identity(state.record, chain)] = (sent, False)
+                    state.pending_by_wallet[submitting_wallet] = (sent, False)
                     state.note("broadcast", "accepted")
                 self._send(200, {
                     "txid": sent,

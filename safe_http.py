@@ -17,6 +17,13 @@ Three guarantees, each of which was previously missing or silently ineffective:
    ambient trust configuration and silently ignores the bundle — which made every
    HTTPS request depend on the machine the app happened to run on. The opener is
    therefore built on first use, and the configured bundle is loaded explicitly.
+4. **A request has a total deadline, not a per-socket timeout.** Passing a
+   ``timeout`` to ``urllib`` arms the *socket*, so every ``recv`` may take that
+   long again: a server that sends one byte just inside the timeout holds the
+   connection open indefinitely while the app waits. :class:`Deadline` measures
+   the whole call on a monotonic clock, :func:`open_url` arms the connect with
+   what is left of it, and :func:`read_bounded` re-arms the socket before every
+   read and refuses to read past it.
 
 Callers import :func:`open_url`; ``wallet_service``, ``gui`` and
 ``network_settings`` bind it to the name ``urlopen`` so every existing call site
@@ -28,6 +35,7 @@ from __future__ import annotations
 import os
 import ssl
 import threading
+import time
 from http.client import HTTPMessage
 from pathlib import Path
 from urllib.error import HTTPError
@@ -38,6 +46,114 @@ from urllib.request import (
 
 class RedirectRefused(Exception):
     """A server tried to redirect a request that must stay on its verified host."""
+
+
+class Deadline:
+    """The total wall-clock budget for one outbound request.
+
+    ``time.monotonic`` cannot go backwards when the system clock is set, which
+    matters for a guarantee that must hold while a user is sending money.
+    """
+
+    def __init__(self, seconds: float):
+        self.total = float(seconds)
+        self._end = time.monotonic() + self.total
+
+    def remaining(self) -> float:
+        """Seconds left, or a value <= 0 once the budget is spent."""
+        return self._end - time.monotonic()
+
+    def expired(self) -> bool:
+        return self.remaining() <= 0
+
+
+def _socket_of(response):
+    """The socket under a urllib response (or an HTTPError), if it can be found.
+
+    Re-arming the socket timeout only works if this lookup succeeds, so every
+    caller treats ``None`` as "no per-read re-arming available" rather than as an
+    error: the deadline checks still bound the loop.
+    """
+    node = response
+    for _ in range(3):
+        raw = getattr(getattr(node, "fp", None), "raw", None)
+        sock = getattr(raw, "_sock", None)
+        if sock is not None:
+            return sock
+        node = getattr(node, "fp", None)
+        if node is None:
+            break
+    return None
+
+
+def _read_once(response, amount: int) -> bytes:
+    """One underlying read, so the caller can re-check the clock in between.
+
+    ``read1`` returns after a single socket read where it exists (the stdlib's
+    ``HTTPResponse`` has it); ``read`` is the fallback for simple stand-ins.
+    """
+    reader = getattr(response, "read1", None)
+    if reader is None:
+        return response.read(amount)
+    return reader(amount)
+
+
+def read_bounded(response, limit: int, deadline: Deadline | None = None,
+                 *, chunk: int = 65536) -> bytes:
+    """Read at most ``limit + 1`` bytes without outliving ``deadline``.
+
+    The caller keeps its own "is this response too large" check on the returned
+    length. One extra byte is read so an over-large body is detectable rather
+    than silently truncated. Without a deadline this is a plain bounded read.
+    """
+    if deadline is None:
+        return response.read(limit + 1)
+    sock = _socket_of(response)
+    body = bytearray()
+    while len(body) <= limit:
+        remaining = deadline.remaining()
+        if remaining <= 0:
+            _close_quietly(response)
+            raise TimeoutError(
+                f"The request exceeded its {deadline.total:g}-second deadline.")
+        if sock is not None:
+            # Re-armed every pass: the timeout bounds *this* read, and the loop
+            # condition above bounds the whole call.
+            try:
+                sock.settimeout(remaining)
+            except OSError:
+                # The connection can already be at EOF (urllib closes the
+                # socket under us), so re-arming the timeout is best
+                # effort: the deadline check above still bounds the call.
+                sock = None
+        piece = _read_once_or_deadline(response, min(chunk, limit + 1 - len(body)),
+                                       deadline)
+        if not piece:
+            break
+        body += piece
+    return bytes(body)
+
+
+def _read_once_or_deadline(response, amount: int, deadline: Deadline) -> bytes:
+    """One read, with a socket-level timeout reported as a deadline overrun.
+
+    The socket timeout is re-armed to whatever is left of the budget, so when
+    less than one inter-byte gap remains it can fire first. Callers only need to
+    know the budget was spent, not which of the two clocks noticed.
+    """
+    try:
+        return _read_once(response, amount)
+    except TimeoutError as exc:
+        _close_quietly(response)
+        raise TimeoutError(
+            f"The request exceeded its {deadline.total:g}-second deadline.") from exc
+
+
+def _close_quietly(response) -> None:
+    try:
+        response.close()
+    except Exception:  # noqa: BLE001 - the deadline error is the one that matters
+        pass
 
 
 class _RefuseRedirects(HTTPRedirectHandler):
@@ -140,8 +256,19 @@ def _opener() -> OpenerDirector:
         return _client
 
 
-def open_url(request, timeout: float):
-    """Open an http(s) request without following redirects or skipping TLS checks."""
+def open_url(request, timeout: float, *, deadline: Deadline | None = None):
+    """Open an http(s) request without following redirects or skipping TLS checks.
+
+    With a ``deadline``, the connect is armed with whatever is left of the total
+    budget (never more than ``timeout``) and the read is left to
+    :func:`read_bounded`.
+    """
+    if deadline is not None:
+        remaining = deadline.remaining()
+        if remaining <= 0:
+            raise TimeoutError(
+                f"The request exceeded its {deadline.total:g}-second deadline.")
+        timeout = min(timeout, remaining)
     response = _opener().open(request, timeout=timeout)
     final = response.geturl()
     if final != request.full_url:

@@ -1,8 +1,11 @@
 """Only synthetic public test-wallet data; no real BSMS export is checked in."""
 
+import http.server
 import io
 import ssl
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -355,13 +358,25 @@ class WalletServiceTests(unittest.TestCase):
 
     def test_one_explorer_client_routes_by_selected_network(self):
         class Response:
+            """A stream, not a static buffer: reading past the body returns b"".
+
+            CT-84 reads in bounded chunks so it can re-check its deadline between
+            them, so a stand-in whose ``read`` never drains would look like an
+            endless body.
+            """
             length = 2
+            def __init__(self):
+                self.remaining = b"{}"
             def __enter__(self):
+                self.remaining = b"{}"
                 return self
             def __exit__(self, *_args):
                 pass
-            def read(self, *_args):
-                return b"{}"
+            def read(self, amount=-1):
+                if amount is None or amount < 0:
+                    amount = len(self.remaining)
+                piece, self.remaining = self.remaining[:amount], self.remaining[amount:]
+                return piece
         with patch("wallet_service.urlopen", return_value=Response()) as fetch:
             for chain, config in CHAIN_CONFIGS.items():
                 self.assertEqual(explorer_get("/blocks/tip", chain=chain), {})
@@ -548,6 +563,74 @@ class WalletServiceTests(unittest.TestCase):
         self.assertIn("Unusually high", check_fee_safety(2700, 1000, 10))
         with self.assertRaisesRegex(WalletError, "10,000-sat"):
             check_fee_safety(10_001, 100_000, 25)
+
+
+class _DribbleHandler(http.server.BaseHTTPRequestHandler):
+    """Answers every request by dripping bytes far slower than the response.
+
+    One byte every 50 ms never trips a socket timeout armed for a whole second,
+    which is exactly the CT-84 scenario: only the caller's total deadline can
+    end the call.
+    """
+
+    def log_message(self, *_args):
+        pass
+
+    def do_GET(self):
+        self._dribble()
+
+    def do_POST(self):
+        self._dribble()
+
+    def _dribble(self):
+        self.send_response(200)
+        self.send_header("Content-Length", "4096")
+        self.end_headers()
+        for _ in range(30):
+            try:
+                self.wfile.write(b"x")
+                self.wfile.flush()
+            except OSError:
+                return
+            time.sleep(0.05)
+
+
+class OutboundDeadlineTests(unittest.TestCase):
+    """CT-84 wiring: the explorer and broadcaster callers really set a budget."""
+
+    def setUp(self):
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _DribbleHandler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}/api"
+
+    def test_a_dribbling_explorer_returns_within_its_deadline(self):
+        # `wallet_service.time` is replaced rather than `time.sleep`, because
+        # patching the global sleep would also still the dribble server and the
+        # read would finish instantly -- a test that cannot fail.
+        with patch("wallet_service.EXPLORER_TIMEOUT_SECONDS", 1.0), \
+                patch("wallet_service.time"):
+            started = time.monotonic()
+            with self.assertRaises(WalletError) as caught:
+                explorer_get("/blocks/tip", chain="testnet4", base_url=self.base)
+            elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 4.0, "the explorer call outlived its deadline")
+        # Both attempts must have hit the deadline. A truncated reply would end
+        # in "returned invalid data" instead, which is what a dropped deadline
+        # looks like from here.
+        self.assertIn("Could not connect", str(caught.exception))
+
+    def test_a_dribbling_broadcaster_gives_up_within_its_deadline(self):
+        # A withhold-then-answer server is the dangerous case: the transaction
+        # may already be relayed, so the outcome must be reported as unknown
+        # rather than as a refusal, and it must not hang forever.
+        with patch("wallet_service.BROADCAST_TIMEOUT_SECONDS", 1.0):
+            started = time.monotonic()
+            with self.assertRaises(BroadcastOutcomeUnknown):
+                broadcast_transaction("00" * 50, "testnet4", self.base)
+            elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 4.0, "the broadcast call outlived its deadline")
 
 
 if __name__ == "__main__":

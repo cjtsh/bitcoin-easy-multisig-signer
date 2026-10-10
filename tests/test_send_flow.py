@@ -30,7 +30,7 @@ from embit.networks import NETWORKS  # noqa: E402
 from urllib.request import Request  # noqa: E402
 
 from fake_explorer import three_output_wallet  # noqa: E402
-from gui import LocalApp, PreparedPayment  # noqa: E402
+from gui import LocalApp, PreparedPayment, wallet_identity  # noqa: E402
 from network_settings import SettingsError  # noqa: E402
 from probe import ProbeError, parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
@@ -319,11 +319,14 @@ class SendFlowTests(unittest.TestCase):
                           "a refused broadcaster is not an unknown outcome; "
                           "nothing was sent and nothing is pending")
 
-    def test_broadcast_prechecks_do_not_hold_the_session_lock(self):
-        """CT-13: explorer I/O before submit must not stall every other operation.
+    def test_broadcast_prechecks_and_submit_do_not_hold_the_session_lock(self):
+        """CT-13/CT-84: no explorer I/O may stall every other operation.
 
-        The irreversible broadcast itself stays under the lock so a concurrent
-        refresh cannot swap the payment mid-send.
+        CT-13 moved the pre-checks out of the lock; CT-84 moved the submit
+        itself, because a withholding broadcaster held the lock for as long as
+        it wanted. The reviewed payment is re-verified and the outcome recorded
+        under short critical sections, which this test pins by depth: the
+        network call runs at depth 0 and the recorded outcome at depth > 0.
         """
         result, keys = self.prepare_a_reviewed_transaction()
         txid = result["txid"]
@@ -335,7 +338,7 @@ class SendFlowTests(unittest.TestCase):
                                     "device_type": "trezor", "device_path": "webusb:1"})
         self.post("/api/finalize", {"preparation_id": "reviewed-1"})
 
-        held = {"outpoint": None, "submit": None}
+        held = {"outpoint": None, "submit": None, "record": None}
 
         class RecordingLock:
             def __init__(self, inner):
@@ -352,6 +355,7 @@ class SendFlowTests(unittest.TestCase):
 
         recorder = RecordingLock(self.app.lock)
         self.app.lock = recorder
+        app_note = self.app.note
 
         def note_outpoints(*_args, **_kwargs):
             held["outpoint"] = recorder.depth
@@ -360,14 +364,55 @@ class SendFlowTests(unittest.TestCase):
             held["submit"] = recorder.depth
             return txid
 
-        with patch("gui.verify_selected_outpoints", side_effect=note_outpoints), \
+        def note_outcome(stage, outcome, *args, **kwargs):
+            if (stage, outcome) == ("broadcast", "accepted"):
+                held["record"] = recorder.depth
+            return app_note(stage, outcome, *args, **kwargs)
+
+        with patch.object(self.app, "note", side_effect=note_outcome), \
+                patch("gui.verify_selected_outpoints", side_effect=note_outpoints), \
                 patch("gui.verify_esplora"), \
                 patch("gui.broadcast_transaction", side_effect=note_submit):
             sent = self.post("/api/broadcast", {"preparation_id": "reviewed-1",
                                                 "confirm": True, "confirmed_txid": txid})
         self.assertEqual(sent["txid"], txid)
         self.assertEqual(held["outpoint"], 0, "prechecks must run outside the lock")
-        self.assertGreater(held["submit"], 0, "the irreversible submit must hold the lock")
+        self.assertEqual(held["submit"], 0, "the network submit must run outside the lock")
+        self.assertGreater(held["record"], 0,
+                           "recording the outcome must hold the lock")
+
+    def test_a_scan_that_goes_stale_before_the_submit_is_refused(self):
+        """CT-84: the gate that replaced the lock, exercised at the boundary.
+
+        The submit now runs outside the session lock, so the prepared payment is
+        re-read under a short critical section immediately before it. A refresh
+        landing in between -- here, during the explorer pre-checks, which also
+        run outside the lock -- must refuse the send rather than submit a
+        payment the page no longer shows as prepared.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[0])):
+            self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                    "device_type": "jade", "device_path": "/dev/x"})
+        with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(keys[1])):
+            self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                    "device_type": "trezor", "device_path": "webusb:1"})
+        self.post("/api/finalize", {"preparation_id": "reviewed-1"})
+
+        def go_stale(*_args, **_kwargs):
+            self.app.scan_generation += 1
+
+        with patch("gui.verify_selected_outpoints", side_effect=go_stale), \
+                patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction") as submit:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True, "confirmed_txid": txid})
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("payment changed before broadcast",
+                      json.load(err.exception)["error"])
+        submit.assert_not_called()
 
     def test_jade_style_metadata_rewrite_keeps_only_verified_signatures(self):
         result, keys = self.prepare_a_reviewed_transaction(chain="mutinynet")
@@ -712,21 +757,31 @@ class SendFlowTests(unittest.TestCase):
         self.assertEqual(sent["txid"], result["txid"])
         self.assertTrue(send.call_args.kwargs["mainnet_opt_in"])
 
-    def test_wallet_import_waits_until_broadcast_submission_finishes(self):
-        """A concurrent import cannot replace the reviewed payment mid-submit."""
+    def test_a_stalled_broadcast_blocks_neither_status_nor_an_import(self):
+        """CT-84: the submit holds no lock, so the session stays usable.
+
+        The old code kept `state.lock` for the whole network call, so a
+        withholding broadcaster froze status, import, scan and prepare. Now the
+        reviewed payment is re-verified under a short critical section (so an
+        import still cannot swap what is submitted) and the outcome is recorded
+        under a second one, attributed to the wallet that actually submitted it
+        -- not to whatever wallet is open when the reply arrives.
+        """
         result, keys = self.prepare_a_reviewed_transaction()
         for key, (kind, path) in zip(keys, (("jade", "/dev/x"), ("trezor", "webusb:1"))):
             with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
                 self.post("/api/sign", {"preparation_id": "reviewed-1",
                                         "device_type": kind, "device_path": path})
+        submitted_wallet = wallet_identity(self.app.record, "testnet4")
         entered = threading.Event()
         release = threading.Event()
         import_done = threading.Event()
+        status_done = threading.Event()
         outcomes = {}
 
         def delayed_broadcast(*_args, **_kwargs):
             entered.set()
-            if not release.wait(3):
+            if not release.wait(5):
                 raise RuntimeError("Timed out waiting for race test")
             return result["txid"]
 
@@ -741,27 +796,49 @@ class SendFlowTests(unittest.TestCase):
         def replace_wallet():
             try:
                 outcomes["import"] = self.post("/api/import", {
-                    "chain": "testnet4", "text": test_record(bsms_template=True)[0],
+                    "chain": "testnet4", "text": test_record(key_count=2)[0],
                     "consent_explorer": True})
             finally:
                 import_done.set()
 
-        with patch("gui.broadcast_transaction", side_effect=delayed_broadcast):
+        def read_status():
+            try:
+                outcomes["status"] = self.post("/api/status", {})
+            finally:
+                status_done.set()
+
+        with patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction", side_effect=delayed_broadcast):
             sender = threading.Thread(target=send)
             sender.start()
             self.assertTrue(entered.wait(2), "broadcast did not enter the submission step")
             importer = threading.Thread(target=replace_wallet)
             importer.start()
+            reader = threading.Thread(target=read_status)
+            reader.start()
             try:
-                self.assertFalse(import_done.wait(0.2),
-                                 "wallet import passed while broadcast was in flight")
+                self.assertTrue(import_done.wait(2),
+                                "a stalled broadcast still blocked the wallet import")
+                self.assertTrue(status_done.wait(2),
+                                "a stalled broadcast still blocked /api/status")
             finally:
                 release.set()
-                sender.join(3)
-                importer.join(3)
+                sender.join(5)
+                importer.join(5)
+                reader.join(5)
         self.assertNotIn("send_error", outcomes)
         self.assertEqual(outcomes["send"]["txid"], result["txid"])
-        self.assertTrue(import_done.is_set())
+        # The outcome is recorded for the wallet that submitted it, and the
+        # wallet imported while the request was in flight is left alone.
+        self.assertEqual(self.app.pending_broadcast_txid, result["txid"])
+        self.assertFalse(self.app.pending_broadcast_unknown)
+        self.assertEqual(self.app.pending_by_wallet.get(submitted_wallet),
+                         (result["txid"], False))
+        self.assertIsNotNone(self.app.record)
+        self.assertNotEqual(wallet_identity(self.app.record, "testnet4"),
+                            submitted_wallet,
+                            "the import should have installed a different wallet")
+        self.assertIsNone(self.app.prepared)
 
     def test_the_device_check_reports_what_can_sign(self):
         text, _ = test_record()
