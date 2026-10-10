@@ -72,6 +72,29 @@ assumption is whether repository-controlled permissions make the path reachable.
 measured state is recorded in sections 4, 5 and 7; the panel must evaluate the publish
 path as it actually stands, not as the workflow's comments describe it.
 
+**Distribution and contribution policy** (owner, 2026-10-10 — an owner amendment to the
+locked scope, logged in section 9): this repository is public so that anyone may read, use,
+fork and independently verify the software, and it is MIT-licensed for that purpose. It is
+**not** open to public collaboration: Bitseeker LLC is the sole contributor and the only
+collaborator with write access, and outside pull requests are not merged into the release
+line. Release artifacts are produced only from `main`, by the audited `build-candidate.yml`
+candidate→promote chain, and are signed under the Bitseeker LLC release key. A fork is
+someone else's build: it cannot publish under this identity, and it is not this audit's
+subject. Consequently this audit treats **push and dispatch rights on this repository** as
+the strongest in-scope attacker capability, and treats GitHub account compromise, GitHub
+platform compromise, and stolen owner credentials as declared external assumptions —
+recorded once, never graded as findings.
+
+**Downstream dependency policy** (owner, 2026-10-10, same amendment): the owner declares
+that the pinned versions in `requirements*.txt`, the `*.lock` files and `vendor/` **are the
+audited versions**. The application does not track upstream automatically — the measured
+platform state agrees, `dependabot_security_updates` being disabled (section 4) — and a
+dependency is not moved to a newer release without its own review. Moving a pin
+**invalidates any inherited audit evidence for that component** until it is re-established.
+Inherited evidence may be cited only for the exact pinned version and only where the owner
+has named the audit that covers it: this plan does not assert component coverage the
+repository cannot show (section 8, question 6).
+
 **Operator model and report audiences** (owner, 2026-10-06, carried forward): the target
 operator is a nontechnical fiduciary or family member — a lawyer, trustee, accountant,
 spouse, or trusted advisor settling an estate that includes Bitcoin. They know Bitcoin is
@@ -146,7 +169,15 @@ The surveyor does not write or endorse it. It must state, at minimum:
   statement if binaries were not verified**;
 - a candid AI-provenance statement: the actual agents/models/vendors involved, whether
   different-model independence was *verified* or only *declared*, and what human review
-  took place.
+  took place;
+- a plain-language posture block for the non-Bitcoin reader: what the app is and is not
+  (it holds no wallet key, creates no wallet, never asks for seed words or a PIN, and never
+  signs or broadcasts silently), the single BSMS wallet file the operator must supply, the
+  one deliberate per-transaction mainnet confirmation, and the operator's own safety checks
+  (verify the recipient and amount through a separate trusted channel; check the change in
+  your own wallet software); and
+- the distribution and contribution policy as stated in section 0, so a reader knows the
+  release line is single-maintainer, signed, and built only from `main`.
 
 It must call the process an **AI-assisted or agentic security review**, never human-firm
 certification, and must make no claim of perfect security, guaranteed absence of malware,
@@ -395,6 +426,22 @@ Each in-scope threat is recorded below with the six required fields. Ranked by i
 plausible reachability. These are the threats the audit must test; the list is deliberately
 finite, and "conceivable" alone does not promote a conjectural issue into a mandatory test.
 
+**The list is closed.** The panel works T1–T12 and stops. Anything else it imagines is
+written onto a next-cycle list — named, dated, and **not investigated in this cycle**. No
+threat may be added to section 5 after the lock without the owner amending this file and
+re-signing, which voids the lock. An item already closed by a demonstrable test, or by a
+dated owner acceptance, is not reopened absent new code at a later revision.
+
+**Burden of proof — the reciprocal of "a test that cannot fail does not count as a fix."**
+A finding that would block release must be *demonstrated* against the locked revision: a
+command or test the referee can run and watch fail, or an API artifact, at
+`file:line @ d525f31`. A concern that cannot be demonstrated is recorded as a **note**, is
+never graded, and does not by itself change the grade. Severity cannot inflate a note: a
+weakened control with a reproducer is CONDITIONAL; hygiene or robustness without a
+demonstrated path is an Info item; a speculation is a speculation. This cuts both ways —
+every one of T1–T12 must still be *tested* with evidence of that kind, and an untested
+threat cannot be cleared by argument.
+
 | # | Asset + plausible attacker starting capability | Repository-controlled entry point / trust boundary | Concrete prohibited outcome | Observable acceptance test or evidence | Exclusions and assumptions | What result would block release |
 |---|---|---|---|---|---|---|
 | T1 | Asset 1/3 — the app itself is the attacker's surface; no prior access required beyond the operator using it | Review → prepare → sign → finalize → broadcast pipeline in `gui.py` and `ui.html` | A transaction is signed or broadcast whose recipient, amount, fee or change differs from what the final screen displayed | Byte-level comparison of the frozen `PreparedPayment`, each signer request, the finalized transaction and the broadcast hex; tripwires `tests/test_gui.py`, `tests/test_send_flow.py` broken red by the referee | Assumes the operator's own machine and the app binary are what they claim to be; does not assume the operator can read a hex payload | Any demonstrated divergence between displayed and signed/broadcast bytes |
@@ -404,7 +451,7 @@ finite, and "conceivable" alone does not promote a conjectural issue into a mand
 | T5 | Asset 1/5 — a malicious or lying Esplora/price server (external service, but the app's trust in it is internal) | `wallet_service.py:131-192` explorer calls; `network_settings.py:118-145`; the price quote feeding the large-amount floors `gui.py:1195-1209` | Funds sent because the app believed a lie: a wrong balance, a wrong fee, a wrong outpoint, a wrongly-identified network, or a suppressed large-amount prompt | Response shape/range validation, the independent second explorer for mainnet (`wallet_service.py:191-192`, `gui.py:240-258`), genesis/checkpoint verification, and the local 0.1/0.04 BTC floors that a lying-low price cannot suppress | Explorer honesty is assumed *only* to the extent the app cross-checks it; a single-source chain (Testnet4, Mutinynet) is a known asymmetry and must be reported as such | Any money-path decision resting on an unverified single source without a stated, tested fallback |
 | T6 | Asset 1/5 — any process or web page on the operator's machine | The loopback HTTP API `gui.py:514-517`, `gui.py:1262`, host/origin/token gate `gui.py:569-572`, `gui.py:634-643` | An unauthorized local page drives the API: rebound DNS name, cross-site form, or a leaked token | Host equality, the Origin clause, constant-time token compare, the fragment-only token delivery, and the absence of an HTML-injection sink (`innerHTML`/`insertAdjacentHTML`/`outerHTML` nowhere; CSP nonce per response `gui.py:536-539`, `gui.py:583-587`) | Other processes on the operator's machine are assumed hostile, which is the point of the gate; the OS account itself is not modelled | Any request that mutates money-path state without the token and an exact Host |
 | T7 | Asset 1/2 — a substituted HWI helper or `hwilib` payload | `probe.py:211-214`, `:294-308`, `:391-428`; `scripts/hwi_entry.py`; the `hwi.sha256` sidecar inside the signed bundle | A poisoned helper signs or exfiltrates; a source-mode import loads a tampered `hwilib` | Byte identity before the helper may speak, exact version-line membership, and pins that can actually fail. **Note for the panel:** the tripwire at `tests/test_hardening_pins.py:331` re-asserts the `HWI_PAYLOAD_PINS` constant and can never fail; `probe.py:211-214` pins only `hwilib` and `hwilib._cli` while source mode imports the whole package — this row must be tested, not cited | The packaged helper's own bytes inside the signed bundle are covered by the outer signature; source mode is a developer path | A substitution path into the helper or `hwilib` that the pins do not refuse, or a claimed pin that cannot fail |
-| T8 | Asset 2/4 — a contributor, fork, or branch that can push to this repository, or a workflow body able to escalate its own token | `.github/workflows/build-candidate.yml`; the dispatch-only trigger and its guards; `scripts/check-publish-paths.sh`; the repository's platform settings | Publish-capable bytes reach a release from a path other than the audited candidate→promote chain: a second publish path, an unsigned/unnotarized publish, a tag or asset overwrite, or code execution inside a `run:` block | The publisher guards (`:57`, `:63`, `:69`, `:698`, `:792`, `:845`, `:954`, `:978`), the branch sweep, the no-overwrite tag guard, and the absence of any other publish-capable file. **Known surface to test, not assume closed:** `build-candidate.yml:69` interpolates the free-text `candidate_run_id` input directly into bash (the safe `env:` handling is at `:702`); `check-publish-paths.sh` matches only literal `contents: write` and the literal string `gh release`, and looks only in `.github/workflows`; `release` holds `contents: write` on every dispatch (`:833`) with no required reviewers on the environment; the `release` job has no job-level `if:`; the "only publish path" claim holds for `main` but not repo-wide — historical tags `v0.1.11`–`v0.6.4` still freeze publish-capable `build-candidate.yml` text with `contents: write` and `gh release create` (the repo discloses this residual itself at `releases/OWNER-ACCEPTANCE-2026-10-07.md:82-98`), and with no non-main remote heads left the sweep now passes trivially | GitHub account compromise, platform compromise and stolen owner credentials are **external assumptions**; the panel evaluates the permissive-workflow path, which *is* in scope | Any demonstrated second publish path, unsigned publish, overwrite, or command injection reachable by a repository-controlled actor |
+| T8 | Asset 2/4 — an actor holding push or dispatch rights on this repository (in practice the owner account: `cjtsh` is the sole collaborator, verified from the API; forks are outside the model per section 0), or a workflow body able to escalate its own token | `.github/workflows/build-candidate.yml`; the dispatch-only trigger and its guards; `scripts/check-publish-paths.sh`; the repository's platform settings | Publish-capable bytes reach a release from a path other than the audited candidate→promote chain: a second publish path, an unsigned/unnotarized publish, a tag or asset overwrite, or code execution inside a `run:` block | The publisher guards (`:57`, `:63`, `:69`, `:698`, `:792`, `:845`, `:954`, `:978`), the branch sweep, the no-overwrite tag guard, and the absence of any other publish-capable file. **Known surface to test, not assume closed:** `build-candidate.yml:69` interpolates the free-text `candidate_run_id` input directly into bash (the safe `env:` handling is at `:702`); `check-publish-paths.sh` matches only literal `contents: write` and the literal string `gh release`, and looks only in `.github/workflows`; `release` holds `contents: write` on every dispatch (`:833`) with no required reviewers on the environment; the `release` job has no job-level `if:`; the "only publish path" claim holds for `main` but not repo-wide — historical tags `v0.1.11`–`v0.6.4` still freeze publish-capable `build-candidate.yml` text with `contents: write` and `gh release create` (the repo discloses this residual itself at `releases/OWNER-ACCEPTANCE-2026-10-07.md:82-98`), and with no non-main remote heads left the sweep now passes trivially | GitHub account compromise, platform compromise and stolen owner credentials are **external assumptions**; the panel evaluates the permissive-workflow path, which *is* in scope | Any demonstrated second publish path, unsigned publish, overwrite, or command injection reachable by a repository-controlled actor |
 | T9 | Asset 4/2 — anyone who can alter what the operator downloads | The release page, `SHA256SUMS`/`SHA256SUMS.asc`, the SBOM, and the site that links them | The bytes a user downloads are not the bytes the candidate run produced, or the published list of hashes is not the one the pipeline signed | The candidate run-id/manifest binding (`:707-739`), `gpg --verify` against the committed key (`:850-851`), the no-overwrite guard, and a review of what the *download page* actually points at | The GitHub release page is assumed honest about what it stores; the repository is not assumed to control the CDN | Any published asset that cannot be traced to a successful candidate run at that commit, or a public link to bytes the pipeline did not produce |
 | T10 | Asset 4 — the public download surface is three releases stale: `docs/index.html:31,243-245` offer **v0.6.4** downloads and `:231,268` present the **v0.6.4** Z.ai review as the security evidence, while v0.6.5, v0.6.6 and v0.6.7 exist | `docs/` (GitHub Pages) and the release page | The operator is directed to an older build and to evidence about a revision the audit did not grade, while newer, graded bytes exist | A literal comparison of every version string and download URL in `docs/` against the release list; the `v0.6.7` commit message claims the stale "current release" prose was corrected, and this surface was not; and the audit PDFs the site links label those reviews "independent" while the framework lock says independence "cannot be determined" (`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.6.md:13`) — wording the Public Security Statement must not repeat | The site is out of code scope; this is a *release-channel and assurance* claim, which asset 4 covers | The public statement of what to download and what was graded disagreeing with the graded revision — a Public Security Statement cannot be written honestly while this stands |
 | T11 | Asset 5 — a diagnostics file or log shared with a reviewer, or a network observer | `gui.py:414-448` diagnostic events, `gui.py:682`; `log_message` `gui.py:518-520`; the Esplora requests themselves | xpubs, addresses, txids, device identities or the session token reach a log, a diagnostics file, the repository, or a server beyond the operator's chosen explorer | Fixed-code events with device *class* only, token scrubbing, the log-silence tripwire (`tests/test_gui.py:928-951`), and a byte-level check of a produced diagnostics file | The chosen Esplora server learns the addresses the operator scanned for; that disclosure is consented to in the UI and is a stated design property, not a finding | Any wallet-identifying string or token in a persisted file, a log, or an artifact |
@@ -480,7 +527,8 @@ finite, and "conceivable" alone does not promote a conjectural issue into a mand
 
 The five cycle-`v0.6.4` questions and their answers are carried forward unchanged (section
 9 of the signed cycle-`v0.6.7` plan); the standard does not change until it is passed. This
-cycle asks five new ones, each grounded in something measured on 2026-10-10:
+cycle asks six new ones, each grounded in something measured on 2026-10-10; the sixth
+arrived with the owner's 2026-10-10 amendment and is the one the amendment itself depends on:
 
 1. **The rewound default branch.** Commits were pushed to `main` on 2026-10-08/09 and are
    now unreachable from every ref, and `d525f31` (authored 2026-10-07) only reached `main`
@@ -514,21 +562,72 @@ cycle asks five new ones, each grounded in something measured on 2026-10-10:
    public download page points at a different revision than the one graded. Does the owner
    want the statement gated on question 2, and does the owner want the surveyor's
    `not exposed by the harness` model line left exactly as written?
+6. **Which downstream components have been audited, and by whom?** The owner's 2026-10-10
+   amendment declares the pinned versions to be the audited versions and forbids inherited
+   evidence except for a named audit. The repository's own status line says the opposite —
+   `CURRENT-STATUS.md:113` records "an independent component audit of the inherited stack
+   (embit, HWI, libusb, pywebview, and PyInstaller)" as **outstanding** — while
+   `releases/AUDIT-ZAI-0.4.3.md`, `releases/AUDIT-ZAI-0.6.2/0.6.3/0.6.4.md` and
+   `releases/AUDIT-DEEPSEEK-0.4.3.md` exist. Which components are covered, by which of
+   those documents, at which versions? The panel needs the list to cite inherited evidence
+   instead of re-auditing dependency internals — and to know which pins the list does **not**
+   cover.
 
 ## 9. Owner review and sign-off — step two, no AI
 
 **Corrections and notes.**
 
-- none — the plan is signed as written, with no corrections to any section.
-- Provenance of this sign-off: recorded on 2026-10-10 at the owner's direction. The owner
-  supplied the signature identity and the date and directed that the plan be published; the
-  surveyor agent transcribed the two lines below, in the same DSH session that produced the
-  plan (`DSH_SESSION_ID=session-5d5422fc-382b-428d-93f1-71eb00cd083b`). No human edited any
-  byte of this file after it was written.
+- **Revision 1** (2026-10-10, commit `df3a4b8`): none — the plan was signed as written, with
+  no corrections to any section.
+- **Revision 2** (2026-10-10, owner-directed amendment, this commit): additions only, except
+  where noted. One bullet per change, naming the section it touches.
+  - **Section 0 — Distribution and contribution policy added.** States that the repository
+    is public to read, use, fork and verify, and is *not* open to public collaboration; that
+    release bytes come only from `main` via the audited candidate→promote chain under the
+    Bitseeker LLC key; and that push/dispatch rights, not anonymous contributors, are the
+    strongest in-scope attacker capability. GitHub platform and account compromise remain
+    declared external assumptions.
+  - **Section 5, T8 — attacker cell restated** from "a contributor, fork, or branch that can
+    push" to the actors that actually exist: holders of push or dispatch rights on this
+    repository. This is the **one narrowing edit** in revision 2. It is recorded openly:
+    no third party holds write or dispatch rights (`cjtsh` is the sole collaborator, verified
+    from the API), so nothing reachable was removed. If an outside contributor is ever added,
+    this cell and the section 0 policy must be revisited before a later cycle.
+  - **Section 0 — Downstream dependency policy added**, with the rule that the pinned
+    versions are the audited versions, that upstream movement is not followed automatically,
+    and that moving a pin invalidates inherited evidence for that component. The measured
+    platform state supports the "no automatic updates" half (`dependabot_security_updates`
+    is disabled).
+  - **Section 5 — closed list and burden of proof added.** The panel works T1–T12 and stops;
+    anything further is recorded on a next-cycle list and not investigated; no threat may be
+    added after the lock without the owner amending this file and re-signing; a closed item
+    is not reopened absent new code; and a finding that would block release must be
+    demonstrated with a command or test the referee can watch fail. A concern that cannot be
+    demonstrated is a note, not a grade.
+  - **Section 0, Public Security Statement spec — plain-language posture block added** (what
+    the app is and is not, the single BSMS file, the one mainnet confirmation, the operator's
+    own checks) and the distribution policy added to the required contents.
+  - **Section 8 — question 6 added** on which downstream components have been audited and by
+    whom; the section now carries six questions, not five. It was added because the
+    downstream policy above asserts nothing about coverage the repository cannot show, and
+    `CURRENT-STATUS.md:113` still records a component audit as outstanding.
+  - **Not changed:** the three rubric grades, the five ranked assets, the two unforgivable
+    acts, the revision under audit (`d525f31`), the operator model, and every in-scope threat
+    other than T8's restated attacker cell. No test, control or acceptance criterion was
+    weakened.
+  - **Timing:** no audit lock and no report exist for this cycle, so no hash has been taken
+    over revision 1. This amendment is made before the lock, which is the only point at which
+    it is free; revision 1 remains in git history at `df3a4b8`.
+- **Provenance of both sign-offs:** recorded on 2026-10-10 at the owner's direction. The owner
+  supplied the signature identity and the date, directed publication, and directed this
+  amendment; the surveyor agent transcribed the two lines below on each occasion, in the same
+  DSH session that produced the plan
+  (`DSH_SESSION_ID=session-5d5422fc-382b-428d-93f1-71eb00cd083b`). No human edited any byte of
+  this file.
 
 **Answers to the questions above.**
 
-- none recorded — the five questions in section 8 are carried forward open, for the owner to
+- none recorded — the six questions in section 8 are carried forward open, for the owner to
   answer before the panel is dispatched.
 
 **Sign-off.**
