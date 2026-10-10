@@ -571,6 +571,25 @@ class LocalApp:
                     f"127.0.0.1:{self.server.server_address[1]}"
                 )
 
+            def _token_matches(self):
+                """True only for the exact local token -- and never by raising.
+
+                `hmac.compare_digest` refuses two `str` arguments that contain a
+                non-ASCII character (`TypeError: comparing strings with non-ASCII
+                characters is not supported`), and a header arrives decoded as
+                latin-1, so a hostile `X-Local-Token` used to kill the connection
+                with a traceback in the log instead of earning the ordinary 403
+                (CT-81). Encoding both sides first keeps the comparison
+                constant-time over bytes and turns every non-ASCII or malformed
+                value into a plain mismatch.
+                """
+                try:
+                    candidate = (self.headers.get("X-Local-Token") or "").encode("utf-8")
+                    expected = state.token.encode("utf-8")
+                except (AttributeError, UnicodeError):
+                    return False
+                return hmac.compare_digest(candidate, expected)
+
             def do_GET(self):
                 if not self._trusted_host():
                     self._send(403, {"error": "Local access only."})
@@ -635,9 +654,7 @@ class LocalApp:
                 expected = f"http://127.0.0.1:{self.server.server_address[1]}"
                 if (not self._trusted_host()
                     or (origin is not None and origin != expected)
-                    or not hmac.compare_digest(
-                        self.headers.get("X-Local-Token") or "", state.token
-                    )):
+                    or not self._token_matches()):
                     self._drain_body()
                     self._send(403, {"error": "Local access only."})
                     return

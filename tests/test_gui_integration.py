@@ -10,8 +10,11 @@ local server itself.
 """
 
 import base64
+import contextlib
+import io
 import json
 import re
+import socket
 import tempfile
 import threading
 import time
@@ -157,6 +160,47 @@ class LocalServerAccessTests(ApiTestCase):
         status, body = self.post("/api/status", {}, origin="http://evil.example")
         self.assertEqual(status, 403)
         self.assertIn("Local access only", body["error"])
+
+    def _raw_token_request(self, token_bytes):
+        """One hand-built POST, so the header can carry bytes urllib cannot.
+
+        `urllib` encodes a `str` header as latin-1, so a hostile header has to
+        be written to the socket by hand to reach the handler as raw bytes.
+        """
+        request = (
+            b"POST /api/status HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:" + str(self.port).encode() + b"\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 2\r\n"
+            b"Connection: close\r\n"
+            b"X-Local-Token: " + token_bytes + b"\r\n"
+            b"\r\n{}"
+        )
+        with socket.create_connection(("127.0.0.1", self.port), timeout=15) as sock:
+            sock.sendall(request)
+            chunks = []
+            while True:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        return b"".join(chunks)
+
+    def test_a_non_ascii_token_header_is_refused_without_a_traceback(self):
+        """CT-81: a hostile header is a wrong token, not a dying connection.
+
+        `hmac.compare_digest` raises TypeError when either `str` argument holds
+        a non-ASCII character, and the header arrives decoded as latin-1, so the
+        connection used to die with a traceback on stderr instead of returning
+        the ordinary 403.
+        """
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            response = self._raw_token_request(b"\xff\xfe\x80")
+        self.assertTrue(response.startswith(b"HTTP/1.0 403"), response)
+        self.assertIn(b"Local access only", response)
+        self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertEqual(self.post("/api/status", {})[0], 200)
 
     def test_wrong_host_header_is_rejected(self):
         request = urllib.request.Request(
