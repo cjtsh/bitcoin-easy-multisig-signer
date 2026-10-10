@@ -94,18 +94,17 @@ REPO, RECORD, MODE, GH = sys.argv[1], pathlib.Path(sys.argv[2]), sys.argv[3], sy
 NOT_OBSERVED = ("recorded_at", "optional_secret_routes", "notes")
 
 
-def api(path):
+def api(path=""):
     """One `gh api` call, or a refusal. A failed read is never an empty answer."""
-    result = subprocess.run(
-        [GH, "api", f"repos/{REPO}/{path}"], capture_output=True, text=True
-    )
+    endpoint = f"repos/{REPO}" + (f"/{path}" if path else "")
+    result = subprocess.run([GH, "api", endpoint], capture_output=True, text=True)
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "no output"
-        raise SystemExit(f"refusing: gh api {path} failed:\n{detail}")
+        raise SystemExit(f"refusing: gh api {endpoint} failed:\n{detail}")
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise SystemExit(f"refusing: gh api {path} did not return JSON: {exc}")
+        raise SystemExit(f"refusing: gh api {endpoint} did not return JSON: {exc}")
 
 
 def environments():
@@ -181,6 +180,27 @@ def registrations():
     }
 
 
+def secret_scanning():
+    """The repository's own secret scanning, asserted rather than assumed.
+
+    CT-86: the source job now reads the bytes it is about to publish, but the
+    setting that reads them after publication was only ever a sentence in a
+    browser. Each status is recorded even when it is "disabled", because a
+    record that names only the good news cannot be diffed.
+    """
+    analysis = api().get("security_and_analysis") or {}
+    return {
+        key: (analysis.get(key) or {}).get("status")
+        for key in (
+            "dependabot_security_updates",
+            "secret_scanning",
+            "secret_scanning_non_provider_patterns",
+            "secret_scanning_push_protection",
+            "secret_scanning_validity_checks",
+        )
+    }
+
+
 def observe():
     return {
         "schema": "bitcoin-easy-multisig-signer/platform-state/1",
@@ -192,6 +212,7 @@ def observe():
             "copied so this record can be published and reviewed."
         ),
         "environments": environments(),
+        "secret_scanning": secret_scanning(),
         "repository_secrets": sorted(
             secret["name"] for secret in api("actions/secrets")["secrets"]
         ),

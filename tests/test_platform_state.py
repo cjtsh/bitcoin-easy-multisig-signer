@@ -39,9 +39,13 @@ ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "releases" / "platform-state.json"
 SCRIPT = ROOT / "scripts" / "check-platform-state.sh"
 WORKFLOW = ROOT / ".github" / "workflows" / "build-candidate.yml"
+if not WORKFLOW.is_file():
+    # A source archive is a source tree: build-source.sh ships the recipes under
+    # ci/ rather than .github/workflows/, and the archive runs this suite.
+    WORKFLOW = ROOT / "ci" / "build-candidate.yml"
 PLAN = ROOT / "releases" / "PLAN-0.6.8.md"
 RELEASE_PROCESS = ROOT / "RELEASE-PROCESS.md"
-WORKFLOW_DIR = ROOT / ".github" / "workflows"
+WORKFLOW_DIR = WORKFLOW.parent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -50,7 +54,10 @@ try:
 except ImportError:  # pragma: no cover - PyYAML is a CI requirement
     yaml = None
 
-SECRET_REFERENCE = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_]*)")
+# A secret reference is `secrets.NAME` in an expression. The lookbehind keeps a
+# hyphenated filename -- scripts/scan-secrets.py, which the source job runs --
+# from being read as a reference to a secret called "py".
+SECRET_REFERENCE = re.compile(r"(?<![\w-])secrets\.([A-Za-z_][A-Za-z0-9_]*)")
 
 # The five names the plan expects to be declared, and nowhere else. The optional
 # route below is the reason the count is five and not six.
@@ -89,6 +96,9 @@ if mutation:
             "name": "New publisher",
             "state": "active",
         }
+    elif kind == "secret-scanning":
+        key, _, status = rest.partition(":")
+        state["secret_scanning"][key] = status
     else:
         raise SystemExit("unknown mutation: " + mutation)
 
@@ -121,13 +131,21 @@ if argv[:1] == ["auth"]:
 if argv[:1] != ["api"] or len(argv) != 2:
     sys.exit(2)
 
-prefix = "repos/" + state["recorded_from"] + "/"
-if not argv[1].startswith(prefix):
+prefix = "repos/" + state["recorded_from"]
+if argv[1] != prefix and not argv[1].startswith(prefix + "/"):
     sys.exit(2)
-path = argv[1][len(prefix):]
+path = argv[1][len(prefix):].lstrip("/")
 registrations = state["workflow_registrations"]
 
-if path == "environments":
+if path == "":
+    # The repository root: the platform's own secret-scanning posture (CT-86).
+    answer = {
+        "security_and_analysis": {
+            key: {"status": status}
+            for key, status in state["secret_scanning"].items()
+        }
+    }
+elif path == "environments":
     answer = {
         "total_count": len(environments),
         "environments": [detail(name) for name in sorted(environments)],
@@ -263,6 +281,23 @@ class PlatformRecordTests(unittest.TestCase):
         workflow = self.record["permissions"]["workflow"]
         self.assertEqual(workflow["default_workflow_permissions"], "read")
         self.assertFalse(workflow["can_approve_pull_request_reviews"])
+
+    def test_the_record_carries_the_platform_secret_scanning_posture(self):
+        """CT-86: the source job reads the bytes, and this reads the setting.
+
+        Every status is recorded, including the disabled ones, because a record
+        that named only the good news could not be diffed.
+        """
+        scanning = self.record["secret_scanning"]
+        self.assertEqual(
+            sorted(scanning),
+            ["dependabot_security_updates", "secret_scanning",
+             "secret_scanning_non_provider_patterns",
+             "secret_scanning_push_protection",
+             "secret_scanning_validity_checks"],
+        )
+        self.assertEqual(scanning["secret_scanning"], "enabled")
+        self.assertEqual(scanning["secret_scanning_push_protection"], "enabled")
 
     def test_an_unenforced_platform_setting_is_named_on_the_next_cycle_list(self):
         actions = self.record["permissions"]["actions"]
@@ -500,6 +535,19 @@ class PlatformCheckScriptTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 1, result.stdout)
             self.assertIn("restored-publisher.yml", result.stderr)
+
+    def test_a_disabled_scanner_is_named_in_the_difference(self):
+        """The setting behind the scan is watched too, not just the scan."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            result = self._run(
+                folder, gh=_fake_gh(folder),
+                mutation="secret-scanning:secret_scanning_push_protection:disabled",
+            )
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("secret_scanning.secret_scanning_push_protection",
+                          result.stderr)
+            self.assertIn("recorded 'enabled', live 'disabled'", result.stderr)
 
     def test_a_missing_record_refuses_instead_of_reporting_ok(self):
         with tempfile.TemporaryDirectory() as tmp:

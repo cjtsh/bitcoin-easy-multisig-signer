@@ -168,6 +168,20 @@ tag carrying a publisher is an offender, so a new tag cannot reintroduce one.
 Accepted with eyes open: those 46 tags can still publish if someone holding push
 or dispatch rights dispatches their workflow against the tag ref.
 
+**The bytes that ship are read for credentials before they ship.** A secret that
+reaches a tag stays public for as long as the tag exists, and until 0.6.8 nothing
+in a workflow read the bytes a tag actually publishes. The `source` job now
+extracts the archive it is about to upload and scans it with
+`detect-secrets==1.5.0`, pinned by version and hash in `requirements-ci.lock`
+like every other release input, through `scripts/scan-secrets.py`. The step
+carries a positive control assembled from fragments at run time -- a canary the
+scan must catch -- so a scan that stopped reading cannot pass by returning
+nothing, and the wrapper refuses (rather than reporting clean) a tree it could
+not read, an empty one, or a scanner that is not the pinned version. The two
+high-entropy plugins are disabled on purpose: they fire on every digest in
+`vendor/hwi-payload-*.json` and on every pinned test vector, which would make the
+baseline move with every unrelated edit and train the reader to ignore it.
+
 **Credential wiring is in the revision, and the rest of the platform is recorded.**
 CT-80: the audited tag declared no `environment:` on any job, so no `MAC_*` or
 `GPG_*` name could resolve there, yet the candidate it produced was signed and
@@ -188,10 +202,12 @@ the route this repository uses and the one that needs no Apple Admin role) or th
 App Store Connect key route (`MAC_NOTARY_KEY_P8_BASE64` with the
 `MAC_NOTARY_KEY_ID` and `MAC_NOTARY_ISSUER_ID` variables, deliberately not
 declared here). `releases/platform-state.json` records the names, the branch
-policies, the reviewer counts, the rulesets, the Actions permissions and the
-workflow registrations; `scripts/check-platform-state.sh` re-reads the live
-platform and diffs it against that file, refuses to report a match it did not
-observe, and is run at release time with its output pasted into the patch record.
+policies, the reviewer counts, the rulesets, the Actions permissions, the
+workflow registrations and the repository's own secret-scanning posture
+(including the statuses that are disabled, so the record can be diffed);
+`scripts/check-platform-state.sh` re-reads the live platform and diffs it
+against that file, refuses to report a match it did not observe, and is run at
+release time with its output pasted into the patch record.
 Re-record with `scripts/check-platform-state.sh --record` and review the diff
 rather than editing the file by hand.
 

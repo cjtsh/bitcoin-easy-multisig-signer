@@ -61,7 +61,7 @@
       "default_workflow_permissions": "read"
     }
   },
-  "recorded_at": "2026-10-10T17:15:40Z",
+  "recorded_at": "2026-10-10T18:20:10Z",
   "recorded_from": "cjtsh/bitcoin-easy-multisig-signer",
   "recorded_with": "scripts/check-platform-state.sh --record",
   "repository_secrets": [],
@@ -99,6 +99,13 @@
     }
   ],
   "schema": "bitcoin-easy-multisig-signer/platform-state/1",
+  "secret_scanning": {
+    "dependabot_security_updates": "disabled",
+    "secret_scanning": "enabled",
+    "secret_scanning_non_provider_patterns": "disabled",
+    "secret_scanning_push_protection": "enabled",
+    "secret_scanning_validity_checks": "disabled"
+  },
   "values": "names only: no secret and no variable value is recorded. Secret values are unreadable through the API; variable values are deliberately not copied so this record can be published and reviewed.",
   "workflow_registrations": {
     "dynamic": {

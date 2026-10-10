@@ -147,6 +147,31 @@ jobs:
             echo "== $test"
             node "$test"
           done
+      # CT-86. A secret that reaches a tag stays public for as long as the tag
+      # exists, and until 0.6.8 nothing read the bytes the tag actually
+      # publishes. The scan therefore reads the extracted archive and not the
+      # worktree it was built from, and scripts/scan-secrets.py is pinned by
+      # version and hash in requirements-ci.lock -- the same --require-hashes
+      # set installed above -- rather than by a floating action.
+      - name: Scan the source archive for secrets
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          version="$VERSION"
+          control="$(mktemp -d)"
+          # The control is assembled from fragments on purpose: this workflow
+          # file is itself inside the archive the scan reads, so a literal token
+          # here would be the very finding it is meant to prove.
+          printf 'github_token = "gh%s_%s"\n' "p" "012345678901234567890123456789012345" > "$control/canary.env"
+          if python scripts/scan-secrets.py "$control"; then
+            echo 'The secret scan passed a planted canary, so it proves nothing.' >&2
+            exit 1
+          fi
+          rm -rf "$control"
+          mkdir -p "$RUNNER_TEMP/scanned"
+          tar xzf "dist/bitcoin-easy-multisig-signer-v${version}.tar.gz" -C "$RUNNER_TEMP/scanned"
+          python scripts/scan-secrets.py "$RUNNER_TEMP/scanned"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: source-archive

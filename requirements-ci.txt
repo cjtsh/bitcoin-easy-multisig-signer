@@ -6,3 +6,7 @@ pyyaml==6.0.3
 # app ships. Windows has no default OpenSSL verify path, so without certifi those
 # tests report a skip, and both build workflows refuse a suite that skips at all.
 certifi==2026.7.22
+# CT-86: the source job scans the archive it is about to upload, and
+# scripts/scan-secrets.py refuses to run a scanner that is not this version. The
+# scanner is an input to the release, so it is hash-locked like every other one.
+detect-secrets==1.5.0

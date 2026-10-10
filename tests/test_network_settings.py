@@ -32,7 +32,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(load_servers(), servers)
         self.assertNotIn("address", self.path.read_text())
         for url in ("https://electrum.btc21.cc/", "http://remote.example/api",
-                    "https://name:password@example.org/api"):
+                    # A credential-shaped URL on purpose: this asserts the app
+                    # refuses one, so the scanner is told not to report it.
+                    "https://name:password@example.org/api"):  # pragma: allowlist secret
             with self.subTest(url=url), self.assertRaises(SettingsError):
                 validate_esplora_url(url)
         self.assertEqual(validate_esplora_url("http://127.0.0.1:3000/api/"),
