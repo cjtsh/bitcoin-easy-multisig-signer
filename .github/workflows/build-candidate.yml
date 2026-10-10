@@ -145,6 +145,12 @@ jobs:
   macos:
     name: Apple Silicon DMG
     needs: version
+    # The Apple signing credentials are stored in this environment, and
+    # environment secrets are handed only to a job that names the environment.
+    # Its deployment rule allows `main` only, so a dispatch at a historical tag
+    # — which runs that tag's own workflow text, with no `environment:` key —
+    # can never be handed the credentials.
+    environment: apple-signing
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -686,6 +692,12 @@ jobs:
   checksums:
     name: SHA256SUMS
     needs: [version, source, macos, windows, linux]
+    # The release GPG key lives in this environment, for the same reason: a job
+    # must name the environment to be handed its secrets. The deployment rule
+    # allows `main` only and declares no human gate, so a promotion still starts
+    # on its own. The key is read only under `if: ${{ inputs.publish }}`, so a
+    # candidate run never touches it.
+    environment: release-signing
     runs-on: ubuntu-24.04
     permissions:
       actions: read
