@@ -46,9 +46,9 @@ DIGESTS = {
     "embit-upstream-2b375a.tar.gz":
         "3323c77583432be513b346bdc54f86f7ef5fb259e1db0e60975dc51bcbceb0a3",
     "embit-0.8.2+besa.1.tar.gz":
-        "d358dc1bb0faeb532172ed587afd88af9a704926df833b2ec5af8edaaf6bc77b",
+        "6974ac6dec0866ebbb5ab1f6e17cc78b187bedb40a31e514c94d50d2a3df0ad6",
     "embit-0.8.2+besa.1-py3-none-any.whl":
-        "77aec9344be124c0718503eb1f7f3c44dfbb01a929e5b974f7edfe2ad206dce0",
+        "41a5e7e850a09f58cae0819ead68a96c4600f90b4e83a5a82f6af49b9d5660ba",
     "libusb-1.0.0.dylib":
         "8f6ad6c17c16f1e7769ad2f780ed2ddf98234ae6580cf5d87d9648cee1769201",
     "libusb-1.0.30.tar.bz2":

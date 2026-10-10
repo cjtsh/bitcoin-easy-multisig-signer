@@ -418,7 +418,7 @@ ecdsa==0.19.2 \
     --hash=sha256:840f5dc5e375c68f36c1a7a5b9caad28f95daa65185c9253c0c08dd952bb7399
     # via hwi
 file:vendor/embit-0.8.2+besa.1-py3-none-any.whl \
-    --hash=sha256:77aec9344be124c0718503eb1f7f3c44dfbb01a929e5b974f7edfe2ad206dce0
+    --hash=sha256:41a5e7e850a09f58cae0819ead68a96c4600f90b4e83a5a82f6af49b9d5660ba
     # via -r requirements.txt
 hidapi==0.15.0 \
     --hash=sha256:005c84c74c940a314b211674edc763a931ace0b63685ace88148496f563e25f9 \

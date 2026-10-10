@@ -15,7 +15,7 @@ hardware-device communication; see the component licenses and source projects.
 | Component | Version | Licence | Upstream |
 | --- | --- | --- | --- |
 | [libusb](https://libusb.info/) | 1.0.30 | **LGPL-2.1-or-later** | <https://github.com/libusb/libusb> |
-| [embit](https://github.com/diybitcoinhardware/embit) | 0.8.2+besa.1 (pinned post-tag source with two local edits; see `vendor/README.md` in the source archive) | MIT | <https://github.com/diybitcoinhardware/embit> |
+| [embit](https://github.com/diybitcoinhardware/embit) | 0.8.2+besa.1 (pinned post-tag source with three local edits; see `vendor/README.md` in the source archive) | MIT | <https://github.com/diybitcoinhardware/embit> |
 | [Bitcoin Core HWI](https://github.com/bitcoin-core/HWI) | 3.2.0 | MIT | <https://github.com/bitcoin-core/HWI> |
 | [pywebview](https://pywebview.flowrl.com/) | 6.2.1 | BSD-3-Clause | <https://github.com/r0x0r/pywebview> |
 | [PyInstaller](https://pyinstaller.org/) | 6.22.2 | GPL-2.0-or-later **with the PyInstaller exception** | <https://github.com/pyinstaller/pyinstaller> |
