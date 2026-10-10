@@ -297,6 +297,14 @@ def wallet_layout(record: WalletRecord) -> Layout:
             else:
                 # xpub/* can match the first address directly at xpub/0.
                 # That does not anchor the BIP48 xpub/0/index branch.
+                # AGENTS.md:23 — such a wallet "must never enable inferred /1/*
+                # change". This flag is the `not bare_receive_only` half of the
+                # standard-change gate below. The pin lives in
+                # test_change_branch.py's
+                # test_bare_wildcard_reference_at_the_branch_root_never_infers_change,
+                # written against this exact shape because every other case
+                # there anchors the reference at xpub/0/0, where this branch —
+                # and so the gate — is unreachable.
                 receive, receive_text = desc, text
                 bare_receive_only = True
         else:

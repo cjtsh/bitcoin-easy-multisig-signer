@@ -53,6 +53,35 @@ class ChangeBranchTests(unittest.TestCase):
                     self.assertFalse(summary["change_assumed"])
                     self.assertIsNone(wallet_layout(record).change)
 
+    def test_bare_wildcard_reference_at_the_branch_root_never_infers_change(self):
+        """AGENTS.md: a bare ``/*`` matching the first address at ``xpub/0`` does
+        not anchor the BIP48 ``xpub/0/index`` receive branch, so the standard
+        ``/1/*`` change branch must not be inferred from it.
+
+        Every other case in this file anchors the reference at ``xpub/0/0``
+        (``receive-branch-only``), where the ``not bare_receive_only`` guard in
+        ``wallet_service.wallet_layout`` is unreachable -- deleting the guard
+        left this whole file green. This is the shape the guard exists for.
+        """
+        roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
+        keys = [f"[{root.my_fingerprint.hex()}/48h/1h/0h/2h]"
+                f"{root.derive('m/48h/1h/0h/2h').to_public().to_base58()}/*"
+                for root in roots]
+        descriptor = f"wsh(sortedmulti(2,{','.join(keys)}))"
+        # The bare wildcard filled with 0 is the first address directly, not the
+        # first index of a receive branch: this is xpub/0, never xpub/0/0.
+        reference = Descriptor.from_string(descriptor).derive(0).address(NETWORKS["test"])
+        record = parse_bsms(
+            f"BSMS 1.0\n{descriptor}#{checksum(descriptor)}\n"
+            f"No path restrictions\n{reference}\n"
+        )
+        self.assertEqual(record.reference_status, "verified")
+        self.assertIsNone(wallet_layout(record).change)
+        summary = wallet_summary(record)
+        self.assertFalse(summary["change_assumed"])
+        self.assertFalse(summary["can_prepare"])
+        self.assertTrue(summary["can_send_all"])
+
     def test_nonstandard_wallet_can_only_sweep_without_creating_change(self):
         roots = [bip32.HDKey.from_seed(bytes([i]) * 32) for i in (1, 2, 3)]
         keys = [f"[{root.my_fingerprint.hex()}/48h/1h/0h/3h]"

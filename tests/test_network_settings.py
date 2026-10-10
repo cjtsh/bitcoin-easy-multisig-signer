@@ -103,5 +103,64 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(load_servers(), default_servers())
 
 
+class PublishedChainConstantsTests(unittest.TestCase):
+    """CT-78: the chain constants are correct, and until now nothing said so.
+
+    Every other case in this file builds its expectation *from* NETWORKS, so a
+    true-value swap (mainnet's genesis replaced by Signet's) agreed with the
+    suite and a mocked Signet explorer passed ``verify_esplora("main")``. These
+    pins are the published values written out literally, so a swap has to fight
+    a literal instead of agreeing with itself.
+    """
+
+    # (genesis hash, checkpoint height, checkpoint hash), pinned verbatim.
+    PUBLISHED = {
+        # BIP-122 / Bitcoin Core mainnet chainparams (`bitcoind getblockhash 0`).
+        "main": ("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+                 None, None),
+        # BIP-94 testnet4 genesis.
+        "testnet4": ("00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
+                     None, None),
+        # Mutinynet is a custom Signet: it shares ordinary Signet's genesis, so
+        # block 1 is pinned as well (captured from the public Esplora API on
+        # 2026-09-29; see releases/MUTINYNET-0.3.0.md).
+        "mutinynet": ("00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+                      1,
+                      "000002855893a0a9b24eaffc5efc770558a326fee4fc10c9da22fc19cd2954f9"),
+    }
+
+    def test_the_published_chain_constants_are_pinned_verbatim(self):
+        self.assertEqual(set(NETWORKS), set(self.PUBLISHED))
+        for chain, (genesis, height, checkpoint) in self.PUBLISHED.items():
+            with self.subTest(chain=chain):
+                config = NETWORKS[chain]
+                self.assertEqual(config.genesis_hash, genesis)
+                self.assertEqual(config.checkpoint_height, height)
+                self.assertEqual(config.checkpoint_hash, checkpoint)
+
+    def test_the_network_to_genesis_mapping_is_exclusive(self):
+        """No two networks share a genesis, and the chainparams agree with it."""
+        genesis = [config.genesis_hash for config in NETWORKS.values()]
+        self.assertEqual(len(genesis), len(set(genesis)))
+        # Mutinynet and ordinary Signet share a genesis, so the block-1
+        # checkpoint is the only thing telling them apart; it must survive.
+        self.assertIsNotNone(NETWORKS["mutinynet"].checkpoint_hash)
+        self.assertEqual(NETWORKS["mutinynet"].checkpoint_height, 1)
+
+    def test_a_signet_genesis_is_not_accepted_as_mainnet(self):
+        """The swap CT-78 was written for: mainnet asked, Signet answered."""
+        class Response(io.BytesIO):
+            length = 64
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                self.close()
+        signet_genesis = self.PUBLISHED["mutinynet"][0]
+        with patch("network_settings.urlopen",
+                   return_value=Response(signet_genesis.encode())):
+            with self.assertRaisesRegex(SettingsError, "wrong Bitcoin network"):
+                verify_esplora("main", "https://ordinary-signet.example/api")
+
+
 if __name__ == "__main__":
     unittest.main()
