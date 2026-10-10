@@ -5,6 +5,11 @@ Run with the fresh .build-venv interpreter after the platform build script compl
 The result is a CycloneDX JSON SBOM shipped beside the immutable release assets.
 It contains package names/versions, hashes of the reviewed lock and libusb,
 and the GitHub commit/run identifiers; never wallet or device data.
+
+On Linux it also records the version of every OS package the build itself used
+(CT-87). Those come from the runner image's moving archive rather than from a
+pin, so they are accepted floating inputs, named at build time and explained in
+releases/PATCH-0.6.8.md.
 """
 
 import argparse
@@ -153,8 +158,72 @@ def embedded_libusb(root: Path) -> dict[str, str]:
     return result
 
 
+DEBIAN_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
+
+
+def debian_release() -> tuple[str, str]:
+    """The distro id and version from /etc/os-release, for the package purl.
+
+    A build on a machine without that file still records its packages, under a
+    neutral namespace rather than a guess.
+    """
+    values: dict[str, str] = {}
+    release = Path("/etc/os-release")
+    if release.is_file():
+        for line in release.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                values[key.strip()] = value.strip().strip('"')
+    return values.get("ID") or "linux", values.get("VERSION_ID") or ""
+
+
+def system_components(path: Path) -> list[dict]:
+    """The OS packages this build used, from the ``name=version`` record.
+
+    These are accepted floating inputs: the runner image's archive moves, so the
+    build records the version each package resolved to rather than pinning a
+    version that a runner refresh would invalidate. The trade is explained in
+    releases/PATCH-0.6.8.md. A record that names nothing is refused, because an
+    empty inventory reads like a clean one.
+    """
+    distro, release = debian_release()
+    machine = platform.machine()
+    qualifiers = f"arch={DEBIAN_ARCH.get(machine, machine)}"
+    if release:
+        qualifiers += f"&distro={distro}-{release}"
+    components = []
+    for number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1):
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        name, separator, version = entry.partition("=")
+        name, version = name.strip(), version.strip()
+        if not separator or not name or not version:
+            raise ValueError(
+                f"{path}:{number}: expected name=version for an OS package, "
+                f"got {entry!r}"
+            )
+        components.append({
+            "type": "library", "name": name, "version": version,
+            "purl": f"pkg:deb/{distro}/{name}@{version}?{qualifiers}",
+            "properties": [{
+                "name": "source",
+                "value": ("resolved by dpkg-query on the build machine; an "
+                          "accepted floating input, see releases/PATCH-0.6.8.md"),
+            }],
+        })
+    if not components:
+        raise ValueError(
+            f"{path} records no OS packages; an empty record is not a record"
+        )
+    components.sort(key=lambda component: component["name"])
+    return components
+
+
 def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str],
-          helper_sha: str | None = None) -> dict:
+          helper_sha: str | None = None,
+          system_packages: Path | None = None) -> dict:
     # Normalise before validating. CI passes the repository variable through
     # raw, and a SHA-256 is case-insensitive, so requiring lowercase here made an
     # uppercase variable fail *after* the build and tests had already succeeded.
@@ -189,6 +258,8 @@ def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str]
         if normalized in LICENCES:
             component["licenses"] = [{"license": {"id": LICENCES[normalized]}}]
         components.append(component)
+    system = system_components(system_packages) if system_packages is not None else []
+    components.extend(system)
     components.sort(key=lambda component: (component["name"], component["version"]))
     for name in native_library_names():
         digest = embedded.get(name)
@@ -224,6 +295,16 @@ def build(lib_hash: str, root: Path, shipped: set[str], embedded: dict[str, str]
                 # hwi.sha256 beside it holds to. CT-49.
                 {"name": "hwi_helper_sha256",
                  "value": helper_sha if helper_sha is not None else helper_digest(root)},
+                # CT-87: the OS packages the build itself used. Linux names
+                # them; the other platforms resolve none.
+                {"name": "system_packages",
+                 "value": (
+                     f"{len(system)} OS packages recorded by dpkg-query on the "
+                     "build machine; accepted floating inputs, see "
+                     "releases/PATCH-0.6.8.md"
+                 ) if system else (
+                     "no OS packages recorded: this platform's build resolves none"
+                 )},
             ],
         },
         "components": components,
@@ -234,11 +315,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--libusb-sha", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--system-packages", type=Path, default=None,
+        help="name=version lines for the OS packages this build used (Linux)",
+    )
     args = parser.parse_args()
     repository = Path(__file__).resolve().parent.parent
     args.output.write_text(
         json.dumps(build(args.libusb_sha, repository,
-                         collected_packages(repository), embedded_libusb(repository)),
+                         collected_packages(repository), embedded_libusb(repository),
+                         system_packages=args.system_packages),
                    indent=2) + "\n",
         encoding="utf-8",
     )

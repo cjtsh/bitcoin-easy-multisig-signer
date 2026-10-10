@@ -615,8 +615,18 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
+          # CT-87: these are the OS packages the AppImage is built with, and
+          # scripts/build-linux.sh declares the same names -- a test asserts the
+          # two agree -- then records the version each one resolved to in the
+          # SBOM. Exact apt versions are declined here on purpose: this runner's
+          # archive moves under it, so a version pin would fail the build on a
+          # runner refresh without making the bytes any more reproducible. That
+          # trade is written down in releases/PATCH-0.6.8.md, under "Accepted
+          # floating inputs".
+          #
           # squashfs-tools provides mksquashfs, the AppImage payload format.
           # librsvg2-bin rasterises assets/icon.svg into the AppDir icon.
+          # build-essential compiles the pinned libusb source.
           # fuse3 provides fusermount3, which a mounted AppImage needs; libfuse2
           # is deliberately NOT installed, so these checks prove the pinned
           # runtime never asks for libfuse.so.2.
@@ -711,10 +721,23 @@ jobs:
 
           # And again inside a container that has no libfuse2: an AppImage that
           # needed the host's libfuse.so.2 dies here with a dlopen failure.
+          #
+          # CT-87: the image is pinned by digest, so this proof runs against the
+          # same bytes every time instead of whatever the moving tag points at.
+          # The digest is the manifest list for ubuntu:24.04 published on
+          # 2026-10-04; refresh it with
+          #   docker buildx imagetools inspect ubuntu:24.04 --format '{{.Manifest.Digest}}'
+          # and record the new value here and in releases/PATCH-0.6.8.md.
+          #
+          # The two packages installed inside the container are the only
+          # floating part left, so the script prints the versions it used into
+          # the run log -- the proof's result is a pass or a failure, not shipped
+          # bytes, so there is nothing to hash; there is something to name.
           cat > build/container-proof.sh <<'SH'
           set -euo pipefail
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends fuse3 ca-certificates >/dev/null
+          dpkg-query -W -f='${Package}=${Version}\n' fuse3 ca-certificates
           if ldconfig -p | grep -qE 'libfuse\.so\.2'; then
             echo "libfuse.so.2 is present in this container; the proof is void." >&2
             exit 1
@@ -727,7 +750,8 @@ jobs:
             --device /dev/fuse --cap-add SYS_ADMIN \
             --security-opt apparmor=unconfined \
             -v "$PWD/dist:/dist:ro" -v "$PWD/build:/work" \
-            ubuntu:24.04 bash -lc 'bash /work/container-proof.sh'
+            ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 \
+            bash -lc 'bash /work/container-proof.sh'
           cat build/container.log
       - name: Name the SBOM for one shared release page
         run: mv dist/BUILD-SBOM.json dist/BUILD-SBOM-linux-x86_64.json

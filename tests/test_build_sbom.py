@@ -190,5 +190,88 @@ class HelperDigestPins(unittest.TestCase):
                              [helper.with_name("hwi.sha256")])
 
 
+class SystemPackageTests(unittest.TestCase):
+    """CT-87: the SBOM names the OS packages the build itself used.
+
+    Those packages come from the runner image's moving archive rather than from
+    a pin, so the honest thing is to record the version each one resolved to and
+    say why the pin is declined. A record that cannot be read, or that names
+    nothing, is refused: an empty inventory reads like a clean one.
+    """
+
+    def _record(self, folder: str, text: str) -> Path:
+        path = Path(folder) / "system-packages.txt"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_the_record_names_each_package_and_its_version(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self._record(folder, "squashfs-tools=1:4.6.1-1build1\n"
+                                        "librsvg2-bin=2.58.0+dfsg-1build1\n"
+                                        "\n# a comment\n")
+            components = {component["name"]: component
+                          for component in build_sbom.system_components(path)}
+        self.assertEqual(sorted(components), ["librsvg2-bin", "squashfs-tools"])
+        self.assertEqual(components["squashfs-tools"]["version"],
+                         "1:4.6.1-1build1")
+        self.assertIn("accepted floating input",
+                      components["squashfs-tools"]["properties"][0]["value"])
+
+    def test_the_purl_names_the_distro_and_architecture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self._record(folder, "fuse3=3.14.0-4\n")
+            with patch.object(build_sbom, "debian_release",
+                              return_value=("ubuntu", "24.04")), \
+                    patch.object(build_sbom.platform, "machine",
+                                 return_value="x86_64"):
+                component = build_sbom.system_components(path)[0]
+        self.assertEqual(
+            component["purl"],
+            "pkg:deb/ubuntu/fuse3@3.14.0-4?arch=amd64&distro=ubuntu-24.04",
+        )
+
+    def test_a_line_that_is_not_name_equals_version_is_refused(self):
+        for text in ("nonsense\n", "=1.2\n", "name=\n"):
+            with tempfile.TemporaryDirectory() as folder:
+                path = self._record(folder, text)
+                with self.assertRaises(ValueError) as caught:
+                    build_sbom.system_components(path)
+            self.assertIn(f"{path}:1:", str(caught.exception))
+            self.assertIn("expected name=version", str(caught.exception))
+
+    def test_an_empty_record_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = self._record(folder, "\n# only a comment\n")
+            with self.assertRaises(ValueError) as caught:
+                build_sbom.system_components(path)
+        self.assertIn("empty record is not a record", str(caught.exception))
+
+    def test_the_inventory_records_how_many_os_packages_it_saw(self):
+        embedded = {name: "d" * 64 for name in build_sbom.native_library_names()}
+        with tempfile.TemporaryDirectory() as folder:
+            path = self._record(folder, "fuse3=3.14.0-4\n"
+                                        "squashfs-tools=1:4.6.1-1build1\n")
+            result = build_sbom.build("a" * 64, ROOT, {"embit", "hwi"}, embedded,
+                                      helper_sha="c" * 64, system_packages=path)
+        properties = {entry["name"]: entry["value"]
+                      for entry in result["metadata"]["properties"]}
+        self.assertIn("2 OS packages", properties["system_packages"])
+        names = [component["name"] for component in result["components"]]
+        self.assertIn("fuse3", names)
+        self.assertIn("squashfs-tools", names)
+
+        result = build_sbom.build("a" * 64, ROOT, {"embit", "hwi"}, embedded,
+                                  helper_sha="c" * 64)
+        properties = {entry["name"]: entry["value"]
+                      for entry in result["metadata"]["properties"]}
+        self.assertIn("no OS packages recorded", properties["system_packages"])
+
+    def test_the_linux_build_hands_its_record_to_the_sbom(self):
+        script = (ROOT / "scripts" / "build-linux.sh").read_text(encoding="utf-8")
+        self.assertIn('system_packages="build/system-packages.txt"', script)
+        self.assertIn("dpkg-query", script)
+        self.assertIn('--system-packages "$system_packages"', script)
+
+
 if __name__ == "__main__":
     unittest.main()

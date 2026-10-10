@@ -677,6 +677,106 @@ class ToolchainPinTests(unittest.TestCase):
         self.assertIn("requirements-piptools.txt", script,
                       "the source archive must ship the lock's input file")
 
+    # CT-87: the two inputs that shape the AppImage but cannot be pinned the way
+    # the Python tree is. The container is pinned by digest; the OS packages are
+    # accepted floating inputs, recorded in the SBOM and named in the ledger.
+    CONTAINER = "ubuntu:24.04"
+    CONTAINER_DIGEST = (
+        "sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55"
+    )
+
+    def _active_recipe(self, name: str) -> str:
+        recipe = find_build_recipe(ROOT, name)
+        self.assertIsNotNone(
+            recipe, f"{name} is missing from both .github/workflows/ and ci/")
+        return "\n".join(
+            line for line in recipe.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#"))
+
+    def test_the_container_proof_runs_a_digest_not_a_moving_tag(self):
+        """CT-87: a tag is a moving pointer; the proof must name bytes.
+
+        `ubuntu:24.04` is republished as the image is rebuilt, so a run against
+        the tag proves something about whatever it meant that day. Pinning the
+        manifest-list digest makes the proof reproducible, and the refresh
+        command sits beside the pin so the next reader can move it deliberately.
+        """
+        active = self._active_recipe("build-candidate.yml")
+        self.assertIn(
+            f"{self.CONTAINER}@{self.CONTAINER_DIGEST}", active,
+            "the container proof must run a digest, not a tag")
+        floating = re.findall(rf"{re.escape(self.CONTAINER)}(?![@\w])", active)
+        self.assertEqual(
+            floating, [],
+            "the container is referenced by tag; pin the manifest digest with "
+            "docker buildx imagetools inspect ubuntu:24.04 "
+            "--format '{{.Manifest.Digest}}'",
+        )
+        recipe = find_build_recipe(ROOT, "build-candidate.yml")
+        self.assertIn(
+            "imagetools inspect", recipe.read_text(encoding="utf-8"),
+            "the recipe must record, in a comment beside the pin, how to "
+            "refresh the digest deliberately")
+
+    def test_the_runner_packages_are_the_ones_the_build_script_declares(self):
+        """CT-87: one list, declared once and recorded.
+
+        Two lists that merely look alike drift. The workflow installs exactly
+        the names scripts/build-linux.sh declares, and the SBOM records the
+        version each one resolved to, so the AppImage's build inputs are
+        readable even though they are not pinned.
+        """
+        script = (ROOT / "scripts" / "build-linux.sh").read_text(encoding="utf-8")
+        declared = re.search(r"SYSTEM_PACKAGES=\(([^)]*)\)", script)
+        self.assertIsNotNone(
+            declared, "build-linux.sh must declare SYSTEM_PACKAGES once")
+        names = sorted(declared.group(1).split())
+        self.assertGreaterEqual(len(names), 3)
+
+        active = self._active_recipe("build-candidate.yml")
+        installs = []
+        lines = active.splitlines()
+        for index, line in enumerate(lines):
+            if not re.search(
+                    r"apt-get install\s+-y\s+--no-install-recommends", line):
+                continue
+            words = []
+            while index < len(lines):
+                text = lines[index]
+                words.extend(word for word in text.split() if word != "\\")
+                if not text.rstrip().endswith("\\"):
+                    break
+                index += 1
+            marker = words.index("--no-install-recommends")
+            installs.append(sorted(words[marker + 1:]))
+        self.assertEqual(
+            len(installs), 1,
+            "expected exactly one runner apt install to compare against")
+        self.assertEqual(
+            installs[0], names,
+            "the workflow installs a different set from the one "
+            "scripts/build-linux.sh records in the SBOM")
+
+    def test_every_floating_input_is_written_down(self):
+        """CT-87: declining a pin is a decision that has to be visible.
+
+        The runner's packages and the container's come from moving archives, so
+        they are accepted floating inputs rather than pins. That is allowed only
+        if the ledger says so: the sites, the digest, and what is recorded
+        instead.
+        """
+        ledger = ROOT / "releases" / "PATCH-0.6.8.md"
+        self.assertTrue(ledger.is_file(), "releases/PATCH-0.6.8.md is missing")
+        text = ledger.read_text(encoding="utf-8")
+        self.assertIn("Accepted floating inputs", text)
+        self.assertIn(self.CONTAINER_DIGEST, text)
+        for package in ("squashfs-tools", "librsvg2-bin", "build-essential",
+                        "fuse3", "ca-certificates"):
+            with self.subTest(package=package):
+                self.assertIn(
+                    package, text,
+                    f"the ledger must name the floating package {package}")
+
 
 class PublishPathSweepTests(unittest.TestCase):
     """CT-48: a second publish path must not survive on any ref.

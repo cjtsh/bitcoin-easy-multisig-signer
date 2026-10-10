@@ -36,6 +36,15 @@ REVIEWED_APPIMAGE_RUNTIME_SHA256="2fca8b443c92510f1483a883f60061ad09b46b978b2631
 # here, and its digest is recorded in the SBOM.
 REVIEWED_LIBUSB_SOURCE_SHA256="fea36f34f9156400209595e300840767ab1a385ede1dc7ee893015aea9c6dbaf"
 REVIEWED_LIBUSB_VERSION="1.0.30"
+# CT-87: the OS packages these bytes are built with, declared once. The workflow
+# installs exactly these names -- a test asserts the two agree -- and the SBOM
+# records the version each one resolved to on the machine that built the
+# AppImage, so a reader can see what mksquashfs, the icon rasteriser and the
+# compiler actually were. Exact apt versions are declined on purpose: the
+# runner's archive moves under it, so a version pin would fail the build on an
+# image refresh without making the bytes any more reproducible. The accepted
+# trade is written down in releases/PATCH-0.6.8.md, "Accepted floating inputs".
+SYSTEM_PACKAGES=(squashfs-tools librsvg2-bin build-essential fuse3)
 
 APP_SLUG="bitcoin-easy-signer"
 DISPLAY_NAME="Bitcoin Easy Signer"
@@ -401,15 +410,33 @@ and check this tarball before you run it:
     sha256sum -c SHA256SUMS
 
 The source this was built from is on the release page too, and BUILD-SBOM.json
-lists every packaged component with its version and hash.
+lists every packaged component with its version and hash, plus the version of
+each OS package this build itself used.
 EOF
 
 tar -czf "$tarball" -C "$tarball_root" .
 
 # ---- the SBOM ----------------------------------------------------------
+# CT-87: record the OS packages that actually built this payload. dpkg-query,
+# not an assumption, and not a silent skip: a package the SBOM cannot name is a
+# package the build should not have proceeded without.
+note "Recording the OS packages this build used"
+command -v dpkg-query >/dev/null 2>&1 \
+    || fail "dpkg-query is required: the SBOM records the OS package versions that built these bytes"
+system_packages="build/system-packages.txt"
+: > "$system_packages"
+for package in "${SYSTEM_PACKAGES[@]}"; do
+    if ! resolved="$(dpkg-query -W -f='${Version}' "$package" 2>/dev/null)"; then
+        fail "dpkg-query reports no installed package '$package'; the SBOM must name the OS packages that built these bytes"
+    fi
+    printf '%s=%s\n' "$package" "$resolved" >> "$system_packages"
+done
+cat "$system_packages"
+
 note "Writing the SBOM"
 "$venv/bin/python" scripts/build-sbom.py \
-    --libusb-sha "$libusb_sha" --output dist/BUILD-SBOM.json
+    --libusb-sha "$libusb_sha" --output dist/BUILD-SBOM.json \
+    --system-packages "$system_packages"
 
 # ---- what was made -----------------------------------------------------
 note "Artifacts in dist/"
