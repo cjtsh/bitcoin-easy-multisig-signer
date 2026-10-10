@@ -108,6 +108,36 @@ then update current-status files in a documentation-only commit. The source
 archive and tag are immutable snapshots; the post-publication records on main
 must explain any documented differences.
 
+### Verifying an asset's attestation
+
+`gh attestation verify` is the supported path, and the only one that also
+checks the signature, the certificate identity and the transparency log:
+
+```sh
+ASSET="Bitcoin-Easy-Signer-v<version>-macOS.dmg"
+gh attestation verify "$ASSET" --repo cjtsh/bitcoin-easy-multisig-signer
+```
+
+The exit status is the result; current versions print nothing on success (add
+`--format json` to read the bundle). The REST endpoint underneath is indexed by
+**subject digest**, and that digest must be written in the documented
+`sha256:HEX_DIGEST` form:
+
+```sh
+DIGEST=$(sha256sum "$ASSET" | cut -d' ' -f1)   # shasum -a 256 on macOS
+gh api "repos/cjtsh/bitcoin-easy-multisig-signer/attestations/sha256:$DIGEST"
+```
+
+Both halves of that path are load-bearing, and both were missing from the
+v0.6.7 audit's first attempt (CT-94, `releases/PATCH-0.6.8.md`): a bare hex
+digest returns `404 Not Found`, and so does a tag-shaped path such as
+`/repos/…/attestations/tags/v0.6.7`, because the API exposes only
+`POST /attestations` and `GET /attestations/{subject_digest}` — nothing is
+indexed by tag. A `404` therefore never means "this asset has no attestation"
+unless the digest carried the `sha256:` prefix. Re-checked on 2026-10-10 for all
+eight v0.6.7 assets: bare hex `404`, prefixed `200` with the bundle for every
+one, and `GH_DEBUG=api gh attestation verify` requests exactly the prefixed URL.
+
 Manual publication bypasses machine-enforced release gates and is prohibited.
 If the workflow is unavailable, wait to publish; do not create a tag, GitHub
 release, or substitute upload by hand. The v0.6.3 release used a manual route;
