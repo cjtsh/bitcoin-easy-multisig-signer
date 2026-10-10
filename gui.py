@@ -54,6 +54,11 @@ FEES_URL = "https://mempool.space/api/v1/fees/recommended"
 FEES_CACHE_SECONDS = 120
 # CT-84: a total budget for each public-data fetch, not a per-socket timeout.
 PUBLIC_DATA_TIMEOUT_SECONDS = 7.0
+# CT-85: every socket operation on an accepted connection is bounded by this, so
+# a client that opens a request and stops talking -- or promises a body and never
+# sends it -- cannot hold its thread open. A timed-out inbound read closes the
+# connection with no response: the client that stalled is not waiting for one.
+CONNECTION_TIMEOUT_SECONDS = 15.0
 # Mainnet payments at or above this size always need the high-value confirmation,
 # independent of any remote BTC/USD quote. 0.1 BTC is 10,000,000 satoshis.
 LARGE_AMOUNT_SATS_FLOOR = 10_000_000
@@ -524,6 +529,11 @@ class LocalApp:
         state = self
 
         class Handler(BaseHTTPRequestHandler):
+            # CT-85: per-connection budget (see CONNECTION_TIMEOUT_SECONDS). This
+            # is a class attribute because socketserver arms the socket with it
+            # in setup(), before any request line is read.
+            timeout = CONNECTION_TIMEOUT_SECONDS
+
             def log_message(self, _format, *_args):
                 # Do not log wallet identifiers, browser requests or PSBTs.
                 pass
@@ -567,13 +577,24 @@ class LocalApp:
                 runs far past the cap is hostile, and a refusal is allowed to
                 leave that client with a transport error rather than spend the
                 app's time reading it.
+
+                Returns False when the declared body never arrived (CT-85): the
+                connection timeout released the thread, the socket is closing,
+                and the caller must not try to answer a client that is not
+                reading.
                 """
                 try:
                     length = int(self.headers.get("Content-Length", "0") or "0")
                 except ValueError:
                     length = 0
-                if 0 < length <= MAX_REQUEST_BYTES * 2:
+                if not 0 < length <= MAX_REQUEST_BYTES * 2:
+                    return True
+                try:
                     self.rfile.read(length)
+                except TimeoutError:
+                    self.close_connection = True
+                    return False
+                return True
 
             def _trusted_host(self):
                 return self.headers.get("Host") == (
@@ -664,7 +685,8 @@ class LocalApp:
                 if (not self._trusted_host()
                     or (origin is not None and origin != expected)
                     or not self._token_matches()):
-                    self._drain_body()
+                    if not self._drain_body():
+                        return
                     self._send(403, {"error": "Local access only."})
                     return
                 try:
@@ -672,9 +694,18 @@ class LocalApp:
                     if (self.headers.get("Content-Type", "").split(";")[0]
                         != "application/json"
                         or length < 2 or length > MAX_REQUEST_BYTES):
-                        self._drain_body()
+                        if not self._drain_body():
+                            return
                         raise WalletError("Wallet request is too large or malformed.")
-                    request = json.loads(self.rfile.read(length))
+                    try:
+                        body = self.rfile.read(length)
+                    except TimeoutError:
+                        # CT-85: a promised body that never arrives releases the
+                        # thread at the connection timeout. No response is
+                        # written -- the write would wait on the same client.
+                        self.close_connection = True
+                        return
+                    request = json.loads(body)
                     if not isinstance(request, dict):
                         raise WalletError("Wallet request is malformed.")
                     if self.path == "/api/import":

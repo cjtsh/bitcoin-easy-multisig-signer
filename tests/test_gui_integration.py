@@ -213,6 +213,72 @@ class LocalServerAccessTests(ApiTestCase):
         self.assertEqual(caught.exception.code, 403)
 
 
+class StalledConnectionTests(ApiTestCase):
+    """CT-85: a request that stalls mid-body must not keep its thread.
+
+    `ThreadingHTTPServer` gives every accepted connection a thread and nothing
+    armed the socket with a timeout, so a client that announced a body and never
+    sent it held a thread -- and its file descriptor -- until the process
+    exited. The handler now arms the connection with `CONNECTION_TIMEOUT_SECONDS`;
+    a stalled read ends the connection with no response at all (writing one would
+    wait on the same client) and the server keeps serving.
+    """
+
+    def setUp(self):
+        # The shipping budget is 15 s; these tests build the same server from a
+        # fraction of it, so the constant -> handler class -> socket wiring is
+        # exercised. Setting the handler's `timeout` attribute directly after the
+        # fact would keep these tests green even if the constant stopped
+        # reaching the handler at all.
+        budget = patch.object(gui, "CONNECTION_TIMEOUT_SECONDS", 0.5)
+        budget.start()
+        self.addCleanup(budget.stop)
+        super().setUp()
+
+    def _stall(self, count, token, length=4096):
+        """Open `count` connections that promise a body and never finish it."""
+        stalled = []
+        for _ in range(count):
+            sock = socket.create_connection(("127.0.0.1", self.port), timeout=5)
+            sock.sendall(
+                b"POST /api/status HTTP/1.1\r\n"
+                + b"Host: 127.0.0.1:%d\r\n" % self.port
+                + b"Content-Type: application/json\r\n"
+                + b"X-Local-Token: " + token + b"\r\n"
+                + b"Content-Length: %d\r\n\r\n" % length
+                + b'{"stalled":')  # promised, never finished
+            stalled.append(sock)
+        return stalled
+
+    def _assert_cut_off(self, stalled):
+        try:
+            for index, sock in enumerate(stalled):
+                sock.settimeout(5)
+                # An empty read is the server closing the connection. A 500, a
+                # 403 or any other reply would arrive here as bytes instead.
+                self.assertEqual(sock.recv(64), b"",
+                                 f"stalled connection {index} was not cut off")
+        finally:
+            for sock in stalled:
+                sock.close()
+
+    def test_stalled_bodies_are_cut_off_and_the_server_keeps_serving(self):
+        stalled = self._stall(8, self.token.encode())
+        self._assert_cut_off(stalled)
+        status, body = self.post("/api/status", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["chain"], self.state.chain)
+
+    def test_a_refused_request_with_a_stalled_body_is_cut_off_too(self):
+        # A declaration one byte past the cap is refused, and the body is
+        # drained first so the refusal is not lost to a reset. That drain runs
+        # inside do_POST's own exception guard, so a timeout that escaped it
+        # would be answered with a 500; the connection must simply close.
+        stalled = self._stall(4, self.token.encode(),
+                              length=gui.MAX_REQUEST_BYTES + 1)
+        self._assert_cut_off(stalled)
+
+
 class LocalTokenComparisonTests(ApiTestCase):
     """CT-82: the token is compared whole, in constant time, and never by prefix.
 

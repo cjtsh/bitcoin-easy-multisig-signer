@@ -968,16 +968,20 @@ class RefusalDeliveryPins(unittest.TestCase):
 
         Asserted as exact ordered forms rather than a substring search, so a
         drain that lands after the response — or on only one of the two
-        refusals — cannot satisfy it.
+        refusals — cannot satisfy it. `_drain_body` now reports whether the body
+        arrived at all (CT-85): a stalled body ends the connection, so the
+        refusal is skipped rather than written to a client that is not reading.
         """
         gui_source = Path(gui.__file__).read_text(encoding="utf-8")
         self.assertIn(
-            'self._drain_body()\n'
+            'if not self._drain_body():\n'
+            '                        return\n'
             '                    self._send(403, {"error": "Local access only."})',
             gui_source,
             "a gate refusal must drain the request body before it answers")
         self.assertIn(
-            'self._drain_body()\n'
+            'if not self._drain_body():\n'
+            '                            return\n'
             '                        raise WalletError('
             '"Wallet request is too large or malformed.")',
             gui_source,
