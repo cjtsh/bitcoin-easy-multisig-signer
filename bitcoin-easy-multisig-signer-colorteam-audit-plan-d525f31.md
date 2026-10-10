@@ -80,13 +80,28 @@ Actions is left at `allowed_actions: "all"` with `sha_pinning_required: false`, 
 owner runs is never blocked by a platform setting. The owner accepts the tool set as inside
 the owner boundary — "the owner's agent went rogue" is a declared external assumption, never
 a graded finding — and the workflow guards exist to bound what a dispatch can do on its own.
-That declaration is not an assumption about behaviour the repository cannot show, because the
-repository has **no automatic build and no automatic code update**: no `schedule:`/cron exists
-in any workflow, and the only non-manual triggers in the tree are pushes to the two retired
-`linux-port` / `windows-port` input branches (`linux-inputs.yml:26-29`,
-`windows-inputs.yml:26-29`), which only regenerate hash locks and publish nothing. Every
-build, every pin move and every publication is dispatched by the owner or by a tool the owner
-directs.
+
+Two separate statements sit behind that, and they must not be conflated:
+
+- **Inside the repository — verified.** There is no automatic build and no automatic code
+  update. No `schedule:`/cron exists in any workflow; the only non-manual triggers in the tree
+  are pushes to the two retired `linux-port` / `windows-port` input branches
+  (`linux-inputs.yml:26-29`, `windows-inputs.yml:26-29`), which only regenerate hash locks and
+  publish nothing. Nothing in this repository starts a build, moves a pin, opens or merges a
+  pull request, or publishes a release on its own initiative. Every build, every pin move and
+  every publication is dispatched by the owner, or by a tool the owner directs while sitting
+  at the terminal.
+- **Outside the repository — declared by the owner, not verifiable from the tree.** The owner
+  states that no scheduled or standing automation exists anywhere in their tool estate either:
+  no cron job watches this codebase; no cron job watches third-party libraries or their
+  releases; and no agent, agentic coding partner or coding framework is standing by to convert
+  a third-party change, an outside pull request or a merge into a release or a pin move.
+  Automated build and release scripts do exist, but nothing invokes them except the owner at
+  the terminal — if the owner is not there as the commander, no work happens. This half is a
+  declaration about systems outside this repository and cannot be tested from the tree. A panel
+  that wishes to test it must obtain from the owner the scheduled-task inventory of the
+  machines and accounts that hold the credentials; absent such an artefact, no finding may be
+  graded on it (section 5, burden of proof).
 
 **Distribution and contribution policy** (owner, 2026-10-10 — an owner amendment to the
 locked scope, logged in section 9): this repository is public so that anyone may read, use,
@@ -727,9 +742,17 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
   - **Not changed:** the three rubric grades, the five ranked assets, the two unforgivable
     acts, the revision under audit (`d525f31`), the operator model, the closed list T1–T12,
     the burden-of-proof rule, and the distribution and dependency policies of revision 2.
-- **Provenance of all three sign-offs:** recorded on 2026-10-10 at the owner's direction. The
-  owner supplied the signature identity and the date, directed publication, and directed both
-  amendments; the surveyor agent transcribed the two lines below on each occasion, in the same
+- **Revision 4** (2026-10-10, owner-directed, this commit): one paragraph broadened, nothing
+  else changed. Section 0's "Authorised agentic operation, and no automation" now separates
+  what is **verified inside the repository** (no scheduler; no non-manual trigger that
+  publishes anything) from what the **owner declares about the tool estate outside it** (no
+  cron job watching the codebase, third-party libraries, outside pull requests or merges; no
+  agent standing by; nothing runs unless the owner is at the terminal as the commander), and
+  records that the external half is not testable from this repository and needs a
+  scheduled-task inventory as its artefact. No other section, threat, grade or asset changed.
+- **Provenance of every sign-off:** recorded on 2026-10-10 at the owner's direction. The
+  owner supplied the signature identity and the date, directed publication, and directed each
+  amendment; the surveyor agent transcribed the two lines below on every occasion, in the same
   DSH session that produced the plan
   (`DSH_SESSION_ID=session-5d5422fc-382b-428d-93f1-71eb00cd083b`). No human edited any byte of
   this file.
