@@ -85,13 +85,12 @@ workflows. The referee also breaks-and-watches every tripwire listed in
 `releases/PATCH-0.6.8.md` — that file is the only list, so it cannot drift from
 the pins the repository actually carries. A pin that cannot fail is a finding.
 
-**Target revision:** tag `v0.6.8`, commit **`REPLACE-AFTER-PUBLISH`** — the commit the
-`v0.6.8` tag points to, created by the publish run of
-`.github/workflows/build-candidate.yml` on `main`. The tag does not exist until the
-unified pipeline publishes it; fill this line with the tag's commit after publication
-(`gh api repos/cjtsh/bitcoin-easy-multisig-signer/git/refs/tags/v0.6.8 --jq .object.sha`)
-and before signing section 9. The panel audits the tag and every asset its pipeline
-produced, byte-for-byte.
+**Target revision:** tag `v0.6.8`, commit
+**`0d4e01f60c7695d720099f9d8e9e23b38da63102`** — published 2026-10-10 through
+the unified pipeline (candidate run 38086778883, promotion run 38087360421),
+created by that publish run of `.github/workflows/build-candidate.yml` on
+`main`. The panel audits the tag and every asset its pipeline produced,
+byte-for-byte.
 
 **Out of scope:**
 

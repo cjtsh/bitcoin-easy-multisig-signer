@@ -4,8 +4,10 @@
 remediation of the `v0.6.7` tree.** Every finding the cycle's plan
 schedules has exactly one row in `releases/PATCH-0.6.8.md` with a
 severity and a closing test the build loads, and `CONTROLS.md` is the
-parsed inventory of the security controls the code claims; publication
-through the unified pipeline follows. The engine is unchanged from 0.6.7,
+parsed inventory of the security controls the code claims. It was
+published 2026-10-10 through the unified pipeline as tag
+[`v0.6.8`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8).
+The engine is unchanged from 0.6.7,
 which was the cycle-3 build-process remediation. The out-of-gate `v0.6.5-windows-x64` release was deleted
 (CT-27), and cycle 3 then found the root cause of it: the per-platform
 publish workflows were never deleted (CT-48). They are now gone from
@@ -13,12 +15,12 @@ every branch. Owner-reported acceptance of the Windows console fix and
 of the Linux AppImage remains in this file's history and in `releases/`;
 those port builds are superseded by the unified pipeline.
 
-## Current stop point — 0.6.8 in preparation; v0.6.7 is the newest published tag
+## Current stop point — v0.6.8 is the newest published tag
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
 and `RELEASE-HISTORY.md` carry; read one of those rather than trusting a
-hardcoded number here. As of 2026-10-07 that is [v0.6.7](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.7), published 2026-10-07 as tag `v0.6.7` on commit `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` by successful candidate run [37644267740](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37644267740) and promote run [37655666900](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37655666900). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.6.8, the current source revision, is the Color Team cycle-4 build-process remediation of that tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads, `CONTROLS.md` is a parsed inventory of the controls the code claims, and the launcher installs the device library from a checked lock. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+hardcoded number here. As of 2026-10-10 that is [v0.6.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8), published 2026-10-10 as tag `v0.6.8` on commit `0d4e01f60c7695d720099f9d8e9e23b38da63102` by successful candidate run [38086778883](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38086778883) and promote run [38087360421](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38087360421). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.6.8, the current source revision, is the Color Team cycle-4 build-process remediation of that tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads, `CONTROLS.md` is a parsed inventory of the controls the code claims, and the launcher installs the device library from a checked lock. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. The dated AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns Green under its rubric after checking the automated release path; it is scoped evidence about that revision, not a certification or guarantee. An independent human end-to-end security review remains open. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
 
 **The cycle-3 panel rerun already ran and graded ⛔ BLOCKED** on the
 `v0.6.6` tree — not on the app. Red found no breach; Orange recorded its
@@ -56,8 +58,8 @@ The published set is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
 and `RELEASE-HISTORY.md` carry — **do not restate a "latest published
 build is X" here**, because that sentence is exactly what CT-71 filed and
-it goes stale the moment `version.py` moves again. As of 2026-10-07 the
-newest published tag is `v0.6.7`, promoted through the automated workflow
+it goes stale the moment `version.py` moves again. As of 2026-10-10 the
+newest published tag is `v0.6.8`, promoted through the automated workflow
 from the exact successful signed candidate. The AI-generated Z.ai v0.6.4
 report assigns Green under its published rubric; the historical v0.6.3
 Yellow grade is documented in its own report. Neither report is a

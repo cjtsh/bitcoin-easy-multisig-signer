@@ -790,3 +790,45 @@ process rather than the symptom.
 * Secret scan: `ok: no secrets in releases/PATCH-0.6.8.md`, and the same scan
   over the extracted archive reports no secrets.
 * `break_and_watch.py`: `all 80 defeats caught`.
+
+## Publication
+
+**Published 2026-10-10** as tag `v0.6.8` = `0d4e01f60c7695d720099f9d8e9e23b38da63102`,
+through the unified pipeline and nothing else.
+
+- Candidate [38086778883](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38086778883)
+  — `notarize=true, publish=false` from `0d4e01f`, every job green (read version,
+  source archive and tests, macOS, Windows, Linux, `SHA256SUMS`), and
+  `CANDIDATE-MANIFEST.txt` written; the publish job was skipped, as it must be
+  on a candidate dispatch.
+- No owner hardware acceptance gate stood for this revision. 0.6.8 changes the
+  build process, the tests and the documentation; it does not touch the device
+  identity, the signing path or broadcast policy, so the gate that 0.6.7 needed
+  for CT-49/CT-58 is not the gate this revision needs. The owner authorized the
+  candidate and the promotion as one decision and neither was paused on.
+- Promotion [38087360421](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38087360421)
+  — `notarize=true, publish=true, candidate_run_id=38086778883`, dispatched from
+  the **same commit** `0d4e01f`. Every job green.
+
+Two candidates preceded this one and their defects are recorded above; both were
+found by the pipeline rather than by a reader, which is what the unified path is
+for.
+
+### Post-publication verification (RELEASE-PROCESS.md §3)
+
+Checked independently after the publish run, against the public release page:
+
+| Check | Result |
+| --- | --- |
+| Tag points to the commit named by the publishing run | `v0.6.8` → `0d4e01f…`, equal to the publish run's `head_sha` and to the candidate run's `head_sha` — same-commit promotion holds |
+| Every public asset downloaded | 10 assets: source tarball, macOS DMG, Windows zip, Linux AppImage + Linux tar.gz, three `BUILD-SBOM.json`, `SHA256SUMS`, `SHA256SUMS.asc` |
+| Published `SHA256SUMS` verified | `shasum -a 256 -c SHA256SUMS` — 8/8 **OK** |
+| `SHA256SUMS.asc` verified against the committed `signing-key.asc` | **Good signature** from `Bitseeker LLC <release@bitseeker.llc>`, RSA key `ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7` |
+| macOS DMG notarized and stapled | `xcrun stapler validate` — **the validate action worked** |
+| Sigstore attestations on an asset | 2 attestations on the DMG digest `cb552710…`, from the publishing workflow |
+| Release is neither draft nor prerelease | `draft=false prerelease=false`, published 2026-10-10T21:31:47Z |
+
+No tag or asset was moved, replaced, or deleted. The candidate bytes and the
+published bytes are the same artefact set: `SHA256SUMS` is the file the pipeline
+wrote, it verifies against every asset, and its signature verifies against the
+key this repository ships.

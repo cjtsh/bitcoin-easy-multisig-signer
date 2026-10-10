@@ -5,8 +5,10 @@ remediation of the `v0.6.7` tree.** Every finding the cycle's plan
 schedules now has exactly one row in `releases/PATCH-0.6.8.md` with a
 severity and a closing test the build loads, so nothing is closed by
 silence, and `CONTROLS.md` is the parsed inventory of the security
-controls the code claims; publication through the unified pipeline
-follows. The wallet, transaction, signing and broadcast engine is
+controls the code claims. It was published 2026-10-10 through the
+unified pipeline as tag
+[`v0.6.8`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8).
+The wallet, transaction, signing and broadcast engine is
 unchanged from 0.6.7, which was the cycle-3 build-process remediation:
 the cycle-3 five-lane Color Team audit of the `v0.6.6`
 tree (report, plan, lock and index in this repository's root) graded
@@ -65,14 +67,14 @@ See [`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
 **Do not restate a "latest published version is X" here** — that is the
 CT-46/CT-71 defect class and it goes stale the moment `version.py` moves.
 The published set is whatever that page and [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)
-carry. As of 2026-10-07 that is
-[v0.6.7](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.7),
-published 2026-10-07 as tag `v0.6.7` on commit
-`81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` by successful candidate run
-[37644267740](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37644267740)
+carry. As of 2026-10-10 that is
+[v0.6.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8),
+published 2026-10-10 as tag `v0.6.8` on commit
+`0d4e01f60c7695d720099f9d8e9e23b38da63102` by successful candidate run
+[38086778883](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38086778883)
 and promote run
-[37655666900](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/37655666900)
-(`publish=true`, `candidate_run_id=37644267740`). The release page
+[38087360421](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38087360421)
+(`publish=true`, `candidate_run_id=38086778883`). The release page
 carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
 `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
 Version 0.6.7 is the Color Team cycle-3 build-process remediation: one
