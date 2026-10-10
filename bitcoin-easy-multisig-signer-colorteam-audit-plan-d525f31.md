@@ -141,17 +141,21 @@ project, the app holds no wallet key, it never receives a PIN, and it never asks
 words. The report must describe the product in those actual terms rather than importing
 airgap vocabulary it does not have.
 
-**Target revision:** `main` at commit **`d525f31b600d5aedd2f7a219ec848df540707ffc`** (short
-`d525f31`) — **no tag**. Author date `2026-10-07T17:17:29Z`, committer date
-`2026-10-09T23:45:35Z`, subject "Publish v0.6.7, and correct the stale claims the tree
-still carried". Its parent is tag `v0.6.7` =
-`81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b`. The `v0.6.7` tag has its own signed plan
-(`…-plan-v0.6.7.md`) and its own publish record; this plan covers the untagged revision
-that `main` now points at, which is why it is named by short commit.
+**Target revision (owner's direction, 2026-10-10):** the published release **`v0.6.7`** — tag
+`81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` (`81f58ec`) — together with the release artifacts
+published on 2026-10-07T17:10:37Z. This is the revision the audit attaches to; section 1
+carries the full statement. The **reconnaissance revision** measured by this survey is `main`
+at **`d525f31b600d5aedd2f7a219ec848df540707ffc`** (`d525f31`) — **no tag** — the tag commit's
+documentation-only child (author date `2026-10-07T17:17:29Z`, committer date
+`2026-10-09T23:45:35Z`, subject "Publish v0.6.7, and correct the stale claims the tree still
+carried"). The two trees differ in **six Markdown files and nothing else**, so a statement in
+this plan made "at `d525f31`" holds at the tag as well unless it concerns one of those six
+documents. The filename keeps the surveyed-commit name because a signed plan for the `v0.6.7`
+cycle already exists in this repository and the runbook forbids overwriting it (section 1).
 
 **Out of scope:**
 
-- `docs/` marketing/manual website — GitHub Pages content; ships separately and shares no code with the app. **Its measured staleness is nonetheless recorded** (sections 4, 7 and 8) because asset 4's public surface is a release-channel question, not a code question.
+- `docs/` marketing/manual website — GitHub Pages content; ships separately and shares no code with the app. **Its measured staleness was nonetheless recorded** (sections 4, 7 and 8) because asset 4's public surface is a release-channel question, not a code question; it was corrected on `main` after the `v0.6.7` release (`fc65647`, section 8 question 2), and the tagged tree still carries the text the tag itself shipped.
 - `releases/` and root status/history documentation (`CURRENT-STATUS.md`, `RELEASE-HISTORY.md`, `PHASE-HANDOFF.md`, `ROADMAP.md`, `PROJECT-HISTORY.md`, `releases/PATCH-*.md`) — historical records, not executable surface; auditing the prose is not this audit's job. **Exception:** `releases/PATCH-0.6.7.md` and `releases/OWNER-ACCEPTANCE-2026-10-07.md` are evidence inputs the referee must verify claim-by-claim (see the independence condition above), not prose to be graded.
 - Prior AI audit reports (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) — history only and not inputs to this cycle.
 - Internals of pinned third-party dependencies (hwi 3.2.0, pywebview 6.2.1, pyinstaller 6.22.2, requests 2.32.5, pyyaml 6.0.3, certifi 2026.7.22, upstream embit) — hash-locked; `CURRENT-STATUS.md:113` records an independent component audit of this stack as outstanding; that is a separate effort with its own plan.
@@ -237,6 +241,18 @@ d525f31` or API-endpoint citation for every claim, and section 0 can be written 
 full. Anything the panel wants beyond that is the panel's budget under its own runbook,
 not this plan's. **Stop condition reached:** the survey ended when the reconnaissance above
 was sufficient to write this file; nothing further was read to "be sure".
+
+**Frozen — this is the last surveyor revision** (owner's direction, 2026-10-10). Revision 8
+is final: the surveyor will publish no further revision of this plan for this cycle. All six
+of section 8's questions are answered — 1 and 3 by the owner directly, 2, 4, 5 and 6 by this
+revision at the owner's direction — the scope is closed, and the repository is handed to the
+incoming review as a clean, committed snapshot. Two consequences the panel must honour: (a)
+the plan is a fixed input, so if the review finds a genuine scope defect it is recorded as a
+**scope/lock mismatch**, not silently repaired — a later change requires the owner to amend
+this file and re-sign, which voids any lock already taken; and (b) the named next-cycle list
+(section 5) and the deferred items (section 4) are the correct destination for anything the
+review finds that is real but outside this cycle's scope. Nothing in this cycle is waiting on
+a further surveyor edit.
 
 **Agent provenance — who ran this, and how you know.**
 
@@ -627,7 +643,7 @@ threat cannot be cleared by argument.
 | T7 | Asset 1/2 — a substituted HWI helper or `hwilib` payload | `probe.py:211-214`, `:294-308`, `:391-428`; `scripts/hwi_entry.py`; the `hwi.sha256` sidecar inside the signed bundle | A poisoned helper signs or exfiltrates; a source-mode import loads a tampered `hwilib` | Byte identity before the helper may speak, exact version-line membership, and pins that can actually fail. **Note for the panel:** the tripwire at `tests/test_hardening_pins.py:331` re-asserts the `HWI_PAYLOAD_PINS` constant and can never fail; `probe.py:211-214` pins only `hwilib` and `hwilib._cli` while source mode imports the whole package — this row must be tested, not cited | The packaged helper's own bytes inside the signed bundle are covered by the outer signature; source mode is a developer path | A substitution path into the helper or `hwilib` that the pins do not refuse, or a claimed pin that cannot fail |
 | T8 | Asset 2/4 — an actor holding push or dispatch rights on this repository (in practice the owner account: `cjtsh` is the sole collaborator, verified from the API; forks are outside the model per section 0), or a workflow body able to escalate its own token | `.github/workflows/build-candidate.yml`; the dispatch-only trigger and its guards; `scripts/check-publish-paths.sh`; the repository's platform settings | Publish-capable bytes reach a release from a path other than the audited candidate→promote chain: a second publish path, an unsigned/unnotarized publish, a tag or asset overwrite, or code execution inside a `run:` block | The publisher guards (`:57`, `:63`, `:69`, `:698`, `:792`, `:845`, `:954`, `:978`), the branch sweep, the no-overwrite tag guard, and the absence of any other publish-capable file. **Known surface to test, not assume closed:** `build-candidate.yml:69` interpolates the free-text `candidate_run_id` input directly into bash (the safe `env:` handling is at `:702`); `check-publish-paths.sh` matches only literal `contents: write` and the literal string `gh release`, and looks only in `.github/workflows`; `release` holds `contents: write` on every dispatch (`:833`) with no required reviewers on the environment; the `release` job has no job-level `if:`; the "only publish path" claim holds for `main` but not repo-wide — historical tags `v0.1.11`–`v0.6.4` still freeze publish-capable `build-candidate.yml` text with `contents: write` and `gh release create` (the repo discloses this residual itself at `releases/OWNER-ACCEPTANCE-2026-10-07.md:82-98`), and with no non-main remote heads left the sweep now passes trivially | GitHub account compromise, platform compromise and stolen owner credentials are **external assumptions**; the panel evaluates the permissive-workflow path, which *is* in scope | Any demonstrated second publish path, unsigned publish, overwrite, or command injection reachable by a repository-controlled actor |
 | T9 | Asset 4/2 — anyone who can alter what the operator downloads | The release page, `SHA256SUMS`/`SHA256SUMS.asc`, the SBOM, and the site that links them | The bytes a user downloads are not the bytes the candidate run produced, or the published list of hashes is not the one the pipeline signed | The candidate run-id/manifest binding (`:707-739`), `gpg --verify` against the committed key (`:850-851`), the no-overwrite guard, and a review of what the *download page* actually points at | The GitHub release page is assumed honest about what it stores; the repository is not assumed to control the CDN | Any published asset that cannot be traced to a successful candidate run at that commit, or a public link to bytes the pipeline did not produce |
-| T10 | Asset 4 — the public download surface is three releases stale: `docs/index.html:31,243-245` offer **v0.6.4** downloads and `:231,268` present the **v0.6.4** Z.ai review as the security evidence, while v0.6.5, v0.6.6 and v0.6.7 exist | `docs/` (GitHub Pages) and the release page | The operator is directed to an older build and to evidence about a revision the audit did not grade, while newer, graded bytes exist | A literal comparison of every version string and download URL in `docs/` against the release list; the `v0.6.7` commit message claims the stale "current release" prose was corrected, and this surface was not; and the audit PDFs the site links label those reviews "independent" while the framework lock says independence "cannot be determined" (`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.6.md:13`) — wording the Public Security Statement must not repeat | The site is out of code scope; this is a *release-channel and assurance* claim, which asset 4 covers | The public statement of what to download and what was graded disagreeing with the graded revision — a Public Security Statement cannot be written honestly while this stands |
+| T10 | Asset 4 — the public download surface: measured by this survey on 2026-10-10 as three releases stale (`docs/index.html:31,243-245` then offered **v0.6.4** downloads and `:231,268` presented the **v0.6.4** Z.ai review as the security evidence, while v0.6.5, v0.6.6 and v0.6.7 existed) | `docs/` (GitHub Pages) and the release page | The operator is directed to an older build and to evidence about a revision the audit did not grade, while newer, graded bytes exist | **Found by this survey and corrected on `main` at `fc65647`** — v0.6.7 metadata, labels, download buttons and an honest review-status notice, with the 63 older releases marked *Superseded* in their notes and every tag and asset retained; verified live (`https://bitcoineasysigner.com/` returns `softwareVersion":"0.6.7"` with no v0.6.4 download link). The panel must still run the literal comparison of every version string and download URL in `docs/` against the release list — in the tagged tree the stale text is what the tag ships (section 8, question 2) — and record the result with that fix. The audit PDFs the site links label those reviews "independent" while the framework lock says independence "cannot be determined" (`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.6.md:13`) — wording the Public Security Statement must not repeat | The site is not a release artifact and is out of code scope; this is a *release-channel and assurance* claim, which asset 4 covers | Whether anything the operator is directed to download differs from the bytes the pipeline published for the graded revision. A public statement of what to download and what was graded disagreeing with the graded revision is a **publication/hygiene defect** (section 8, question 2), not a code path to an unforgivable act |
 | T11 | Asset 5 — a diagnostics file or log shared with a reviewer, or a network observer | `gui.py:414-448` diagnostic events, `gui.py:682`; `log_message` `gui.py:518-520`; the Esplora requests themselves | xpubs, addresses, txids, device identities or the session token reach a log, a diagnostics file, the repository, or a server beyond the operator's chosen explorer | Fixed-code events with device *class* only, token scrubbing, the log-silence tripwire (`tests/test_gui.py:928-951`), and a byte-level check of a produced diagnostics file | The chosen Esplora server learns the addresses the operator scanned for; that disclosure is consented to in the UI and is a stated design property, not a finding | Any wallet-identifying string or token in a persisted file, a log, or an artifact |
 | T12 | Asset 1/3 — a hostile or mistaken BSMS file (accepted as a boundary by the owner, but the boundary must be stated where the operator meets it) | `probe.py:93` parse; the step-1 import UI and help text | The operator signs for a wallet definition the file's author chose — an attacker-named key | `tests/test_gui.py` `WalletFileTrustPins` plus the boundary statement in README and the step-1 help; the app must not *claim* to verify whose key is whose | Trusted delivery of the BSMS file is an explicit owner-accepted assumption (CT-61), not a control | Any UI or README text that implies the app verifies key ownership, or a parse that accepts a file the documented rules reject |
 
@@ -734,6 +750,12 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
    > project and the framework is being adopted incrementally; earlier cycles did not
    > converge, which is why this cycle's plan states a closed scope and a burden of proof.
 
+   **The commissioned reviewer is Z.ai (GLM)** — the same tool set whose earlier run over this
+   same release, `v0.6.7`, is the open-ended cycle described above. That earlier run is exactly
+   what this reset replaces: the target did not change, the scope did. The incoming review is
+   told its own history here so that it works the closed list in section 5 under the burden of
+   proof, and does not resume unbounded threat enumeration over `v0.6.7`.
+
    Facts the panel should have, and need not investigate further:
    - The commits pushed to `main` on 2026-10-08/09 are unreachable from every ref. They remain
      retrievable **by SHA** through the GitHub API — which is how the credential-scoping change
@@ -744,11 +766,31 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
      by the reset: the release artifacts predate it by a day.
    - The discarded line is **out of scope** (section 6). The audit target is the `v0.6.7`
      release (section 1), not the abandoned work.
-2. **The public download page is three releases behind.** `docs/index.html` still offers
-   v0.6.4 and still presents the v0.6.4 Z.ai review as the safety evidence, on the same
-   repository whose v0.6.7 sources corrected exactly this pattern elsewhere. Should the
-   site be brought to the graded revision before the Public Security Statement is published,
-   and should the plan treat a stale download page as a release-readiness gate?
+2. **The public download page — answered by the fix, 2026-10-10.** The page was found three
+   releases behind: `docs/index.html` offered v0.6.4 from every download button and presented
+   the v0.6.4 Z.ai review as the current safety evidence, on the same repository whose v0.6.7
+   sources had corrected exactly this pattern elsewhere. It is now corrected and verified
+   live. Commit **`fc65647`** on `main` moves the JSON-LD metadata, the version label and all
+   three download buttons to `v0.6.7`; rewrites the review notices to state that **no review of
+   `v0.6.7` has been published yet**, that a Color Team audit of this release is being
+   commissioned, and that the older Z.ai reports describe only their own revisions; and
+   relabels the footer links per revision. `docs/user-manual.html` carries the same
+   corrections. The 63 releases older than `v0.6.7` now open with a *Superseded — do not use
+   for new deployments* notice placed in their **notes only**: no tag was moved, no asset was
+   added, replaced or deleted, and every published byte is retained. Verification: the Pages
+   build for `fc65647` completed (`built`); the live site returns HTTP 200 with
+   `softwareVersion":"0.6.7"` and no v0.6.4 download link; and all three `v0.6.7` asset URLs
+   resolve.
+
+   **Scope ruling, so this cannot become a loop:** the website is **not a release artifact**.
+   It is absent from `SHA256SUMS`, from the DMG, bundle, AppImage and tarball, and it cannot
+   affect a payment. A stale download page is a **publication/hygiene defect, not a code
+   defect**: it is recorded here as found and fixed, and the panel must not raise it as a
+   finding against `v0.6.7`. The audited revision is the tag, and the tag's own `docs/*.html`
+   still contains the stale text — the correction lands after it, on `main`, by design. If the
+   panel observes the stale text in the tagged tree, this paragraph is the record that it was
+   found, fixed and verified, and the item belongs on the named next-cycle list rather than in
+   the grade. A future recurrence is likewise a next-cycle item, not an audit finding.
 3. **Repository-controlled platform protections — answered by the owner, 2026-10-10.** At the
    target revision there was no branch protection and no ruleset anywhere, and no job entered a
    signing environment. The owner has since protected `main` (`protect-main`) and the release
@@ -760,30 +802,68 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
    name rather than half-adopt it. The panel need not ask this again; it should verify both
    rulesets and record that GitHub's *immutable releases* setting remains off, with the reason
    and the named follow-up in section 4.
-4. **The claimed-fix ledger is unaudited.** `releases/PATCH-0.6.7.md` closes CT-48 through
-   CT-71 by test or by dated acceptance, and no audit has run since it was written. Two rows
-   (CT-54, CT-59) are deferrals that expire 2027-10-07. Does the owner confirm that the
-   referee should break-and-watch every named tripwire — including the ones this survey
-   already suspects cannot fail, such as the `HWI_PAYLOAD_PINS` re-assertion at
-   `tests/test_hardening_pins.py:331`? Note that one row's evidence is already
-   unverifiable: the thirteen CT-48 branch commits it cites (`PATCH-0.6.7.md:61-80`) are no
-   longer objects in this repository (section 7), so that row cannot be checked at all from
-   the tree, only accepted.
-5. **The Public Security Statement.** Framework `v1.5.0` makes a one-page public statement a
-   mandatory audit output (section 0). The audit cannot write an honest one while the
-   public download page points at a different revision than the one graded. Does the owner
-   want the statement gated on question 2, and does the owner want the surveyor's
-   `not exposed by the harness` model line left exactly as written?
-6. **Which downstream components have been audited, and by whom?** The owner's 2026-10-10
-   amendment declares the pinned versions to be the audited versions and forbids inherited
-   evidence except for a named audit. The repository's own status line says the opposite —
-   `CURRENT-STATUS.md:113` records "an independent component audit of the inherited stack
-   (embit, HWI, libusb, pywebview, and PyInstaller)" as **outstanding** — while
-   `releases/AUDIT-ZAI-0.4.3.md`, `releases/AUDIT-ZAI-0.6.2/0.6.3/0.6.4.md` and
-   `releases/AUDIT-DEEPSEEK-0.4.3.md` exist. Which components are covered, by which of
-   those documents, at which versions? The panel needs the list to cite inherited evidence
-   instead of re-auditing dependency internals — and to know which pins the list does **not**
-   cover.
+4. **The claimed-fix ledger — answered by the owner's decision rule, 2026-10-10.** The
+   referee's duty is bounded as follows, and neither half may be widened without the owner's
+   amendment:
+   - **Break-and-watch the release-critical controls.** For every control in the
+     release-critical set — the money-path gates recorded in section 4 and the
+     release-integrity gates — the referee must demonstrate that its test **can fail**: disable
+     or falsify the control on a scratch copy, watch the named test fail, restore. A control
+     whose test cannot fail is not evidenced by that test.
+   - **Do not re-litigate the ledger.** The remaining rows of `releases/PATCH-0.6.7.md` are not
+     re-broken one by one. Rows closed by a dated acceptance
+     (`releases/OWNER-ACCEPTANCE-2026-10-07.md`) are taken as records. CT-54 and CT-59 are
+     time-boxed deferrals expiring **2027-10-07**: they are **not** findings this cycle, and the
+     report must carry them as open deferrals with their expiry dates.
+   - **The unverifiable row is neither a finding nor a clearance.** CT-48's evidence cites
+     thirteen branch commits (`PATCH-0.6.7.md:61-80`) that are no longer objects in this
+     repository. The row cannot be checked from the tree; it is **accepted as a historical
+     record** and listed in the report as "evidence no longer retrievable". Unverifiability is
+     not by itself a defect — but it is also not proof.
+   - **A weak test is a note, not a blocker.** If a named tripwire cannot fail — the
+     `HWI_PAYLOAD_PINS` re-assertion at `tests/test_hardening_pins.py:331` is this survey's
+     example — that is a **test-hygiene note (Info)** and goes on the named next-cycle list. It
+     is graded only if the panel demonstrates a path by which the un-failable test lets a real
+     control regress; the burden of proof applies to the panel as much as to the code.
+   - The referee's claim-by-claim verification of the ledger (section 0, independence
+     condition) is unchanged by this answer.
+5. **The Public Security Statement — answered, 2026-10-10.** The statement is no longer gated:
+   question 2 is answered by the correction above, so the public download surface and the
+   graded revision now agree. The statement is written by the incoming review and published
+   with the report, to the specification in section 0; until it exists, the site carries a
+   truthful interim notice that the review of `v0.6.7` is being commissioned and that no review
+   of this revision has been published yet. **The surveyor's model line stays exactly as
+   written** — `not exposed by the harness` (sections 0 and 1). The environment contains no
+   model variable, the owner has not declared one, and the plan will not guess; the panel
+   should treat an unverifiable provenance line as a recorded fact about the harness, not as an
+   omission.
+6. **Downstream component coverage — answered from the record, 2026-10-10.** There is **no
+   component audit** on record for the pinned stack, and none can be inherited:
+   - The documents that exist — `releases/AUDIT-BASELINE-0.1.27.md` (v0.1.27),
+     `releases/AUDIT-ZAI-0.4.3.md` and `releases/AUDIT-DEEPSEEK-0.4.3.md` (source version
+     0.4.3; two independent reviewers, the DeepSeek target two docs-only commits ahead of the
+     Z.ai target), `releases/AUDIT-ZAI-0.6.2.md`, `releases/AUDIT-ZAI-0.6.3.md` and
+     `releases/AUDIT-ZAI-0.6.4.md` — audit **this repository's own code** at those revisions.
+     The `v0.6.2` report is the only one that records a line-by-line review of inherited
+     libraries, and it names **embit 0.8.0, HWI 3.2.0 and the bundled libusb** at that
+     revision; the `v0.6.3` and `v0.6.4` reports cover the application and the release
+     artifacts at their own tags.
+   - The stack actually pinned at `v0.6.7` is **embit `0.8.2+besa.1`** (the vendored fork
+     wheel, `requirements.txt`), **hwi 3.2.0** and **pywebview 6.2.1**
+     (`requirements-desktop*.txt`), **libusb 1.0.30** (`vendor/`) and **PyInstaller** (per the
+     published SBOM). The owner's own rule (section 0, downstream dependency policy) permits
+     inherited evidence **only for the exact pinned version and only where the owner names the
+     audit** — and the one named review is of embit **0.8.0**, not the pinned `0.8.2+besa.1`,
+     so moving that pin invalidated the inherited evidence for it.
+   - **Conclusion, and the scope ruling.** No inherited component evidence transfers to this
+     revision. `CURRENT-STATUS.md:113` — an independent component audit of the inherited stack
+     (embit, HWI, libusb, pywebview and PyInstaller) remains outstanding — is accurate and
+     stands. Dependency *internals* are out of scope (section 0): the panel identifies and
+     records the dependency boundary and the exact pins, and does **not** clear a dependency by
+     citing a report about a different version. A component audit is named as a next-cycle
+     item. The prior AI reports remain history and are not inputs to this cycle's conclusions
+     (section 0, independence condition); this answer cites them only as the inventory of
+     coverage the question asked for, and does not adopt any of their findings.
 
 ## 9. Owner review and sign-off — step two, no AI
 
@@ -932,6 +1012,49 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
   - **Not changed:** the three rubric grades, the five ranked assets, the two unforgivable
     acts, the threat list T1–T12, the closed list, the burden-of-proof rule, and the policies
     of revisions 2–6.
+- **Revision 8 — final** (2026-10-10, owner-directed, this commit): the plan is frozen for the
+  incoming review, the target statement is made internally consistent, and the four remaining
+  questions are closed. No threat added, removed or re-graded; no asset, grade or acceptance
+  criterion changed.
+  - **Section 0 — the target-revision paragraph corrected.** It still read "`main` at
+    `d525f31` — no tag", which contradicted section 1's retarget to the `v0.6.7` release and
+    would have read to a referee as a scope/lock mismatch. It now names the release as the
+    audit target and `d525f31` as the reconnaissance revision, with the six-Markdown-file delta
+    and the filename explanation.
+  - **Section 0 — the freeze paragraph added**: revision 8 is the last surveyor revision, the
+    plan is a fixed input, and a later change requires an owner amendment and re-signing, which
+    voids any lock already taken.
+  - **Section 8 question 1 — the commissioned reviewer named** (Z.ai/GLM, the tool set whose
+    earlier open-ended run over this same release is the cause of the reset), so the incoming
+    review is told its own history and the closed scope is not re-opened by accident.
+  - **Section 8 question 2 closed** — the stale download page was found, fixed at `fc65647` and
+    verified live (v0.6.7 metadata, labels, buttons and review notices; the 63 older releases
+    marked *Superseded* in their notes with every tag and asset retained), and the panel is
+    told in terms that a public-site defect is a publication/hygiene matter, not a code finding
+    against the release.
+  - **Section 8 question 4 closed** — the referee's tripwire duty is bounded to break-and-watch
+    on the release-critical controls; the ledger's remaining rows are not re-litigated;
+    CT-54/CT-59 stand as deferrals expiring 2027-10-07; CT-48's vanished-commit row is recorded
+    as evidence no longer retrievable, neither finding nor clearance; and an un-failable
+    tripwire is an Info note unless the panel demonstrates a real regression path.
+  - **Section 8 question 5 closed** — the Public Security Statement is no longer gated (the
+    site now agrees with the graded revision), it is published with the report, and the
+    surveyor's `not exposed by the harness` model line stands exactly as written.
+  - **Section 8 question 6 closed** — no component audit exists on record and none transfers:
+    the only inherited-library review is the `v0.6.2` report's embit 0.8.0 / HWI 3.2.0 /
+    bundled-libusb pass, while the pinned embit is `0.8.2+besa.1`; `CURRENT-STATUS.md:113` is
+    accurate; the panel identifies dependencies but does not clear them by inheritance.
+  - **The surveyor's writes in this revision.** Every write was owner-directed. One
+    documentation commit (`fc65647`) corrected the public site and the user manual; one
+    API-only edit prepended a *Superseded* notice to the notes of the 63 historical releases
+    (no tag moved, no asset added, replaced or deleted); and this revision's commit publishes
+    the plan. The repository's own `scripts/check-publish-paths.sh` was also run read-only and
+    returned `ok: no non-main ref carries a publish-capable workflow` (exit 0), recorded as
+    clean-snapshot evidence. No workflow was dispatched, no branch created, no release
+    published or altered, no artifact downloaded, and no secret value requested.
+  - **Not changed:** the three rubric grades, the five ranked assets, the two unforgivable
+    acts, the threat list T1–T12, the closed list, the burden-of-proof rule, and the policies
+    of revisions 2–7.
 - **Provenance of every sign-off:** recorded on 2026-10-10 at the owner's direction. The
   owner supplied the signature identity and the date, directed publication, and directed each
   amendment; the surveyor agent transcribed the two lines below on every occasion, in the same
@@ -941,10 +1064,16 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
 
 **Answers to the questions above.**
 
-- **Questions 1 and 3 are answered** by the owner in section 8: the audit target is the
-  published `v0.6.7` release rather than a branch head, and the Oct-8/09 reset is explained on
-  the record; `main` and the release tags are now protected by rulesets. The remaining **four**
-  questions are carried forward open, for the owner to answer before the panel is dispatched.
+- **All six questions are answered, and none is carried forward open.** Questions 1 and 3 were
+  answered by the owner directly: the audit target is the published `v0.6.7` release rather
+  than a branch head, the Oct-8/09 reset is explained on the record, and `main` and the release
+  tags are now protected by rulesets. Questions 2, 4, 5 and 6 are answered in this revision at
+  the owner's direction, each by a measurement or a fix rather than by a promise: the public
+  download surface was corrected and verified live (question 2); the referee's tripwire duty is
+  bounded to break-and-watch on the release-critical controls (question 4); the Public Security
+  Statement is ungated and published with the report (question 5); and no component audit
+  exists on record or can be inherited for the pinned stack (question 6). Nothing in section 8
+  remains open, and the plan is frozen.
 
 **Sign-off.**
 
