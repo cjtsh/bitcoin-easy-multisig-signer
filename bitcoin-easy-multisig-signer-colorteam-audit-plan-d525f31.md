@@ -72,6 +72,22 @@ assumption is whether repository-controlled permissions make the path reachable.
 measured state is recorded in sections 4, 5 and 7; the panel must evaluate the publish
 path as it actually stands, not as the workflow's comments describe it.
 
+**Authorised agentic operation, and no automation** (owner, 2026-10-10 — an owner amendment
+to the locked scope, logged in section 9): the owner works through agentic coding tools that
+act under the owner's own GitHub credentials and authority. Platform controls must therefore
+not lock those tools out: no required reviewer is added to the signing environments, and
+Actions is left at `allowed_actions: "all"` with `sha_pinning_required: false`, so a tool the
+owner runs is never blocked by a platform setting. The owner accepts the tool set as inside
+the owner boundary — "the owner's agent went rogue" is a declared external assumption, never
+a graded finding — and the workflow guards exist to bound what a dispatch can do on its own.
+That declaration is not an assumption about behaviour the repository cannot show, because the
+repository has **no automatic build and no automatic code update**: no `schedule:`/cron exists
+in any workflow, and the only non-manual triggers in the tree are pushes to the two retired
+`linux-port` / `windows-port` input branches (`linux-inputs.yml:26-29`,
+`windows-inputs.yml:26-29`), which only regenerate hash locks and publish nothing. Every
+build, every pin move and every publication is dispatched by the owner or by a tool the owner
+directs.
+
 **Distribution and contribution policy** (owner, 2026-10-10 — an owner amendment to the
 locked scope, logged in section 9): this repository is public so that anyone may read, use,
 fork and independently verify the software, and it is MIT-licensed for that purpose. It is
@@ -146,13 +162,19 @@ can reach mainnet without it; that is recorded as an in-scope weakness, not excl
 
 **Risk residuals this cycle is explicitly asked to treat as gates, not assumptions**
 (owner, 2026-10-06, carried forward): tag rulesets, environment protection, and
-least-privilege tokens are external controls the previous cycle could not verify. This
-cycle measured them (section 4) and they are **weaker than the workflow's own comments
-imply**: there is no branch protection and no ruleset on `main` or on tags, the two signing
-environments have branch policies but no required reviewers and allow admin bypass, and
-the workflow's `release` job holds `contents: write` on every dispatch. They are recorded
-as residual risk and release-readiness gates, and the panel must say what it verified
-itself versus what it took on the document's word.
+least-privilege tokens are external controls the previous cycle could not verify. This cycle
+measured them, and the owner then changed some of them before this plan was signed. As they
+now stand: `main` carries branch ruleset `protect-main` (`24840839`), which blocks branch
+deletion and non-fast-forward pushes with **no bypass actor**, so it applies to the owner's
+own tooling as well; **tags still carry no ruleset**, so a published tag can still be moved or
+deleted by anyone with write; the two signing environments carry a `main`-only branch policy
+and, by the owner's explicit decision (section 0, authorised agentic operation), **no required
+reviewers**; and the workflow's `release` job holds `contents: write` on every dispatch. At
+the target revision `d525f31` no job entered either signing environment, so the signing
+credentials were unreachable and a release could not have been notarized or published — a
+release-readiness blocker this survey found and the owner then fixed (sections 4 and 7). These
+are recorded as residual risk and release-readiness gates, and the panel must say what it
+verified itself versus what it took on the document's word.
 
 **Mandatory audit output — one-page Public Security Statement** (framework `v1.5.0`): the
 audit must produce a **one-page, release-specific, public-facing security statement**
@@ -188,7 +210,9 @@ described as approved or safe to deploy. Tone: calm, helpful, **trust but verify
 checked-out tree at `d525f31`, its committed history, and read-only GitHub REST API
 metadata (repository settings, rulesets, environments, Actions registrations, workflow
 runs, releases). No build, no dispatch, no download, no live system, no secret value, no
-write of any kind — the read-only rule is the budget. The survey stops when the five
+write of any kind — the read-only rule is the budget. (The owner later set that rule aside
+for the owner-directed writes logged in section 9; the surveyor did not relax it itself, and
+no reading budget beyond the above was spent.) The survey stops when the five
 declared assets, the two unforgivable acts, the in-scope / out-of-scope / not-examined
 lists, and the questions for the owner can each be written with a `file:line @
 d525f31` or API-endpoint citation for every claim, and section 0 can be written out in
@@ -218,10 +242,15 @@ the audit is void.** Different identifiers establish different runs, not differe
 ## 1. Target and revision
 
 - **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (public, MIT, created
-  2026-09-27T22:35:04Z; `pushed_at` 2026-10-09T23:45:48Z)
+  2026-09-27T22:35:04Z; `pushed_at` 2026-10-10T13:25:20Z)
 - **Revision surveyed:** `main` at **`d525f31b600d5aedd2f7a219ec848df540707ffc`**
   (`d525f31`), an **untagged** commit. Author date 2026-10-07T17:17:29Z, committer date
   2026-10-09T23:45:35Z — it reached `main` two days after it was written.
+- **The branch has moved since.** Three owner-directed commits landed on top of it after this
+  survey (`247ca73`, `333b361`, and the commit that carries this revision of the plan), so
+  **`main` is no longer the revision under audit**. The panel and the referee must pin
+  `d525f31` by hash, as `v0.6.7`'s plan pinned its own tag; a lock taken over the branch head
+  would lock the wrong tree.
 - **Date:** 2026-10-10
 - **Surveyed by:** DeepSeek Harness agent (harness `com.deepseek.dsh`, session
   `session-5d5422fc-382b-428d-93f1-71eb00cd083b`, model not exposed by the harness). Must
@@ -316,6 +345,21 @@ table.
   `MAC_NOTARY_KEY_P8_BASE64`, `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`; environment groups
   `apple-signing` (the three `MAC_*` signing secrets) and `release-signing` (both GPG
   secrets), each with a branch policy of `main` only.
+- **Credential wiring at the target revision — found by this survey, fixed after it.** The
+  workflow names those six secrets, but `d525f31` declares **no `environment:` key on any
+  job** (`grep -c 'environment:' .github/workflows/build-candidate.yml` → `0`; the same is
+  true of the run revision `81f58ec`). The only stored copies are the environment-scoped
+  secrets above — the repository-level secret list is empty — and a job is handed environment
+  secrets only if it names the environment, so a notarized build or a publish would have
+  failed closed at `build-candidate.yml:226-227` (`MAC_CERT_P12_BASE64 is not set`) and
+  `:794-795` (`GPG_PRIVATE_KEY is not set`). The fix was already written once and lost: the
+  discarded 2026-10-08 revision `1a5e9bf` declares `environment: apple-signing` (its line 162)
+  and `environment: release-signing` (its line 719), under commit `2f779e2` "Record the
+  revision that carries credential recovery (CT-97)". The rewind of `main` dropped that wiring
+  and reintroduced CT-97. It was restored after this survey at commit `333b361`. **Consequence
+  for the panel:** at `d525f31` the credential resolution cannot be exercised at all, so the
+  notarize and publish steps are testable by reading, not by running, until the revision under
+  audit carries the fix.
 - Release key: committed public `signing-key.asc` = `rsa4096`, fingerprint `ACCC 2F1C D436
   9128 D549 CC58 E972 85D2 DD0B D6D7`, uid `Bitseeker LLC <release@bitseeker.llc>`; the
   private half lives only in the `release-signing` environment secret and is bound to that
@@ -354,18 +398,32 @@ buffer; the diagnostics JSON and saved PSBTs in `~/Downloads` (`gui.py:328-385`,
 
 ### Repository-controlled platform settings (measured this cycle, read-only, via the API)
 
-- `main` has **no branch protection** (`/branches/main/protection` → 404) and the repository
-  has **no rulesets** (`/rulesets` → `[]`), so no tag or branch is immutable at the platform
-  level.
+- `main` carries branch ruleset **`protect-main`** (id `24840839`, created 2026-10-10):
+  branch deletion and non-fast-forward pushes are blocked, with **no bypass actor**, so it
+  binds the owner's own tooling too. Ordinary pushes are unaffected. There is still **no
+  classic branch protection** (`/branches/main/protection` → 404 — rulesets are a separate
+  mechanism) and **no ruleset on tags**, so tags remain movable and deletable.
 - Environments `apple-signing` and `release-signing` each carry a branch policy of `main`
-  and `can_admins_bypass: true`, with **no required reviewers**; `github-pages` allows
-  `gh-pages` and `main`.
-- Actions: `allowed_actions: "all"`, `sha_pinning_required: false`; default workflow token
-  `read`; `secret_scanning` and `secret_scanning_push_protection` enabled;
-  `dependabot_security_updates` and validity checks disabled. Sole collaborator `cjtsh`
-  (admin). No deploy keys, no webhooks, no repository-level secrets.
+  and `can_admins_bypass: true`, with **no required reviewers** — an owner decision (section
+  0), because a human gate would sit in front of the agentic tooling the owner directs.
+  `github-pages` allows `gh-pages` and `main`. **No job in `build-candidate.yml` at
+  `d525f31` enters any environment** (no `environment:` key exists in the file; the discarded
+  revision `1a5e9bf` did declare two), so at the target revision these policies gate nothing
+  and the signing secrets are unreachable — see the credential-wiring bullet above.
+- Actions: `allowed_actions: "all"`, `sha_pinning_required: false` (owner decision: do not
+  lock out authorised tooling); default workflow token `read`; `secret_scanning` and
+  `secret_scanning_push_protection` enabled; `dependabot_security_updates` and validity
+  checks disabled. Sole collaborator `cjtsh` (admin), zero pending invitations, zero forks,
+  and all 57 pull requests (state `all`) were opened from a branch of this repository — no
+  fork PR has ever existed. No deploy keys, no webhooks, no repository-level secrets; the
+  authorized OAuth/GitHub Apps list could not be enumerated by the surveyor's token, so the
+  owner must read it from Settings → Applications.
 - The workflow registrations `build-windows.yml` and `build-linux.yml` still exist with
   state `disabled_manually` although their files are absent from every ref.
+- The repository's own text now matches the single-maintainer policy: `CONTRIBUTING.md` was
+  rewritten and `README.md:95` reworded after this survey (commit `247ca73`). At the target
+  revision `d525f31` both still invited outside pull requests, which is the mismatch the
+  panel should record against the section 0 policy.
 
 ## 5. In scope
 
@@ -487,10 +545,25 @@ threat cannot be cleared by argument.
   create/delete events for `cycle5-0.6.8`, `chore/fresh-color-team-v1.5-audit`,
   `archive/legacy-audit-artifacts` and others, Pages builds on those commits, and PR #57
   ("Superseded: audit-artifact reset, not adopted", opened 2026-10-09T19:16:05Z, closed
-  unmerged). Today `main` is `d525f31` and those commit objects are **absent from the
-  repository**; `git ls-remote` shows one branch. This cycle cannot audit code it cannot
-  read, and it does **not** treat the surviving tree as a record of what was pushed. The
+  unmerged). Today `main` is `d525f31` and `git ls-remote` shows one branch. Those commits
+  are unreachable from every ref, but they are not gone: the GitHub API still serves the
+  objects by SHA, and this survey read the workflow text at `1a5e9bf` that way — which is how
+  the lost credential-recovery wiring (CT-97) was recovered (section 4). What cannot be
+  audited is the Oct-8/9 tree **as a whole**: only objects the surveyor knew to ask for were
+  read, nothing establishes the list is complete, and the branch that carried the work is
+  gone. This cycle does **not** treat the surviving tree as a record of what was pushed; the
   delta is recorded as a provenance gap and a question for the owner.
+- **The post-survey fixes.** Three commits landed after the target revision and are therefore
+  **not** part of what the panel audits: `247ca73` (the contribution-policy wording in
+  `CONTRIBUTING.md` and `README.md:95`), `333b361` (restoring the `environment:` keys that
+  make the signing credentials reachable), and the commit that carries this revision of the
+  plan. The panel should verify the two *defects* as they stand at `d525f31` and treat the
+  fixes as next-cycle verification, exactly as `releases/PATCH-0.6.7.md` stands to the
+  cycle-3 audit.
+- **The survey's writes.** The runbook's read-only rule was set aside at the owner's explicit
+  direction for these commits and for publishing this plan (section 9, revision 3). No other
+  write was made: no branch was created, no workflow dispatched, no release touched, no
+  artifact downloaded.
 - `vendor/libusb-1.0.0.dylib` — a compiled arm64 binary (and the Windows DLL and Linux
   AppImage runtime alongside it). Provenance and hash pins are documented at
   `vendor/README.md:36-47`; the binaries' internals were not reviewed.
@@ -541,13 +614,17 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
    repository whose v0.6.7 sources corrected exactly this pattern elsewhere. Should the
    site be brought to the graded revision before the Public Security Statement is published,
    and should the plan treat a stale download page as a release-readiness gate?
-3. **Repository-controlled platform protections.** There is no branch protection and no
-   ruleset on `main` or on tags, the signing environments have no required reviewers and
-   allow admin bypass, and the `release` job holds `contents: write` on every dispatch. The
-   previous cycle could not see any of this and treated it as an external assumption. Now
-   that it is measured, does the owner want the standard to require a tag ruleset and/or
-   required reviewers before a release-grade audit can clear? The panel will otherwise
-   continue to treat push and dispatch rights as owner account hygiene.
+3. **Repository-controlled platform protections — partly answered, one gap left.** At the
+   target revision there was no branch protection and no ruleset anywhere, and no job entered
+   a signing environment. `main` now carries `protect-main` (deletion and force-push blocked,
+   no bypass), and the owner has declined required reviewers on the signing environments and
+   an Actions allow-list, because either would sit in front of the agentic tooling the owner
+   directs (section 0). **Tags still carry no ruleset**, so a published tag — the thing the
+   release key and the Public Security Statement point at — can still be moved or deleted by
+   anyone with write, including a tool acting under the owner's credentials. Does the owner
+   want tags protected before this cycle is graded, or is tag immutability a process rule the
+   panel should record as unenforced? The panel will otherwise continue to treat push and
+   dispatch rights as owner account hygiene.
 4. **The claimed-fix ledger is unaudited.** `releases/PATCH-0.6.7.md` closes CT-48 through
    CT-71 by test or by dated acceptance, and no audit has run since it was written. Two rows
    (CT-54, CT-59) are deferrals that expire 2027-10-07. Does the owner confirm that the
@@ -618,9 +695,41 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
   - **Timing:** no audit lock and no report exist for this cycle, so no hash has been taken
     over revision 1. This amendment is made before the lock, which is the only point at which
     it is free; revision 1 remains in git history at `df3a4b8`.
-- **Provenance of both sign-offs:** recorded on 2026-10-10 at the owner's direction. The owner
-  supplied the signature identity and the date, directed publication, and directed this
-  amendment; the surveyor agent transcribed the two lines below on each occasion, in the same
+- **Revision 3** (2026-10-10, owner-directed, this commit): five changes, each a consequence
+  of a decision or a measurement made after revision 2 was published. No threat was added,
+  removed, narrowed or re-graded.
+  - **Section 0 — "Authorised agentic operation, and no automation" added.** Records the
+    owner's standing constraint that the agentic tools acting under the owner's credentials
+    must not be locked out; that the tool set sits inside the owner boundary, so "the tool
+    went rogue" is a declared assumption rather than a graded finding; and that the
+    repository has no scheduled or automatic build or code-update path — verified from the
+    workflow triggers, not asserted.
+  - **Section 0, risk residuals — corrected to the state now in force.** `main` now carries
+    branch ruleset `protect-main`; tags still carry none; required reviewers remain absent by
+    the owner's decision; and at `d525f31` the signing credentials were unreachable.
+  - **Section 4 — the credential-wiring defect recorded**, with the evidence that the fix had
+    already been written once, was lost in the rewind of `main`, and was restored after this
+    survey. The section's platform-settings block now separates what was measured at
+    `d525f31` from what the owner changed afterwards, and records the contribution-policy
+    wording change (`247ca73`).
+  - **Section 8, question 3 — narrowed to the gap still open** (tag protection), because the
+    owner answered the branch and environment halves by decision rather than by question.
+  - **Corrections of fact.** (a) Section 7 said the 2026-10-08/09 commits were "absent from
+    the repository"; they are unreachable from every ref, but the API still serves the
+    objects by SHA and one was read this cycle — the record now says exactly that. (b)
+    Section 7 now names the three post-survey commits and the survey's own writes, so no
+    later reader mistakes them for part of the audited revision.
+  - **The read-only rule.** Every write in this cycle was owner-directed: the publication of
+    revisions 1 and 2, the contribution-policy rewrite, and the credential-wiring fix. The
+    surveyor did not relax the rule on its own initiative; the owner set it aside, and this
+    log is the disclosure. The surveyor made no other write: no workflow dispatched, no
+    branch created, no release touched, no artifact downloaded, no secret value requested.
+  - **Not changed:** the three rubric grades, the five ranked assets, the two unforgivable
+    acts, the revision under audit (`d525f31`), the operator model, the closed list T1–T12,
+    the burden-of-proof rule, and the distribution and dependency policies of revision 2.
+- **Provenance of all three sign-offs:** recorded on 2026-10-10 at the owner's direction. The
+  owner supplied the signature identity and the date, directed publication, and directed both
+  amendments; the surveyor agent transcribed the two lines below on each occasion, in the same
   DSH session that produced the plan
   (`DSH_SESSION_ID=session-5d5422fc-382b-428d-93f1-71eb00cd083b`). No human edited any byte of
   this file.
