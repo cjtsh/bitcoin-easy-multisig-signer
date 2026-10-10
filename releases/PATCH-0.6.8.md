@@ -613,3 +613,87 @@ test added:
 `break_and_watch.py` carries three CT-94 defeats (the note drops the digest
 prefix, the note points at a tag, the note renames the supported command); all 67
 defeats caught. Full suite: `Ran 648 tests in 164.211s OK`.
+
+## Candidate attempt 38082865187 — the tests that were not portable
+
+The first 0.6.8 candidate (dispatch of `d7dd590`, `notarize=true`,
+`publish=false`) built and notarized both desktop artifacts, then failed two of
+its remaining jobs. Both failures were portability defects in the new cycle-4
+tests, not in the product: the macOS and Linux jobs ran the whole suite green.
+
+### Cause
+
+* **Windows job — the platform-state fake `gh` was a shebang script.** The
+  differ is handed `PLATFORM_STATE_GH`, which the test planted as a file
+  beginning `#!{sys.executable}`. Git Bash runs that form, but the Python side of
+  `scripts/check-platform-state.sh` execs the path and Windows CreateProcess
+  refuses a `#!` file:
+  `OSError: [WinError 193] %1 is not a valid Win32 application`. Seven
+  `PlatformCheckScriptTests` cases failed on the platform difference and never
+  reached the control they pin.
+* **Windows job — Git Bash has no `shasum`.** Three
+  `tests/test_publish_guards.py` cases run the workflow's real checksum steps
+  through `tests/workflow_harness.py`; those steps call
+  `shasum -a 256 -c SHA256SUMS`, and the runner answered
+  `shasum: command not found` (exit 127). The workflow itself runs those steps on
+  macOS and ubuntu, where `shasum` is the tool that exists.
+* **Source archive job — the inventory cited a checkout-only path.** Four
+  `ControlInventoryTests::test_every_row_names_code_that_exists` subtests failed
+  for `CM-12`…`CM-15`: `CM-1x cites missing
+  .github/workflows/build-candidate.yml`. An archive is a source tree —
+  `scripts/build-source.sh` ships that recipe as `ci/build-candidate.yml` — and
+  `tests/support.py:find_build_recipe` already resolves both places. The
+  portability pin lists the modules that must go through it; this module was not
+  on the list, which is the third time this class of defect has shipped (0.6.6
+  `PipToolsPinTests`, 0.6.7 `ToolchainPinTests`).
+
+### Fixes
+
+* `tests/test_platform_state.py` — `_fake_gh` writes the Python source as
+  `gh.py` and, on `win32`, a `gh.cmd` trampoline (`@echo off`, then
+  `"<python>" "%~dp0gh.py" %*`), returning that as the program. POSIX keeps the
+  shebang file. This is the shape `tests/test_hardening_pins.py` has used since
+  the 0.6.7 candidate taught the same lesson.
+* `tests/workflow_harness.py` — the stub preamble now defines a real `shasum`
+  (`SHASUM_SHIM`): it consumes `-a`/`--algorithm` (sha-256 only; anything else
+  refuses with exit 2), then runs `sha256sum` where it exists and the real
+  `shasum` where it does not. That is digest math, not a canned answer, so a step
+  body under test still verifies real bytes on every runner; a test that passes
+  its own `shasum` in `stubs` still overrides it, because that function is
+  defined later in the script.
+* `tests/test_controls_inventory.py` — `cited_file(relative, root=ROOT)`
+  resolves a row's citation through `support.find_build_recipe` when the raw path
+  is absent and the citation names `.github/workflows/<name>`.
+* `tests/test_windows_portability.py` — `test_controls_inventory.py` joins the
+  pinned resolver list, and three behaviour tests were added: the ci/ fallback
+  with a temporary root, the platform-state fake `gh`'s shape under a simulated
+  `win32`, and the shasum shim (a real digest passes, a changed byte refuses).
+
+### A trap the tripwire run set for the next suite
+
+The mutation harness rewrites a source file and restores it in `finally`. For an
+equal-length edit made and undone inside one filesystem timestamp tick, the
+`.pyc` compiled from the *mutated* source still matches the restored file on
+(mtime, size), so the next run reuses it. The clean suite that followed `all 77
+defeats caught` failed four cases with the mutated shim's own refusal message
+(`workflow_harness: only sha-256 is available here`), while the file on disk was
+correct. `break_and_watch.py` now runs its child suite with `-B` and
+`PYTHONPYCACHEPREFIX` pointed at a scratch directory, so a mutation can never
+leave bytecode in the checkout — and, more to the point, can never hide a defeat
+from the harness itself.
+
+### Tripwires for the fixes (`break_and_watch.py`, 77/77)
+
+Three defeats were added, each caught by a named committed test:
+
+| defeat | caught by |
+| --- | --- |
+| the shared recipe resolver forgets the archive copy | `tests/test_windows_portability.py::HardeningPinPortabilityTests::test_the_shared_resolver_finds_the_archived_copy` |
+| the platform-state fake `gh` is a shebang script again | `tests/test_platform_state.py::PlatformCheckScriptTests::test_the_fake_gh_is_whatever_this_platform_can_execute` |
+| the step harness stops answering `shasum` for sha-256 | `tests/test_windows_portability.py::ReleaseChecksumPortabilityTests::test_the_shasum_shim_verifies_real_bytes_and_refuses_a_changed_one` |
+
+The archive-specific half cannot be caught from a checkout, where the
+`.github/workflows/` copy exists: it is caught by the archive job itself, and
+locally by `scripts/build-source.sh 0.6.8` followed by the suite from the
+extracted tree, which is the same step the pipeline runs — `Ran 667 tests in
+162.346s / OK`. Full suite from the checkout: `Ran 667 tests in 162.466s / OK`.

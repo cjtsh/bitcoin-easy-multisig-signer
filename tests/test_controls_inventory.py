@@ -68,6 +68,30 @@ def site(text):
     return relative, int(first), int(last or first)
 
 
+def cited_file(relative, root=ROOT):
+    """The file a row cites, from the checkout or from an extracted archive.
+
+    The rows cite the canonical recipe as
+    ``.github/workflows/build-candidate.yml``. A source archive is a source
+    tree: ``scripts/build-source.sh`` ships that recipe as
+    ``ci/build-candidate.yml``, so a raw ``ROOT / relative`` lookup reports a
+    missing file there. 0.6.6 caught ``PipToolsPinTests`` making this mistake,
+    0.6.7 caught ``ToolchainPinTests``, and the 0.6.8 candidate run (38082865187)
+    caught this inventory making it a third time. Every pin that reads a recipe
+    goes through ``support.find_build_recipe``.
+    """
+    path = root / relative
+    if path.is_file():
+        return path
+    parts = pathlib.PurePosixPath(relative).parts
+    if len(parts) == 3 and parts[:2] == (".github", "workflows"):
+        sys.path.insert(0, str(root / "tests"))
+        from support import find_build_recipe
+
+        return find_build_recipe(root, parts[2])
+    return None
+
+
 def comment_blocks(path):
     """Yield (first_line, last_line, text) for each comment block in `path`.
 
@@ -148,8 +172,8 @@ class ControlInventoryTests(unittest.TestCase):
                 self.assertIsNotNone(
                     parsed, f"{row['id']} does not cite a `file:line` in backticks")
                 relative, first, last = parsed
-                path = ROOT / relative
-                self.assertTrue(path.is_file(), f"{row['id']} cites missing {relative}")
+                path = cited_file(relative)
+                self.assertIsNotNone(path, f"{row['id']} cites missing {relative}")
                 count = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
                 self.assertLessEqual(
                     last, count,

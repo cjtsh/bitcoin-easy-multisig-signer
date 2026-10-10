@@ -33,6 +33,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -218,9 +219,30 @@ json.dump(answer, sys.stdout)
 
 
 def _fake_gh(folder: Path) -> Path:
-    """A `gh` on disk that answers every endpoint from the fixture."""
+    """A `gh` on disk that answers every endpoint from the fixture.
+
+    On Windows a `#!` script is not a program: Git Bash runs it, but the
+    Python side of `scripts/check-platform-state.sh` hands the path to
+    `subprocess`, which raises `OSError: [WinError 193] %1 is not a valid Win32
+    application`. The 0.6.6 candidate hit that with the HWI helper
+    (`tests/test_hardening_pins.py`), and the 0.6.8 candidate run 38082865187
+    hit it here, so the helper now takes the portable form: a `.cmd` trampoline
+    that runs the Python source with this interpreter.
+    """
+    source = folder / "gh.py"
+    source.write_text(FAKE_GH, encoding="utf-8", newline="\n")
+    if sys.platform == "win32":
+        program = folder / "gh.cmd"
+        program.write_text(
+            "@echo off\r\n"
+            f'"{sys.executable}" "%~dp0gh.py" %*\r\n',
+            encoding="utf-8",
+        )
+        program.chmod(0o755)
+        return program
     program = folder / "gh"
-    program.write_text(f"#!{sys.executable}\n{FAKE_GH}", encoding="utf-8")
+    program.write_text(
+        f"#!{sys.executable}\n{FAKE_GH}", encoding="utf-8", newline="\n")
     program.chmod(0o755)
     return program
 
@@ -497,6 +519,31 @@ class PlatformCheckScriptTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("not installed", result.stderr)
             self.assertNotIn("ok:", result.stdout)
+
+    def test_the_fake_gh_is_whatever_this_platform_can_execute(self):
+        """A shebang script is not a valid Win32 application.
+
+        The 0.6.8 candidate run 38082865187 failed seven of these tests on
+        Windows with `OSError: [WinError 193] %1 is not a valid Win32
+        application`: the differ's Python side runs the path through
+        `subprocess`, which cannot exec the shebang form Git Bash had been
+        happy with. Same lesson as the HWI plant in
+        `tests/test_hardening_pins.py`; asserted from any platform.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch.object(sys, "platform", "win32"):
+                program = _fake_gh(Path(folder))
+            self.assertEqual(program.name, "gh.cmd")
+            body = program.read_text(encoding="utf-8")
+            self.assertIn("@echo off", body)
+            self.assertNotIn("#!/", body)
+            self.assertIn("gh.py", body)
+
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch.object(sys, "platform", "darwin"):
+                program = _fake_gh(Path(folder))
+            self.assertEqual(program.name, "gh")
+            self.assertIn("#!/", program.read_text(encoding="utf-8"))
 
     def test_a_matching_platform_reports_ok(self):
         with tempfile.TemporaryDirectory() as tmp:

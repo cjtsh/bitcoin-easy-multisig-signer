@@ -7,17 +7,23 @@ helpers in ``tests/support.py`` are the fix, and ``WINDOWS-PORT.md`` is the
 written record. These tests fail if either is weakened, so 0.6.6, 0.7.x and
 1.x do not spend hours rediscovering the same Windows quirks.
 
+The 0.6.8 candidate (run 38082865187) added two more of the same shape: a fake
+``gh`` that was only a shebang, which the differ's Python side could not exec,
+and the release guards' ``shasum`` calls, which Git Bash does not provide.
+
 No test here may skip: the Windows job refuses a suite that reports any skip.
 """
 
 import os
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
 import gui
 import support
+import workflow_harness
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -101,12 +107,15 @@ class PrivateFileHelperTests(unittest.TestCase):
 
 
 class HardeningPinPortabilityTests(unittest.TestCase):
-    """The 0.6.6 tripwire tests themselves must be Windows-portable.
+    """The tripwire tests themselves must be Windows-portable.
 
     Candidate run 37464977050 failed the Windows job because HwiIdentityPins
     wrote a #!/bin/sh helper (CreateProcess: WinError 193) and the source
     archive job because PipToolsPinTests only looked under .github/workflows/
-    while the archive ships recipes under ci/.
+    while the archive ships recipes under ci/. Candidate run 38082865187 failed
+    the Windows job because the platform-state differ's fake `gh` was written
+    the same shebang-only way, and the archive job because the control
+    inventory reopened the inline recipe lookup.
     """
 
     def test_hwi_identity_helpers_never_rely_on_a_shebang_alone(self):
@@ -115,11 +124,23 @@ class HardeningPinPortabilityTests(unittest.TestCase):
         self.assertIn("hwi.cmd", text)
         self.assertIn("@echo off", text)
 
+    def test_the_platform_state_fake_gh_never_relies_on_a_shebang_alone(self):
+        """Run 38082865187: WinError 193 from the differ's fake `gh`.
+
+        Git Bash runs a `#!` script; the Python side of
+        `scripts/check-platform-state.sh` execs it and Windows refuses.
+        """
+        text = (ROOT / "tests" / "test_platform_state.py").read_text(encoding="utf-8")
+        self.assertIn('if sys.platform == "win32"', text)
+        self.assertIn("gh.cmd", text)
+        self.assertIn("@echo off", text)
+
     def test_recipe_lookups_go_through_the_shared_helper(self):
         """One resolver, so the ci/ fallback cannot be dropped a third time.
 
         0.6.6 caught PipToolsPinTests opening only .github/workflows/; 0.6.7
-        caught ToolchainPinTests doing the same. Both now call
+        caught ToolchainPinTests doing the same; 0.6.8 caught
+        ControlInventoryTests doing it a third time. All now call
         support.find_build_recipe, and this holds that nothing reopens the
         inline two-path lookup to drift away from it again.
         """
@@ -127,7 +148,7 @@ class HardeningPinPortabilityTests(unittest.TestCase):
         self.assertIn('root / "ci" / name', support_text)
         self.assertIn('root / ".github" / "workflows" / name', support_text)
         for name in ("test_hardening_pins.py", "test_workflow_config.py",
-                     "test_libusb_vendor.py"):
+                     "test_libusb_vendor.py", "test_controls_inventory.py"):
             text = (ROOT / "tests" / name).read_text(encoding="utf-8")
             with self.subTest(module=name):
                 self.assertIn("find_build_recipe", text,
@@ -135,6 +156,67 @@ class HardeningPinPortabilityTests(unittest.TestCase):
                               f"support.find_build_recipe")
                 self.assertNotIn('root / "ci" / name', text,
                                  f"{name} must not reopen the inline lookup")
+
+    def test_the_shared_resolver_finds_the_archived_copy(self):
+        """The behaviour behind the list, provable without an archive."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ci").mkdir()
+            archived = root / "ci" / "build-candidate.yml"
+            archived.write_text("on: push\n", encoding="utf-8")
+            self.assertEqual(
+                support.find_build_recipe(root, "build-candidate.yml"), archived,
+                "an archive ships the recipe as ci/build-candidate.yml")
+            checkout = root / ".github" / "workflows" / "build-candidate.yml"
+            checkout.parent.mkdir(parents=True)
+            checkout.write_text("on: push\n", encoding="utf-8")
+            self.assertEqual(
+                support.find_build_recipe(root, "build-candidate.yml"), checkout,
+                "the checkout copy is canonical when both exist")
+            self.assertIsNone(
+                support.find_build_recipe(root, "no-such-recipe.yml"),
+                "a recipe that is in neither place must be reported missing")
+
+
+class ReleaseChecksumPortabilityTests(unittest.TestCase):
+    """The release guards' checksum steps must run on every runner.
+
+    Candidate run 38082865187 failed three tests in test_publish_guards.py on
+    Windows with `shasum: command not found`: Git Bash ships `sha256sum` and no
+    `shasum`, macOS ships the opposite. The step harness defines a real shasum,
+    so a body that checks real bytes still checks real bytes.
+    """
+
+    def test_the_step_harness_defines_a_real_shasum(self):
+        shim = workflow_harness.SHASUM_SHIM
+        self.assertIn("shasum() {", shim)
+        self.assertIn("command -v sha256sum", shim)
+        self.assertIn("command shasum", shim)
+        preamble = workflow_harness.stub_preamble({}, Path("unused.tsv"))
+        self.assertIn("shasum() {", preamble,
+                      "every rendered step body must see the shasum")
+
+    def test_the_shasum_shim_verifies_real_bytes_and_refuses_a_changed_one(self):
+        body = workflow_harness.SHASUM_SHIM + textwrap.dedent(
+            """
+            set -euo pipefail
+            printf 'payload\\n' > asset.bin
+            digest="$(shasum -a 256 asset.bin | awk '{print $1}')"
+            printf '%s  asset.bin\\n' "$digest" > SHA256SUMS
+            shasum -a 256 -c SHA256SUMS
+            printf 'changed\\n' > asset.bin
+            if shasum -a 256 -c SHA256SUMS; then
+              echo "a changed asset passed the checksum check" >&2
+              exit 1
+            fi
+            echo "refused-the-change"
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            result = support.run_bash_script(body, cwd=tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("asset.bin: OK", result.stdout)
+        self.assertIn("refused-the-change", result.stdout)
 
 
 if __name__ == "__main__":

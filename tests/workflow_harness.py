@@ -331,12 +331,40 @@ def _case_pattern(part: str) -> str:
     return f'*"{escaped}"*'
 
 
+# Windows Git Bash ships `sha256sum` and no `shasum`; macOS ships `shasum` and
+# no `sha256sum`. The release guards' checksum steps call `shasum`, so on Windows
+# three tests in `tests/test_publish_guards.py` failed with `shasum: command not
+# found` (0.6.8 candidate run 38082865187) -- the workflow itself runs those steps
+# on macOS and ubuntu, where the tool exists. This defines a *real* shasum: real
+# digest math rather than a canned answer, so a step body under test still
+# verifies bytes on every runner. A test that wants a fake shasum passes one in
+# `stubs`; that function is defined after this one, so it wins.
+SHASUM_SHIM = """\
+shasum() {
+  local algorithm=256
+  if [ "${1:-}" = "-a" ] || [ "${1:-}" = "--algorithm" ]; then
+    algorithm="${2:-}"
+    shift 2
+  fi
+  if [ "$algorithm" != "256" ]; then
+    echo "workflow_harness: only sha-256 is available here" >&2
+    return 2
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    command sha256sum "$@"
+  else
+    command shasum "$@"
+  fi
+}"""
+
+
 def stub_preamble(stubs: dict[str, list[Stub]], log: Path) -> str:
     """Bash functions that shadow the named tools and record every call."""
     lines = [
         "# --- workflow_harness stub tools (M1) ---",
         f"STUB_LOG={_bash_quote(str(log))}",
         ": > \"$STUB_LOG\"",
+        SHASUM_SHIM,
     ]
     for tool, rules in stubs.items():
         lines.append(f"{tool}() {{")
