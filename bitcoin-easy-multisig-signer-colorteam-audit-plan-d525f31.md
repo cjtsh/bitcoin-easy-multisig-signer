@@ -262,15 +262,36 @@ the audit is void.** Different identifiers establish different runs, not differe
 - **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (public, MIT, created
   2026-09-27T22:35:04Z; `pushed_at` 2026-10-10, after the post-survey commits logged in
   section 9)
-- **Revision surveyed:** `main` at **`d525f31b600d5aedd2f7a219ec848df540707ffc`**
-  (`d525f31`), an **untagged** commit. Author date 2026-10-07T17:17:29Z, committer date
-  2026-10-09T23:45:35Z — it reached `main` two days after it was written.
-- **The branch has moved since.** Owner-directed commits landed on top of it after this
-  survey — the successive revisions of this plan, the contribution-policy reword (`247ca73`),
-  the credential-wiring fix (`333b361`) and one candidate build dispatched and not published
-  (run `38056270688`) — so **`main` is no longer the revision under audit**. The panel and the
-  referee must pin `d525f31` by hash, as `v0.6.7`'s plan pinned its own tag; a lock taken over
-  the branch head would lock the wrong tree.
+- **Revision under audit (owner's direction, 2026-10-10): the published release `v0.6.7`,
+  tag `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` (`81f58ec`), together with the release
+  artifacts published on 2026-10-07T17:10:37Z.** `v0.6.7` is the current public release: the
+  macOS DMG (signed and notarized), the Windows bundle, the Linux AppImage and tarball, the
+  source archive, the BUILD-SBOM documents, `SHA256SUMS` and its GPG signature. The owner
+  directs that the audit attach to **what users actually hold and download**, not to a branch
+  head and not to a release users do not have.
+- **Reconnaissance revision:** `main` at
+  **`d525f31b600d5aedd2f7a219ec848df540707ffc`** (`d525f31`) — the commit this survey
+  measured. `d525f31` is the child of the `v0.6.7` tag commit: written 2026-10-07T17:17:29Z,
+  landed on `main` 2026-10-09T23:45:35Z. **The two trees differ in six Markdown files and
+  nothing else** — `CURRENT-STATUS.md`, `PHASE-HANDOFF.md`, `RELEASE-HISTORY.md`, `ROADMAP.md`,
+  `releases/PATCH-0.6.7.md`, and the previous cycle's plan
+  `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md`; 78 insertions, 35 deletions in
+  total. Every executable file, including `.github/workflows/build-candidate.yml`, is
+  **byte-identical** at the two revisions. The code audited is therefore the same under either
+  pin: a statement in this plan made "at `d525f31`" holds at the tag as well, unless it concerns
+  one of those six documents.
+- **Why this file is named for the commit.** The framework names the cycle for the revision
+  surveyed — its release tag, or the short commit when it has no tag. A signed plan for the
+  `v0.6.7` cycle already exists in this repository, and the runbook forbids overwriting a file
+  the repository already has. This file therefore keeps the surveyed-commit name in its
+  filename while the audit target it defines is the release tag. The lock and the report should
+  name the cycle **`v0.6.7`**, and record that the plan carrying it is this file.
+- **The branch has moved since this survey.** Owner-directed commits landed on top of
+  `d525f31` — the successive revisions of this plan, the contribution-policy reword
+  (`247ca73`), the credential-wiring fix (`333b361`) and one candidate build dispatched and not
+  published (run `38056270688`). None of them is part of the audited release, and none alters a
+  byte of it. The panel and the referee must pin the **tag `v0.6.7` and its artifacts** by hash,
+  never the branch head.
 - **Date:** 2026-10-10
 - **Surveyed by:** DeepSeek Harness agent (harness `com.deepseek.dsh`, session
   `session-5d5422fc-382b-428d-93f1-71eb00cd083b`, model not exposed by the harness). Must
@@ -700,12 +721,29 @@ The five cycle-`v0.6.4` questions and their answers are carried forward unchange
 cycle asks six new ones, each grounded in something measured on 2026-10-10; the sixth
 arrived with the owner's 2026-10-10 amendment and is the one the amendment itself depends on:
 
-1. **The rewound default branch.** Commits were pushed to `main` on 2026-10-08/09 and are
-   now unreachable from every ref, and `d525f31` (authored 2026-10-07) only reached `main`
-   on 2026-10-09T23:45:35Z. The `v0.6.7` tag and its release were created from `81f58ec`
-   before that. Was the Oct-8/9 line deliberately abandoned, and is there anything in it —
-   in particular the "fresh Color Team v1.5 audit" branch — that the panel should be told
-   about rather than discover? The plan records the gap and does not audit it.
+1. **The rewound default branch — answered by the owner, 2026-10-10.** The Oct-8/9 line was
+   abandoned deliberately, by the owner's decision, and the reason is recorded here so the
+   panel is told it rather than left to speculate:
+
+   > After the `v0.6.7` release, further audit-cycle work was started with several different
+   > agentic tool sets, and it did not converge. Review rounds kept producing additional
+   > speculative failure scenarios; each was treated as a defect, fixed, and re-reviewed,
+   > without any scenario ever being demonstrated against the code. One cycle ran to roughly a
+   > hundred executions without yielding a reproducible finding. The owner stopped it and
+   > directed a return to a clean state at the `v0.6.7` release. This is a single-maintainer
+   > project and the framework is being adopted incrementally; earlier cycles did not
+   > converge, which is why this cycle's plan states a closed scope and a burden of proof.
+
+   Facts the panel should have, and need not investigate further:
+   - The commits pushed to `main` on 2026-10-08/09 are unreachable from every ref. They remain
+     retrievable **by SHA** through the GitHub API — which is how the credential-scoping change
+     recorded in section 4 was recovered. Nothing in the `v0.6.7` release depends on them.
+   - The work prepared on that line, including a "fresh Color Team v1.5 audit" branch, was
+     **never adopted**. Pull request #57, which would have introduced it, was closed unmerged.
+   - **No release was published from that line**, and no published byte of `v0.6.7` was altered
+     by the reset: the release artifacts predate it by a day.
+   - The discarded line is **out of scope** (section 6). The audit target is the `v0.6.7`
+     release (section 1), not the abandoned work.
 2. **The public download page is three releases behind.** `docs/index.html` still offers
    v0.6.4 and still presents the v0.6.4 Z.ai review as the safety evidence, on the same
    repository whose v0.6.7 sources corrected exactly this pattern elsewhere. Should the
@@ -874,6 +912,26 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
   - **Not changed:** the revision under audit (`d525f31`), the three rubric grades, the five
     ranked assets, the two unforgivable acts, the threat list T1–T12, the closed list, the
     burden-of-proof rule, and the policies of revisions 2–5.
+- **Revision 7** (2026-10-10, owner-directed, this commit): the audit target moved from the
+  surveyed commit to the published release, and one question was closed with the owner's own
+  account. No threat added or re-scoped, no grade touched.
+  - **Section 1 — the target is the `v0.6.7` release** (tag `81f58ec`) and its published
+    artifacts, not a branch head. The surveyed commit `d525f31` is that tag commit's
+    documentation-only child; the plan records that the six differing files are all Markdown
+    and that every executable file, including the release workflow, is byte-identical at the
+    two revisions — so the code under audit is the same either way. The filename keeps the
+    surveyed-commit name because a signed plan for the `v0.6.7` cycle already exists in this
+    repository and the runbook forbids overwriting it; the lock and the report should name the
+    cycle `v0.6.7` and cite this file as the plan carrying it.
+  - **Section 8 question 1 closed** with the owner's account of the Oct-8/09 reset: an audit
+    cycle run with several agentic tool sets that did not converge — speculative scenarios
+    treated as defects, fixed without demonstration, one cycle reaching roughly a hundred
+    executions — deliberately stopped and reset to a clean state at `v0.6.7`. The entry
+    records what the panel should know (no release published from that line; PR #57 closed
+    unmerged; no published byte altered by the reset) and that the line is out of scope.
+  - **Not changed:** the three rubric grades, the five ranked assets, the two unforgivable
+    acts, the threat list T1–T12, the closed list, the burden-of-proof rule, and the policies
+    of revisions 2–6.
 - **Provenance of every sign-off:** recorded on 2026-10-10 at the owner's direction. The
   owner supplied the signature identity and the date, directed publication, and directed each
   amendment; the surveyor agent transcribed the two lines below on every occasion, in the same
@@ -883,9 +941,10 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
 
 **Answers to the questions above.**
 
-- **Question 3 is answered** by the owner in section 8 (protect the release tags; record the
-  reasoning). The remaining **five** questions in section 8 are carried forward open, for the
-  owner to answer before the panel is dispatched.
+- **Questions 1 and 3 are answered** by the owner in section 8: the audit target is the
+  published `v0.6.7` release rather than a branch head, and the Oct-8/09 reset is explained on
+  the record; `main` and the release tags are now protected by rulesets. The remaining **four**
+  questions are carried forward open, for the owner to answer before the panel is dispatched.
 
 **Sign-off.**
 
