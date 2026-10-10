@@ -23,6 +23,7 @@ by a dated owner acceptance note. Nothing is closed by silence.
 | CT-89 | Low | `probe.py` claimed to refuse a BSMS whose receive and change branches used different multisig keys. Both branches are expanded from the one `/**` template, so the refusal could never fire. It was **deleted** rather than left in place: a check no accepted input can trip is a claim, not a control. Two tests hold the ground it claimed — the change branch is the receive wallet by construction, and the deleted claim cannot come back unargued. | `tests/test_probe.py::ProbeTests::test_the_expanded_change_branch_is_the_receive_wallet`, `…test_no_refusal_claims_a_key_agreement_the_template_cannot_violate`; `CONTROLS.md` records that no control is claimed here |
 | CT-91 | Info | The vendored embit's Liquid/PSET copy kept upstream's `sequence=(self.sequence or 0xFFFFFFFF)`, which rewrites a legal `nSequence=0`; the fork had already fixed that shape in `src/embit/psbt.py`. Both properties in `src/embit/liquid/pset.py` (`vin`, `blinded_vin`) now carry the same explicit check, and the fork's whole delta is machine-held: the wheel must be the archive's `src/embit` tree in both directions, the implicit form must appear nowhere, and no shipped module may import the Liquid surface. | `tests/test_embit_vendor.py::EmbitVendorTests::test_source_diff_is_only_the_declared_version_and_sequence_fixes`, `…test_no_liquid_input_rewrites_a_legal_sequence_of_zero`, `…test_the_wheel_carries_the_source_it_was_built_from`, `…test_the_documentation_states_the_liquid_delta`, `…test_the_application_does_not_import_the_liquid_surface` |
 | CT-92 | Low | The source-mode install pinned one library and guarded one library. `requirements.lock` carried the embit wheel and nothing else, `Start Easy Multisig.command` guarded only that version, and `probe.py` refused with "Install hwi 3.2.0 to use devices." — no command, and a venv created before the device library was wanted was never repaired. Added `requirements-source.txt` → `requirements-source.lock`: hwi 3.2.0 and its whole closure under `--require-hashes`, every version and hash set constrained to the reviewed `requirements-desktop.lock`; the launcher now guards both libraries and installs the source lock; the refusal names the exact command. | `tests/test_launcher.py` (9 tests), `tests/test_build_source.py::ArchiveCompletenessTests::test_the_source_mode_lock_reaches_the_archive`; break-and-watch: the lock loses hwi, the lock drifts, the guard drifts, the refusal loses the command |
+| CT-93 | Low | `signing-key.asc` is committed and `SIGNING.md`/`RELEASE-PROCESS.md` tell a downloader to import it, but the source archive's allowlist copy left it out, so a tarball reader could not check `SHA256SUMS.asc` — the same dangling-reference class as the missing plist (CT-56). The key now ships: it is on the root copy and on the completeness loop that refuses a shipped document pointing at a file the archive lacks. The test reads the filename out of `SIGNING.md`, so the instruction and the archive cannot drift apart. | `tests/test_build_source.py::ArchiveCompletenessTests::test_the_release_public_key_reaches_the_archive`; break-and-watch: the key leaves the copy, the instruction renames it |
 
 ## CT-87: the build's floating inputs
 
@@ -307,3 +308,54 @@ The test module is also its own control: its first run failed with
 `AssertionError: 'm.version("embit")' not found in ' command -v python3 >/dev/null 2>&1'`
 because the guard test took the first `if !` in the launcher rather than the
 install condition; it now anchors on the text before the install string.
+
+## CT-93: the archive told readers to import a key it did not ship
+
+`SIGNING.md` ends with the commands a downloader runs, and one of them is
+`gpg --import signing-key.asc`; `RELEASE-PROCESS.md` says to verify the published
+`SHA256SUMS` against "the committed `signing-key.asc`". Both are true of the
+repository. Neither was true of the source archive: `scripts/build-source.sh` is
+an allowlist copy, and the public key was never on it, so an archive-only reader
+had to fetch the repository to check the signature over the tarball's own
+checksums.
+
+**Included, not reworded.** The key is public, committed, and 1,692 bytes. The
+archive already ships the entitlements plist, the vendor libraries and the
+platform record for exactly this reason — a shipped document must not point at a
+file the archive does not contain — and rewriting the instructions would have
+made the tarball a worse copy of the release evidence to save 1.7 KB. The root
+copy now carries `signing-key.asc`, the completeness loop checks it (with a note
+that it is on the list although it is not a document, because a shipped
+`SIGNING.md` that names it is the dangling reference that loop exists to
+refuse), and `SIGNING.md`'s verification step states that the source archive
+ships the same key.
+
+**Red first.** At the CT-92 commit with only the new test added, the class ran
+`Ran 7 tests in 0.005s / FAILED (failures=1)`:
+
+```
+AssertionError: 'signing-key.asc' not found in 'set -euo pipefail…'
+  : the archive copy must carry the release public key
+```
+
+**The first control was not one.** That version asked whether `signing-key.asc`
+appeared anywhere in the script and in the document — and both break-and-watch
+defeats sailed through it, because the completeness loop names the key too and
+`SIGNING.md` names it a second time in the `git add` line of the key setup. The
+shipped test instead *reads the filename out of* `SIGNING.md`'s
+`gpg --import …` line and requires that exact name on the root copy command, so
+renaming the instruction or dropping the file from the copy each fail:
+
+```
+MISSED  the archive drops the release public key
+MISSED  the verification instructions name a key the archive does not ship
+```
+
+Both are `CAUGHT` now, and the whole harness reports `all 64 defeats caught`.
+
+**End to end.** `scripts/build-source.sh 0.6.7` run in a scratch copy of the
+tree built the archive; `signing-key.asc` is in it, byte-identical to the
+committed file
+(`sha256 812f790d37c6a5b97e0e27e536b1371657ac6d8052e33899f331ca9b03ddc54b`), and
+the whole tarball contains one `BEGIN PGP PUBLIC KEY BLOCK` and zero
+`PRIVATE KEY BLOCK`.

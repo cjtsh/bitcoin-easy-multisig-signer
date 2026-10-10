@@ -87,6 +87,7 @@ is published.
 shasum -a 256 -c SHA256SUMS
 
 # 2. The manifest was signed by the release key committed in the repo
+#    (the source archive ships the same key, so this works from the tarball alone)
 gpg --import signing-key.asc
 gpg --verify SHA256SUMS.asc SHA256SUMS
 

@@ -13,7 +13,11 @@ class BuildSourceTests(unittest.TestCase):
         script = (ROOT / "scripts" / "build-source.sh").read_text(encoding="utf-8")
         self.assertIn("root_docs=(", script)
         self.assertIn('cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md', script)
-        self.assertIn('for file in "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md;', script)
+        # CT-93 put the release public key on this loop as well; the point of the
+        # pin is that the completeness loop reads the allowlist, not a file glob.
+        self.assertIn(
+            'for file in "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md signing-key.asc;',
+            script)
         self.assertNotIn("for file in ./*.md", script)
 
     def test_the_archive_carries_what_its_own_tests_read(self):
@@ -115,6 +119,43 @@ class ArchiveCompletenessTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue((ROOT / name).is_file(),
                                 f"{name} is named in the copy but missing from the tree")
+
+    def test_the_release_public_key_reaches_the_archive(self):
+        """CT-93: SIGNING.md tells a downloader to import the committed key.
+
+        `SIGNING.md` and `RELEASE-PROCESS.md` both check `SHA256SUMS.asc`
+        against the committed public key. A source archive without that key
+        cannot run the verification those documents describe, so the file the
+        instructions name has to be on the root copy — the tarball is where an
+        archive-only reader runs them. This is the same defect class as the
+        missing plist: a shipped document pointing at a file the archive does
+        not contain.
+
+        The filename is read out of SIGNING.md rather than written here twice,
+        because the control is that the instruction and the archive agree. A
+        first version only asked whether the string appeared anywhere in the
+        script and in the document; the completeness loop names the key too, so
+        deleting it from the copy line, or renaming it in the instruction, both
+        sailed through the untouched half. Pin the pair, not the token.
+        """
+        signing = (ROOT / "SIGNING.md").read_text(encoding="utf-8")
+        match = re.search(r"gpg --import (\S+)", signing)
+        self.assertIsNotNone(
+            match, "SIGNING.md no longer shows how to import the release key")
+        key = match.group(1)
+        self.assertTrue((ROOT / key).is_file(),
+                        f"SIGNING.md tells a downloader to import {key}, which "
+                        f"is not in the working tree")
+        copy = re.search(r'cp "\$\{root_docs\[@\]\}".*?"\$stage/\$root/"',
+                         self.active, re.DOTALL)
+        self.assertIsNotNone(copy, "build-source.sh no longer has a root copy command")
+        self.assertIn(key, copy.group(0),
+                      f"the root copy must carry {key}; SIGNING.md tells an "
+                      f"archive reader to import it and a tarball without it "
+                      f"cannot check SHA256SUMS.asc")
+        self.assertIn(key, (ROOT / "RELEASE-PROCESS.md").read_text(encoding="utf-8"),
+                      "RELEASE-PROCESS.md no longer names the key the archive "
+                      "ships; the agreement this test pins has moved")
 
     def test_the_header_comment_does_not_claim_the_plist_is_absent(self):
         """A comment that overclaims — or understates — a control is a finding.

@@ -37,7 +37,13 @@ root_docs=(
 # shipped: it is the record of what the audited macOS build installs, and dropping
 # it here would silently erase that. requirements-desktop-linux.lock is the
 # Linux-resolved record, and the archive's own test suite checks it.
-cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md "Start Easy Multisig.command" \
+# The release public key ships with the archive (CT-93). SIGNING.md and
+# RELEASE-PROCESS.md tell a downloader to import the committed `signing-key.asc`
+# and check `SHA256SUMS.asc` against it; a tarball that left the key out could
+# not run the verification it documents, the same defect class as the missing
+# plist above. It is a public key and costs 1.7 KB.
+cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md signing-key.asc \
+  "Start Easy Multisig.command" \
   requirements.txt requirements.lock \
   requirements-source.txt requirements-source.lock \
   requirements-desktop.txt requirements-desktop.lock \
@@ -79,9 +85,11 @@ fi
 # was once left off this list while README.md and AGENTS.md still directed reviewers
 # to read it, so the archive shipped a README linking to a file it did not contain.
 # Every document under releases/ must ship for the same reason: RELEASE-HISTORY.md
-# and the audit records link to them by name.
+# and the audit records link to them by name. `signing-key.asc` is on the list
+# although it is not a document: a shipped SIGNING.md that says to import it is
+# exactly the kind of dangling reference this loop exists to refuse.
 missing_docs=()
-for file in "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md; do
+for file in "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md signing-key.asc; do
   [[ -f "$stage/$root/$(basename "$file")" ]] || missing_docs+=("$(basename "$file")")
 done
 for file in ./releases/*.md; do
