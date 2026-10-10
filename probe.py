@@ -212,6 +212,13 @@ HWI_PAYLOAD_PINS: dict[str, str] = {
     "hwilib": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
     "hwilib._cli": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
 }
+# Those two pins are 2 of the 115 .py files the distribution ships, so a
+# poisoned hwilib/devices/trezor.py used to pass the check and then run the
+# moment the helper imported the package (CT-73). This manifest records a digest
+# for every file in the distribution — 157 of them in 3.2.0 — and the check
+# below recomputes the whole set and refuses a missing, added or changed file.
+# The two entry pins stay, as the fast pre-check that names the CT-49 surface.
+HWI_PAYLOAD_MANIFEST = f"hwi-payload-{EXPECTED_HWI_VERSION}.json"
 # A frozen build writes this inside the signed bundle it authenticates —
 # Contents/Resources on macOS, where codesign seals it, and beside the helper on
 # Windows. An explicitly named helper carries its own, beside itself. It is also
@@ -221,6 +228,14 @@ HWI_DIGEST_SIDECAR = "hwi.sha256"
 _HWI_NO_DIGEST = (
     "The hardware-wallet tool carries no digest for this app to verify. "
     "Refusing to run it."
+)
+_HWI_NO_PAYLOAD_MANIFEST = (
+    "The pinned hardware-wallet library carries no payload manifest. "
+    "Refusing to run it."
+)
+_HWI_PAYLOAD_CHANGED = (
+    "The pinned hardware-wallet library does not match the payload this app "
+    "expects. Refusing to run it."
 )
 _HWI_WRONG_DIGEST = (
     "The hardware-wallet tool does not match its recorded digest. "
@@ -308,19 +323,55 @@ def _hwi_command(executable: str) -> list[str]:
     return [sys.executable, path]
 
 
-def _verify_hwi_payload() -> None:
-    """Refuse a substituted hwilib before it can see an xpub or a PSBT.
+def _hwi_manifest_path(helper_path: str | None = None) -> Path:
+    """The manifest of the payload this app is willing to run.
 
-    The in-tree entry point is repository source; the code that can be swapped
-    out from under a running interpreter is the third-party package it imports.
-    The two files behind the pinned HWI release are hashed here by the anchored
-    interpreter, so a poisoned site-packages is refused rather than believed.
+    Source mode reads the committed ``vendor/`` manifest: repository source, the
+    same trust root as this file, and never a digest computed from the package
+    being checked. A frozen or explicitly named helper carries its own beside
+    it, or in Contents/Resources on macOS where the outer signature seals it.
+    """
+    candidates: list[Path] = []
+    if helper_path is not None:
+        helper = Path(helper_path)
+        candidates.append(helper.with_name(HWI_PAYLOAD_MANIFEST))
+        resources = helper.parent.parent / "Resources" / HWI_PAYLOAD_MANIFEST
+        if resources != candidates[0]:
+            candidates.append(resources)
+    elif getattr(sys, "frozen", False):
+        helper = Path(sys.executable).with_name("hwi.exe" if sys.platform == "win32" else "hwi")
+        candidates.append(helper.with_name(HWI_PAYLOAD_MANIFEST))
+        candidates.append(helper.parent.parent / "Resources" / HWI_PAYLOAD_MANIFEST)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return Path(__file__).resolve().parent / "vendor" / HWI_PAYLOAD_MANIFEST
+
+
+def _hash_hwi_package() -> dict[str, str]:
+    """Every file of the installed hwilib, by relative path, hashed.
+
+    ``importlib.util.find_spec`` builds the spec from the finder without
+    executing the package, so a poisoned ``__init__.py`` is hashed rather than
+    run. That is the whole point of hashing here instead of importing in
+    process: the check must not run the code it is about to refuse.
     """
     script = (
-        "import hashlib, importlib, pathlib\n"
-        "for name in ('hwilib', 'hwilib._cli'):\n"
-        "    path = pathlib.Path(importlib.import_module(name).__file__)\n"
-        "    print(name + ' ' + hashlib.sha256(path.read_bytes()).hexdigest())\n"
+        "import hashlib, importlib.util, json, pathlib\n"
+        "spec = importlib.util.find_spec('hwilib')\n"
+        "roots = list(spec.submodule_search_locations or []) if spec else []\n"
+        "if not roots:\n"
+        "    raise SystemExit('hwilib is not installed')\n"
+        "root = pathlib.Path(roots[0])\n"
+        "seen = {}\n"
+        "for path in sorted(root.rglob('*')):\n"
+        "    if not path.is_file():\n"
+        "        continue\n"
+        "    relative = path.relative_to(root)\n"
+        "    if '__pycache__' in relative.parts or relative.name.endswith('.pyc'):\n"
+        "        continue\n"
+        "    seen[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()\n"
+        "print(json.dumps(seen))\n"
     )
     try:
         result = subprocess.run(
@@ -338,14 +389,64 @@ def _verify_hwi_payload() -> None:
             "The pinned hardware-wallet library is not installed in this "
             "environment. Install hwi " + EXPECTED_HWI_VERSION + " to use devices."
         )
-    seen: dict[str, str] = {}
-    for line in (result.stdout or "").splitlines():
-        parts = line.split(" ", 1)
-        if len(parts) == 2:
-            seen[parts[0]] = parts[1].strip()
-    for name, expected in HWI_PAYLOAD_PINS.items():
-        if seen.get(name) != expected:
+    try:
+        seen = json.loads(result.stdout or "")
+    except ValueError as exc:
+        raise ProbeError(_HWI_UNIDENTIFIED) from exc
+    if not isinstance(seen, dict) or not seen:
+        raise ProbeError(_HWI_UNIDENTIFIED)
+    return {str(name): str(digest) for name, digest in seen.items()}
+
+
+def _name_payload_differences(missing: list[str], added: list[str],
+                              changed: list[str], *, limit: int = 6) -> str:
+    """Name what differs, capped, so the refusal stays readable."""
+    parts: list[str] = []
+    for label, names in (("missing", missing), ("unrecorded", added), ("changed", changed)):
+        if not names:
+            continue
+        shown = ", ".join(names[:limit - len(parts)])
+        remaining = len(names) - (limit - len(parts))
+        parts.append(f"{label}: {shown}" + (f" (+{remaining} more)" if remaining > 0 else ""))
+        if len(parts) >= limit:
+            break
+    return "; ".join(parts)
+
+
+def _verify_hwi_payload(manifest_path: Path | None = None) -> None:
+    """Refuse a substituted hwilib before it can see an xpub or a PSBT.
+
+    The in-tree entry point is repository source; the code that can be swapped
+    out from under a running interpreter is the third-party package it imports.
+    The whole package is checked here — CT-73: pinning hwilib/__init__.py and
+    hwilib/_cli.py left 113 of 115 modules unchecked, so a poisoned
+    hwilib/devices/trezor.py passed and then ran on import. A file that is
+    missing, a file that was added, and a file whose bytes changed are all
+    refused, so a new module cannot arrive unnoticed either.
+    """
+    path = manifest_path or _hwi_manifest_path()
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        expected = manifest["files"]
+        if not isinstance(expected, dict) or not expected:
+            raise ValueError("the manifest records no files")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ProbeError(_HWI_NO_PAYLOAD_MANIFEST) from exc
+
+    seen = _hash_hwi_package()
+    for module, digest in HWI_PAYLOAD_PINS.items():
+        name = "__init__.py" if "." not in module else module.rpartition(".")[2] + ".py"
+        if seen.get(name) != digest:
             raise ProbeError(_HWI_WRONG_DIGEST)
+    missing = sorted(set(expected) - set(seen))
+    added = sorted(set(seen) - set(expected))
+    changed = sorted(name for name in set(expected) & set(seen)
+                     if expected[name] != seen[name])
+    if missing or added or changed:
+        raise ProbeError(
+            _HWI_PAYLOAD_CHANGED + " ("
+            + _name_payload_differences(missing, added, changed) + ")"
+        )
 
 
 def _hwi_sidecars(path: str) -> list[Path]:

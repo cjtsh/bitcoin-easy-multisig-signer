@@ -148,6 +148,11 @@ else
 fi
 mkdir -p build/libusb-alias
 cp -f "$libusb_dylib" build/libusb-alias/libusb-1.0.dylib
+# The committed manifest records every file of the installed hwilib. Refusing to
+# bundle a hwilib the manifest does not describe is what keeps that record from
+# drifting: bumping the dependency fails here until the manifest is regenerated
+# and committed, so a new module cannot arrive unchecked (CT-73).
+.build-venv/bin/python scripts/build-hwi-manifest.py --check
 hwi_args=(--noconfirm --clean --onefile --name hwi --collect-all hwilib
           --collect-all hid --collect-all requests --collect-all urllib3
           --collect-all certifi --add-binary "$libusb_dylib:." \
@@ -249,6 +254,10 @@ xattr -cr "$app"
 hwi_digest="$(shasum -a 256 "$hwi_bin" | awk '{print $1}')"
 mkdir -p "$app/Contents/Resources"
 printf '%s  %s\n' "$hwi_digest" "hwi" > "$app/Contents/Resources/hwi.sha256"
+# Ship the payload manifest inside the sealed bundle too, so the record of what
+# this build pinned travels with the bytes it describes. Resources, for the same
+# reason as the sidecar above.
+cp vendor/hwi-payload-*.json "$app/Contents/Resources/"
 echo "Bundled hwi sha256 $hwi_digest (recorded in Contents/Resources/hwi.sha256)."
 
 # Seal the .app last, with no recursive signing.

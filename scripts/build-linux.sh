@@ -153,6 +153,11 @@ rm -rf dist
 mkdir -p dist
 
 note "Building the app bundle"
+# The committed manifest records every file of the installed hwilib. Refusing to
+# bundle a hwilib the manifest does not describe is what keeps that record from
+# drifting: bumping the dependency fails here until the manifest is regenerated
+# and committed, so a new module cannot arrive unchecked (CT-73).
+"$venv/bin/python" scripts/build-hwi-manifest.py --check
 "$venv/bin/python" -m PyInstaller --noconfirm --clean --onedir --name "$APP_SLUG" \
     --paths . \
     --add-data "ui.html:." --add-data "LICENSE:." --add-data "DISCLAIMER.md:." \
@@ -181,6 +186,10 @@ chmod 755 "dist/$APP_SLUG/hwi"
 hwi_digest="$(sha256sum "dist/$APP_SLUG/hwi" | awk '{print $1}')"
 printf '%s  %s\n' "$hwi_digest" "hwi" > "dist/$APP_SLUG/hwi.sha256"
 printf '%s  %s\n' "$hwi_digest" "hwi" > "dist/hwi/hwi.sha256"
+# Ship the payload manifest beside the helper, so the record of what this build
+# pinned travels with the bytes it describes.
+cp vendor/hwi-payload-*.json "dist/$APP_SLUG/"
+cp vendor/hwi-payload-*.json "dist/hwi/"
 note "bundled hwi sha256 $hwi_digest (recorded in hwi.sha256)"
 
 # ---- the checks, against the payload this build just made ---------------

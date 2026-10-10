@@ -13,7 +13,10 @@ weakened it. Break-and-watch: remove the gate, watch this file go red.
 """
 
 import hashlib
+import json
+import os
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -34,8 +37,9 @@ import probe
 from fake_explorer import three_output_wallet
 from probe import (
     EXPECTED_HWI_VERSION, HWI_PAYLOAD_PINS, ProbeError, _bitcoin_message_digest,
-    _hwi_command, _hwi_path, _verify_hwi_identity, begin_signing_session,
-    invoke_hwi, parse_bsms, prove_signer_holds_key, verify_signer_device,
+    _hwi_command, _hwi_path, _verify_hwi_identity, _verify_hwi_payload,
+    begin_signing_session, invoke_hwi, parse_bsms, prove_signer_holds_key,
+    verify_signer_device,
 )
 from signing import SECP256K1_HALF_ORDER, SigningError, _is_low_s, verified_input_signatures
 from test_money_path_pins import prepared
@@ -326,48 +330,136 @@ class HwiIdentityPins(unittest.TestCase):
             with self.assertRaisesRegex(ProbeError, "missing from this checkout"):
                 _hwi_path("hwi")
 
-    # -- the payload pin for source mode ----------------------------------
+    # -- the payload manifest for source mode ------------------------------
+    #
+    # CT-73 asked for real bytes: the old tests asserted the pin constant and
+    # mocked subprocess.run, so they could not fail however the package on disk
+    # was poisoned. These build a scratch hwilib, record it with the real
+    # manifest tool, and then check the real package directory.
 
-    def test_the_payload_pins_pin_the_published_hwilib_files(self):
-        """Nobody may 'update' a pin without changing this test."""
-        self.assertEqual(HWI_PAYLOAD_PINS, {
-            "hwilib": "3945f7ed877a64ef367741892f67662b48194ed73fc6f953bc640897623e0fc9",
-            "hwilib._cli": "c0d83c4d9a90fadba88ce554dcb45744d92c3ce04dbcecd98a7c43d4f9bfe35e",
-        })
+    def _scratch_payload(self, folder: Path, files: dict[str, str]):
+        """Write a scratch hwilib and record it with scripts/build-hwi-manifest.py."""
+        package = folder / "hwilib"
+        for name, body in files.items():
+            path = package / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        manifest = folder / "manifest.json"
+        generator = Path(probe.__file__).resolve().parent / "scripts" / "build-hwi-manifest.py"
+        result = subprocess.run(
+            [sys.executable, str(generator), "--package-dir", str(package),
+             "--out", str(manifest)],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pins = {
+            "hwilib": hashlib.sha256((package / "__init__.py").read_bytes()).hexdigest(),
+            "hwilib._cli": hashlib.sha256((package / "_cli.py").read_bytes()).hexdigest(),
+        }
+        return manifest, pins
 
-    def test_a_substituted_hwilib_payload_is_refused(self):
-        """A poisoned site-packages must not be believed just because it imports."""
-        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
-        with tempfile.TemporaryDirectory() as folder:
-            helper = Path(folder) / "hwi_entry.py"
-            helper.write_bytes(entry.read_bytes())
-            seen = "\n".join(f"{name} {'0' * 64}" for name in HWI_PAYLOAD_PINS)
-            with patch("probe.subprocess.run",
-                       return_value=CompletedProcess([], 0, seen, "")) as run:
-                with self.assertRaisesRegex(
-                        ProbeError, "does not match its recorded digest"):
-                    _verify_hwi_identity(str(helper), [sys.executable, str(helper)])
-        # The payload check ran before any --version question was asked.
-        self.assertEqual(run.call_count, 1)
-        self.assertIn("hwilib", run.call_args.args[0][2])
+    def _check_payload(self, folder: Path, manifest: Path, pins: dict) -> None:
+        with patch.dict(os.environ, {"PYTHONPATH": str(folder)}), \
+                patch.object(probe, "HWI_PAYLOAD_PINS", pins):
+            _verify_hwi_payload(manifest)
 
-    def test_the_payload_checker_accepts_the_anchored_interpreter(self):
-        entry = Path(probe.__file__).resolve().parent / "scripts" / "hwi_entry.py"
-        with tempfile.TemporaryDirectory() as folder:
-            helper = Path(folder) / "hwi_entry.py"
-            helper.write_bytes(entry.read_bytes())
-            seen = "\n".join(
-                f"{name} {digest}" for name, digest in HWI_PAYLOAD_PINS.items())
-            version = f"hwi_entry.py {EXPECTED_HWI_VERSION}"
+    def test_the_manifest_covers_the_whole_payload_not_two_files(self):
+        """The recorded set, checked against the committed bytes."""
+        manifest = json.loads(
+            (Path(probe.__file__).resolve().parent / "vendor"
+             / probe.HWI_PAYLOAD_MANIFEST).read_text(encoding="utf-8"))
+        files = manifest["files"]
+        self.assertEqual(manifest["version"], EXPECTED_HWI_VERSION)
+        self.assertEqual(manifest["file_count"], len(files))
+        self.assertGreater(len(files), 100,
+                           "2 of 115 files is the defect CT-73 recorded")
+        self.assertEqual(files["__init__.py"], HWI_PAYLOAD_PINS["hwilib"])
+        self.assertEqual(files["_cli.py"], HWI_PAYLOAD_PINS["hwilib._cli"])
+        self.assertIn("devices/trezor.py", files)
+        self.assertIn("__pycache__", manifest["rule"])
+        self.assertIn(".pyc", manifest["rule"])
 
-            def fake_run(argv, **kwargs):
-                if "--version" in argv:
-                    return CompletedProcess(argv, 0, version, "")
-                return CompletedProcess(argv, 0, seen, "")
+    def test_the_manifest_tool_refuses_a_stale_manifest(self):
+        with tempfile.TemporaryDirectory() as name:
+            folder = Path(name)
+            manifest, _ = self._scratch_payload(
+                folder, {"__init__.py": "", "_cli.py": "", "devices/trezor.py": "x = 1\n"})
+            generator = Path(probe.__file__).resolve().parent / "scripts" / "build-hwi-manifest.py"
+            (folder / "hwilib" / "devices" / "new_device.py").write_text("y = 2\n")
+            result = subprocess.run(
+                [sys.executable, str(generator), "--package-dir", str(folder / "hwilib"),
+                 "--check", "--out", str(manifest)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertIn("devices/new_device.py", result.stderr)
 
-            with patch("probe.subprocess.run", side_effect=fake_run):
-                _verify_hwi_identity(str(helper), [sys.executable, str(helper)])
-            self.assertIn(str(helper), probe._verified_hwi_paths)
+    def test_every_platform_build_gates_on_the_manifest(self):
+        """A record nobody checks at build time drifts; each build gates on it.
+
+        The check is the closed-under-change half: bump the hwi pin and the
+        build fails until the manifest is regenerated and committed, so a new
+        module cannot arrive unrecorded.
+        """
+        root = Path(probe.__file__).resolve().parent
+        for name, needle in (
+            ("build-macos.sh", "scripts/build-hwi-manifest.py --check"),
+            ("build-linux.sh", "scripts/build-hwi-manifest.py --check"),
+            ("build-windows.ps1", "scripts\\build-hwi-manifest.py --check"),
+        ):
+            with self.subTest(script=name):
+                text = (root / "scripts" / name).read_text(encoding="utf-8")
+                self.assertIn(needle, text, f"{name} must run the payload manifest check")
+        archive = (root / "scripts" / "build-source.sh").read_text(encoding="utf-8")
+        self.assertIn("vendor/hwi-payload-*.json", archive,
+                      "the source archive must ship the payload manifest")
+
+    def test_a_poisoned_package_is_refused_on_real_bytes(self):
+        with tempfile.TemporaryDirectory() as name:
+            folder = Path(name)
+            manifest, pins = self._scratch_payload(folder, {
+                "__init__.py": "",
+                "_cli.py": "",
+                "devices/trezor.py": "def sign():\n    return 'honest'\n",
+            })
+
+            self._check_payload(folder, manifest, pins)  # the honest package runs
+
+            poisoned = folder / "hwilib" / "devices" / "trezor.py"
+            poisoned.write_text("def sign():\n    return 'attacker'\n", encoding="utf-8")
+            with self.assertRaisesRegex(ProbeError, "does not match the payload"):
+                self._check_payload(folder, manifest, pins)
+
+            poisoned.write_text("def sign():\n    return 'honest'\n", encoding="utf-8")
+            (folder / "hwilib" / "evil.py").write_text("z = 3\n", encoding="utf-8")
+            with self.assertRaisesRegex(ProbeError, "unrecorded: evil.py"):
+                self._check_payload(folder, manifest, pins)
+
+            (folder / "hwilib" / "evil.py").unlink()
+            poisoned.unlink()
+            with self.assertRaisesRegex(ProbeError, "missing: devices/trezor.py"):
+                self._check_payload(folder, manifest, pins)
+
+    def test_a_poisoned_entry_module_is_refused_before_it_runs(self):
+        """The check hashes the package; it must never import it first.
+
+        A planted ``hwilib/__init__.py`` that writes a marker proves the order:
+        the refuse happens on bytes, so the marker is never created.
+        """
+        with tempfile.TemporaryDirectory() as name:
+            folder = Path(name)
+            marker = folder / "ran.txt"
+            manifest, pins = self._scratch_payload(folder, {
+                "__init__.py": "",
+                "_cli.py": "",
+                "devices/trezor.py": "x = 1\n",
+            })
+            (folder / "hwilib" / "__init__.py").write_text(
+                "import pathlib\n"
+                f"pathlib.Path({str(marker)!r}).write_text('ran')\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ProbeError, "does not match its recorded digest"):
+                self._check_payload(folder, manifest, pins)
+            self.assertFalse(marker.exists(), "the checker imported the package it was checking")
 
     # -- CT-58: re-identify at every signing session ----------------------
 

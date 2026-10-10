@@ -155,6 +155,19 @@ release) before it sees an account xpub or PSBT. Actions stay pinned to full
 commit SHAs. `tests/test_workflow_config.py` and
 `tests/test_hardening_pins.py` hold these.
 
+**One publish path, and it is named.** `main` may carry exactly one
+publish-capable workflow, `build-candidate.yml`, and no other branch may carry
+any. `scripts/check-publish-paths.sh` enforces that at dispatch on the remote's
+refs rather than on the checkout. It fetches tags as well as heads and judges a
+tag by what its workflow can do from that tag's own ref: a publisher that
+refuses every ref except `main` is inert, the tags published from v0.1.7 to
+v0.6.3 before that guard existed are recorded as an enumerated accepted residual
+(they are immutable, and dispatching any ref already requires push or dispatch
+rights — the strongest in-scope capability the audit plan states), and any other
+tag carrying a publisher is an offender, so a new tag cannot reintroduce one.
+Accepted with eyes open: those 46 tags can still publish if someone holding push
+or dispatch rights dispatches their workflow against the tag ref.
+
 **Stale version strings are findings.** When `version.py` moves, update
 `AGENTS.md`, release notes, user-facing references and the audit plan's target
 revision together in the same commit. "Current published version is X" inside

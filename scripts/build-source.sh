@@ -141,6 +141,10 @@ cp vendor/README.md vendor/embit-upstream-2b375a.tar.gz \
   vendor/libusb-1.0.dll \
   vendor/appimage-runtime-x86_64 \
   vendor/libusb-COPYING "$stage/$root/vendor/"
+# The hwilib payload manifest is a vendor record like the libraries above, and the
+# archive's own suite reads it (tests/test_hardening_pins.py): an archive that left
+# it out could not verify the package it ships instructions for.
+cp vendor/hwi-payload-*.json "$stage/$root/vendor/"
 # Glob, not a list: build-windows.ps1 calls the other scripts, and an archive missing
 # a script it invokes would build nothing while looking complete. The plist is not
 # optional either — build-macos.sh passes it to codesign for the bundled HWI helper,

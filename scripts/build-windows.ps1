@@ -138,6 +138,15 @@ if ($env:PREPARE_ONLY -eq '1') {
     exit 0
 }
 
+# The committed manifest records every file of the installed hwilib. Refusing to
+# bundle a hwilib the manifest does not describe is what keeps that record from
+# drifting: bumping the dependency fails here until the manifest is regenerated
+# and committed, so a new module cannot arrive unchecked (CT-73).
+& $venvPython scripts\build-hwi-manifest.py --check
+if ($LASTEXITCODE -ne 0) {
+    Fail 'The committed hwilib payload manifest does not match the installed package.'
+}
+
 if (-not (Test-Path -LiteralPath 'assets\AppIcon.ico' -PathType Leaf)) {
     Fail 'assets\AppIcon.ico is missing. Regenerate it with scripts\make-windows-icon.py.'
 }
@@ -229,6 +238,9 @@ if ($LASTEXITCODE -ne 0) { Fail 'PyInstaller did not build the HWI helper.' }
 
 $hwiExe = Join-Path $appDir 'hwi.exe'
 Copy-Item -LiteralPath 'dist\hwi\hwi.exe' -Destination $hwiExe -Force
+# Ship the payload manifest beside the helper, so the record of what this build
+# pinned travels with the bytes it describes.
+Copy-Item -Path 'vendor\hwi-payload-*.json' -Destination $appDir -Force
 & $hwiExe --help > $null
 if ($LASTEXITCODE -ne 0) { Fail 'The bundled HWI helper could not run.' }
 
