@@ -26,7 +26,7 @@ by a dated owner acceptance note. Nothing is closed by silence.
 | CT-77 | High | The sweep recognised only the literal `contents:[ ]?write` (`check-publish-paths.sh:48-49` *(v0.6.7)*) and the substring `gh release` (`:102-108`), so a branch with `permissions: write-all` and `gh api -X POST "repos/$GITHUB_REPOSITORY/releases"` printed "ok"; `curl -X POST …/releases`, `softprops/action-gh-release@v1` and `actions/create-release` were invisible too. The denylist is inverted to an allowlist with `CONTENT_WRITE_RE` (`scripts/check-publish-paths.sh:104`), `WRITE_ALL_RE` (`:106`) and `RELEASE_SURFACE_RE` (`:111`, `/releases\|action-gh-release\|create-release`); whole-line comments are skipped and never truncated, so prose cannot flag a file and a `#` cannot hide code. | `tests/test_workflow_config.py::PublishPathSweepTests::test_the_sweep_refuses_a_branch_granting_write_all`, `…::test_the_sweep_refuses_a_branch_that_posts_to_the_rest_api`, `…::test_the_sweep_refuses_a_branch_using_a_release_action`, `…::test_the_sweep_ignores_a_workflow_whose_only_match_is_a_comment`, `…::test_the_sweep_still_flags_a_pattern_after_a_hash_on_a_code_line`; break-and-watch: 17 defeats, each green first, incl. `write-all matcher neutered`, `second-publisher-on-main rule dropped`, `comment stripping removed`, `unreadable body reported as clean` |
 | CT-78 | Med | Every case in `tests/test_network_settings.py` built its expectation from `NETWORKS` itself, so swapping `network_config.py:48` *(v0.6.7)* mainnet genesis for true Signet's (`00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6`) agreed with the suite, and a mocked Signet explorer passed `verify_esplora("main", …)`; the Mutinynet block-1 checkpoint (`:43`) was likewise unasserted. The four published constants (mainnet and testnet4 genesis, Mutinynet genesis and its block-1 checkpoint) are now pinned verbatim, the network-to-genesis mapping is asserted exclusive, and a Signet answer to a mainnet check is refused. | `tests/test_network_settings.py::PublishedChainConstantsTests::test_the_published_chain_constants_are_pinned_verbatim`, `…::test_the_network_to_genesis_mapping_is_exclusive`, `…::test_a_signet_genesis_is_not_accepted_as_mainnet`; break-and-watch: 24 defeats caught (was 22) — `mainnet genesis swapped for Signet's`, `the Mutinynet block-1 checkpoint is dropped` |
 | CT-79 | Med | `not bare_receive_only` in `wallet_service.py:313` *(v0.6.7)* (`standard_candidate = not declared and not bare_receive_only and _standard_bip48(record)`) is what stops a bare `/*` that matches `xpub/0` from enabling an inferred `/1/*` change branch; all 16 cases in `tests/test_change_branch.py` used a reference at `xpub/0/0`, where the branch is unreachable, so deleting the guard left the file green. A new case builds the shape the guard exists for (reference at `xpub/0`) and asserts `change is None`; the `AGENTS.md:23` invariant is pinned inline at the guard, now `wallet_service.py:330`. | `tests/test_change_branch.py::ChangeBranchTests::test_bare_wildcard_reference_at_the_branch_root_never_infers_change`; break-and-watch: 24 defeats caught (was 22), baseline 24 test ids green — `bare-receive-only wallets may infer standard change`; with the guard deleted the new case fails while the old 16 pass |
-| CT-80 | High | At the audited tag `81f58ec` no job declared `environment:` (`grep -c 'environment:'` = 0, workflow-level `contents: read`), so no `MAC_*` or `GPG_*` name could resolve there — yet runs #106/#107 signed, notarized and GPG-signed on 2026-10-07: the credential wiring that made publication work lived on the platform and in no revision. Current `main` declares `environment: apple-signing` (`.github/workflows/build-candidate.yml:189`) and `environment: release-signing` (`:775`); `tests/test_platform_state.py` asserts every secret name a job reads is declared by the environment that job names (with `MAC_NOTARY_KEY_P8_BASE64` proved optional by a real `else` route holding a declared credential), and `releases/platform-state.json` plus `scripts/check-platform-state.sh` record and re-read the live platform, refusing on any unobserved state. | `tests/test_platform_state.py::WorkflowWiringTests::test_every_referenced_secret_is_declared_by_the_job_environment`, `tests/test_platform_state.py::PlatformRecordTests::test_the_record_declares_exactly_the_five_expected_secret_names`, `…::test_the_signing_environments_are_pinned_to_main_with_no_reviewers`, `tests/test_platform_state.py::PlatformCheckScriptTests` (11 tests), `scripts/check-platform-state.sh`; break-and-watch: all 29 mutations caught by their named tests — dropped platform secret, a differ that stops comparing, an unauthenticated `gh` that no longer stops the read, a job reading secrets without naming its environment, a record that stops shipping |
+| CT-80 | High | At the audited tag `81f58ec` no job declared `environment:` (`grep -c 'environment:'` = 0, workflow-level `contents: read`), so no `MAC_*` or `GPG_*` name could resolve there — yet runs #106/#107 signed, notarized and GPG-signed on 2026-10-07: the credential wiring that made publication work lived on the platform and in no revision. Current `main` declares `environment: apple-signing` (`.github/workflows/build-candidate.yml:189`) and `environment: release-signing` (`:775`); `tests/test_platform_state.py` asserts every secret name a job reads is declared by the environment that job names (with `MAC_NOTARY_KEY_P8_BASE64` proved optional by a real `else` route holding a declared credential), and `releases/platform-state.json` plus `scripts/check-platform-state.sh` record and re-read the live platform, refusing on any unobserved state. | `tests/test_platform_state.py::WorkflowWiringTests::test_every_referenced_secret_is_declared_by_the_job_environment`, `tests/test_platform_state.py::PlatformRecordTests::test_the_record_declares_exactly_the_five_expected_secret_names`, `…::test_the_signing_environments_are_pinned_to_main_with_no_reviewers`, `tests/test_platform_state.py::PlatformCheckScriptTests` (11 tests), `scripts/check-platform-state.sh`. Break-and-watch: all 29 mutations caught by their named tests — dropped platform secret, a differ that stops comparing, an unauthenticated `gh` that no longer stops the read, a job reading secrets without naming its environment, a record that stops shipping |
 | CT-81 | Low | A non-ASCII `X-Local-Token` made `hmac.compare_digest` raise `TypeError: comparing strings with non-ASCII characters is not supported` inside the comparison at `gui.py:638` *(v0.6.7)*, so the connection died with a traceback and the caller never received the ordinary 403. `_token_matches()` (`gui.py:604`) now encodes both sides as UTF-8 first, so the comparison is over bytes, stays constant-time, and every non-ASCII or malformed value is a plain mismatch. | `tests/test_gui_integration.py::LocalServerAccessTests::test_a_non_ascii_token_header_is_refused_without_a_traceback`; break-and-watch: all 31 mutations caught — `a non-ascii token header raises instead of refusing` (the comparison back on raw `str`) |
 | CT-82 | Low | The only pin was that a wrong token is refused (`tests/test_gui_integration.py:151-153` *(v0.6.7)*), so a comparison accepting any prefix — `state.token.startswith(header)`, a last-six-characters test — stayed green. `LocalTokenComparisonTests` now walks empty, one-character-short, one-character-long, the first six characters, the last six characters, both one-sided truncations, a single substituted character and a doubled value, each expected 403, and pins `hmac.compare_digest` over the two UTF-8 encodings. | `tests/test_gui_integration.py::LocalTokenComparisonTests::test_every_near_miss_of_the_token_is_refused`, `…::test_the_comparison_is_whole_value_and_constant_time`; break-and-watch: all 31 mutations caught — `the token comparison accepts a six-character prefix` |
 | CT-83 | Med | The release job held `permissions: contents: write` with no job-level `if:`, and the publish decision was made inside its last step (`build-candidate.yml:828-834` *(v0.6.7)*), so a `publish=false` candidate dispatch also carried the repository write grant. The grant is split across two jobs: `candidate-manifest` (`contents: read`, `if: ${{ !inputs.publish }}`, `.github/workflows/build-candidate.yml:915`/`:925`) verifies the candidate's checksums and uploads the manifest, and `release` (`contents: write`, `if: ${{ inputs.publish }}`, `:978`/`:987`) verifies the signed bytes and creates the release; a candidate run reaches no job that can write. `LeastAuthorityTests` renders each job's effective `contents` scope and `if:` rather than reading text. | `tests/test_workflow_config.py::LeastAuthorityTests::test_a_candidate_dispatch_holds_no_write_grant`, `…::test_a_publish_dispatch_holds_the_write_grant_only_to_publish`, `…::test_the_workflow_default_is_read_only`, `tests/test_publish_guards.py::ReleaseGuardBehaviourTests::test_the_candidate_job_never_holds_the_write_grant`; break-and-watch: all 33 mutations caught — `the publish job loses its gate and runs on a candidate dispatch`, `the candidate job is handed the repository write grant` |
@@ -133,7 +133,7 @@ The audit (Amber AMBER-4, Red RED-4, Blue BLUE-9, White F10) found that at the a
 
 **Red first.** The commit records no verbatim red-first failure output.
 
-**Break and watch.** The commit adds **five mutations** and **all 29 mutations are caught by their named tests**: `a platform secret is dropped from the record` → `test_the_record_declares_exactly_the_five_expected_secret_names`; `the differ stops comparing and always matches` → `test_a_dropped_secret_is_named_in_the_difference`; `an unauthenticated gh no longer stops the read` → `test_the_script_refuses_when_gh_is_present_but_unusable`; `a job reads secrets without naming its environment` → `test_every_referenced_secret_is_declared_by_the_job_environment`; `the platform record stops shipping in the archive` → `test_the_source_archive_ships_the_record_and_the_script`. Full suite: 582 tests, OK.
+**Break and watch.** The commit adds **five mutations** and **all 29 mutations are caught by their named tests**: `a platform secret is dropped from the record` → `test_the_record_declares_exactly_the_five_expected_secret_names`, `the differ stops comparing and always matches` → `test_a_dropped_secret_is_named_in_the_difference`, `an unauthenticated gh no longer stops the read` → `test_the_script_refuses_when_gh_is_present_but_unusable`, `a job reads secrets without naming its environment` → `test_every_referenced_secret_is_declared_by_the_job_environment`, `the platform record stops shipping in the archive` → `test_the_source_archive_ships_the_record_and_the_script`. Full suite: 582 tests, OK.
 
 ## CT-81: a non-ASCII token header was a traceback, not a refusal
 
@@ -697,3 +697,96 @@ The archive-specific half cannot be caught from a checkout, where the
 locally by `scripts/build-source.sh 0.6.8` followed by the suite from the
 extracted tree, which is the same step the pipeline runs — `Ran 667 tests in
 162.346s / OK`. Full suite from the checkout: `Ran 667 tests in 162.466s / OK`.
+
+## Candidate attempt 38085097103 — three more tests that only held on a POSIX host
+
+The same commit (`5b1e52e`) dispatched a second time, `notarize=true,
+publish=false`. The macOS DMG, the Linux AppImage and the suite inside the
+source archive all passed this time — the archive job got past the tests that
+the first attempt's `cited_file` fix repaired, and the Windows job got past the
+shebang-only fake `gh`. Three defects remained, and all three were reachable
+only by running on Windows, plus one that the archive's own byte scan found in
+this ledger.
+
+### Cause
+
+* **The differ's shell could not see or run a batch file.** On `win32` the fake
+  `gh` is a `.cmd`, and the differ's presence gate was `command -v "$gh_bin"` —
+  which cannot see a batch file. Seven tests reported `refusing: C:\...\gh.cmd
+  is not installed, so the platform state cannot be read.` Even had the gate
+  passed, bash cannot execute a `.cmd`: the command interpreter has to read it.
+  The one test that plants an extensionless `#!/bin/sh` helper passed on the
+  same runner, which is how we know the path form and the backslashes were
+  never the problem.
+* **An assertion that named the host's spelling of a shebang.** The new
+  `test_the_fake_gh_is_whatever_this_platform_can_execute` asserted `"#!/"` for
+  its POSIX branch. On a Windows host that branch's first line is
+  `#!C:\hostedtoolcache\...\python.exe`, which is a shebang with no `!/` in it.
+  The assertion tested the host, not the shape it was written to pin.
+* **A checksum file written in the platform's newline.** `write_dist` wrote
+  `SHA256SUMS` in text mode; on Windows that put a carriage return between the
+  digest and the filename, and the step harness's real `sha256sum -c` reported
+  `sha256sum: 'Bitcoin-Easy-Signer-v9.9.9-macOS.dmg'$'\r': No such file or
+  directory`, failing three release-guard tests. The shim is real digest math,
+  so it reproduced exactly what a Windows runner would do to that file.
+* **The scanner refused this ledger.** The archive job's "Scan the source
+  archive for secrets" step failed with `refused: 4 secret(s); a tag would
+  publish them:` naming `releases/PATCH-0.6.8.md` lines 29, 136, 221 and 223.
+  Two were the platform record quoted in Python's repr, whose single quotes the
+  status-line exclusion did not cover because it was written for JSON. Two were
+  a code span that ends in `;` within fifty non-space characters of the word
+  `secret` inside a test name — the keyword plugin's quoted-value rule, which
+  reads punctuation, not meaning. Neither was a credential; both were real
+  defects in a document that a release publishes.
+
+### Fixes
+
+* `scripts/check-platform-state.sh` — the presence gate now accepts a real file
+  at the given path (`[ ! -f "$gh_bin" ]`) as well as a name on `PATH`, and a
+  new `gh_run` helper sends `*.cmd`/`*.bat` through `cmd.exe //c` while
+  everything else goes straight to the binary. `auth status` runs through it.
+  Windows Python can exec a `.cmd` — the HWI identity gate has done so since
+  0.6.6 — and now the shell does not have to.
+* `tests/test_platform_state.py` — the POSIX branch asserts
+  `body.startswith("#!")` and that `sys.executable` appears in the body. The
+  `win32` branch is unchanged.
+* `tests/test_publish_guards.py` — `write_dist` writes `SHA256SUMS` with
+  `newline="\n"`, so the file a shell parses is the same file on every host.
+* `scripts/scan-secrets.py` — `STATUS_LINE_EXCLUSION` now accepts single or
+  double quotes around the key and the value, so the Python repr of the status
+  lines is excluded exactly like the JSON form. It is still a line-shaped
+  exclusion: the same line carrying a real token is still a finding, which is
+  what the new canary proves.
+* `releases/PATCH-0.6.8.md` — in the CT-80 section, the two sentences the
+  scanner read as assignments were reworded; no claim changed.
+* `tests/test_secret_scan.py` — two canaries for the widened exclusion: the
+  repr form is excluded, and a planted `github_token` beside it is still
+  refused.
+* `tests/test_windows_portability.py` — a new pin that the differ defines
+  `gh_run` and hands a batch file to `cmd.exe //c`, and the module and class
+  docstrings now record this run as well.
+
+### Tripwires for the fixes (`break_and_watch.py`, 80/80)
+
+Three defeats were added, each caught by a named committed test:
+
+| defeat | caught by |
+| --- | --- |
+| the differ hands a batch `gh` straight to the shell | `tests/test_windows_portability.py::HardeningPinPortabilityTests::test_the_differ_never_hands_a_batch_gh_to_the_shell_directly` |
+| the checksum file carries the platform's newline | `tests/test_publish_guards.py::ReleaseGuardBehaviourTests::test_the_candidate_path_verifies_checksums_and_stops` |
+| the status exclusion stops covering the record's repr | `tests/test_secret_scan.py::CanaryTests::test_the_python_rendering_of_the_status_lines_is_excluded_too` |
+
+The Windows behaviour itself cannot be reproduced on this host; what the
+tripwires hold is that the batch-file branch exists and that the file a shell
+parses has no carriage return in it. Both defects were found by the candidate
+pipeline, which is the control that has to work — the point of fixing the
+process rather than the symptom.
+
+### Verification
+
+* Checkout suite: `Ran 671 tests in 162.951s / OK`.
+* Source archive: `scripts/build-source.sh 0.6.8`, extracted, suite run from the
+  extracted tree: `Ran 671 tests in 163.739s / OK`.
+* Secret scan: `ok: no secrets in releases/PATCH-0.6.8.md`, and the same scan
+  over the extracted archive reports no secrets.
+* `break_and_watch.py`: `all 80 defeats caught`.

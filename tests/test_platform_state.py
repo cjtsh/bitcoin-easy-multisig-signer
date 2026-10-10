@@ -543,7 +543,12 @@ class PlatformCheckScriptTests(unittest.TestCase):
             with mock.patch.object(sys, "platform", "darwin"):
                 program = _fake_gh(Path(folder))
             self.assertEqual(program.name, "gh")
-            self.assertIn("#!/", program.read_text(encoding="utf-8"))
+            body = program.read_text(encoding="utf-8")
+            # `#!C:\...\python.exe` on a Windows host, `#!/usr/bin/env ...` on
+            # a POSIX one: what matters is the shebang, not its spelling.
+            self.assertTrue(body.startswith("#!"),
+                            "a POSIX helper has to be a shebang script")
+            self.assertIn(sys.executable, body)
 
     def test_a_matching_platform_reports_ok(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -639,7 +644,7 @@ class PlatformCheckScriptTests(unittest.TestCase):
         """A weak differ is the defect this whole work order is about."""
         script = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('command -v "$gh_bin"', script)
-        self.assertIn('"$gh_bin" auth status', script)
+        self.assertIn('gh_run auth status', script)
         self.assertIn("refusing", script)
         self.assertIn("NOT_OBSERVED", script)
         # Exactly one `|| true` is allowed: the optional origin lookup, whose

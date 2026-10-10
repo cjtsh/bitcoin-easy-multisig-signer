@@ -56,10 +56,13 @@ DISABLED_PLUGINS = ("HexHighEntropyString", "Base64HighEntropyString")
 # releases/platform-state.json records the platform's own scanning posture, so
 # it holds lines like `"secret_scanning": "enabled"`. detect-secrets reads those
 # as a keyword next to a value -- two findings in a file that is generated,
-# names-only, and reviewed by scripts/check-platform-state.sh. The exclusion is
-# line-shaped and matches no other shape: a credential on any other line of the
+# names-only, and reviewed by scripts/check-platform-state.sh. The ledger quotes
+# the same lines back in Python's repr form, so both quotings are excluded: the
+# 0.6.8 candidate's source job refused its own archive over the single-quoted
+# copy. The exclusion is line-shaped and matches no other shape -- the value is
+# literally `enabled` or `disabled` -- so a credential on any other line of the
 # same file is still a finding, and CanaryTests proves it.
-STATUS_LINE_EXCLUSION = r'"secret_scanning(_[a-z_]+)?":\s*"(enabled|disabled)"'
+STATUS_LINE_EXCLUSION = r"['\"]secret_scanning(_[a-z_]+)?['\"]:\s*['\"](enabled|disabled)['\"]"
 
 CLEAN = 0
 FINDINGS = 1

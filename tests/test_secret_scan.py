@@ -122,6 +122,36 @@ class CanaryTests(unittest.TestCase):
         self.assertIn("platform-state.json", result.stdout)
         self.assertIn("GitHub Token", result.stdout)
 
+    def test_the_python_rendering_of_the_status_lines_is_excluded_too(self):
+        """The ledger quotes the record in Python's repr, so single quotes count.
+
+        The 0.6.8 candidate's source job refused its own archive over four
+        findings in releases/PATCH-0.6.8.md; two of them were this shape in
+        single quotes. The value is still literally `enabled` or `disabled`,
+        so the exclusion stays line-shaped.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            write_lf(
+                folder / "excerpt.md",
+                "  'disabled', 'secret_scanning': 'enabled',\n"
+                "  'secret_scanning_validity_checks': 'disabled'})\n",
+            )
+            result = run_scan(folder)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_the_single_quoted_exclusion_still_catches_a_credential(self):
+        """The other quoting must not widen the exclusion into a file-wide one."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            write_lf(
+                folder / "excerpt.md",
+                "  'secret_scanning': 'enabled',\n" + canary_text(),
+            )
+            result = run_scan(folder)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("GitHub Token", result.stdout)
+
     def test_an_allowlisted_line_is_not_a_finding(self):
         """A documented exception has to work, or nobody will use one."""
         with tempfile.TemporaryDirectory() as tmp:

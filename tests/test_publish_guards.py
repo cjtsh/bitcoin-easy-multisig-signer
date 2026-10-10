@@ -85,7 +85,12 @@ def write_dist(workdir: Path, *, version: str = "9.9.9", tamper: bool = False) -
     payload = b"asset-bytes"
     asset.write_bytes(payload)
     digest = hashlib.sha256(payload).hexdigest()
-    (dist / "SHA256SUMS").write_text(f"{digest}  {asset.name}\n", encoding="utf-8")
+    # `sha256sum -c` reads this file byte for byte. On Windows the default text
+    # mode would turn the newline into CRLF, and the tool would then look for a
+    # file whose name ends in a carriage return. Candidate run 38085097103 found
+    # exactly that (`'…-macOS.dmg'$'\r': No such file or directory`).
+    (dist / "SHA256SUMS").write_text(f"{digest}  {asset.name}\n", encoding="utf-8",
+                                     newline="\n")
     if tamper:
         asset.write_bytes(b"tampered-after-checksums")
     return dist
@@ -433,6 +438,24 @@ class InterpolationLintTests(unittest.TestCase):
             "the run id must still reach the step, through env: rather than "
             "through the script text",
         )
+
+
+class ChecksumFilePortabilityTests(unittest.TestCase):
+    """The checksum file a shell parses must be the same bytes on every host.
+
+    Candidate run 38085097103: Windows text mode wrote ``\\r\\n`` into
+    ``SHA256SUMS``, and the tool then looked for a file whose name ended in a
+    carriage return. One shasum implementation tolerates that and another does
+    not, so the file itself is what gets pinned.
+    """
+
+    def test_the_checksum_file_carries_no_carriage_return(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dist = write_dist(Path(tmp))
+            data = (dist / "SHA256SUMS").read_bytes()
+            self.assertNotIn(b"\r", data,
+                             "a shell parses this file byte for byte")
+            self.assertTrue(data.endswith(b"\n"))
 
 
 if __name__ == "__main__":

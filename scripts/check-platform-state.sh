@@ -55,13 +55,27 @@ fi
 
 # The platform cannot be read without the tool that reads it, and a check that
 # silently does nothing when `gh` is absent is the defect this script exists to
-# avoid.
-if ! command -v "$gh_bin" >/dev/null 2>&1; then
+# avoid. `command -v` cannot see a Windows batch file (a `gh.cmd` is not a
+# command this shell will run), so a real file at the given path counts too.
+if ! command -v "$gh_bin" >/dev/null 2>&1 && [ ! -f "$gh_bin" ]; then
   echo "refusing: $gh_bin is not installed, so the platform state cannot be read." >&2
   echo "Install the GitHub CLI, run 'gh auth login', and run this script again." >&2
   exit 1
 fi
-if ! "$gh_bin" auth status >/dev/null 2>&1; then
+
+# Windows installs the CLI as `gh.exe` or as a batch file; the first is a
+# program this shell can start and the second is a document the command
+# interpreter has to read. The 0.6.8 candidate run 38085097103 found this: the
+# tests handed the differ a `.cmd`, which `command -v` refused and this shell
+# would not have run even had the gate passed.
+gh_run() {
+  case "$gh_bin" in
+    *.cmd|*.bat|*.CMD|*.BAT) cmd.exe //c "$gh_bin" "$@" ;;
+    *) "$gh_bin" "$@" ;;
+  esac
+}
+
+if ! gh_run auth status >/dev/null 2>&1; then
   echo "refusing: $gh_bin is not authenticated, so the platform state cannot be read." >&2
   exit 1
 fi

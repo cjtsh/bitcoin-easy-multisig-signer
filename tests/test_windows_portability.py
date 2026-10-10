@@ -11,6 +11,12 @@ The 0.6.8 candidate (run 38082865187) added two more of the same shape: a fake
 ``gh`` that was only a shebang, which the differ's Python side could not exec,
 and the release guards' ``shasum`` calls, which Git Bash does not provide.
 
+Candidate run 38085097103 then found three more, all only reachable by running
+the tests on Windows: the differ's shell could neither see nor run a
+``gh.cmd`` batch file, a POSIX-only ``"#!/"`` assertion broke on a Windows
+host, and a ``SHA256SUMS`` written in text mode reached ``sha256sum -c`` with a
+carriage return glued to the filename.
+
 No test here may skip: the Windows job refuses a suite that reports any skip.
 """
 
@@ -115,7 +121,10 @@ class HardeningPinPortabilityTests(unittest.TestCase):
     while the archive ships recipes under ci/. Candidate run 38082865187 failed
     the Windows job because the platform-state differ's fake `gh` was written
     the same shebang-only way, and the archive job because the control
-    inventory reopened the inline recipe lookup.
+    inventory reopened the inline recipe lookup. Candidate run 38085097103
+    failed the Windows job because the differ's shell could not see or run a
+    `gh.cmd`, and because a POSIX-only assertion and a text-mode `SHA256SUMS`
+    only held on a POSIX host.
     """
 
     def test_hwi_identity_helpers_never_rely_on_a_shebang_alone(self):
@@ -134,6 +143,20 @@ class HardeningPinPortabilityTests(unittest.TestCase):
         self.assertIn('if sys.platform == "win32"', text)
         self.assertIn("gh.cmd", text)
         self.assertIn("@echo off", text)
+
+    def test_the_differ_never_hands_a_batch_gh_to_the_shell_directly(self):
+        """Run 38085097103: `command -v` cannot see a `.cmd`, and bash cannot run one.
+
+        The differ has to accept a real file as `gh` and give a batch file to
+        the command interpreter. Windows Python can exec a `.cmd` (that is why
+        the HwiIdentityPins helper works there); Git Bash can do neither, so
+        the shell must not be the thing that starts it.
+        """
+        text = (ROOT / "scripts" / "check-platform-state.sh").read_text(encoding="utf-8")
+        self.assertIn("gh_run() {", text)
+        self.assertIn("cmd.exe //c", text)
+        self.assertIn('[ ! -f "$gh_bin" ]', text)
+        self.assertIn("gh_run auth status", text)
 
     def test_recipe_lookups_go_through_the_shared_helper(self):
         """One resolver, so the ci/ fallback cannot be dropped a third time.
