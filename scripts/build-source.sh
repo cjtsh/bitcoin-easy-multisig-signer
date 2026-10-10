@@ -106,7 +106,7 @@ if (( ${#missing_links[@]} )); then
 fi
 
 cp tests/test_*.py tests/support.py tests/fake_explorer.py \
-  tests/ui_*.cjs "$stage/$root/tests/"
+  tests/workflow_harness.py tests/ui_*.cjs "$stage/$root/tests/"
 mkdir -p "$stage/$root/assets"
 cp assets/icon.svg assets/AppIcon.icns assets/AppIcon.ico "$stage/$root/assets/"
 mkdir -p "$stage/$root/assets/manual"

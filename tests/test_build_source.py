@@ -124,6 +124,44 @@ class ArchiveCompletenessTests(unittest.TestCase):
             "merely avoid the false claim",
         )
 
+    def test_every_local_helper_the_shipped_tests_import_is_shipped(self):
+        """A test module whose helper the archive left out cannot run there.
+
+        The suite runs again from inside the archive. CT-86 found this the hard
+        way: tests/workflow_harness.py was added to tests/ and never added to the
+        copy line, so `unittest discover` inside the archive could not import
+        test_workflow_config or test_publish_guards -- 525 tests run, 2 errors,
+        while the repository's own suite stayed green. A helper that is imported
+        by a shipped test module has to travel with it.
+        """
+        match = re.search(r"cp tests/.*?\"\$stage/\$root/tests/\"", self.active, re.DOTALL)
+        self.assertIsNotNone(
+            match, "build-source.sh no longer copies anything into tests/")
+        copy = match.group(0)
+        self.assertIn(
+            "tests/test_*.py", copy,
+            "every test module must travel, and the glob is what keeps a newly "
+            "added test_*.py from being left behind")
+
+        helpers = {path.stem for path in (ROOT / "tests").glob("*.py")
+                   if not path.name.startswith("test_")}
+        imports = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_]*)", re.MULTILINE)
+        needed: set[str] = set()
+        for path in sorted((ROOT / "tests").glob("test_*.py")):
+            for name in imports.findall(path.read_text(encoding="utf-8")):
+                if name in helpers:
+                    needed.add(name)
+        self.assertIn("workflow_harness", needed,
+                      "no shipped test module imports tests/workflow_harness.py; "
+                      "if that helper is gone, delete this pin deliberately")
+        for name in sorted(needed):
+            with self.subTest(module=name):
+                self.assertIn(
+                    f"{name}.py", copy,
+                    f"tests/{name}.py is imported by a shipped test module and "
+                    f"must be in the tests/ copy, or the archive's own suite "
+                    f"cannot import the module that needs it")
+
     def test_the_completeness_loop_covers_the_new_inputs(self):
         """The existing missing_docs loop must actually check what we just added.
 
