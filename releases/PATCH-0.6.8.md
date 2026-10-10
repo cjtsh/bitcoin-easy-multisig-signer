@@ -20,6 +20,7 @@ by a dated owner acceptance note. Nothing is closed by silence.
 | --- | --- | --- | --- |
 | CT-87 | Med | The container proof runs a digest, not a moving tag. The runner's apt set is declared once (`SYSTEM_PACKAGES` in `scripts/build-linux.sh`), asserted to be exactly what the workflow installs, and the version each resolved to is written into the SBOM by `dpkg-query` (fail closed if a declared package is absent). Exact apt version pins are **declined** for the runner image and recorded below as accepted floating inputs. | `tests/test_workflow_config.py::ToolchainPinTests::test_the_container_proof_runs_a_digest_not_a_moving_tag`, `…test_the_runner_packages_are_the_ones_the_build_script_declares`, `…test_every_floating_input_is_written_down`; `tests/test_build_sbom.py::SystemPackageTests` |
 | CT-88 | Low | Every digest `vendor/README.md` states was prose with nothing checking it. `tests/test_vendor_pins.py::VendorPinTests` hashes the committed bytes, asserts the README states each digest, and refuses a file in `vendor/` that no digest covers. The README's regeneration command is real: `scripts/vendor-digests.py` is run by the test and must reproduce the recorded digests. | `tests/test_vendor_pins.py::VendorPinTests` (byte-flip break-and-watch in a disposable copy) |
+| CT-89 | Low | `probe.py` claimed to refuse a BSMS whose receive and change branches used different multisig keys. Both branches are expanded from the one `/**` template, so the refusal could never fire. It was **deleted** rather than left in place: a check no accepted input can trip is a claim, not a control. Two tests hold the ground it claimed — the change branch is the receive wallet by construction, and the deleted claim cannot come back unargued. | `tests/test_probe.py::ProbeTests::test_the_expanded_change_branch_is_the_receive_wallet`, `…test_no_refusal_claims_a_key_agreement_the_template_cannot_violate`; `CONTROLS.md` records that no control is claimed here |
 
 ## CT-87: the build's floating inputs
 
@@ -115,3 +116,48 @@ AssertionError: '5e51f2fe3ee28b9e36dd5127efc215c4df1185e151485c99146c67f1bb42506
 != '3323c77583432be513b346bdc54f86f7ef5fb259e1db0e60975dc51bcbceb0a3' :
 embit-upstream-2b375a.tar.gz does not match its recorded digest
 ```
+
+## CT-89: a refusal that could never fire
+
+`parse_bsms` accepted a BIP 129 `/**` template by expanding it twice —
+once to `/0/*` for receive and once to `/1/*` for change — and then
+claimed to refuse the result if the two branches did not use the same
+multisig keys:
+
+```python
+if change_descriptor is not None:
+    ...
+    raise ProbeError("BSMS receive and change descriptors do not use the same multisig keys.")
+```
+
+Both branches come from the same `descriptor_text` through `str.replace`,
+so their key sets and thresholds are equal by construction. A BSMS record
+cannot express a change branch with different signers, which means the
+`if` had no input that could reach it. The audit row named the choice:
+make the rejection reachable, or delete it. **It was deleted.**
+
+The reason is the rule this cycle is applying elsewhere: a check no
+accepted input can trip is a claim about the code, not a control over it,
+and a reader who trusts it stops looking. What the claim was standing in
+for is now a stated invariant with a test on it — the change branch is
+the receive wallet:
+
+- `test_the_expanded_change_branch_is_the_receive_wallet` asserts the
+  `/1/*` branch carries the same signer set, the same threshold, and the
+  same native-SegWit `wsh` shape as the `/0/*` branch. If the expansion
+  ever stops guaranteeing that, this fails and the refusal has to come
+  back as a check that can actually fire.
+- `test_no_refusal_claims_a_key_agreement_the_template_cannot_violate`
+  reads `probe.py` and fails while the deleted message is present. That is
+  the test that was watched failing first:
+
+```
+self.assertNotIn("do not use the same multisig keys", source)
+AssertionError: 'do not use the same multisig keys' unexpectedly found in '...'
+```
+
+`break_and_watch.py` carries two defeats for it: reinstating the deleted
+refusal (caught by the removal pin) and expanding the change branch with
+a threshold of its own (caught by the invariant test). The comment left
+at the expansion site says why no key-agreement check is needed, and
+`CONTROLS.md` records that no control is claimed here.

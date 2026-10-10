@@ -124,6 +124,15 @@ def parse_bsms(text: str) -> WalletRecord:
         # BIP 129 descriptor templates use /** with explicit derivation-path
         # restrictions. Expand only the conventional receive/change pair; do
         # not infer a change path from a receive-only wildcard.
+        #
+        # CT-89: both branches are expanded from this one template, so they
+        # carry the same signer set and threshold by construction -- a BSMS
+        # record cannot express a change branch that uses different keys. The
+        # `if` that used to claim to check for one could therefore never fire,
+        # and a check no accepted input can trip is a claim rather than a
+        # control, so it was deleted. test_probe.py pins the invariant that
+        # makes it unnecessary, and CONTROLS.md records that nothing is
+        # claimed here.
         if descriptor_text.count("/**") < 2:
             raise ProbeError("BSMS receive/change template is incomplete.")
         receive_descriptor_text = descriptor_text.replace("/**", "/0/*")
@@ -158,15 +167,6 @@ def parse_bsms(text: str) -> WalletRecord:
         raise ProbeError("This app supports multisig wallets with two or three keys only.")
     if any(not key.is_extended or key.is_private or key.origin is None for key in keys):
         raise ProbeError("Every signer needs a public xpub and key origin.")
-    if change_descriptor is not None:
-        change_keys = change_descriptor.keys
-        if (not change_descriptor.wsh or change_descriptor.sh
-            or not isinstance(change_descriptor.miniscript, Multi)
-            or change_descriptor.miniscript.args[0].num != threshold
-            or len(change_keys) != len(keys)
-            or sorted(key.key.to_base58() for key in change_keys)
-               != sorted(key.key.to_base58() for key in keys)):
-            raise ProbeError("BSMS receive and change descriptors do not use the same multisig keys.")
     if len({key.fingerprint for key in keys}) != len(keys):
         raise ProbeError("Duplicate signer fingerprints are ambiguous in this proof.")
     if network in ("test", "main"):

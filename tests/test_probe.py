@@ -10,7 +10,10 @@ from unittest.mock import patch
 from embit import bip32
 from embit.descriptor import Descriptor
 from embit.descriptor.checksum import checksum
+from embit.descriptor.miniscript import Multi
 from embit.networks import NETWORKS
+
+ROOT = Path(__file__).resolve().parents[1]
 
 from probe import (
     ProbeError, _same_xpub, _validate_chain, funding_address,
@@ -137,6 +140,38 @@ class ProbeTests(unittest.TestCase):
         self.assertIsNotNone(wallet.change_descriptor)
         self.assertTrue(all(key.suffix == "/0/*" for key in wallet.descriptor.keys))
         self.assertTrue(all(key.suffix == "/1/*" for key in wallet.change_descriptor.keys))
+
+    def test_the_expanded_change_branch_is_the_receive_wallet(self):
+        """CT-89: the property the deleted key-agreement refusal claimed to check.
+
+        A `/**` template is expanded twice from one descriptor -- once to `/0/*`
+        and once to `/1/*` -- so the two branches must use the same signer set and
+        the same threshold. If the expansion ever stops guaranteeing that, this
+        fails and the refusal has to come back as a check that can actually fire.
+        """
+        record, _ = test_record(bsms_template=True)
+        wallet = self.write(record)
+        change = wallet.change_descriptor
+        self.assertEqual(
+            sorted(key.key.to_base58() for key in change.keys),
+            sorted(key.key.to_base58() for key in wallet.descriptor.keys),
+        )
+        self.assertEqual(change.miniscript.args[0].num, wallet.threshold)
+        self.assertTrue(change.wsh)
+        self.assertFalse(change.sh)
+        self.assertIsInstance(change.miniscript, Multi)
+
+    def test_no_refusal_claims_a_key_agreement_the_template_cannot_violate(self):
+        """CT-89: the refusal was deleted, not left unreachable.
+
+        Both branches are expanded with `str.replace` from the same descriptor, so
+        a BSMS record cannot express a change branch with different signers: the
+        `if` that claimed to check for one could never fire, and a check no
+        accepted input can trip is a claim rather than a control. This pins the
+        removal so a later edit cannot quietly reinstate it without arguing why.
+        """
+        source = (ROOT / "probe.py").read_text(encoding="utf-8")
+        self.assertNotIn("do not use the same multisig keys", source)
 
     def test_unsupported_bsms_paths_are_rejected_not_guessed(self):
         record, _ = test_record(bsms_template=True)
