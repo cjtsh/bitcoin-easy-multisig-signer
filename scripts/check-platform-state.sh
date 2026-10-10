@@ -22,7 +22,7 @@
 #
 # It fails closed. A missing `gh`, an unauthenticated `gh`, an API error or an
 # unreadable record is a refusal -- never "no difference found". The one thing
-# this script must never do is report a match it did not observe.
+# this script must never do is report a match it did not observe. CONTROL: CM-11
 #
 # `--record` rewrites the platform half of the file and carries the hand-written
 # annotations (the `optional_secret_routes` map and the `notes` list) forward

@@ -821,7 +821,7 @@ class LocalApp:
                 result = scan_wallet(record, base_url=explorer, chain=chain)
                 if pending_txid:
                     # A newly broadcast tx may not yet appear in address statistics.
-                    # Fail closed on a missing/invalid status until a block confirms it.
+                    # Fail closed on a missing/invalid status until a block confirms it. CONTROL: CM-02
                     try:
                         status = explorer_get(f"/tx/{pending_txid}/status", chain=chain,
                                               base_url=explorer)

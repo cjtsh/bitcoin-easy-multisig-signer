@@ -323,7 +323,7 @@ def wallet_layout(record: WalletRecord) -> Layout:
         # change. Support that standard layout using the one recovery file the
         # owner has, but label the change branch as standard-derived rather
         # than claiming it was declared by BSMS or proven by an empty history.
-        # Nonstandard/custom origins continue to fail closed.
+        # Nonstandard/custom origins continue to fail closed. CONTROL: CM-05
         if bare_receive_only and record.restrictions == "/0/*,/1/*":
             raise WalletError("BSMS receive restriction disagrees with its first address.")
         declared = record.restrictions == "/0/*,/1/*"

@@ -217,7 +217,7 @@ HWI_PAYLOAD_PINS: dict[str, str] = {
 # moment the helper imported the package (CT-73). This manifest records a digest
 # for every file in the distribution — 157 of them in 3.2.0 — and the check
 # below recomputes the whole set and refuses a missing, added or changed file.
-# The two entry pins stay, as the fast pre-check that names the CT-49 surface.
+# The two entry pins stay, as the fast pre-check that names the CT-49 surface. CONTROL: CM-08
 HWI_PAYLOAD_MANIFEST = f"hwi-payload-{EXPECTED_HWI_VERSION}.json"
 # A frozen build writes this inside the signed bundle it authenticates —
 # Contents/Resources on macOS, where codesign seals it, and beside the helper on

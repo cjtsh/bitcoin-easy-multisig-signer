@@ -77,7 +77,7 @@
 #   - a body that cannot be read is itself an offender (`unreadable-workflow`),
 #     never a pass;
 #   - matching is `[[ ]]` under nocasematch, with no external tool whose
-#     absence could turn a refusal into silence.
+#     absence could turn a refusal into silence. CONTROL: CM-10
 
 set -euo pipefail
 

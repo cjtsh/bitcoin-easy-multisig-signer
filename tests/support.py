@@ -177,3 +177,48 @@ def assert_private_file(test: unittest.TestCase, path: Path) -> None:
         gui.assert_private_file(Path(path))
     except RuntimeError as exc:
         test.fail(str(exc))
+
+
+def missing_test_reason(name: str, loader: unittest.TestLoader | None = None):
+    """Why ``module.Class[.method]`` names no test, or ``None`` when it does.
+
+    ``unittest``'s own loader is not an existence check: asked for a name that
+    does not exist it hands back a one-case placeholder that fails only when it
+    is run, so ``loader.loadTestsFromName("test_x.NoSuchClass").countTestCases()``
+    is ``1``. A tripwire built on that number stays green for a citation whose
+    class was renamed or whose method was deleted — the whole failure mode the
+    tripwire exists to catch. It was found the hard way: the 0.6.8
+    break-and-watch run reported ``MISSED  a ledger row cites a closing test
+    that cannot be loaded`` against a check that used exactly this count.
+
+    Resolve the name by hand instead, and refuse anything that is not a
+    ``TestCase`` subclass or a ``test_*`` method on one.
+    """
+    import importlib
+
+    module_name, _, rest = name.partition(".")
+    try:
+        obj = importlib.import_module(module_name)
+    except Exception as error:  # noqa: BLE001 - report whatever the import raised
+        return "%s cannot be imported: %s: %s" % (
+            module_name, type(error).__name__, error)
+    if not rest:
+        # A bare module citation: the module imports, so it can be collected.
+        return None
+    parent = None
+    for part in rest.split("."):
+        parent, obj = obj, getattr(obj, part, None)
+        if obj is None:
+            return "%s names no attribute %r" % (name, part)
+    if isinstance(obj, type):
+        if not issubclass(obj, unittest.TestCase):
+            return "%s is not a TestCase" % name
+        loader = loader or unittest.TestLoader()
+        if loader.loadTestsFromTestCase(obj).countTestCases() == 0:
+            return "%s holds no tests" % name
+        return None
+    if not callable(obj) or not getattr(obj, "__name__", "").startswith("test"):
+        return "%s is not a test method" % name
+    if not (isinstance(parent, type) and issubclass(parent, unittest.TestCase)):
+        return "%s is not a method of a TestCase" % name
+    return None
