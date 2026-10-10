@@ -181,8 +181,10 @@ least-privilege tokens are external controls the previous cycle could not verify
 measured them, and the owner then changed some of them before this plan was signed. As they
 now stand: `main` carries branch ruleset `protect-main` (`24840839`), which blocks branch
 deletion and non-fast-forward pushes with **no bypass actor**, so it applies to the owner's
-own tooling as well; **tags still carry no ruleset**, so a published tag can still be moved or
-deleted by anyone with write; the two signing environments carry a `main`-only branch policy
+own tooling as well; **tags are now protected too**, by ruleset `protect-tags` (`24841466`),
+which blocks tag deletion and non-fast-forward tag moves across `refs/tags/v*` with no bypass
+actor, while deliberately leaving tag **creation** unrestricted so that the release job can
+still create the release tag; the two signing environments carry a `main`-only branch policy
 and, by the owner's explicit decision (section 0, authorised agentic operation), **no required
 reviewers**; and the workflow's `release` job holds `contents: write` on every dispatch. At
 the target revision `d525f31` no job entered either signing environment, so the signing
@@ -258,15 +260,17 @@ the audit is void.** Different identifiers establish different runs, not differe
 ## 1. Target and revision
 
 - **Repository:** `cjtsh/bitcoin-easy-multisig-signer` (public, MIT, created
-  2026-09-27T22:35:04Z; `pushed_at` 2026-10-10T13:25:20Z)
+  2026-09-27T22:35:04Z; `pushed_at` 2026-10-10, after the post-survey commits logged in
+  section 9)
 - **Revision surveyed:** `main` at **`d525f31b600d5aedd2f7a219ec848df540707ffc`**
   (`d525f31`), an **untagged** commit. Author date 2026-10-07T17:17:29Z, committer date
   2026-10-09T23:45:35Z — it reached `main` two days after it was written.
-- **The branch has moved since.** Three owner-directed commits landed on top of it after this
-  survey (`247ca73`, `333b361`, and the commit that carries this revision of the plan), so
-  **`main` is no longer the revision under audit**. The panel and the referee must pin
-  `d525f31` by hash, as `v0.6.7`'s plan pinned its own tag; a lock taken over the branch head
-  would lock the wrong tree.
+- **The branch has moved since.** Owner-directed commits landed on top of it after this
+  survey — the successive revisions of this plan, the contribution-policy reword (`247ca73`),
+  the credential-wiring fix (`333b361`) and one candidate build dispatched and not published
+  (run `38056270688`) — so **`main` is no longer the revision under audit**. The panel and the
+  referee must pin `d525f31` by hash, as `v0.6.7`'s plan pinned its own tag; a lock taken over
+  the branch head would lock the wrong tree.
 - **Date:** 2026-10-10
 - **Surveyed by:** DeepSeek Harness agent (harness `com.deepseek.dsh`, session
   `session-5d5422fc-382b-428d-93f1-71eb00cd083b`, model not exposed by the harness). Must
@@ -470,7 +474,30 @@ buffer; the diagnostics JSON and saved PSBTs in `~/Downloads` (`gui.py:328-385`,
   branch deletion and non-fast-forward pushes are blocked, with **no bypass actor**, so it
   binds the owner's own tooling too. Ordinary pushes are unaffected. There is still **no
   classic branch protection** (`/branches/main/protection` → 404 — rulesets are a separate
-  mechanism) and **no ruleset on tags**, so tags remain movable and deletable.
+  mechanism).
+- Tags carry ruleset **`protect-tags`** (id `24841466`, created 2026-10-10): tag deletion and
+  non-fast-forward tag moves are blocked across `refs/tags/v*`, with **no bypass actor** — the
+  rule that AGENTS.md states in prose ("moving or deleting a published tag is forbidden") is
+  now enforced by the platform. Tag **creation is deliberately not restricted**: the ruleset
+  omits the `creation` rule, because the release job's only tag write is
+  `gh release create "$tag" --target "$GITHUB_SHA"` (`build-candidate.yml:1009`), and no
+  workflow anywhere deletes or moves a tag (`grep` over `.github/workflows/` returns that one
+  line). The control therefore protects published tags without inhibiting an agentic release:
+  a dispatched promotion still creates its tag, and only a rewrite of an existing tag is
+  refused. Recovery cost, stated plainly: with no bypass actor, withdrawing a tag that a
+  failed publication left behind requires an admin to change the ruleset first — the same
+  property `protect-main` has, accepted by the owner for the same reason.
+- **Considered and deliberately deferred: GitHub "immutable releases".** The setting exists and
+  is off (`GET /repos/…/immutable-releases` → `{"enabled": false}`). It would lock a
+  published release's assets and tag and emit a signed **release attestation** binding tag,
+  commit and assets — all desirable. It is *not* enabled yet because GitHub's own guidance is
+  to create the release as a **draft**, attach every asset, then publish, and this workflow does
+  the opposite: `gh release create … dist/*` (`build-candidate.yml:1009-1011`) publishes first
+  and uploads the assets afterwards, which is exactly the pattern immutability is documented to
+  obstruct. Enabling it as-is would risk breaking the *next real publication* — a failure no
+  candidate run can detect, and precisely the kind of derailment this plan exists to prevent.
+  It is recorded as a named next-cycle improvement: change the release job to draft → upload →
+  publish, test that path with a real publication, and only then enable immutability.
 - Environments `apple-signing` and `release-signing` each carry a branch policy of `main`
   and `can_admins_bypass: true`, with **no required reviewers** — an owner decision (section
   0), because a human gate would sit in front of the agentic tooling the owner directs.
@@ -684,17 +711,17 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
    repository whose v0.6.7 sources corrected exactly this pattern elsewhere. Should the
    site be brought to the graded revision before the Public Security Statement is published,
    and should the plan treat a stale download page as a release-readiness gate?
-3. **Repository-controlled platform protections — partly answered, one gap left.** At the
-   target revision there was no branch protection and no ruleset anywhere, and no job entered
-   a signing environment. `main` now carries `protect-main` (deletion and force-push blocked,
-   no bypass), and the owner has declined required reviewers on the signing environments and
-   an Actions allow-list, because either would sit in front of the agentic tooling the owner
-   directs (section 0). **Tags still carry no ruleset**, so a published tag — the thing the
-   release key and the Public Security Statement point at — can still be moved or deleted by
-   anyone with write, including a tool acting under the owner's credentials. Does the owner
-   want tags protected before this cycle is graded, or is tag immutability a process rule the
-   panel should record as unenforced? The panel will otherwise continue to treat push and
-   dispatch rights as owner account hygiene.
+3. **Repository-controlled platform protections — answered by the owner, 2026-10-10.** At the
+   target revision there was no branch protection and no ruleset anywhere, and no job entered a
+   signing environment. The owner has since protected `main` (`protect-main`) and the release
+   tags (`protect-tags`), both with no bypass actor, and has declined required reviewers on the
+   signing environments and an Actions allow-list, on the recorded ground that either would sit
+   in front of the agentic tooling the owner directs (section 0). The owner's decision rule,
+   stated directly: adopt a control when it makes the system safer, does not inhibit agentic
+   building of releases, and does not open an unbounded line of inquiry — otherwise defer it by
+   name rather than half-adopt it. The panel need not ask this again; it should verify both
+   rulesets and record that GitHub's *immutable releases* setting remains off, with the reason
+   and the named follow-up in section 4.
 4. **The claimed-fix ledger is unaudited.** `releases/PATCH-0.6.7.md` closes CT-48 through
    CT-71 by test or by dated acceptance, and no audit has run since it was written. Two rows
    (CT-54, CT-59) are deferrals that expire 2027-10-07. Does the owner confirm that the
@@ -824,6 +851,29 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
     resolve.
   - **Not changed:** the revision under audit (`d525f31`), the three rubric grades, the five
     ranked assets, the threat list T1–T12, and the policies of revisions 2–4.
+- **Revision 6** (2026-10-10, owner-directed, this commit): one platform control added, one
+  deferred item recorded by name, one question closed. No threat re-scoped, no grade touched.
+  - **Release tags are protected.** Ruleset `protect-tags` (`24841466`) now blocks tag deletion
+    and non-fast-forward tag moves across `refs/tags/v*`, with **no bypass actor**. Tag
+    *creation* is deliberately left unrestricted: the release job's only tag write is
+    `gh release create "$tag" --target "$GITHUB_SHA"` (`build-candidate.yml:1009`) and no
+    workflow anywhere deletes or moves a tag, so the control refuses a rewrite of a published
+    tag without inhibiting an agentic promotion. Section 0's residual-risk paragraph and
+    section 4's platform-settings list were corrected to match, replacing the earlier
+    statement that tags still carried no ruleset.
+  - **"Immutable releases" considered and deliberately deferred** (section 4), with the API
+    probe (`{"enabled": false}`), GitHub's documented draft → attach-all-assets → publish
+    requirement, and the reason for deferral: this workflow publishes in one step and uploads
+    the assets afterwards, so enabling the setting as-is could break the *next real
+    publication* — a failure no candidate run can detect. Named as the next-cycle improvement
+    it should follow.
+  - **Section 8 question 3 closed** as answered by the owner, and the owner's decision rule
+    recorded in substance: adopt a control when it makes the system safer, does not inhibit
+    agentic building of releases, and does not open an unbounded line of inquiry — otherwise
+    defer it by name rather than half-adopt it.
+  - **Not changed:** the revision under audit (`d525f31`), the three rubric grades, the five
+    ranked assets, the two unforgivable acts, the threat list T1–T12, the closed list, the
+    burden-of-proof rule, and the policies of revisions 2–5.
 - **Provenance of every sign-off:** recorded on 2026-10-10 at the owner's direction. The
   owner supplied the signature identity and the date, directed publication, and directed each
   amendment; the surveyor agent transcribed the two lines below on every occasion, in the same
@@ -833,8 +883,9 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
 
 **Answers to the questions above.**
 
-- none recorded — the six questions in section 8 are carried forward open, for the owner to
-  answer before the panel is dispatched.
+- **Question 3 is answered** by the owner in section 8 (protect the release tags; record the
+  reasoning). The remaining **five** questions in section 8 are carried forward open, for the
+  owner to answer before the panel is dispatched.
 
 **Sign-off.**
 
