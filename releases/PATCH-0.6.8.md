@@ -22,6 +22,7 @@ by a dated owner acceptance note. Nothing is closed by silence.
 | CT-88 | Low | Every digest `vendor/README.md` states was prose with nothing checking it. `tests/test_vendor_pins.py::VendorPinTests` hashes the committed bytes, asserts the README states each digest, and refuses a file in `vendor/` that no digest covers. The README's regeneration command is real: `scripts/vendor-digests.py` is run by the test and must reproduce the recorded digests. | `tests/test_vendor_pins.py::VendorPinTests` (byte-flip break-and-watch in a disposable copy) |
 | CT-89 | Low | `probe.py` claimed to refuse a BSMS whose receive and change branches used different multisig keys. Both branches are expanded from the one `/**` template, so the refusal could never fire. It was **deleted** rather than left in place: a check no accepted input can trip is a claim, not a control. Two tests hold the ground it claimed — the change branch is the receive wallet by construction, and the deleted claim cannot come back unargued. | `tests/test_probe.py::ProbeTests::test_the_expanded_change_branch_is_the_receive_wallet`, `…test_no_refusal_claims_a_key_agreement_the_template_cannot_violate`; `CONTROLS.md` records that no control is claimed here |
 | CT-91 | Info | The vendored embit's Liquid/PSET copy kept upstream's `sequence=(self.sequence or 0xFFFFFFFF)`, which rewrites a legal `nSequence=0`; the fork had already fixed that shape in `src/embit/psbt.py`. Both properties in `src/embit/liquid/pset.py` (`vin`, `blinded_vin`) now carry the same explicit check, and the fork's whole delta is machine-held: the wheel must be the archive's `src/embit` tree in both directions, the implicit form must appear nowhere, and no shipped module may import the Liquid surface. | `tests/test_embit_vendor.py::EmbitVendorTests::test_source_diff_is_only_the_declared_version_and_sequence_fixes`, `…test_no_liquid_input_rewrites_a_legal_sequence_of_zero`, `…test_the_wheel_carries_the_source_it_was_built_from`, `…test_the_documentation_states_the_liquid_delta`, `…test_the_application_does_not_import_the_liquid_surface` |
+| CT-92 | Low | The source-mode install pinned one library and guarded one library. `requirements.lock` carried the embit wheel and nothing else, `Start Easy Multisig.command` guarded only that version, and `probe.py` refused with "Install hwi 3.2.0 to use devices." — no command, and a venv created before the device library was wanted was never repaired. Added `requirements-source.txt` → `requirements-source.lock`: hwi 3.2.0 and its whole closure under `--require-hashes`, every version and hash set constrained to the reviewed `requirements-desktop.lock`; the launcher now guards both libraries and installs the source lock; the refusal names the exact command. | `tests/test_launcher.py` (9 tests), `tests/test_build_source.py::ArchiveCompletenessTests::test_the_source_mode_lock_reaches_the_archive`; break-and-watch: the lock loses hwi, the lock drifts, the guard drifts, the refusal loses the command |
 
 ## CT-87: the build's floating inputs
 
@@ -233,3 +234,76 @@ holding the pre-CT-91 wheel and archive makes three controls fail
 `test_no_liquid_input_rewrites_a_legal_sequence_of_zero`, and the older
 `test_bundled_wheel_is_hash_locked_and_contains_no_native_code`, which
 is what pins the wheel hash in the locks).
+
+## CT-92: the source install pinned one library and guarded one library
+
+`requirements.txt` is one line — the vendored embit wheel — and
+`requirements.lock` was compiled from it, so source mode installed embit and
+stopped. `Start Easy Multisig.command` guarded exactly that:
+
+```
+if ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0
+if m.version("embit") == "0.8.2+besa.1" else 1)' >/dev/null 2>&1; then
+```
+
+A venv created before the device library was needed therefore satisfied the
+guard forever and never installed HWI, while the refusal the user actually
+meets said:
+
+```
+The pinned hardware-wallet library is not installed in this environment.
+Install hwi 3.2.0 to use devices.
+```
+
+Neither the message nor `HWI-DEPENDENCY.md` named an install command.
+
+**What changed.** A source-mode lock set, in the shape of the existing desktop
+one: `requirements-source.txt` is `-r requirements.txt` plus the two extras and
+`-c requirements-desktop.lock`; `requirements-source.lock` is the resolved,
+hash-verified closure (22 entries: 21 packages plus the wheel file line). The
+constraint is the load-bearing part. A fresh resolve today picks *newer* builds
+than the release was reviewed with — `charset-normalizer 3.5.2`,
+`cryptography 50.0.2` and `pycparser 3.11` against `3.5.1`, `50.0.1` and `3.0`
+in `requirements-desktop.lock` — so an unconstrained source install would run a
+different build of the same library than the bundle. With the constraint every
+source entry is identical in version *and* hash set to its desktop counterpart,
+and a test checks that rather than an eye. `Start Easy Multisig.command` now
+tests both libraries through `importlib.metadata` (never importing them, so the
+launcher cannot be the first thing to execute the library `probe.py` hashes) and
+installs `--require-hashes -r requirements-source.lock`; `probe.py` names that
+same command; `HWI-DEPENDENCY.md` gains an "Installing it, by mode" section and
+its bump procedure now says the pin has three consumers and every lock is
+regenerated, the source lock last. The three CI test jobs deliberately stay on
+`requirements.lock` and its `hwilib` stub: installing hidapi and libusb1 into
+every runner would have changed the environment under test to prove a point
+about a different one.
+
+**Red first.** With the fix absent (HEAD plus only the new lock files), the new
+module ran `FAILED (failures=8)`:
+
+```
+AssertionError: 'm.version("hwi") == "3.2.0"' not found in '#!/bin/zsh…'
+AssertionError: 0 != 1 : the launcher must install the source lock exactly once
+AssertionError: 'python -m pip install --require-hashes -r requirements-source.lock'
+                 not found in '"""Read-only BSMS and USB signer discovery proof.…'
+```
+
+plus `test_the_guards_read_metadata_and_never_import_the_package` and the four
+`test_every_install_path_names_the_source_lock` subtests (launcher, `probe.py`,
+`README.md`, `HWI-DEPENDENCY.md`). The three lock-shape tests passed on the new
+lock itself, and the embit guard test passed because that guard is unchanged and
+the source lock names the same wheel.
+
+**Break and watch.** Four defeats, each caught by its named test: the source
+lock loses the device library (`hwi==3.2.0` and its two hashes deleted) →
+`SourceLockTests.test_the_device_library_is_pinned_with_hashes`; the source lock
+drifts from the reviewed desktop lock (`cryptography==50.0.1` → `50.0.2`) →
+`test_every_source_entry_matches_the_reviewed_desktop_lock`; the launcher's hwi
+guard drifts (`"3.2.0"` → `"9.9.9"`) →
+`LauncherTests.test_hwi_guard_matches_the_locked_pin`; the refusal loses the
+command →
+`DocumentedInstallPathTests.test_the_refusal_names_the_command_that_installs_the_library`.
+The test module is also its own control: its first run failed with
+`AssertionError: 'm.version("embit")' not found in ' command -v python3 >/dev/null 2>&1'`
+because the guard test took the first `if !` in the launcher rather than the
+install condition; it now anchors on the text before the install string.

@@ -1,0 +1,15 @@
+# What running from source needs: the app's own runtime set, plus hardware-wallet
+# support. `Start Easy Multisig.command` installs this file's lock, not
+# requirements.lock, so the device libraries are hash-pinned on the path a
+# non-technical user actually follows. Test jobs stay on requirements.lock,
+# which is why this file exists rather than growing that one.
+-r requirements.txt
+# Every version this resolves to is the one the released app already uses. The
+# freeze is generated from the reviewed desktop lock, so source mode and the
+# bundle cannot drift onto two different builds of the same library.
+-c requirements-desktop.lock
+hwi==3.2.0
+# The Jade's PIN unlock is relayed through Blockstream's pin server. hwilib
+# disables that relay unless `requests` is importable, and without it a Jade
+# cannot be unlocked at all. The PIN itself never leaves the device.
+requests==2.32.5

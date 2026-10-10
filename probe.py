@@ -386,8 +386,10 @@ def _hash_hwi_package() -> dict[str, str]:
         raise ProbeError(_HWI_UNIDENTIFIED) from exc
     if result.returncode != 0:
         raise ProbeError(
-            "The pinned hardware-wallet library is not installed in this "
-            "environment. Install hwi " + EXPECTED_HWI_VERSION + " to use devices."
+            "The pinned hardware-wallet library (hwi " + EXPECTED_HWI_VERSION +
+            ") is not installed in this environment. Install it from the "
+            "hash-locked source set: python -m pip install --require-hashes -r "
+            "requirements-source.lock"
         )
     try:
         seen = json.loads(result.stdout or "")

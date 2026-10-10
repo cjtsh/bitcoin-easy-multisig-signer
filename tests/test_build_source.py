@@ -96,6 +96,26 @@ class ArchiveCompletenessTests(unittest.TestCase):
                                 f"{name} is named in root_docs but missing from "
                                 f"the working tree")
 
+    def test_the_source_mode_lock_reaches_the_archive(self):
+        """CT-92: the archive must carry the lock the source install path uses.
+
+        `Start Easy Multisig.command` installs `--require-hashes -r
+        requirements-source.lock`, and `tests/test_launcher.py` opens both the
+        input and the lock from wherever the suite runs. A source tarball
+        without them cannot build a working source install or pass its own
+        suite, so both names must sit on the `cp` that carries the lock set.
+        """
+        self.assertIn('cp "${root_docs[@]}"', self.active,
+                      "the requirement copy block moved; revisit this test")
+        self.assertIn("requirements-source.txt requirements-source.lock",
+                      self.active,
+                      "the archive's copy must carry the source-mode lock and its "
+                      "input; the launcher and the archive's own test suite read them")
+        for name in ("requirements-source.txt", "requirements-source.lock"):
+            with self.subTest(name=name):
+                self.assertTrue((ROOT / name).is_file(),
+                                f"{name} is named in the copy but missing from the tree")
+
     def test_the_header_comment_does_not_claim_the_plist_is_absent(self):
         """A comment that overclaims — or understates — a control is a finding.
 

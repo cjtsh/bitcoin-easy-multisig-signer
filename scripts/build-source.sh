@@ -38,7 +38,9 @@ root_docs=(
 # it here would silently erase that. requirements-desktop-linux.lock is the
 # Linux-resolved record, and the archive's own test suite checks it.
 cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md "Start Easy Multisig.command" \
-  requirements.txt requirements.lock requirements-desktop.txt requirements-desktop.lock \
+  requirements.txt requirements.lock \
+  requirements-source.txt requirements-source.lock \
+  requirements-desktop.txt requirements-desktop.lock \
   requirements-desktop-windows.lock requirements-desktop-linux.lock \
   requirements-ci.txt requirements-ci.lock \
   requirements-piptools.txt requirements-piptools.lock version.py \

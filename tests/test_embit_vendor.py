@@ -161,7 +161,8 @@ class EmbitVendorTests(unittest.TestCase):
     def test_bundled_wheel_is_hash_locked_and_contains_no_native_code(self):
         wheel = VENDOR / "embit-0.8.2+besa.1-py3-none-any.whl"
         digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
-        for lock in ("requirements.lock", "requirements-desktop.lock"):
+        for lock in ("requirements.lock", "requirements-desktop.lock",
+                     "requirements-source.lock"):
             self.assertIn(digest, (ROOT / lock).read_text(encoding="utf-8"))
         with zipfile.ZipFile(wheel) as archive:
             names = archive.namelist()

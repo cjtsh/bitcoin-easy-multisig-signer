@@ -111,6 +111,8 @@ python3.12 -m venv .venv
 .venv/bin/python -m unittest discover -s tests -q
 ```
 
+[`requirements.lock`](requirements.lock) is the app's own set, enough to run the tests. Running the GUI from source — or using a hardware wallet at all — also needs the device libraries: [`requirements-source.lock`](requirements-source.lock) adds `hwi` 3.2.0 and its pinned closure, and `Start Easy Multisig.command` installs it on first launch with `--require-hashes`. Its versions are taken from the reviewed desktop lock, so source mode and the released bundle cannot run two different builds of the same library.
+
 The Mac build installs [`requirements-desktop.lock`](requirements-desktop.lock) with hashes. A reviewed `LIBUSB_SHA256` is mandatory. [`scripts/build-source.sh`](scripts/build-source.sh) creates the source archive; [`scripts/build-macos.sh`](scripts/build-macos.sh) creates the DMG on Apple Silicon. The GitHub workflow is **manual dispatch only**; see [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md) for the required signed-candidate run followed by publication from the same commit through workflow gates. Every published version includes `BUILD-SBOM.json` and `SHA256SUMS`. Never republish under an existing version; use a new patch version for any correction to a published build.
 
 ## External components

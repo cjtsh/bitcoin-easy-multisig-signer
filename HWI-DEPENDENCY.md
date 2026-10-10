@@ -21,7 +21,7 @@ is the only way to gain support for a new device or a changed firmware.
 | | |
 |---|---|
 | Version | **`hwi==3.2.0`** |
-| Declared by | `requirements-desktop.txt`, hash-locked in `requirements-desktop.lock` |
+| Declared by | `requirements-desktop.txt`, `requirements-desktop-linux.txt` and `requirements-source.txt`, hash-locked in the matching `.lock` files |
 | Install mode | `--require-hashes`, so only the reviewed artifact can be installed |
 | Recorded in | `BUILD-SBOM.json`, published with every release alongside the DMG |
 | Home | <https://github.com/bitcoin-core/HWI> |
@@ -29,6 +29,28 @@ is the only way to gain support for a new device or a changed firmware.
 Because the pin is hash-locked, a change to HWI's `master` branch — including a
 compromised one — cannot reach a released build. Only a deliberate version bump
 can.
+
+## Installing it, by mode
+
+- **The released bundle** installs `requirements-desktop.lock` (macOS),
+  `requirements-desktop-windows.lock` or `requirements-desktop-linux.lock`, each
+  with `--require-hashes`.
+- **Running from source** installs `requirements-source.lock`, which
+  `Start Easy Multisig.command` applies on first launch — and re-applies if
+  either pinned version is absent, so an environment created before this pin
+  existed gains the device library instead of silently skipping the install:
+
+  ```sh
+  .venv/bin/python3 -m pip install --require-hashes -r requirements-source.lock
+  ```
+
+  That lock is resolved *through* the reviewed desktop lock (`-c
+  requirements-desktop.lock` in `requirements-source.txt`), so source mode and
+  the bundle cannot run two different builds of the same library. It is also the
+  command `probe.py` names when a device is used and `hwilib` is absent, so the
+  refusal a user sees is a command that works rather than "install HWI".
+- **Test jobs** install `requirements.lock`, the app's own set without the device
+  libraries. The suite stubs `hwilib` deliberately; it does not need it present.
 
 ## Bundled HWI helper changes
 
@@ -154,8 +176,13 @@ deliberate upgrade.
 
 Nothing about this is a one-line change. In order:
 
-1. Bump `hwi` in `requirements-desktop.txt`.
-2. Regenerate **both** hash-locked files for **Python 3.12**.
+1. Bump `hwi` in `requirements-desktop.txt`, `requirements-desktop-linux.txt` and
+   `requirements-source.txt` — the same pin has three consumers.
+2. Regenerate **every** hash-locked file for **Python 3.12**:
+   `requirements-desktop.lock` (macOS), `requirements-desktop-windows.lock` (on
+   Windows, via `windows-inputs.yml`), `requirements-desktop-linux.lock`, and
+   `requirements-source.lock` last, because it resolves *through* the regenerated
+   desktop lock.
 3. **Recompute `HWI_PAYLOAD_PINS` in `probe.py`** from the new `hwilib/__init__.py`
    and `hwilib/_cli.py`, and update `test_the_payload_pins_pin_the_published_hwilib_files`
    with the new literals. This is not optional: the pins are what make a
