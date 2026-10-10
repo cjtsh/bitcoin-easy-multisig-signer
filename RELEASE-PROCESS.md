@@ -168,6 +168,33 @@ tag carrying a publisher is an offender, so a new tag cannot reintroduce one.
 Accepted with eyes open: those 46 tags can still publish if someone holding push
 or dispatch rights dispatches their workflow against the tag ref.
 
+**Credential wiring is in the revision, and the rest of the platform is recorded.**
+CT-80: the audited tag declared no `environment:` on any job, so no `MAC_*` or
+`GPG_*` name could resolve there, yet the candidate it produced was signed and
+notarized. The wiring that made that work existed only on the platform. It is
+now in the tagged text, and the placement is stated here:
+
+| Environment | Deployable from | Required reviewers | Secret names it holds |
+| --- | --- | --- | --- |
+| `apple-signing` (`build-candidate.yml`, the macOS job) | `main` | none | `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `MAC_APP_SPECIFIC_PASSWORD` |
+| `release-signing` (`build-candidate.yml`, the publish job) | `main` | none | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` |
+| `github-pages` | `gh-pages`, `main` | none | none |
+
+There are no repository-level secrets, so a job cannot read a credential unless
+it declares the environment that holds it. `build-candidate.yml`'s notary step
+has two routes and whichever secret exists decides: the Apple-ID route
+(`MAC_APP_SPECIFIC_PASSWORD` with the `MAC_APPLE_ID` and `MAC_TEAM_ID` variables,
+the route this repository uses and the one that needs no Apple Admin role) or the
+App Store Connect key route (`MAC_NOTARY_KEY_P8_BASE64` with the
+`MAC_NOTARY_KEY_ID` and `MAC_NOTARY_ISSUER_ID` variables, deliberately not
+declared here). `releases/platform-state.json` records the names, the branch
+policies, the reviewer counts, the rulesets, the Actions permissions and the
+workflow registrations; `scripts/check-platform-state.sh` re-reads the live
+platform and diffs it against that file, refuses to report a match it did not
+observe, and is run at release time with its output pasted into the patch record.
+Re-record with `scripts/check-platform-state.sh --record` and review the diff
+rather than editing the file by hand.
+
 **Stale version strings are findings.** When `version.py` moves, update
 `AGENTS.md`, release notes, user-facing references and the audit plan's target
 revision together in the same commit. "Current published version is X" inside

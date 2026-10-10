@@ -51,6 +51,15 @@ cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md "Start Easy Multisig.command
 # resolve for a reader who only has the tarball.
 cp releases/*.md "$stage/$root/releases/"
 
+# The machine-readable half of the release evidence ships too: a reader of the
+# tarball holds the platform record (environments, branch policies, required
+# reviewers, secret *names*, rulesets, registrations) and the script that diffs
+# it against the live platform, so the record can be re-checked without network
+# access to this repository's history.
+if compgen -G "releases/*.json" >/dev/null; then
+  cp releases/*.json "$stage/$root/releases/"
+fi
+
 # Every root module must ship. Omitting safe_http.py produced an archive whose own
 # code could not import, and nothing noticed because CI ran the tests from the
 # checkout rather than from the archive.

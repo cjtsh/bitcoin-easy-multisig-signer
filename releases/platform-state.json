@@ -1,0 +1,133 @@
+{
+  "environments": {
+    "apple-signing": {
+      "branch_policies": [
+        "main"
+      ],
+      "can_admins_bypass": true,
+      "required_reviewers": 0,
+      "secrets": [
+        "MAC_APP_SPECIFIC_PASSWORD",
+        "MAC_CERT_P12_BASE64",
+        "MAC_CERT_PASSWORD"
+      ],
+      "variables": []
+    },
+    "github-pages": {
+      "branch_policies": [
+        "gh-pages",
+        "main"
+      ],
+      "can_admins_bypass": true,
+      "required_reviewers": 0,
+      "secrets": [],
+      "variables": []
+    },
+    "release-signing": {
+      "branch_policies": [
+        "main"
+      ],
+      "can_admins_bypass": true,
+      "required_reviewers": 0,
+      "secrets": [
+        "GPG_PASSPHRASE",
+        "GPG_PRIVATE_KEY"
+      ],
+      "variables": []
+    }
+  },
+  "notes": [
+    "Recorded from the live GitHub platform with scripts/check-platform-state.sh --record. scripts/check-platform-state.sh re-reads the platform and fails closed on any difference, so this file is the recorded half of the posture that git cannot show (M7, releases/PLAN-0.6.8.md:161-166).",
+    "Why it exists (W7, CT-80): at the audited tag 81f58ec no job declared an environment at all, so no MAC_* or GPG_* name could resolve there, yet the 2026-10-07 candidate runs signed and notarized. The wiring that made publication work was in no revision a reviewer could read. Current main declares environment: apple-signing on the macOS job and environment: release-signing on the publish job.",
+    "apple-signing and release-signing each carry a branch policy of main, zero required reviewers and can_admins_bypass true. What the platform requires before a signing job runs is therefore that the ref be main -- not that a human approve the run. Recorded as measured, not as preferred.",
+    "github-pages is not a signing environment: it deploys the Pages site and holds no secret. Its branch policies are recorded because the platform has them.",
+    ".github/workflows/build-linux.yml and build-windows.yml are registered but disabled_manually: they are the retired per-platform publishers that scripts/check-publish-paths.sh also treats as superseded. Re-enabling one is drift here.",
+    "allowed_actions is \"all\" and sha_pinning_required is false: the platform does not enforce action pinning. The workflow pins action SHAs by convention and tests/test_workflow_config.py holds that; the platform-level setting is an owner decision named on the next-cycle list in releases/PLAN-0.6.8.md section 9.",
+    "required_reviewers counts protection rules of type required_reviewers on the environment. Zero means a job that names the environment proceeds without an approval step."
+  ],
+  "optional_secret_routes": {
+    "apple-signing": {
+      "MAC_NOTARY_KEY_P8_BASE64": "referenced by the workflow and declared nowhere on purpose. Provide notary credentials (.github/workflows/build-candidate.yml:273-309) takes either an App Store Connect API key -- this secret plus vars.MAC_NOTARY_KEY_ID and vars.MAC_NOTARY_ISSUER_ID, neither of which is set on this platform -- or an Apple ID with an app-specific password (vars.MAC_APPLE_ID, vars.MAC_TEAM_ID and the declared secret MAC_APP_SPECIFIC_PASSWORD). This platform uses the second route, which needs no Apple Admin role. tests/test_platform_state.py proves the fallback branch is present rather than trusting this note."
+    }
+  },
+  "permissions": {
+    "actions": {
+      "allowed_actions": "all",
+      "enabled": true,
+      "sha_pinning_required": false
+    },
+    "workflow": {
+      "can_approve_pull_request_reviews": false,
+      "default_workflow_permissions": "read"
+    }
+  },
+  "recorded_at": "2026-10-10T17:15:40Z",
+  "recorded_from": "cjtsh/bitcoin-easy-multisig-signer",
+  "recorded_with": "scripts/check-platform-state.sh --record",
+  "repository_secrets": [],
+  "repository_variables": [
+    "LIBUSB_SHA256",
+    "LIBUSB_WINDOWS_SHA256",
+    "MAC_APPLE_ID",
+    "MAC_SIGN_IDENTITY",
+    "MAC_TEAM_ID"
+  ],
+  "rulesets": [
+    {
+      "enforcement": "active",
+      "include": [
+        "refs/heads/main"
+      ],
+      "name": "protect-main",
+      "rules": [
+        "deletion",
+        "non_fast_forward"
+      ],
+      "target": "branch"
+    },
+    {
+      "enforcement": "active",
+      "include": [
+        "refs/tags/v*"
+      ],
+      "name": "protect-tags",
+      "rules": [
+        "deletion",
+        "non_fast_forward"
+      ],
+      "target": "tag"
+    }
+  ],
+  "schema": "bitcoin-easy-multisig-signer/platform-state/1",
+  "values": "names only: no secret and no variable value is recorded. Secret values are unreadable through the API; variable values are deliberately not copied so this record can be published and reviewed.",
+  "workflow_registrations": {
+    "dynamic": {
+      "dynamic/pages/pages-build-deployment": {
+        "name": "pages-build-deployment",
+        "state": "active"
+      }
+    },
+    "file": {
+      ".github/workflows/build-candidate.yml": {
+        "name": "Build all platform artifacts and release",
+        "state": "active"
+      },
+      ".github/workflows/build-linux.yml": {
+        "name": "Build the Linux AppImage",
+        "state": "disabled_manually"
+      },
+      ".github/workflows/build-windows.yml": {
+        "name": "Build Windows bundle and release",
+        "state": "disabled_manually"
+      },
+      ".github/workflows/linux-inputs.yml": {
+        "name": "Produce the reviewed Linux build inputs",
+        "state": "active"
+      },
+      ".github/workflows/windows-inputs.yml": {
+        "name": "Produce reviewed Windows build inputs",
+        "state": "active"
+      }
+    }
+  }
+}
