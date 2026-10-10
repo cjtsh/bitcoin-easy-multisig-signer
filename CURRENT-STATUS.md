@@ -1,7 +1,14 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.6.7 is the Color Team cycle-3 build-process
-remediation.** The cycle-3 five-lane Color Team audit of the `v0.6.6`
+**Source revision 0.6.8 is the Color Team cycle-4 build-process
+remediation of the `v0.6.7` tree.** Every finding the cycle's plan
+schedules now has exactly one row in `releases/PATCH-0.6.8.md` with a
+severity and a closing test the build loads, so nothing is closed by
+silence, and `CONTROLS.md` is the parsed inventory of the security
+controls the code claims; publication through the unified pipeline
+follows. The wallet, transaction, signing and broadcast engine is
+unchanged from 0.6.7, which was the cycle-3 build-process remediation:
+the cycle-3 five-lane Color Team audit of the `v0.6.6`
 tree (report, plan, lock and index in this repository's root) graded
 **⛔ BLOCKED** — not on the app. Red found no breach, Orange recorded its
 first LOGIC PROVEN (21/21 invariants), Amber verified the supply chain
