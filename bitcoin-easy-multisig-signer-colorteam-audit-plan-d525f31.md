@@ -165,7 +165,7 @@ that `main` now points at, which is why it is named by short commit.
 - `vendor/libusb-1.0.0.dylib` — compiled arm64 binary; provenance and hash pin documented at `vendor/README.md:36-47` but internals not reviewed.
 - Vendored embit wheel internals — only the documented two-edit delta vs upstream (`vendor/README.md:10-34`); the full library was not read.
 - `ui.html` (129 KB), `gui.py` (51 KB), `wallet_service.py` (36 KB), `probe.py` (30 KB), `tests/test_workflow_config.py` (1112 lines) — sampled at entry points, gates, and stated invariants; not read line-by-line. Full reading is the panel's job.
-- Runtime behavior on a live machine, and the contents of the published release artifacts — the survey was static and offline; no build was run, no server started, no device attached, no artifact downloaded, no workflow dispatched. Every published byte was therefore **not** verified at survey time.
+- Runtime behavior on a live machine, and the contents of the published release artifacts — the survey was static and offline; no build was run, no server started, no device attached, no artifact downloaded, no workflow dispatched *during the survey*. One candidate build was dispatched afterwards at the owner's direction (section 4, revision 5); its artifacts were produced but were not downloaded or executed, and no published release byte was verified. Every published byte was therefore **not** verified at survey time.
 - The GitHub Actions run **logs** of the `v0.6.7` candidate and promote runs — run metadata was verified from the API (section 7); the logs themselves were not read.
 - `docs/audits/*.pdf` — prior third-party AI audit reports in binary PDF form, not read.
 - GitHub secret **values** — only their names were read, from the workflow and the environment list (section 4); values were never requested and are not in the repository.
@@ -226,7 +226,8 @@ checked-out tree at `d525f31`, its committed history, and read-only GitHub REST 
 metadata (repository settings, rulesets, environments, Actions registrations, workflow
 runs, releases). No build, no dispatch, no download, no live system, no secret value, no
 write of any kind — the read-only rule is the budget. (The owner later set that rule aside
-for the owner-directed writes logged in section 9; the surveyor did not relax it itself, and
+for the owner-directed writes logged in section 9, which include one candidate build dispatch;
+the surveyor did not relax it itself, and
 no reading budget beyond the above was spent.) The survey stops when the five
 declared assets, the two unforgivable acts, the in-scope / out-of-scope / not-examined
 lists, and the questions for the owner can each be written with a `file:line @
@@ -375,6 +376,58 @@ table.
   for the panel:** at `d525f31` the credential resolution cannot be exercised at all, so the
   notarize and publish steps are testable by reading, not by running, until the revision under
   audit carries the fix.
+- **The fix, proved by a real build (post-survey, owner-directed).** Reading can show that a job
+  names the environment; it cannot show that the stored values arrive, because a wrong
+  password, an expired certificate and a secret filed in the wrong store all look identical
+  from outside. On 2026-10-10 the owner directed one candidate dispatch to settle it. It is
+  recorded here because it is the only hard evidence that the release path still works after
+  the rewind, and because the panel must know exactly what it does and does not prove.
+
+  | Fact | Value |
+  |---|---|
+  | Run | `38056270688` — <https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38056270688> |
+  | Workflow and commit | `build-candidate.yml` dispatched from `main` at `05ae6aeec1a460f1a0faffbdf11850fd2afd2263` |
+  | Inputs | `notarize=true`, `publish=false` — the documented candidate step |
+  | Result | `completed` / `success`; all seven jobs green |
+  | Published | **Nothing.** The newest release is still `v0.6.7`; no tag was created |
+
+  Credential steps, by name, read from the run's own job record
+  (`run_attempt` 1): `Import the Developer ID certificate` **success**,
+  `Provide notary credentials` **success**, `Build the DMG` **success**,
+  `Verify the DMG, the signature and the bundled app` **success**. The guard
+  `A requested notarized build must fail closed without credentials` also passed, so the run
+  took the credentialed path rather than degrading silently.
+
+  Proof that `publish=false` was honoured, in the same record: in the `SHA256SUMS` job,
+  `Sign the checksum manifest with the release key` is **skipped** while
+  `Attest build provenance for every asset` **succeeds**.
+
+  Artifact digests, computed by GitHub over the exact uploaded bytes; a referee can re-read
+  them at `.../actions/runs/38056270688/artifacts`:
+
+  | Artifact | Bytes | sha256 |
+  |---|---|---|
+  | `macos-dmg` | 33,743,651 | `6c0a0589edd6bc65dd37c1860f8150f0edefa6898bcc8742219efb81ca103087` |
+  | `windows-bundle` | 35,402,302 | `28ec47abb5fc91db6498e4124e9b99304c93b6531c9959af4d0c16aec12d1c61` |
+  | `linux-desktop` | 134,966,290 | `3e2bd459ca71ad53cba63a12a2455b5262c9579717724750c97619f80345e0d7` |
+  | `source-archive` | 3,450,507 | `085bacc0ef95719c4c7cc89827b56d8e22a30f4d189e9bdbcaaf703dc12ff3f6` |
+  | `release-assets` | 207,563,242 | `e88c498c518a369bacf71a287f650ea56b5c84490538df74ac09ce182580c924` |
+  | `sha256sums` | 580 | `d473b23f06a5856afaa9ef22e6cb52d315a73a89ad5c6e8e1653d252d9658d7a` |
+  | `candidate-manifest` | 254 | `c8a79a40b71e35c649deeac21105e81ba877fc1c4efc0867b1f3f559548add9c` |
+
+  - **What this proves:** the Apple signing certificate and the notary credentials are reachable
+    by a dispatched build from `main`; signing, notarization and verification complete; the
+    provenance attestation is emitted; and no human approval sits anywhere in the path. No
+    session handled a secret value.
+  - **What it does not prove:** the GPG half. `Sign the checksum manifest with the release key`
+    was skipped by design, so the release key stays unexercised until a real publication. And it
+    says nothing about the audited revision — the run is at `05ae6ae`, *after* `d525f31`. The
+    panel must still confirm that the revision it locks carries the environment keys, which at
+    this post-survey state are `build-candidate.yml:153` and `:700`.
+  - **A correction for whoever tries to re-check this:** the Jobs API does not expose a job's
+    environment at all — the field is absent from the response, not present-and-null. "No job
+    entered a signing environment at `d525f31`" is therefore established by reading the
+    workflow text (no `environment:` key), and can never be established from that API.
 - Release key: committed public `signing-key.asc` = `rsa4096`, fingerprint `ACCC 2F1C D436
   9128 D549 CC58 E972 85D2 DD0B D6D7`, uid `Bitseeker LLC <release@bitseeker.llc>`; the
   private half lives only in the `release-signing` environment secret and is bound to that
@@ -576,9 +629,11 @@ threat cannot be cleared by argument.
   fixes as next-cycle verification, exactly as `releases/PATCH-0.6.7.md` stands to the
   cycle-3 audit.
 - **The survey's writes.** The runbook's read-only rule was set aside at the owner's explicit
-  direction for these commits and for publishing this plan (section 9, revision 3). No other
-  write was made: no branch was created, no workflow dispatched, no release touched, no
-  artifact downloaded.
+  direction for these commits, for publishing this plan (section 9, revision 3), and for one
+  candidate build dispatch made after the survey (revision 5, run `38056270688`). No other
+  write was made: no branch was created, no release touched or tag created, no artifact
+  downloaded, no secret value requested. The dispatch attached no release, changed no source
+  file, and left the tree byte-identical.
 - `vendor/libusb-1.0.0.dylib` — a compiled arm64 binary (and the Windows DLL and Linux
   AppImage runtime alongside it). Provenance and hash pins are documented at
   `vendor/README.md:36-47`; the binaries' internals were not reviewed.
@@ -750,6 +805,25 @@ arrived with the owner's 2026-10-10 amendment and is the one the amendment itsel
   agent standing by; nothing runs unless the owner is at the terminal as the commander), and
   records that the external half is not testable from this repository and needs a
   scheduled-task inventory as its artefact. No other section, threat, grade or asset changed.
+- **Revision 5** (2026-10-10, owner-directed, this commit): evidence added, two statements
+  corrected, nothing re-scoped and no grade touched.
+  - **Section 4 — the post-fix proof run recorded** (run `38056270688`): a notarized candidate
+    dispatch from `main`, all seven jobs green, the Apple credential steps and notarization
+    demonstrably executed, the GPG signing step demonstrably skipped, nothing published, and
+    the artifact digests GitHub computed over the uploaded bytes, with the API path a referee
+    can re-read. The block states plainly what the run proves and what it does not, including
+    that it ran *after* the audited revision.
+  - **Section 6 corrected** — it said no workflow was dispatched. One candidate build was, after
+    the survey, at the owner's direction; no artifact was downloaded or executed and no
+    published byte was verified, so the exclusion stands.
+  - **Section 7 corrected** — "The survey's writes" now names that dispatch alongside the
+    commits, and records that it created no release or tag and changed no file.
+  - **Note for the panel.** The Jobs API does not expose a job's environment field, so "no job
+    entered a signing environment at `d525f31`" rests on the workflow text, not on any API
+    value; the run's step outcomes, not that field, are the evidence that the credentials
+    resolve.
+  - **Not changed:** the revision under audit (`d525f31`), the three rubric grades, the five
+    ranked assets, the threat list T1–T12, and the policies of revisions 2–4.
 - **Provenance of every sign-off:** recorded on 2026-10-10 at the owner's direction. The
   owner supplied the signature identity and the date, directed publication, and directed each
   amendment; the surveyor agent transcribed the two lines below on every occasion, in the same
