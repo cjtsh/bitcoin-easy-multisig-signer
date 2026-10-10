@@ -213,6 +213,55 @@ class LocalServerAccessTests(ApiTestCase):
         self.assertEqual(caught.exception.code, 403)
 
 
+class LocalTokenComparisonTests(ApiTestCase):
+    """CT-82: the token is compared whole, in constant time, and never by prefix.
+
+    `tests/test_gui_integration.py` pinned only that a wrong token is refused.
+    A comparison that accepted any prefix -- `state.token.startswith(header)` or
+    a last-six-characters test -- stayed green under that pin, so the matrix
+    below walks every near miss and the shape pin holds the primitive.
+    """
+
+    def test_every_near_miss_of_the_token_is_refused(self):
+        token = self.token
+        substitution = ("0" if token[0] != "0" else "1") + token[1:]
+        cases = {
+            "no header at all": None,
+            "empty value": "",
+            "one character short": token[:-1],
+            "one character long": token + "x",
+            "first six characters": token[:6],
+            "last six characters": token[-6:],
+            "third through last": token[2:],
+            "everything but the first": token[1:],
+            "everything but the last": token[:-1],
+            "one character substituted": substitution,
+            "doubled": token * 2,
+        }
+        # A surrounding space is not a near miss worth asserting: `http.client`
+        # refuses a value containing a newline outright, and both client and
+        # parser strip surrounding whitespace, so " token" reaches the handler
+        # as the token itself. That is HTTP, not a weakened comparison.
+        for name, value in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self.post("/api/status", {}, token=value)[0], 403, name)
+        self.assertEqual(self.post("/api/status", {}, token=token)[0], 200)
+
+    def test_the_comparison_is_whole_value_and_constant_time(self):
+        """Pin the primitive: a weakened comparison is what the matrix exposes."""
+        source = Path(gui.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            'candidate = (self.headers.get("X-Local-Token") or "").encode("utf-8")',
+            source,
+        )
+        self.assertIn('expected = state.token.encode("utf-8")', source)
+        self.assertIn("return hmac.compare_digest(candidate, expected)", source)
+        for weakened in ("state.token.startswith", "state.token.endswith",
+                         "in state.token", "state.token in "):
+            self.assertNotIn(weakened, source,
+                             f"the token comparison was weakened to {weakened!r}")
+
+
 class TransactionJourneyTests(ApiTestCase):
     def test_mutinynet_uses_same_builder_with_distinct_network_selection(self):
         self.state.mutinynet_fees = {**FEE_QUOTE, "network": "mutinynet"}
