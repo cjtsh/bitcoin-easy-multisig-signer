@@ -15,7 +15,7 @@ commit").
 | **Same session for both?** | `no` — different harnesses (DeepSeek DSH vs ZCode) and different recorded session identifiers; the surveyor's session id is exposed and differs from this harness's, which exposes none. Different sessions are established; different models rest on the two harnesses' declarations (DeepSeek harness vs Z.ai GLM), not on independent verification. |
 | **Locked at** | `2026-10-10T14:21:23Z` |
 | **Published before the panel ran** | this lock file, committed to public `main` immediately after writing (commit hash recorded in the cycle's report and index row) |
-| **Plan SHA-256 at the end of the audit** | `<filled by the referee>` |
+| **Plan SHA-256 at the end of the audit** | `ab5c7dbb4b89ed4f485d1e6851ddab20a5950e57bd4aae5d852667d22c5fbed8` (re-hashed by the White referee from `main:bitcoin-easy-multisig-signer-colorteam-audit-plan-d525f31.md`, 2026-10-10 — **equal to the start hash: the scope never moved; the audit is not void**) |
 
 The plan's rubric (section 0, "The rubric as adapted to this target") is the locked
 rubric for this cycle: CLEARED requires no path in in-scope code at the target revision
