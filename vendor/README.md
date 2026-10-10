@@ -130,3 +130,18 @@ run `python scripts/build-hwi-manifest.py --check` before they bundle the helper
 and the tarball ships this file. Moving the hwi pin therefore fails the build
 until the manifest is regenerated and committed, which is the point: coverage is
 recorded from the artifact rather than asserted by name.
+
+## Checking these pins
+
+Every digest stated above is checked against the committed bytes by
+`tests/test_vendor_pins.py`, which also refuses a file in this directory that no
+digest covers. This is the command that reproduces them:
+
+```
+python scripts/vendor-digests.py
+```
+
+After a deliberate replacement, run it, update the prose above and `DIGESTS` in
+the test in the same commit. To watch the check fail without touching the
+committed files, copy this directory somewhere disposable, flip one byte in the
+copy, and run the module with `VENDOR_DIR` pointing at it.

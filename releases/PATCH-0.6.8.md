@@ -19,6 +19,7 @@ by a dated owner acceptance note. Nothing is closed by silence.
 | ID | Sev | Fix | Closing evidence |
 | --- | --- | --- | --- |
 | CT-87 | Med | The container proof runs a digest, not a moving tag. The runner's apt set is declared once (`SYSTEM_PACKAGES` in `scripts/build-linux.sh`), asserted to be exactly what the workflow installs, and the version each resolved to is written into the SBOM by `dpkg-query` (fail closed if a declared package is absent). Exact apt version pins are **declined** for the runner image and recorded below as accepted floating inputs. | `tests/test_workflow_config.py::ToolchainPinTests::test_the_container_proof_runs_a_digest_not_a_moving_tag`, `…test_the_runner_packages_are_the_ones_the_build_script_declares`, `…test_every_floating_input_is_written_down`; `tests/test_build_sbom.py::SystemPackageTests` |
+| CT-88 | Low | Every digest `vendor/README.md` states was prose with nothing checking it. `tests/test_vendor_pins.py::VendorPinTests` hashes the committed bytes, asserts the README states each digest, and refuses a file in `vendor/` that no digest covers. The README's regeneration command is real: `scripts/vendor-digests.py` is run by the test and must reproduce the recorded digests. | `tests/test_vendor_pins.py::VendorPinTests` (byte-flip break-and-watch in a disposable copy) |
 
 ## CT-87: the build's floating inputs
 
@@ -74,3 +75,43 @@ A review of this release should re-run the refresh command, move the
 digest, and, if any of the four runner packages changes, update
 `SYSTEM_PACKAGES`, this section, and the SBOM expectations in the same
 commit.
+
+## CT-88: the vendored digests were prose
+
+`vendor/README.md` stated seven SHA-256 digests and nothing checked any
+of them. Each is an input to a signed release — two embit archives, the
+embit wheel both lock files require, the libusb dylib, the libusb source
+tarball, the Windows DLL, and the AppImage runtime — so a changed byte
+would have shipped against a README that still claimed the old value.
+
+`tests/test_vendor_pins.py::VendorPinTests` now asserts three things,
+each one a way a prose digest goes wrong:
+
+- every registered file hashes to the digest the README states;
+- the README states every registered digest, so editing the prose alone
+  breaks the check rather than silently changing what is claimed;
+- every file in `vendor/` is either registered or listed in the test
+  with a reason it is not (the README itself, `libusb-COPYING`, and the
+  generated `hwi-payload-3.2.0.json`, which `build-hwi-manifest.py
+  --check` already covers).
+
+The regeneration command the README documents is not prose either:
+`scripts/vendor-digests.py` prints `digest  name` for the directory, and
+the test runs it and requires it to reproduce the recorded digests.
+
+Break-and-watch, per the plan, is a flipped byte in a disposable copy
+rather than in the committed file:
+
+```
+cp -R vendor /tmp/vendor-scratch
+python -c "from pathlib import Path; p = Path('/tmp/vendor-scratch/embit-upstream-2b375a.tar.gz'); d = bytearray(p.read_bytes()); d[100] ^= 0xFF; p.write_bytes(bytes(d))"
+VENDOR_DIR=/tmp/vendor-scratch python -m unittest tests.test_vendor_pins
+```
+
+which reports the flipped file as
+
+```
+AssertionError: '5e51f2fe3ee28b9e36dd5127efc215c4df1185e151485c99146c67f1bb425068'
+!= '3323c77583432be513b346bdc54f86f7ef5fb259e1db0e60975dc51bcbceb0a3' :
+embit-upstream-2b375a.tar.gz does not match its recorded digest
+```
