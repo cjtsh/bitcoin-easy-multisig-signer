@@ -61,12 +61,19 @@ jobs:
           exit 1
       - name: Require the default branch for publication
         if: ${{ inputs.publish }}
+        env:
+          # The run id is free text from the dispatch form. It is read from the
+          # environment and never substituted into this script: the shell expands
+          # `$CANDIDATE_RUN_ID` as data, whereas `${{ inputs.candidate_run_id }}`
+          # used to be pasted into the program text before bash parsed it, so the
+          # test below ran its own input (CT-72, fixed in 0.6.8).
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo 'Public releases must be dispatched from main.' >&2
             exit 1
           fi
-          if [[ ! "${{ inputs.candidate_run_id }}" =~ ^[0-9]+$ ]]; then
+          if [[ ! "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]]; then
             echo 'Publishing requires the run ID of a successful notarized candidate.' >&2
             exit 1
           fi
@@ -121,14 +128,18 @@ jobs:
             echo "== $test"
             node "$test"
           done
-      - run: bash scripts/build-source.sh ${{ needs.version.outputs.version }}
+      - env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: bash scripts/build-source.sh "$VERSION"
       # Run the tests FROM the archive. An archive missing a test helper still
       # builds and still uploads, so nothing caught it until the tests were run
       # out of the extracted tarball.
       - name: Run the tests from the archive itself
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          version="${{ needs.version.outputs.version }}"
+          version="$VERSION"
           tar xzf "dist/bitcoin-easy-multisig-signer-v${version}.tar.gz" -C "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/bitcoin-easy-multisig-signer-v${version}"
           python -m unittest discover -s tests -q
@@ -197,12 +208,14 @@ jobs:
             node "$test"
           done
       - name: The signed-release path must fail closed without credentials
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           # RELEASE=1 is the notarized path. It must refuse to build rather than
           # quietly produce an ad-hoc-signed artifact, and CI can prove that
           # without holding Apple credentials it does not have.
-          if RELEASE=1 bash scripts/build-macos.sh "${{ needs.version.outputs.version }}" >release-guard.txt 2>&1; then
+          if RELEASE=1 bash scripts/build-macos.sh "$VERSION" >release-guard.txt 2>&1; then
             echo "RELEASE=1 built without signing credentials; that must not happen." >&2
             exit 1
           fi
@@ -213,9 +226,11 @@ jobs:
         # about the notary credentials, so a "notarized" run cannot quietly
         # produce an ad-hoc-signed DMG instead.
         if: ${{ inputs.notarize }}
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          if RELEASE=1 bash scripts/build-macos.sh "${{ needs.version.outputs.version }}" >notary-guard.txt 2>&1; then
+          if RELEASE=1 bash scripts/build-macos.sh "$VERSION" >notary-guard.txt 2>&1; then
             echo "RELEASE=1 built without a notarisation credential; that must not happen." >&2
             exit 1
           fi
@@ -223,7 +238,9 @@ jobs:
           grep -q "MAC_NOTARY_KEY_PATH, MAC_NOTARY_KEY_ID and MAC_NOTARY_ISSUER_ID" notary-guard.txt \
             || grep -q "Notarisation credentials are set incompletely" notary-guard.txt
       - name: Prepare hash-locked build environment before signing secrets
-        run: PREPARE_ONLY=1 bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: PREPARE_ONLY=1 bash scripts/build-macos.sh "$VERSION"
       - name: Import the Developer ID certificate
         # Only the notarized path needs a signing identity. An unsigned test build
         # must keep working without any Apple credentials.
@@ -305,14 +322,17 @@ jobs:
           RELEASE: ${{ inputs.notarize && '1' || '0' }}
           BUILD_DEPS_PREPARED: '1'
           MAC_SIGN_IDENTITY: ${{ inputs.notarize && vars.MAC_SIGN_IDENTITY || '' }}
+          VERSION: ${{ needs.version.outputs.version }}
           # The notary credential — a profile name, or the API key triple — is
           # exported by the "Provide notary credentials" step, so it arrives through
           # the environment rather than being duplicated here.
-        run: bash scripts/build-macos.sh ${{ needs.version.outputs.version }}
+        run: bash scripts/build-macos.sh "$VERSION"
       - name: Verify the DMG, the signature and the bundled app
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          version="${{ needs.version.outputs.version }}"
+          version="$VERSION"
           app="dist/Bitcoin Easy Signer.app"
           exe="$app/Contents/MacOS/Bitcoin Easy Signer"
           # Whichever path ran, exactly one DMG must exist. Not mapfile: the macOS
@@ -455,13 +475,15 @@ jobs:
         shell: pwsh
         env:
           PREPARE_ONLY: "1"
-        run: ./scripts/build-windows.ps1 -Version "${{ needs.version.outputs.version }}"
+          VERSION: ${{ needs.version.outputs.version }}
+        run: ./scripts/build-windows.ps1 -Version "$env:VERSION"
       - name: Build the Windows bundle
         shell: pwsh
         env:
           LIBUSB_SHA256: ${{ vars.LIBUSB_WINDOWS_SHA256 }}
           BUILD_DEPS_PREPARED: "1"
-        run: ./scripts/build-windows.ps1 -Version "${{ needs.version.outputs.version }}"
+          VERSION: ${{ needs.version.outputs.version }}
+        run: ./scripts/build-windows.ps1 -Version "$env:VERSION"
       - name: Verify the built bundle
         run: |
           set -euo pipefail
@@ -509,10 +531,12 @@ jobs:
           ./.build-venv/Scripts/python.exe scripts/build-sbom.py \
             --libusb-sha "$LIBUSB_SHA256" --output dist/BUILD-SBOM.json
       - name: Check the bundle's layout, icon and archive
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           ./.build-venv/Scripts/python.exe scripts/verify-windows-bundle.py \
-            --version "${{ needs.version.outputs.version }}" \
+            --version "$VERSION" \
             --sbom dist/BUILD-SBOM.json
       - name: Name the SBOM for one shared release page
         run: mv dist/BUILD-SBOM.json dist/BUILD-SBOM-windows-x64.json
@@ -579,11 +603,13 @@ jobs:
           # only place it is installed, so a lock that does not match its
           # requirements file fails here rather than inside a build.
           PREPARE_ONLY: "1"
-        run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+          VERSION: ${{ needs.version.outputs.version }}
+        run: scripts/build-linux.sh "$VERSION"
       - name: Build the AppImage and the tarball
         env:
           BUILD_DEPS_PREPARED: "1"
-        run: scripts/build-linux.sh "${{ needs.version.outputs.version }}"
+          VERSION: ${{ needs.version.outputs.version }}
+        run: scripts/build-linux.sh "$VERSION"
       - name: Prove the AppImage starts where libfuse.so.2 is absent
         # The published promise is that a downloaded AppImage does not need the
         # host's libfuse.so.2 -- the library whose absence has always made one
@@ -850,11 +876,13 @@ jobs:
           name: release-assets
           path: dist
       - name: Verify downloaded release bytes
+        env:
+          PUBLISH: ${{ inputs.publish }}
         run: |
           set -euo pipefail
           cd dist
           shasum -a 256 -c SHA256SUMS
-          if [[ "${{ inputs.publish }}" == "true" ]]; then
+          if [[ "$PUBLISH" == "true" ]]; then
             # The publish path must carry the release-key signature, verified
             # against the public key committed in this repository (SIGNING.md).
             test -f SHA256SUMS.asc || { echo "SHA256SUMS.asc is missing." >&2; exit 1; }
@@ -866,6 +894,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
+          NOTARIZE: ${{ inputs.notarize }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           set -euo pipefail
           tag="v${VERSION}"
@@ -881,7 +911,7 @@ jobs:
           # The tag is the identity. What changed for the reader belongs in the notes
           # below, where it can be a sentence instead of a suffix.
           release_title="$tag"
-          if [[ "${{ inputs.notarize }}" == "true" ]]; then
+          if [[ "$NOTARIZE" == "true" ]]; then
             build_kind="The macOS download is signed with a Developer ID certificate and **notarized by Apple**, so it installs with a normal double-click. The Windows and Linux downloads are **unsigned**: their guarantee is provenance, not a certificate — every asset was built from this exact commit in one gated workflow run, is covered by the CI-generated \`SHA256SUMS\` and its release-key signature \`SHA256SUMS.asc\`, and carries a GitHub Sigstore build attestation. See \`SIGNING.md\`."
             dmg_name="Bitcoin-Easy-Signer-v${VERSION}-macOS.dmg"
           else
@@ -963,13 +993,13 @@ jobs:
           # to correct a build nobody had opened yet. No tag is created and no
           # release exists, so nothing is downloadable by the public; the DMG and
           # the source archive stay attached to this workflow run as artifacts.
-          if [[ "${{ inputs.publish }}" != "true" ]]; then
+          if [[ "$PUBLISH" != "true" ]]; then
             cat > dist/CANDIDATE-MANIFEST.txt <<EOF
           version=${VERSION}
           commit=${GITHUB_SHA}
           run_id=${GITHUB_RUN_ID}
-          notarize=${{ inputs.notarize }}
-          publish=${{ inputs.publish }}
+          notarize=${NOTARIZE}
+          publish=${PUBLISH}
           EOF
             {
               echo "### Candidate build of v${VERSION} — not published"
@@ -987,7 +1017,7 @@ jobs:
             cat notes.md
             exit 0
           fi
-          if [[ "${{ inputs.notarize }}" != "true" ]]; then
+          if [[ "$NOTARIZE" != "true" ]]; then
             echo "Refusing to publish an unsigned or unnotarized build." >&2
             exit 1
           fi

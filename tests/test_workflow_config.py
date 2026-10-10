@@ -206,7 +206,10 @@ class WorkflowConfigTests(unittest.TestCase):
                      if step.get("name") == "Require the default branch for publication")
         self.assertEqual(guard["if"], "${{ inputs.publish }}")
         self.assertIn('refs/heads/main', guard["run"])
-        self.assertIn("candidate_run_id", guard["run"])
+        self.assertIn("CANDIDATE_RUN_ID", guard["run"])
+        self.assertEqual(
+            guard["env"]["CANDIDATE_RUN_ID"], "${{ inputs.candidate_run_id }}",
+            "the run id must arrive through env:, never as script text (CT-72)")
 
     def test_versioned_release_notes_are_included_when_present(self):
         self.assertIn('release_notes="releases/RELEASE-NOTES-${VERSION}.md"', self.text)
@@ -252,7 +255,7 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIs(inputs["publish"]["default"], False,
                       "an ordinary dispatch must build only a candidate")
         self.assertIs(inputs["notarize"]["default"], False)
-        guard = self.text.index('if [[ "${{ inputs.publish }}" != "true" ]]')
+        guard = self.text.index('if [[ "$PUBLISH" != "true" ]]')
         notes = self.text.index("cat > notes.md <<EOF")
         publish = self.text.index("gh release create")
         self.assertLess(notes, guard, "the guard must run after the notes are built")
@@ -627,6 +630,14 @@ class PublishPathSweepTests(unittest.TestCase):
         subprocess.run(["git", "branch", "-q", "-D", name], cwd=folder,
                        check=True, capture_output=True, text=True)
 
+    def _tag(self, folder: pathlib.Path, name: str) -> None:
+        subprocess.run(["git", "tag", name], cwd=folder,
+                       check=True, capture_output=True, text=True)
+
+    def _switch(self, folder: pathlib.Path, name: str) -> None:
+        subprocess.run(["git", "switch", "-q", name], cwd=folder,
+                       check=True, capture_output=True, text=True)
+
     def _run_sweep(self, folder: pathlib.Path):
         return run_bash_file(ROOT / "scripts" / "check-publish-paths.sh",
                              str(folder), cwd=folder, timeout=60)
@@ -661,6 +672,68 @@ class PublishPathSweepTests(unittest.TestCase):
         "    runs-on: ubuntu-24.04\n"
         "    steps:\n"
         "      - run: echo ok\n"
+    )
+    # The blanket grant. A denylist that only knew `contents: write` and
+    # `gh release` missed this completely.
+    PUBLISHING_WRITE_ALL = (
+        "name: blanket\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    permissions: write-all\n"
+        "    steps:\n"
+        "      - run: echo ok\n"
+    )
+    # The REST path, with no CLI and no write grant of its own.
+    PUBLISHING_REST = (
+        "name: rest\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    steps:\n"
+        "      - run: gh api -X POST /repos/$GITHUB_REPOSITORY/releases\n"
+    )
+    # A third-party release action.
+    PUBLISHING_ACTION = (
+        "name: action\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    steps:\n"
+        "      - uses: softprops/action-gh-release@v2\n"
+    )
+    # A publisher that refuses every ref which is not main. This is what makes
+    # a published tag inert rather than an offender.
+    GUARDED = (
+        "name: guarded\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    permissions:\n"
+        "      contents: write\n"
+        "    steps:\n"
+        "      - run: |\n"
+        "          if [ \"$GITHUB_REF\" != \"refs/heads/main\" ]; then\n"
+        "            echo 'refusing'\n"
+        "            exit 1\n"
+        "          fi\n"
+        "          gh release create v9 \"$GITHUB_SHA\"\n"
+    )
+    # Prose, not publication. This is the real shape of linux-inputs.yml and
+    # windows-inputs.yml, whose comments used to spell the patterns.
+    COMMENT_ONLY = (
+        "name: prose\n"
+        "on: workflow_dispatch\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    steps:\n"
+        "      - run: echo ok\n"
+        "# This recipe has no contents: write grant and never runs gh release.\n"
     )
 
     def test_the_sweep_refuses_a_remote_branch_carrying_a_release_job(self):
@@ -875,6 +948,235 @@ class PublishPathSweepTests(unittest.TestCase):
                                 f"the sweep missed a body it should read:\n{out}")
             self.assertIn("grants-contents-write", out)
 
+    # -- W2: the allowlist, the wider matchers, and the tags ------------------
+    #
+    # CT-76/CT-77: the sweep fetched `+refs/heads/*` only, so 46 published
+    # tags that freeze an UNGUARDED publisher were invisible, and its two
+    # hard-coded patterns (`contents: write`, the substring `gh release`) never
+    # saw `permissions: write-all`, a REST release POST, or any of the
+    # third-party release actions. These tests drive the real script against a
+    # fixture remote for each form the audit demonstrated.
+
+    def _repo_with_tag(self, repo: pathlib.Path, tag: str, body: str) -> None:
+        """main clean, a `release` branch carrying `body`, tagged, branch gone.
+
+        The branch is deleted afterwards so the tag is the only ref under
+        test; otherwise a red result could come from the branch half and the
+        tag half could still be blind.
+        """
+        self._repo(repo)
+        self._write(repo, "build-candidate.yml", self.CLEAN)
+        self._commit(repo, "main")
+        self._branch(repo, "release")
+        self._write(repo, "build-candidate.yml", body)
+        self._commit(repo, "release")
+        self._tag(repo, tag)
+        self._switch(repo, "main")
+        self._drop(repo, "release")
+
+    def test_the_sweep_refuses_a_tag_carrying_an_unguarded_publisher(self):
+        """The tag half of CT-76, on a tag that is not on the legacy list.
+
+        This is the audit's own fixture, inverted: a tag whose publisher has
+        no default-branch guard used to pass silently. A NEW tag may not
+        reintroduce one, which is what keeps the rule closed under change.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo_with_tag(repo, "v9.9.9", self.PUBLISHING)
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a tag that can publish:\n{out}")
+            self.assertIn("unguarded-tag-publisher", out)
+            self.assertIn("v9.9.9", out)
+
+    def test_the_sweep_accepts_an_enumerated_legacy_tag(self):
+        """The 46 tags published before the guard existed are a known residual.
+
+        They are immutable (AGENTS.md forbids deleting or moving a published
+        tag), so the sweep records them instead of blocking every release
+        forever. The name is taken from the script's own list, so this test
+        stays honest if that list is edited.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo_with_tag(repo, "v0.4.0", self.PUBLISHING)
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused an enumerated legacy tag:\n{out}")
+            self.assertIn("legacy-unguarded-tag-publisher", out)
+
+    def test_the_sweep_accepts_a_tag_whose_publisher_refuses_off_main(self):
+        """A guarded publisher cannot publish from a tag ref, so it is inert."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo_with_tag(repo, "v9.9.8", self.GUARDED)
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused a guarded tag publisher:\n{out}")
+            self.assertIn("guarded-tag-publisher", out)
+
+    def test_the_sweep_refuses_a_branch_granting_write_all(self):
+        """CT-77: `permissions: write-all` is a blanket grant the old
+        denylist never spelled."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "blanket")
+            self._write(repo, "build-candidate.yml", self.PUBLISHING_WRITE_ALL)
+            self._commit(repo, "blanket")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted write-all:\n{out}")
+            self.assertIn("grants-write-all", out)
+
+    def test_the_sweep_refuses_a_branch_that_posts_to_the_rest_api(self):
+        """`gh api -X POST …/releases` publishes without the release CLI."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "rest")
+            self._write(repo, "build-candidate.yml", self.PUBLISHING_REST)
+            self._commit(repo, "rest")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a REST publish:\n{out}")
+            self.assertIn("names-release-surface", out)
+
+    def test_the_sweep_refuses_a_branch_using_a_release_action(self):
+        """Every `*-action-gh-release` variant names the release surface."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "action")
+            self._write(repo, "build-candidate.yml", self.PUBLISHING_ACTION)
+            self._commit(repo, "action")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted a release action:\n{out}")
+            self.assertIn("names-release-surface", out)
+
+    def test_the_sweep_ignores_a_workflow_whose_only_match_is_a_comment(self):
+        """The honest `linux-inputs.yml` shape must not be an offender.
+
+        Its comment used to spell both patterns, which made a lock-only recipe
+        look like a publisher — and one copy of that comment is frozen in the
+        immutable tag v0.6.7, where it could never be fixed.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "inputs")
+            self._write(repo, "linux-inputs.yml", self.COMMENT_ONLY)
+            self._commit(repo, "inputs")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused a comment-only recipe:\n{out}")
+
+    def test_the_sweep_still_flags_a_pattern_after_a_hash_on_a_code_line(self):
+        """Documented residual, pinned so it cannot be softened by accident.
+
+        Only a line whose FIRST non-whitespace character is `#` is skipped. No
+        line is ever truncated at a `#`, so `run: echo ok # gh release` is
+        still matched whole. That is the fail-closed direction: the cost is a
+        false positive on a trailing comment, never a false negative hidden
+        behind a quote.
+        """
+        trailing = (
+            "name: trailing\n"
+            "on: workflow_dispatch\n"
+            "jobs:\n"
+            "  build:\n"
+            "    runs-on: ubuntu-24.04\n"
+            "    steps:\n"
+            "      - run: echo ok  # this prose mentions gh release\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.CLEAN)
+            self._commit(repo, "main")
+            self._branch(repo, "trailing")
+            self._write(repo, "build-candidate.yml", trailing)
+            self._commit(repo, "trailing")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"a pattern after a # on a code line went unseen:\n{out}")
+            self.assertIn("runs-gh-release", out)
+
+    def test_the_sweep_refuses_a_second_publisher_on_main(self):
+        """main may carry exactly one publisher, and it must be by name.
+
+        The old rule skipped main entirely, so any number of publishers could
+        sit there as long as one of them was the published path.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.PUBLISHING)
+            self._commit(repo, "main")
+            self._write(repo, "windows-inputs.yml", self.PUBLISHING)
+            self._commit(repo, "second publisher on main")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0,
+                                f"the sweep accepted two publishers on main:\n{out}")
+            self.assertIn("second-publisher-on-main", out)
+            self.assertIn("windows-inputs.yml", out)
+
+    def test_the_sweep_accepts_main_publishing_through_the_one_named_file(self):
+        """Positive half: build-candidate.yml on main still passes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            self._repo(repo)
+            self._write(repo, "build-candidate.yml", self.PUBLISHING)
+            self._write(repo, "linux-inputs.yml", self.CLEAN)
+            self._commit(repo, "main")
+
+            result = self._run_sweep(repo)
+            out = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0,
+                             f"the sweep refused the documented publish path:\n{out}")
+            self.assertIn("ok: no non-main ref carries a publish-capable workflow", out)
+
+    def test_the_sweep_fetches_tags_into_their_own_namespace(self):
+        """Body pin: tags are fetched explicitly, and never as heads.
+
+        If the tag refspec is dropped the tag tests go blind again; if the two
+        namespaces overlap, a tag would be judged by the head rule (allowed by
+        name) and an unguarded tag would pass.
+        """
+        text = (ROOT / "scripts" / "check-publish-paths.sh").read_text(encoding="utf-8")
+        self.assertIn("refs/tags/*", text,
+                      "the sweep must fetch every remote tag, not just heads")
+        self.assertIn("refs/remotes/publish-audit/tags", text)
+        self.assertIn("refs/remotes/publish-audit/heads", text)
+
 
 class SweepFailClosedPins(unittest.TestCase):
     """The sweep must never turn a failure to read into "ok".
@@ -895,7 +1197,7 @@ class SweepFailClosedPins(unittest.TestCase):
     def test_an_unreadable_workflow_body_is_an_offender(self):
         self.assertIn("unreadable-workflow", self.text,
                       "a body the sweep cannot read must be reported, not passed")
-        self.assertIn('report "$branch" "$path" "unreadable-workflow"', self.text)
+        self.assertIn('report "$label" "$path" "unreadable-workflow"', self.text)
 
     def test_the_body_read_is_not_allowed_to_swallow_its_failure(self):
         reads = [line for line in self.text.splitlines()
@@ -1027,12 +1329,16 @@ class ReleaseNotesTests(unittest.TestCase):
         # release_title is built from it.
         body, _, _ = self.text.split('tag="v${VERSION}"', 1)[1].partition("          EOF")
         block = 'tag="v${VERSION}"\n' + body + "          EOF\n"
-        script = block.replace("${{ inputs.notarize }}", notarize)
+        script = block
         # Print instead of writing notes.md, and drop the YAML indentation.
         script = script.replace("cat > notes.md <<EOF", "cat <<EOF")
         script = "\n".join(line[10:] if line.startswith(" " * 10) else line
                            for line in script.splitlines())
+        # NOTARIZE arrives through env: in the workflow, so the mode is selected
+        # the same way the runner would select it (0.6.8 moved every expression
+        # out of the script text; see CT-72).
         runner = ("VERSION=9.9.9 GITHUB_REF_NAME=main GITHUB_SHA=abcdef1234567890\n"
+                  f"NOTARIZE={notarize}\n"
                   + script + '\necho "TITLE=${release_title}"\n')
         # Never bash -c: Windows CreateProcess quoting mangles multiline -c
         # scripts into an exit-1/empty-stderr failure. run_bash_script writes

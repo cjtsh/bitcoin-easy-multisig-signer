@@ -21,8 +21,10 @@ name: Produce the reviewed Linux build inputs
 # had: a workflow that exists only on a non-default branch is not offered in the
 # "Run workflow" list until it has run once. The path filter keeps it quiet after
 # that, so it only re-runs when the thing it produces from actually changes.
-# This recipe publishes nothing — it has no contents:write and no gh release —
-# which is why scripts/check-publish-paths.sh allows it to stay on a branch.
+# This recipe publishes nothing: its permission is read-only and it never
+# invokes the release CLI, so scripts/check-publish-paths.sh allows it to stay
+# on a branch. (The sweep matches raw text, comments included, so this comment
+# must not spell the patterns it looks for.)
 on:
   push:
     branches:
