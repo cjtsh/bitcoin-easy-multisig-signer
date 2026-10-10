@@ -23,6 +23,7 @@ import tempfile
 import unittest
 
 from support import bash_syntax_check, find_build_recipe, run_bash_file, run_bash_script
+from workflow_harness import evaluate_if
 
 try:
     import yaml
@@ -150,7 +151,10 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertNotIn("--prerelease", self.text)
         self.assertNotIn("--clobber", self.text)
         release = self.data["jobs"]["release"]
-        self.assertNotIn("if", release, "publishing must not be gated on a tag")
+        # Gated on the dispatch input, never on a tag or a ref pattern: the tag
+        # is what publishing creates, so it cannot also be what triggers it.
+        self.assertEqual(release["if"], "${{ inputs.publish }}")
+        self.assertNotIn("refs/tags", release["if"])
         self.assertEqual(release["permissions"], {"contents": "write"})
 
     def test_network_check_also_runs_without_ambient_trust(self):
@@ -255,11 +259,20 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIs(inputs["publish"]["default"], False,
                       "an ordinary dispatch must build only a candidate")
         self.assertIs(inputs["notarize"]["default"], False)
-        guard = self.text.index('if [[ "$PUBLISH" != "true" ]]')
+        # Building and publishing are separate jobs, split by least authority
+        # (CT-83): the candidate job can never create a release, and the publish
+        # job cannot run on a candidate dispatch. The notes and the release
+        # command belong to the publish job alone.
+        candidate = self.data["jobs"]["candidate-manifest"]
+        self.assertEqual(candidate["if"], "${{ !inputs.publish }}")
+        self.assertEqual(candidate["permissions"], {"contents": "read"})
+        candidate_runs = "\n".join(step.get("run", "") for step in candidate["steps"])
+        self.assertIn("CANDIDATE-MANIFEST.txt", candidate_runs)
+        self.assertNotIn("gh release create", candidate_runs,
+                         "the candidate job must not be able to publish")
         notes = self.text.index("cat > notes.md <<EOF")
         publish = self.text.index("gh release create")
-        self.assertLess(notes, guard, "the guard must run after the notes are built")
-        self.assertLess(guard, publish, "the candidate path must exit before publishing")
+        self.assertLess(notes, publish, "the notes must be built before the release command")
         self.assertIn("was built and NOT published", self.text)
         # A candidate is not a draft release and not a prerelease: it creates no
         # release object at all, so there is nothing to publish by accident.
@@ -269,10 +282,12 @@ class WorkflowConfigTests(unittest.TestCase):
         """The three platform jobs share one run, one commit, one sums file."""
         jobs = self.data["jobs"]
         for job in ("version", "source", "macos", "windows", "linux",
-                    "checksums", "release"):
+                    "checksums", "candidate-manifest", "release"):
             self.assertIn(job, jobs)
         self.assertEqual(jobs["checksums"]["needs"],
                          ["version", "source", "macos", "windows", "linux"])
+        self.assertEqual(jobs["candidate-manifest"]["needs"],
+                         ["version", "source", "macos", "windows", "linux", "checksums"])
         self.assertEqual(jobs["release"]["needs"],
                          ["version", "source", "macos", "windows", "linux", "checksums"])
         self.assertEqual(jobs["windows"]["runs-on"], "windows-2022")
@@ -349,6 +364,81 @@ class WorkflowConfigTests(unittest.TestCase):
                         "stops a second publish path surviving on another ref")
         self.assertIn("scripts/check-publish-paths.sh", self.text,
                       "build-candidate.yml must run the publish-path sweep")
+
+
+@unittest.skipIf(yaml is None, "PyYAML not installed; workflow lint skipped")
+class LeastAuthorityTests(unittest.TestCase):
+    """CT-83: the repository write grant exists only where the write happens.
+
+    A candidate dispatch builds bytes and stops, so it must not carry
+    `contents: write` anywhere. A publish dispatch must carry it only on the job
+    that creates the release. Each job's own `if:` is rendered with the M1
+    harness instead of pattern-matched, so a job that merely starts gated — or
+    whose condition is later widened — fails here rather than at release time.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.data = yaml.safe_load(ACTIVE.read_text(encoding="utf-8"))
+        cls.jobs = cls.data["jobs"]
+
+    def effective_contents(self, job: dict) -> str:
+        """The `contents` scope a job holds once it runs.
+
+        A job-level `permissions:` block replaces the workflow default for every
+        scope, so a scope the job does not list is `none` — which is why the
+        default alone cannot make a job read-only.
+        """
+        if "permissions" in job:
+            return job["permissions"].get("contents", "none")
+        return self.data.get("permissions", {}).get("contents", "none")
+
+    def running_jobs(self, publish: bool) -> dict[str, str]:
+        context = {
+            "inputs.publish": publish,
+            "inputs.notarize": False,
+            "github.ref": "refs/heads/main",
+            "github.event_name": "workflow_dispatch",
+        }
+        return {
+            name: self.effective_contents(job)
+            for name, job in self.jobs.items()
+            if evaluate_if(job.get("if", True), context)
+        }
+
+    def test_the_workflow_default_is_read_only(self):
+        self.assertEqual(self.data.get("permissions"), {"contents": "read"},
+                         "the default grant must be read-only; jobs opt in to more")
+
+    def test_both_dispatch_kinds_reach_at_least_one_job(self):
+        # Without this, the two grant assertions below could pass by selecting
+        # an empty set of jobs.
+        for publish in (False, True):
+            with self.subTest(publish=publish):
+                self.assertTrue(self.running_jobs(publish),
+                                "the render selected no job at all")
+
+    def test_a_candidate_dispatch_holds_no_write_grant(self):
+        writers = {name for name, scope in self.running_jobs(False).items()
+                   if scope == "write"}
+        self.assertEqual(
+            writers, set(),
+            "a publish=false dispatch must not hold contents: write anywhere",
+        )
+
+    def test_a_publish_dispatch_holds_the_write_grant_only_to_publish(self):
+        running = self.running_jobs(True)
+        writers = {name for name, scope in running.items() if scope == "write"}
+        self.assertEqual(
+            writers, {"release"},
+            "publishing is the only act that needs to write to the repository",
+        )
+        self.assertNotIn("candidate-manifest", running,
+                         "the candidate job must not run on a publish dispatch")
+        release_runs = "\n".join(step.get("run", "")
+                                 for step in self.jobs["release"]["steps"])
+        self.assertIn("gh release create", release_runs,
+                      "the job that holds the write grant is the one that publishes")
 
 
 class PythonInterpreterPinTests(unittest.TestCase):

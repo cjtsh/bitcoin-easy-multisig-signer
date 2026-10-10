@@ -52,6 +52,10 @@ UNSIGNED_GUARD = "Refuse an unsigned public release"
 VERIFY_STEP = "Verify downloaded release bytes"
 PUBLISH_STEP = "Publish the release"
 RELEASE_JOB = "release"
+# CT-83: the candidate half lives in its own job, which holds no write grant.
+CANDIDATE_JOB = "candidate-manifest"
+CANDIDATE_VERIFY = "Verify the candidate's checksums"
+CANDIDATE_STEP = "Write the candidate manifest"
 
 
 def context(**overrides) -> dict:
@@ -229,14 +233,14 @@ class ReleaseGuardBehaviourTests(unittest.TestCase):
             "the gate must actually run the sweep against origin",
         )
 
-    # -- "Verify downloaded release bytes" (release job) --------------------
+    # -- "Verify the candidate's checksums" (candidate-manifest job) --------
 
     def test_a_tampered_asset_fails_the_checksum_verification(self):
         """The defeat this must kill: `shasum -c SHA256SUMS || true`."""
         with tempfile.TemporaryDirectory() as workspace:
             workdir = Path(workspace)
             write_dist(workdir, tamper=True)
-            step = find_step(self.workflow, RELEASE_JOB, VERIFY_STEP)
+            step = find_step(self.workflow, CANDIDATE_JOB, CANDIDATE_VERIFY)
             result = run_step(step, context(**{"inputs.publish": False}), cwd=workdir)
             self.assertNotEqual(
                 result.returncode, 0,
@@ -247,9 +251,11 @@ class ReleaseGuardBehaviourTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as workspace:
             workdir = Path(workspace)
             write_dist(workdir)
-            step = find_step(self.workflow, RELEASE_JOB, VERIFY_STEP)
+            step = find_step(self.workflow, CANDIDATE_JOB, CANDIDATE_VERIFY)
             result = run_step(step, context(**{"inputs.publish": False}), cwd=workdir)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    # -- "Verify downloaded release bytes" (release job) --------------------
 
     def test_the_publish_path_requires_the_signature_and_the_public_key(self):
         with tempfile.TemporaryDirectory() as workspace:
@@ -310,12 +316,28 @@ class ReleaseGuardBehaviourTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as workspace:
             workdir = Path(workspace)
             write_dist(workdir)
-            result = self.publish(workdir, **{"inputs.publish": False, "inputs.notarize": False})
+            step = find_step(self.workflow, CANDIDATE_JOB, CANDIDATE_STEP)
+            result = run_step(
+                step, context(**{"inputs.publish": False, "inputs.notarize": False}), cwd=workdir
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.called("gh", "release", "create"), [])
             manifest = (workdir / "dist" / "CANDIDATE-MANIFEST.txt").read_text(encoding="utf-8")
             self.assertIn("publish=false", manifest)
             self.assertIn("notarize=false", manifest)
+
+    def test_the_candidate_job_never_holds_the_write_grant(self):
+        """CT-83: the grant must be on a job that a candidate dispatch skips.
+
+        The behaviour above proves the candidate path does not publish; this
+        proves it *cannot*, whichever step is added to it later.
+        """
+        job = self.workflow["jobs"][CANDIDATE_JOB]
+        self.assertEqual(job["permissions"], {"contents": "read"})
+        self.assertEqual(job["if"], "${{ !inputs.publish }}")
+        release = self.workflow["jobs"][RELEASE_JOB]
+        self.assertEqual(release["permissions"], {"contents": "write"})
+        self.assertEqual(release["if"], "${{ inputs.publish }}")
 
     def test_an_unnotarized_publish_is_refused(self):
         with tempfile.TemporaryDirectory() as workspace:
