@@ -224,6 +224,12 @@ and a claim here that turns out wrong is a defect in this survey to record, not 
 - **Budget.** The panel works from the tree at `0d4e01f` and the ten published `v0.6.8` assets.
   Every repo claim carries `file:line @ 0d4e01f`; every artifact claim names the asset and its
   digest. No claim is sourced from a prior report, plan, lock, or grade.
+- **Environment.** The suite runs on the pinned interpreter: Python 3.12.10 with the locked
+  dependencies (`requirements-ci.txt`, `requirements-ci.lock`, `vendor/`). On any other interpreter
+  the imports fail first — `ModuleNotFoundError: No module named 'embit'` is an environment state,
+  not a defect, and it stops `tests/test_controls_inventory.py` from running at all. A panelist who
+  meets it records the interpreter and the pin instead of filing the import error.
+
 - **Stop condition.** Coverage stops when every in-scope threat row in §5 has a recorded outcome
   of HOLDS, BROKEN, or UNPROVEN with its evidence attached. A row with no evidence is recorded
   **UNPROVEN** and blocks CLEARED. Scope is not expanded mid-cycle: a new candidate threat is
@@ -902,6 +908,38 @@ it to that claim. A file that refers to a document that no longer exists is reco
 in the report's environment section — it is not a finding, and it is not resolved by reaching
 backwards. The prior AI audit reports (`releases/AUDIT-*.md`) and the four `docs/audits/*.pdf`
 files were removed from `main` for this cycle and remain only in the tagged trees.
+
+### The living documents at the tag, and what changed after it
+
+The audit targets `0d4e01f`, so the panel reads those documents as they stood on 2026-10-10. Several
+had drifted and were corrected on `main` afterwards. They are listed here as a known inventory, not
+as a discovery: none is a defect in the wallet engine, none changes what the code does, and none is
+a finding in its own right.
+
+| Document | What it said at `0d4e01f` | Corrected on `main` by |
+|---|---|---|
+| `SIGNING.md` | the one-time key setup named `release@bitseeker.com`; the shipped key is `release@bitseeker.llc` | `336ea6c`, with the guard `tests/test_signing_docs.py` (`6d17a80`) |
+| `DISCLAIMER.md` | opened with "Version 0.6.2 is a maintenance release" | `913ce30` |
+| `USER-MANUAL.md` | said version 0.6.3 in three places while the published page said 0.6.8 | `913ce30` |
+| `PHASE-HANDOFF.md` | called the cycle-3 plan the input any later audit would start from, and placed the cycle-3 artifacts in the repository root | `913ce30` |
+| `CURRENT-STATUS.md` | the same repository-root claim | `913ce30` |
+| `LINUX-PORT.md` | said the `linux-port` branch, not `main`, answers for a Linux release | `913ce30` |
+| `AGENTS.md` | presented the earlier AI audit reports as live context | `913ce30` |
+| `CHANGE-ADDRESS-REVIEW.md` | cited an owner note supplied privately, without saying so | `913ce30` |
+| `releases/README.md` | its index stopped at 0.6.1 and described audits no longer in the folder | `913ce30` |
+
+**Rule.** Two of these actively mislead a panelist reading the tag. `PHASE-HANDOFF.md` at `0d4e01f`
+tells the reader to treat the cycle-3 plan as their input, and `AGENTS.md` at `0d4e01f` presents the
+earlier reports as live context. Both instructions are superseded and wrong for this cycle. Where a
+document at the tag disagrees with this plan, this plan and the owner's direction win; the
+disagreement is recorded as a document-state note in the report's environment section, not as a
+finding. The `SIGNING.md` row is the one case already carried in §5: T-27 holds it, because a setup
+step that cannot reproduce the shipped release key is a claim about the release, not a typo.
+
+**`CONTROLS.md` is the counter-example.** It is a shipped artifact the release itself claims, so it
+stays in scope (item 17 above). The tag's copy carries 20 control rows; `main` carries 21, the extra
+being the guard added by `6d17a80`. The panel audits the tag's 20 rows against the tag's code and
+tests, because that is what the release shipped.
 
 ### The owner's policies these exclusions rest on
 
