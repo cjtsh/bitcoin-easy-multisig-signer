@@ -178,7 +178,7 @@ complete as to what I know as at 2026-10-11.
 |---|---|---|---|---|---|
 | D-1 | `SIGNING.md`'s one-time key setup told a maintainer to export `release@bitseeker.com`. The shipped `signing-key.asc` is `Bitseeker LLC <release@bitseeker.llc>`. | The documented way to reproduce the release key could not work; a maintainer following it would export nothing, or build a second identity and sign with the wrong key. No published artifact is affected — the shipped key is correct and `SHA256SUMS.asc` verifies against it. | `SIGNING.md:70,75` in the `v0.6.8` tree | `336ea6c` | `tests/test_signing_docs.py` (`6d17a80`) fails if any address named in `SIGNING.md` is not an address the shipped key carries; recorded as control `CM-21` (`4fbe6ef`) |
 | D-2 | Eight living documents had drifted from the software. `DISCLAIMER.md` still opened "Version 0.6.2 is a maintenance release". `USER-MANUAL.md` said version 0.6.3 in three places while the published manual page said 0.6.8. `PHASE-HANDOFF.md` treated the cycle-3 plan as the input any later audit would start from, and placed the cycle-3 artifacts in the repository root. `CURRENT-STATUS.md` repeated that root claim. `LINUX-PORT.md` described the retired `linux-port` branch as the path a Linux release answers to. `AGENTS.md` presented the earlier AI reports as live context. `CHANGE-ADDRESS-REVIEW.md` cited a note supplied privately without saying so. `releases/README.md` indexed records only up to 0.6.1. | A reader — including an auditor following the repository's own read order — would be sent to a plan that is not this cycle's, told an obsolete revision was current, or told a removed branch was a release path. Documentation only: none of it changes what the code does. | the `v0.6.8` tree | `913ce30` | the same drift is recorded in the audit plan's section 6, so the panel meets it as a known list rather than a discovery |
-| D-3 | The previous audit cycle was defective. The framework revision then in force treated "what if the owner, or GitHub, is compromised" as an audit question. That cycle ran roughly a hundred executions without producing a reproducible finding, and the project was changed to answer issues that were not real. It made the code worse, not better. | A project loop — churn without a finding. The line was abandoned: the codebase was returned to `v0.6.7`, the framework was corrected to `v1.5.1`, and `v0.6.8` was built as the remediation of that base. The risk is of the same loop recurring if the panel is not told. | the abandoned 2026-10-08/09 line, and the artifacts it left in the tag trees | framework `v1.5.1`; the fresh baseline the owner directed on 2026-10-11 | the plan's out-of-scope list: external compromise of the owner's account, machines, credentials or agentic tools is a declared external assumption and is not a source of findings |
+| D-3 | **A process mistake, not a code mistake.** The framework revision then in force treated "what if the owner, or GitHub, is compromised" as an audit question. Directed by that, the coding team started fixing *possibilities* rather than known defects, and the code jumped. Roughly a hundred executions produced no reproducible finding in the application. | Code movement driven by questions that have no answer. The defects being "fixed" were hypotheses, never demonstrated. | the abandoned 2026-10-08/09 line, and the artifacts it left in the tag trees | the line was abandoned; the framework was corrected to `v1.5.1`; `v0.6.8` was built as the remediation of `v0.6.7` | the plan's out-of-scope list: external compromise of the owner's account, machines, credentials or agentic tools is a declared external assumption and is not a source of findings |
 | D-4 | `main` carries changes that are not in the released tag and have no ledger row: removal of the legacy audit artifacts (`a786981`), the `SIGNING.md` correction (`336ea6c`), its guard test (`6d17a80`), the `CONTROLS.md` row for that guard (`4fbe6ef`), this cycle's plan (`2f55748`, `1282c13`, `e6e717e`), and the living-document corrections (`913ce30`). | A reader comparing the tag with `main` sees differences nothing accounts for. The `releases/` records are deliberately never rewritten, so nothing there explains them. | `main`, after the 2026-10-10 release | disclosed here rather than left to be found | the audit plan's section 6 records the tag-to-`main` delta |
 | D-5 | The earlier cycles' artifacts — plans, locks, reports and a public security statement — are still inside every published tag tree from `v0.6.4` onward, including a superseded draft carrying the same filename as this cycle's plan. | An auditor who checks out the tag and looks for "the plan" finds the wrong file. | 16 audit files at the root of the `v0.6.8` tree, plus `releases/AUDIT-*.md` and `docs/audits/*.pdf` in the older trees | the material was removed from `main` on 2026-10-11 for this cycle | the audit plan's section 6 names all 16 and rules them not inputs; a tag cannot be edited without destroying the release it names |
 | D-6 | History cannot be purged while the releases stand. A tag is a pointer to a commit, and all 69 tags point into that history, so the abandoned line stays reachable. | The repository is larger and more confusing than a clean cut-off would leave it. | the tag set | not fixed, and not fixable without voiding the audit target and every published download's provenance | declared here as an accepted constraint, so it is not read as an oversight |
@@ -204,6 +204,31 @@ complete as to what I know as at 2026-10-11.
 match the present is no longer evidence. That rule applies to this disclosure too: where an earlier
 record describes a state that has since changed, the record stands and this section carries the
 correction. A historical record should be read as what was true when it was written.
+
+### 7.4 What the panel is asked to judge, and what it is not
+
+I want this said in my own words, because it is the whole reason I commissioned a fresh plan.
+
+**What went wrong was a process, not the software.** The runaway cycle was mine. I adopted a framework
+revision whose logic looped, and I let it point my coding team at *possibilities* instead of known
+defects. That is what created the code jumps — edits made to answer questions that have no answer — and
+it pulled the project away from what it is for. It was never shown that the application had the problems
+being "fixed". Those were hypotheses, and they were treated as work.
+
+**So I am asking the panel to judge the current revision, not the journey.**
+
+- Judge tag `0d4e01f` and the release path as they stand. The build is what has to be clean, current,
+  best-practice, locked down and safe.
+- Do not grade the abandoned cycle — not its findings, not its artifacts, and not whether the changes it
+  caused were the right ones. Its artifacts are named in the audit plan and ruled not inputs.
+- Do not grade my audit framework, my agentic tooling, or how I choose to work. Those are declarations,
+  not evidence.
+
+**I am not asking the panel to narrow its remit, and I do not want to be read as doing so.** Everything
+about the *present* process stays in scope exactly as the plan states it: the publish pipeline, its
+workflow guards, the two signing environments, the platform controls, `CONTROLS.md`, and every threat row
+in §5. The distinction is between the *history* of a line I abandoned and the *state* of the pipeline that
+ships today. **A defect found in the present state is a finding, and I expect it to be graded as one.**
 
 ---
 
