@@ -786,12 +786,30 @@
     } catch { /* decoration only */ }
 
     // The access token arrives in the URL fragment, which a browser never sends
-    // to the server, so it does not appear in this page's source.
+    // to the server, so it does not appear in this page's source. The fragment
+    // is read once and then replaced out of the address bar (CT-05): a fragment
+    // survives in that browser's session history, so leaving it there kept the
+    // session token recoverable from history for as long as the tab lived. It is
+    // held in per-tab sessionStorage instead -- which dies with the tab and lets
+    // a reload keep working -- so no history entry ever names it.
     const token = (() => {
       // The hash may be "#token=..." or "#&token=...", so both separators must
       // match. Dropping the "#" here silently breaks every launch.
       const match = location.hash.match(/[#&]token=([^&]+)/);
-      return match ? decodeURIComponent(match[1]) : "";
+      if (match) {
+        let value = "";
+        try { value = decodeURIComponent(match[1]); } catch { value = ""; }
+        if (value) {
+          try { sessionStorage.setItem("besa-local-token", value); }
+          catch { /* storage disabled; the token still works for this page load */ }
+          try {
+            history.replaceState(null, "", location.pathname + location.search);
+          } catch { /* decoration only */ }
+          return value;
+        }
+      }
+      try { return sessionStorage.getItem("besa-local-token") || ""; }
+      catch { return ""; }
     })();
     // True inside the packaged Mac app, where the page talks to Python through
     // pywebview instead of using browser downloads (WKWebView ignores those).
@@ -1301,7 +1319,10 @@
     async function loadPrice() {
       const requestId = ++priceRequestId;
       try {
-        const response = await fetch("/api/price", {cache:"no-store"});
+        // The market feed is a read, but it is still this session's read
+        // (CT-08), so it carries the same local token as every other API call.
+        const response = await fetch("/api/price",
+          {headers:{"X-Local-Token":token}, cache:"no-store"});
         if (!response.ok) throw new Error("Price feed unavailable");
         const quote = await response.json();
         if (requestId === priceRequestId) rate = quote;
@@ -1404,8 +1425,10 @@
       const requestId = ++feeRequestId;
       const chain = selectedChain();
       try {
+        // Fee estimates come back over the same token-gated read path (CT-08).
         const response = await fetch(chain === "mutinynet" ?
-          "/api/fees?chain=mutinynet" : "/api/fees", {cache:"no-store"});
+          "/api/fees?chain=mutinynet" : "/api/fees",
+          {headers:{"X-Local-Token":token}, cache:"no-store"});
         if (!response.ok) throw new Error("Fee feed unavailable");
         const quote = await response.json();
         if (requestId === feeRequestId && chain === selectedChain()) {

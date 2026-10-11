@@ -14,6 +14,7 @@ import contextlib
 import io
 import json
 import re
+import select
 import socket
 import tempfile
 import threading
@@ -277,6 +278,122 @@ class StalledConnectionTests(ApiTestCase):
         stalled = self._stall(4, self.token.encode(),
                               length=gui.MAX_REQUEST_BYTES + 1)
         self._assert_cut_off(stalled)
+
+
+class ConnectionCeilingTests(ApiTestCase):
+    """CT-09: the thread budget is a ceiling, not only a per-thread timeout.
+
+    `StalledConnectionTests` shows a stalled connection cannot hold its thread
+    forever. It does not show the number of threads is bounded at all: every
+    accepted socket used to get one, so a process that opened sockets faster than
+    `CONNECTION_TIMEOUT_SECONDS` retired them still grew the thread count without
+    limit. `BoundedThreadingHTTPServer` admits `MAX_CONNECTIONS` at once and
+    closes the rest without starting a thread.
+    """
+
+    CEILING = 3
+
+    def setUp(self):
+        ceiling = patch.object(gui, "MAX_CONNECTIONS", self.CEILING)
+        ceiling.start()
+        self.addCleanup(ceiling.stop)
+        super().setUp()
+        self.capped = gui.BoundedThreadingHTTPServer(("127.0.0.1", 0), self.state.handler())
+        self.capped_port = self.capped.server_address[1]
+        self.capped_base = f"http://127.0.0.1:{self.capped_port}"
+        threading.Thread(target=self.capped.serve_forever, daemon=True).start()
+        self.addCleanup(self._stop_capped)
+
+    def _stop_capped(self):
+        self.capped.shutdown()
+        self.capped.server_close()
+
+    def _hold(self, count):
+        """Open `count` connections that never say anything at all.
+
+        They are still accepted sockets with a thread each, which is what the
+        ceiling bounds. Saying nothing also means that when the test closes them
+        the server reads end-of-input and hangs up without writing a refusal a
+        gone client would turn into a broken-pipe traceback.
+        """
+        held = []
+        for _ in range(count):
+            held.append(socket.create_connection(("127.0.0.1", self.capped_port),
+                                                 timeout=5))
+        return held
+
+    def _is_closed(self, sock):
+        """True once the peer has hung up; an admitted socket is not readable."""
+        readable, _, _ = select.select([sock], [], [], 1.0)
+        if not readable:
+            return False
+        try:
+            return sock.recv(64) == b""
+        except ConnectionResetError:
+            # A refused socket is reset rather than closed cleanly, and a reset
+            # is still the server refusing it.
+            return True
+
+    def _post_to_capped(self, path, payload):
+        request = urllib.request.Request(
+            self.capped_base + path, data=json.dumps(payload).encode(), method="POST",
+            headers={"Content-Type": "application/json", "X-Local-Token": self.token})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status, json.loads(response.read())
+
+    def test_sockets_beyond_the_ceiling_are_closed(self):
+        # Five sockets, three slots: at least two must be refused, whichever the
+        # accept loop reaches first.
+        held = self._hold(self.CEILING + 2)
+        try:
+            deadline = time.monotonic() + 5
+            closed = 0
+            while closed < 2 and time.monotonic() < deadline:
+                closed = sum(1 for sock in held if self._is_closed(sock))
+            self.assertGreaterEqual(
+                closed, 2, "the ceiling admitted every connection")
+        finally:
+            for sock in held:
+                sock.close()
+
+    def test_the_same_server_answers_once_the_slots_come_back(self):
+        held = self._hold(self.CEILING + 2)
+        for sock in held:
+            sock.close()
+        # Closing the held connections releases their slots; the server is not
+        # wedged by having refused the surplus.
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                status, body = self._post_to_capped("/api/status", {})
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.1)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["chain"], self.state.chain)
+
+    def test_the_shipped_server_is_the_bounded_class(self):
+        """The ceiling only holds if the app's own server is the bounded one."""
+        created = []
+
+        class _Server:
+            def __init__(self, address, handler):
+                created.append(address)
+                self.server_address = ("127.0.0.1", 45555)
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                pass
+
+        with patch.object(gui, "BoundedThreadingHTTPServer", _Server), \
+                patch.object(gui.threading, "Timer"), \
+                patch.object(gui.webbrowser, "open"):
+            gui.main()
+        self.assertEqual(created, [("127.0.0.1", 0)])
 
 
 class LocalTokenComparisonTests(ApiTestCase):

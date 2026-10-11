@@ -41,7 +41,7 @@ root_docs=(
 # RELEASE-PROCESS.md tell a downloader to import the committed `signing-key.asc`
 # and check `SHA256SUMS.asc` against it; a tarball that left the key out could
 # not run the verification it documents, the same defect class as the missing
-# plist above. It is a public key and costs 1.7 KB.
+# plist above. It is a public key and costs 1.7 KB. CONTROL: CM-19
 cp "${root_docs[@]}" LICENSE THIRD-PARTY-NOTICES.md signing-key.asc \
   "Start Easy Multisig.command" \
   requirements.txt requirements.lock \

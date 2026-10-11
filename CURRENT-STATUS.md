@@ -1,15 +1,29 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.6.8 is the Color Team cycle-4 build-process
-remediation of the `v0.6.7` tree.** Every finding the cycle's plan
-schedules now has exactly one row in `releases/PATCH-0.6.8.md` with a
+**Source revision 0.6.9 is the Color Team cycle-5 build-process
+remediation of the `v0.6.8` tree.** Every finding the cycle's plan
+schedules has exactly one row in `releases/PATCH-0.6.9.md` with a
 severity and a closing test the build loads, so nothing is closed by
-silence, and `CONTROLS.md` is the parsed inventory of the security
-controls the code claims. It was published 2026-10-10 through the
-unified pipeline as tag
-[`v0.6.8`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8).
+silence; every `CONTROLS.md` citation is a content binding to a
+`CONTROL: CM-##` marker inside the range it cites, so a citation that
+moves off its subject fails the build; and the download page's version
+comes from `version.py` under a guard that refuses a link naming another
+release. The release is built and published from `main` through the
+unified pipeline; until its promote run lands, the newest published tag
+remains
+[`v0.6.8`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8),
+whose cycle-4 remediation introduced the checked audit ledger and the
+parsed `CONTROLS.md` inventory.
 The wallet, transaction, signing and broadcast engine is
-unchanged from 0.6.7, which was the cycle-3 build-process remediation:
+unchanged from 0.6.8, which was the cycle-4 build-process remediation of
+the `v0.6.7` tree, where the five-lane panel graded
+**⚠️ CONDITIONAL**: it held the money path, the devices, the pipeline and
+the published bytes, and named four Low findings — the control inventory
+could not detect a citation that moved, three first-line guards were
+tested only through the deeper guard behind them, one broadcast branch
+had no test that could fail, and the download page was corrected after
+the tag instead of before it. `releases/PATCH-0.6.8.md` is that cycle's
+evidence record. Version 0.6.7 was the cycle-3 build-process remediation:
 the cycle-3 five-lane Color Team audit of the `v0.6.6`
 tree — its report, plan, lock and index are no longer in `main` and remain in
 the `v0.6.6` tag tree — graded

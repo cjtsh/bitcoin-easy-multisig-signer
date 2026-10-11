@@ -25,7 +25,7 @@ fi
 if ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0 if m.version("embit") == "0.8.2+besa.1" else 1)' >/dev/null 2>&1 \
    || ! .venv/bin/python3 -c 'import importlib.metadata as m; raise SystemExit(0 if m.version("hwi") == "3.2.0" else 1)' >/dev/null 2>&1; then
   echo "Installing the hash-verified dependencies (first launch only)..."
-  .venv/bin/python3 -m pip install --disable-pip-version-check --require-hashes -r requirements-source.lock
+  .venv/bin/python3 -m pip install --disable-pip-version-check --require-hashes -r requirements-source.lock  # CONTROL: CM-17
 fi
 
 echo "Opening the Bitcoin Easy Signer GUI in your browser..."

@@ -10,6 +10,9 @@ it, so this module reads it five ways:
   deleted test breaks the inventory rather than quietly emptying a row;
 * every `CONTROL: CM-##` marker in shipped code has a row for that id citing
   the same file, so a marker cannot outlive its entry or drift to another file;
+* every row's cited line range actually carries that row's own `CONTROL: CM-##`
+  marker, so a citation is a content binding: re-pointing a row at unrelated
+  code, the way the 0.6.8 referee re-pointed CM-18, fails the build (CT-03);
 * every comment block that *claims* a control (it uses one of the pinned
   phrases) must say `CONTROL: CM-##` or point at `CONTROLS.md`, so a new claim
   cannot arrive without an entry;
@@ -205,6 +208,31 @@ class ControlInventoryTests(unittest.TestCase):
                             and (site(row["where"]) or ("", 0, 0))[0] == relative
                             for row in self.rows),
                         f"{relative}:{first} marks {control}, which has no row citing {relative}")
+
+    def test_every_row_cites_its_own_marker(self):
+        """A citation is a content binding, not just a line that exists.
+
+        Each row must name a range that carries its own `CONTROL: CM-##` marker.
+        Naming an existing line was never enough: at 0.6.8 the referee moved
+        CM-18 onto `gui.py:10-20` and the suite stayed green, because the only
+        questions asked were whether the file existed and the line number was
+        inside it. With the marker inside the cited range there is nothing to
+        gain by re-pointing a row except a red build.
+        """
+        for row in self.rows:
+            with self.subTest(control=row["id"]):
+                parsed = site(row["where"])
+                self.assertIsNotNone(
+                    parsed, f"{row['id']} does not cite a `file:line` in backticks")
+                relative, first, last = parsed
+                path = cited_file(relative)
+                self.assertIsNotNone(path, f"{row['id']} cites missing {relative}")
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                window = "\n".join(lines[max(first - 1, 0):last])
+                self.assertRegex(
+                    window, rf"CONTROL:\s*{re.escape(row['id'])}\b",
+                    f"{row['id']} cites {relative}:{first}-{last}, which carries no "
+                    f"CONTROL: {row['id']} marker")
 
     def test_a_claim_comment_points_at_the_inventory(self):
         for path, first, last, text in self.blocks:

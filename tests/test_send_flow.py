@@ -441,12 +441,43 @@ class SendFlowTests(unittest.TestCase):
                          result["txid"])
 
     def test_signing_requires_the_reviewed_transaction(self):
+        """CT-02: the review-id guard in front of /api/sign refuses by its name.
+
+        Without this the only proof that a stale preparation id is refused was
+        that the request failed with 400, which several later guards would also
+        produce.
+        """
         self.prepare_a_reviewed_transaction()
         for bad in ("", "stale-id", None):
             with self.assertRaises(HTTPError) as err:
                 self.post("/api/sign", {"preparation_id": bad,
                                         "device_type": "jade", "device_path": "/dev/x"})
             self.assertEqual(err.exception.code, 400)
+            self.assertIn("Review the current transaction",
+                          json.load(err.exception)["error"])
+
+    def test_prepare_refuses_while_a_payment_waits_for_confirmation(self):
+        """CT-02: the pending-payment guard in _prepare refuses by its own rule.
+
+        The scan says an earlier payment from this wallet has not confirmed yet.
+        Preparing a second one is refused at the endpoint, with the reason the
+        person needs, before any unsigned transaction is built.
+        """
+        self.prepare_a_reviewed_transaction()
+        self.app.scan = {"pending_outgoing": True}
+        recipient = wallet_layout(self.app.record).receive.derive(5).address(
+            NETWORKS["test"])
+        with patch("gui.build_unsigned_psbt") as builder:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/prepare", {
+                    "chain": "testnet4", "recipient": recipient,
+                    "amount_sats": 100_000, "send_all": False, "fee_rate": 5,
+                })
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("waiting for one confirmation",
+                      json.load(err.exception)["error"])
+        builder.assert_not_called()
+        self.assertIsNone(self.app.prepared)
 
     def test_finalise_refuses_a_final_transaction_that_differs_from_the_review(self):
         """The final-vs-review backstop must hold at finalisation (CT-03).
@@ -604,11 +635,18 @@ class SendFlowTests(unittest.TestCase):
         other = build_unsigned_psbt(record, scan,
                                     layout.receive.derive(7).address(NETWORKS["test"]),
                                     50_000, 5, explorer)
+        reviewed = self.app.prepared
         with patch("gui.sign_psbt_with_device", return_value=other["psbt_base64"]):
             with self.assertRaises(HTTPError) as err:
                 self.post("/api/sign", {"preparation_id": "reviewed-1",
                                         "device_type": "jade", "device_path": "/dev/x"})
         self.assertEqual(err.exception.code, 400)
+        # CT-02: this first-line txid guard must refuse by its own message, not
+        # by falling through to a deeper check that happens to reject the bytes.
+        self.assertIn("returned a different transaction",
+                      json.load(err.exception)["error"])
+        self.assertIs(self.app.prepared, reviewed)
+        self.assertEqual(reviewed.checked_psbt().inputs[0].partial_sigs, {})
 
     def test_broadcast_needs_an_explicit_confirmation_of_that_exact_transaction(self):
         result, keys = self.prepare_a_reviewed_transaction()

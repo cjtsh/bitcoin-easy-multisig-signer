@@ -251,7 +251,7 @@ color-team report as the fix list. Close each finding with a test demonstrated
 able to fail, or with a written owner acceptance — never by silence.
 `tests/test_ledger_completeness.py` holds that to the plan: every finding the
 cycle's work orders schedule must have exactly one row in
-`releases/PATCH-0.6.8.md`, every row must state a severity and cite a closing
+`releases/PATCH-0.6.9.md`, every row must state a severity and cite a closing
 test that loads, and a row may cite no test only if it is a deferral the plan
 itself makes.
 
@@ -259,5 +259,5 @@ itself makes.
 security control this project relies on, the line that makes the claim, and the
 test that would go red without it. `tests/test_controls_inventory.py` reads that
 file and fails the build if a cited file, line or test stops existing, if a
-`CONTROL: CM-##` marker has no row, or if a comment that claims a control names
-no entry. Add, move or delete a control and its row moves in the same commit.
+`CONTROL: CM-##` marker has no row, if a row's own marker is not inside the
+range that row cites, or if a comment that claims a control names no entry. Add, move or delete a control and its row moves in the same commit.

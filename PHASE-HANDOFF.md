@@ -1,26 +1,30 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Source revision 0.6.8 is the Color Team cycle-4 build-process
-remediation of the `v0.6.7` tree.** Every finding the cycle's plan
-schedules has exactly one row in `releases/PATCH-0.6.8.md` with a
-severity and a closing test the build loads, and `CONTROLS.md` is the
-parsed inventory of the security controls the code claims. It was
-published 2026-10-10 through the unified pipeline as tag
+**Source revision 0.6.9 is the Color Team cycle-5 build-process
+remediation of the `v0.6.8` tree.** Every finding the cycle's plan
+schedules has exactly one row in `releases/PATCH-0.6.9.md` with a
+severity and a closing test the build loads; every `CONTROLS.md` citation
+is a content binding to a `CONTROL: CM-##` marker inside the range it
+cites, so a citation that moves off its subject fails the build; and the
+download page's version comes from `version.py` under a guard that
+refuses a link naming another release. The release is built and published
+from `main` through the unified pipeline; until its promote run lands,
+the newest published tag remains
 [`v0.6.8`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8).
-The engine is unchanged from 0.6.7,
-which was the cycle-3 build-process remediation. The out-of-gate `v0.6.5-windows-x64` release was deleted
+The engine is unchanged from 0.6.8,
+which was the cycle-4 build-process remediation of the `v0.6.7` tree. The out-of-gate `v0.6.5-windows-x64` release was deleted
 (CT-27), and cycle 3 then found the root cause of it: the per-platform
 publish workflows were never deleted (CT-48). They are now gone from
 every branch. Owner-reported acceptance of the Windows console fix and
 of the Linux AppImage remains in this file's history and in `releases/`;
 those port builds are superseded by the unified pipeline.
 
-## Current stop point — v0.6.8 is the newest published tag
+## Current stop point — source revision 0.6.9; v0.6.8 is the newest published tag
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
 and `RELEASE-HISTORY.md` carry; read one of those rather than trusting a
-hardcoded number here. As of 2026-10-10 that is [v0.6.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8), published 2026-10-10 as tag `v0.6.8` on commit `0d4e01f60c7695d720099f9d8e9e23b38da63102` by successful candidate run [38086778883](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38086778883) and promote run [38087360421](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38087360421). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.6.8, the current source revision, is the Color Team cycle-4 build-process remediation of that tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads, `CONTROLS.md` is a parsed inventory of the controls the code claims, and the launcher installs the device library from a checked lock. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. No independent human end-to-end security review is recorded; nothing here is a certification or a guarantee. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+hardcoded number here. As of 2026-10-10 that is [v0.6.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8), published 2026-10-10 as tag `v0.6.8` on commit `0d4e01f60c7695d720099f9d8e9e23b38da63102` by successful candidate run [38086778883](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38086778883) and promote run [38087360421](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38087360421). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.6.9, the current source revision, is the Color Team cycle-5 build-process remediation of that tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads, every `CONTROLS.md` citation is content-bound to a marker inside the range it cites, and the launcher installs the device library from a checked lock. Version 0.6.8 was the cycle-4 build-process remediation of the `v0.6.7` tree, which introduced the checked audit ledger and the parsed `CONTROLS.md` inventory. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. No independent human end-to-end security review is recorded; nothing here is a certification or a guarantee. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
 
 **The cycle-3 panel rerun already ran and graded ⛔ BLOCKED** on the
 `v0.6.6` tree — not on the app. Red found no breach; Orange recorded its

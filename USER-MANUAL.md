@@ -1,6 +1,6 @@
 # Bitcoin Easy Signer — a guide for the person helping
 
-**For a spouse, family member, trustee, lawyer or accountant who has been asked to help with an existing Bitcoin multisig wallet.** This guide describes version 0.6.8. It is a plain-language guide, not a warranty or assurance about the software, a wallet, or a transaction.
+**For a spouse, family member, trustee, lawyer or accountant who has been asked to help with an existing Bitcoin multisig wallet.** This guide describes version 0.6.9. It is a plain-language guide, not a warranty or assurance about the software, a wallet, or a transaction.
 
 > **Please read first:** Bitcoin Easy Signer is free, open-source software maintained and distributed by Bitseeker LLC. Anyone may inspect, test, audit, and validate the public source; this does not mean a release has been professionally or independently audited. The software is provided “as is,” without warranty or guarantee of any kind to the fullest extent allowed by law. The Project Parties—Bitseeker LLC and its members, managers, officers, employees, maintainers, volunteers, authors, and contributors—make no promise that it will work for your wallet or prevent loss. You decide whether to use it and must independently check the wallet, network, destination, amount, fee, and change. Bitcoin payments may be irreversible. Read the [full safety notice](DISCLAIMER.md) before use.
 
@@ -119,7 +119,7 @@ Developer Mode is a test bench for people who already have a practice wallet fil
 - A practice-network payment does not demonstrate that a future mainnet payment is correct or that a particular signer firmware displays every output.
 - A single confirmed mainnet payment is only one data point; it does not establish how a later payment will behave.
 
-Bitcoin Easy Signer is free, open-source community software maintained by Bitseeker LLC. **It is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. Use it at your own risk and independently verify every payment.** This guide is general information, not legal, financial, or estate-planning advice. The published Z.ai reviews are AI-generated evidence about the earlier revisions 0.6.2, 0.6.3 and 0.6.4 — the 0.6.4 report assigned Green under its published rubric after verifying the automated release path — but no independent human end-to-end security review of version 0.6.8 is recorded. Version 0.6.8 answers the Color Team cycle-4 plan, recorded in `releases/PATCH-0.6.8.md`.
+Bitcoin Easy Signer is free, open-source community software maintained by Bitseeker LLC. **It is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. Use it at your own risk and independently verify every payment.** This guide is general information, not legal, financial, or estate-planning advice. The published Z.ai reviews are AI-generated evidence about the earlier revisions 0.6.2, 0.6.3 and 0.6.4 — the 0.6.4 report assigned Green under its published rubric after verifying the automated release path — but no independent human end-to-end security review of version 0.6.9 is recorded. Version 0.6.9 answers the Color Team cycle-5 plan, recorded in `releases/PATCH-0.6.9.md`.
 
 ## Small glossary
 
@@ -135,4 +135,4 @@ Bitcoin Easy Signer is free, open-source community software maintained by Bitsee
 
 ---
 
-*This manual is for Bitcoin Easy Signer version 0.6.8. Read the [project website](https://cjtsh.github.io/bitcoin-easy-multisig-signer/) and the [current safety notice](DISCLAIMER.md) before use.*
+*This manual is for Bitcoin Easy Signer version 0.6.9. Read the [project website](https://cjtsh.github.io/bitcoin-easy-multisig-signer/) and the [current safety notice](DISCLAIMER.md) before use.*

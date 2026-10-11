@@ -94,6 +94,46 @@ DIAGNOSTIC_OUTCOMES = frozenset({
     "passed", "declared", "standard", "missing", "complete", "incomplete",
     "consistent", "inconsistent", "verified", "rejected", "accepted", "unknown",
 })
+# CT-09: the per-connection timeout bounds how long one thread lingers, not how
+# many can exist. A local process can still open sockets faster than fifteen
+# seconds expire them, so the server admits a fixed number of live connections
+# and hangs up on the rest rather than growing a thread per accepted socket.
+MAX_CONNECTIONS = 32
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a ceiling on concurrent connection threads.
+
+    The count is bounded per server instance, not process-wide, so several state
+    servers can exist at once without competing for one another's slots. A socket
+    that arrives with no slot free is closed instead of queued behind a thread
+    that does not exist. Thirty-two is far more than one window's load and far
+    less than an unbounded allocator.
+    """
+
+    daemon_threads = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._connection_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+
+    def process_request(self, request, client_address):
+        if not self._connection_slots.acquire(blocking=False):
+            # Refuse without spawning a thread: a request beyond the ceiling gets
+            # a closed connection, not a place in an unbounded queue.
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._connection_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connection_slots.release()
 
 
 def launch_url(port: int, token: str) -> str:
@@ -101,10 +141,10 @@ def launch_url(port: int, token: str) -> str:
 
     The fragment is not sent to the server and is not part of the referrer, so
     the token is never disclosed in an unauthenticated HTTP response or an
-    upstream log. In browser mode the URL — fragment included — can persist in
-    that browser's history on this machine while the session runs; the desktop
-    window keeps no such history. The token unlocks only this loopback session
-    and dies with it.
+    upstream log. The page reads the fragment once and immediately replaces it
+    out of the address bar (CT-05), so the token does not stay in that browser's
+    session history; a reload is served from per-tab sessionStorage instead. The
+    token unlocks only this loopback session and dies with it.
     """
     return f"http://127.0.0.1:{port}/#token={token}"
 
@@ -335,7 +375,7 @@ def assert_private_file(path: Path) -> None:
                 "Windows protects it with a per-user access list."
             ) from None
         return
-    if resolved.stat().st_mode & 0o777 != 0o600:
+    if resolved.stat().st_mode & 0o777 != 0o600:  # CONTROL: CM-26
         raise RuntimeError("The saved file permissions are not 0600.")
 
 
@@ -512,7 +552,7 @@ class LocalApp:
         """
         if stage not in DIAGNOSTIC_STAGES or outcome not in DIAGNOSTIC_OUTCOMES:
             return
-        cleaned = _device_class(device)
+        cleaned = _device_class(device)  # CONTROL: CM-18
         with self.lock:
             event = {
                 "time_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -548,7 +588,7 @@ class LocalApp:
                 # A per-response nonce replaces 'unsafe-inline' for scripts. This
                 # server has exactly one document and rebuilds it for every
                 # request, so a fresh nonce costs nothing, and any script reaching
-                # the page without it has no allowance to hide behind.
+                # the page without it has no allowance to hide behind. CONTROL: CM-23
                 script_src = (f"'nonce-{script_nonce}'" if script_nonce
                               else "'self'")
                 self.send_header(
@@ -599,7 +639,7 @@ class LocalApp:
             def _trusted_host(self):
                 return self.headers.get("Host") == (
                     f"127.0.0.1:{self.server.server_address[1]}"
-                )
+                )  # CONTROL: CM-22
 
             def _token_matches(self):
                 """True only for the exact local token -- and never by raising.
@@ -638,6 +678,14 @@ class LocalApp:
                     self._headers(200, "text/html; charset=utf-8", len(body),
                                   script_nonce=script_nonce)
                     self.wfile.write(body)
+                elif not self._token_matches():
+                    # CT-08: /api/price and /api/fees return public market data,
+                    # but "public" is not "unauthenticated". These read-only
+                    # lookups belong behind the same loopback token as every
+                    # write, so the port is not an open oracle for the app's
+                    # outbound requests. The one unauthenticated document is the
+                    # page itself, above, which carries no wallet data.
+                    self._send(403, {"error": "Local access only."})
                 elif self.path == "/api/price":
                     with state.lock:
                         cached = (state.price if state.price is not None
@@ -816,7 +864,7 @@ class LocalApp:
                 # numbers, including the built-in default (CT-20). A TLS-pinned
                 # canonical URL is not a substitute for seeing the genesis hash
                 # this chain config expects. Custom Signet shares the standard
-                # Signet genesis block, so verify its fork checkpoint too.
+                # Signet genesis block, so verify its fork checkpoint too. CONTROL: CM-01
                 verify_esplora(chain, explorer)
                 result = scan_wallet(record, base_url=explorer, chain=chain)
                 if pending_txid:
@@ -1048,7 +1096,7 @@ class LocalApp:
                 txid = payment.txid
                 if data.get("confirm") is not True:
                     raise WalletError("Confirm the final transaction before broadcasting it.")
-                if chain == "main" and data.get("mainnet_opt_in") is not True:
+                if chain == "main" and data.get("mainnet_opt_in") is not True:  # CONTROL: CM-03
                     raise WalletError(
                         "Confirm the separate mainnet warning before broadcasting real Bitcoin."
                     )
@@ -1100,7 +1148,7 @@ class LocalApp:
                         mainnet_opt_in=(chain == "main"
                                         and data.get("mainnet_opt_in") is True),
                     )
-                    if sent != txid:
+                    if sent != txid:  # CONTROL: CM-24
                         raise BroadcastOutcomeUnknown(
                             "The server reported a different transaction ID. The result "
                             "is unknown. Do not send again; check an explorer first."
@@ -1331,7 +1379,7 @@ class LocalApp:
 
 def main():
     state = LocalApp()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
+    server = BoundedThreadingHTTPServer(("127.0.0.1", 0), state.handler())
     port = server.server_address[1]
     # Printed without the token so it stays out of terminal scrollback and logs.
     display_url = f"http://127.0.0.1:{port}/"

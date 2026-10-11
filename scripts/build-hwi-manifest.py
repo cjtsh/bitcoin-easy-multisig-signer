@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{out} does not exist; the pinned payload is not recorded", file=sys.stderr)
         return 1
     committed = json.loads(out.read_text(encoding="utf-8"))
-    problems = compare(committed, current)
+    problems = compare(committed, current)  # CONTROL: CM-09
     if problems:
         print(f"{out.name} is stale for the hwilib in this environment:", file=sys.stderr)
         for problem in problems:

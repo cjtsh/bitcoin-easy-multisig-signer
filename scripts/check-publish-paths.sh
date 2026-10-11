@@ -84,7 +84,7 @@ set -euo pipefail
 REMOTE="${1:-origin}"
 ALLOWED_BRANCH="main"
 ALLOWED_PUBLISHER="build-candidate.yml"
-REFUSAL="refusing: a non-main ref carries a publish-capable workflow"
+REFUSAL="refusing: a non-main ref carries a publish-capable workflow"  # CONTROL: CM-20
 
 # The tags that were published before the default-branch guard existed, read
 # from the real repository on 2026-10-11: v0.1.7 through v0.6.3. They are

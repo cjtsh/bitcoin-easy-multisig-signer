@@ -29,6 +29,7 @@ carries a value is deleted, not only if the comparison is inverted.
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -56,6 +57,9 @@ RELEASE_JOB = "release"
 CANDIDATE_JOB = "candidate-manifest"
 CANDIDATE_VERIFY = "Verify the candidate's checksums"
 CANDIDATE_STEP = "Write the candidate manifest"
+# CT-11: a retired per-platform publisher that is not disabled refuses the run.
+CHECKSUMS_JOB = "checksums"
+RETIRED_GUARD = "Refuse while a retired publisher is runnable"
 
 
 def context(**overrides) -> dict:
@@ -405,7 +409,7 @@ class InterpolationLintTests(unittest.TestCase):
                 body = step.get("run")
                 if not body:
                     continue
-                for match in EXPRESSION.finditer(body):
+                for match in EXPRESSION.finditer(body):  # CONTROL: CM-16
                     offenders.append(
                         f"{job_name} / {step.get('name')!r}: {match.group(0)}"
                     )
@@ -456,6 +460,80 @@ class ChecksumFilePortabilityTests(unittest.TestCase):
             self.assertNotIn(b"\r", data,
                              "a shell parses this file byte for byte")
             self.assertTrue(data.endswith(b"\n"))
+
+
+class RetiredPublisherGuardTests(unittest.TestCase):
+    """CT-11: a re-enabled retired publisher refuses the run, not just the note.
+
+    ``build-linux.yml`` and ``build-windows.yml`` were deleted from every branch
+    (M5), and the platform still holds their registrations, disabled. The
+    deletion API answers 404 while the files survive in the immutable tag trees,
+    so the recorded posture and the differ were the only things watching. The
+    step under test makes the run itself refuse: it reads the live registrations
+    and fails closed on a re-enabled one, and it fails closed on a read that did
+    not happen, because a guard that passes by not looking is the defect.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = load_workflow()
+
+    def _run(self, *, stdout: str = "", exit_code: int = 0) -> "StepResult":
+        step = find_step(self.workflow, CHECKSUMS_JOB, RETIRED_GUARD)
+        return run_step(
+            step,
+            context(),
+            stubs={"gh": [Stub(contains=("actions/workflows",),
+                               stdout=stdout, exit=exit_code)]},
+        )
+
+    def test_a_disabled_pair_is_accepted(self):
+        payload = json.dumps({"total_count": 3, "workflows": [
+            {"id": 373388817, "path": ".github/workflows/build-linux.yml",
+             "state": "disabled_manually"},
+            {"id": 373278944, "path": ".github/workflows/build-windows.yml",
+             "state": "disabled_manually"},
+            {"id": 368710221, "path": ".github/workflows/build-candidate.yml",
+             "state": "active"},
+        ]})
+        result = self._run(stdout=payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("still disabled_manually", result.stdout)
+
+    def test_a_re_enabled_publisher_refuses_and_names_it(self):
+        payload = json.dumps({"total_count": 2, "workflows": [
+            {"id": 373388817, "path": ".github/workflows/build-linux.yml",
+             "state": "active"},
+            {"id": 373278944, "path": ".github/workflows/build-windows.yml",
+             "state": "disabled_manually"},
+        ]})
+        result = self._run(stdout=payload)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("build-linux.yml", result.stderr)
+        self.assertIn("not disabled", result.stderr)
+        self.assertNotIn("build-windows.yml", result.stderr)
+
+    def test_a_registration_that_is_gone_is_not_a_re_enabled_one(self):
+        payload = json.dumps({"total_count": 1, "workflows": [
+            {"id": 368710221, "path": ".github/workflows/build-candidate.yml",
+             "state": "active"},
+        ]})
+        result = self._run(stdout=payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_unreadable_platform_refuses(self):
+        result = self._run(exit_code=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("could not be read", result.stderr)
+
+    def test_the_guard_runs_on_a_candidate_and_on_a_publish(self):
+        step = find_step(self.workflow, CHECKSUMS_JOB, RETIRED_GUARD)
+        for publish in (True, False):
+            self.assertTrue(
+                step_runs(step, context(**{"inputs.publish": publish})),
+                "the check belongs on both paths: a candidate a promotion later "
+                "trusts must already have refused a re-enabled publisher",
+            )
 
 
 if __name__ == "__main__":

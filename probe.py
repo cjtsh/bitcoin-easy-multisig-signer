@@ -163,7 +163,7 @@ def parse_bsms(text: str) -> WalletRecord:
 
     keys = descriptor.keys
     threshold = descriptor.miniscript.args[0].num
-    if not 1 <= threshold <= len(keys) or not 2 <= len(keys) <= 3:
+    if not 1 <= threshold <= len(keys) or not 2 <= len(keys) <= 3:  # CONTROL: CM-07
         raise ProbeError("This app supports multisig wallets with two or three keys only.")
     if any(not key.is_extended or key.is_private or key.origin is None for key in keys):
         raise ProbeError("Every signer needs a public xpub and key origin.")

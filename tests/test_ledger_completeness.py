@@ -1,6 +1,6 @@
 """The ledger is the backlog: every scheduled finding has exactly one closing row.
 
-`releases/PATCH-0.6.8.md` is where a finding stops being open. Nothing read it before
+`releases/PATCH-0.6.9.md` is where a finding stops being open. Nothing read it before
 this test, and the cost was concrete: the file held six rows for the twenty-six
 findings the plan schedules, so twenty were closed by silence — eighteen of them
 already fixed and committed, two deliberately deferred but unrecorded. A fix a
@@ -23,8 +23,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAN = ROOT / "releases" / "PLAN-0.6.8.md"
-LEDGER = ROOT / "releases" / "PATCH-0.6.8.md"
+PLAN = ROOT / "releases" / "PLAN-0.6.9.md"
+LEDGER = ROOT / "releases" / "PATCH-0.6.9.md"
 
 # The plan's work-order rows: `| W1 | CT-72 | High | … |`, and rows that schedule two
 # findings (`| W2 | CT-76, CT-77 | High | … |`).
@@ -41,16 +41,15 @@ CITED = re.compile(
 
 SEVERITIES = ("High", "Med", "Low", "Info")
 
-# Findings the plan schedules but deliberately does not fix in 0.6.8, with the reason.
-# Adding an id here is the reviewable act that lets a row cite no test.
-NO_TEST = {
-    # `network_config.py:57-58` needs an operator-trusted second practice-network
-    # endpoint; choosing one is an owner policy decision (PLAN-0.6.8.md W23).
-    "CT-90",
-    # `vendor/libusb-1.0.0.dylib` is rebuilt from pinned source at the next dependency
-    # bump, when the pin has to move anyway (OWNER-ACCEPTANCE-2026-10-07.md).
-    "CT-54",
-}
+# Findings the plan schedules but deliberately does not fix in this cycle, with the
+# reason. Adding an id here is the reviewable act that lets a row cite no test.
+#
+# 0.6.9 defers nothing: all twelve findings close with a test, so this is empty on
+# purpose. The 0.6.8 pair it used to hold (CT-90, the second practice-network oracle
+# that needs an owner policy decision; CT-54, the libusb dylib rebuilt at the next
+# dependency bump) were resolved in the 0.6.8 cycle. An empty set here is a claim
+# the next cycle has to re-earn, not a default.
+NO_TEST = set()
 
 
 def cells(line):

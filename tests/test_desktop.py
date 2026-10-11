@@ -143,10 +143,21 @@ class DesktopTests(unittest.TestCase):
                     page = response.read().decode()
                 self.page = page
         fake = FakeWebview()
+        created = []
+
+        class RecordingServer(desktop.BoundedThreadingHTTPServer):
+            def __init__(self, *args, **kwargs):
+                created.append(self)
+                super().__init__(*args, **kwargs)
+
         # The renderer the machine really has is not this test's subject, and the
         # preflight would refuse to start where WebView2 is genuinely absent.
-        with patch.object(desktop, "windows_renderer", return_value="edgechromium"):
+        with patch.object(desktop, "windows_renderer", return_value="edgechromium"), \
+                patch.object(desktop, "BoundedThreadingHTTPServer", RecordingServer):
             run_desktop(fake)
+        # CT-09: the window is served by the bounded server, not the unbounded
+        # ThreadingHTTPServer that starts one thread per accepted socket.
+        self.assertEqual(len(created), 1)
         self.assertEqual(fake.asserted_gui, webview_renderer())
         self.assertTrue(fake.url.startswith("http://127.0.0.1:"))
         self.assertIs(fake.bridge.window, fake.window)
@@ -379,13 +390,28 @@ class StartupFailureTests(unittest.TestCase):
         self.addCleanup(dialog_patch.stop)
         self.log = Path(self.temp.name) / "desktop-startup-error.log"
 
-    def test_a_failed_start_writes_the_traceback_beside_the_settings(self):
+    def test_a_failed_start_writes_the_failure_beside_the_settings(self):
+        """CT-06: the note names the failure, not the machine's own paths.
+
+        A traceback in this file carries the absolute paths of whoever hit the
+        failure, and this file is the artifact a person is asked to attach to a
+        bug report. The exception's type and message are what the reader acts on.
+        """
         with patch.object(desktop.sys, "platform", "linux"):
             report_startup_failure(ValueError("the WebView2 runtime is missing"))
         text = self.log.read_text(encoding="utf-8")
-        self.assertIn("ValueError", text)
-        self.assertIn("the WebView2 runtime is missing", text)
+        self.assertEqual(text, "ValueError: the WebView2 runtime is missing")
+        self.assertNotIn("Traceback", text)
+        self.assertNotIn('File "', text)
         self.dialog.assert_not_called()
+
+    def test_a_long_failure_message_is_bounded(self):
+        with patch.object(desktop.sys, "platform", "linux"):
+            report_startup_failure(ValueError("x" * 10_000))
+        text = self.log.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("ValueError: "))
+        self.assertLessEqual(len(text), desktop.STARTUP_FAILURE_LIMIT + 3)
+        self.assertTrue(text.endswith("..."))
 
     def test_windows_also_shows_a_dialog_naming_the_report(self):
         with patch.object(desktop, "windows_error_dialog") as dialog, patch.object(

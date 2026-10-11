@@ -118,7 +118,7 @@ class SigningDocumentAddressTests(unittest.TestCase):
             "signing-key.asc yielded no user-id e-mail, so the comparison below "
             "would pass on two empty sets")
 
-    def test_the_export_commands_name_the_shipped_key(self):
+    def test_the_export_commands_name_the_shipped_key(self):  # CONTROL: CM-21
         documented = set(DOCUMENTED.findall(self.text))
         self.assertTrue(
             documented,

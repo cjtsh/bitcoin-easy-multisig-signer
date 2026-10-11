@@ -61,9 +61,13 @@
       "default_workflow_permissions": "read"
     }
   },
-  "recorded_at": "2026-10-10T18:20:10Z",
+  "recorded_at": "2026-10-11T13:55:41Z",
   "recorded_from": "cjtsh/bitcoin-easy-multisig-signer",
   "recorded_with": "scripts/check-platform-state.sh --record",
+  "release_immutability": {
+    "enabled": true,
+    "enforced_by_owner": false
+  },
   "repository_secrets": [],
   "repository_variables": [
     "LIBUSB_SHA256",

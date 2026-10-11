@@ -14,12 +14,11 @@ import os
 import subprocess
 import sys
 import threading
-import traceback
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import safe_http
-from gui import LocalApp, assert_private_file, launch_url, save_prepared_psbt, ui_path
+from gui import (BoundedThreadingHTTPServer, LocalApp, assert_private_file, launch_url,
+                 save_prepared_psbt, ui_path)
 from network_settings import settings_path
 from probe import (
     ProbeError,
@@ -29,6 +28,11 @@ from probe import (
     verify_hwi_identity_for_command,
 )
 from wallet_service import WalletError
+
+# The failure note is a bounded type-and-message line, not a traceback (CT-06):
+# a platform error can quote a long path or an entire HTML error page, and this
+# file is meant to be pasted into a bug report.
+STARTUP_FAILURE_LIMIT = 2000
 
 
 def report(message: str) -> None:
@@ -313,7 +317,7 @@ def run_desktop(webview_module) -> None:
     """Only the window is new; LocalApp owns the same API and state as browser mode."""
     require_edge_chromium()
     state = LocalApp(desktop=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), state.handler())
+    server = BoundedThreadingHTTPServer(("127.0.0.1", 0), state.handler())
     port = server.server_address[1]
     url = f"http://127.0.0.1:{port}/"
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -333,7 +337,7 @@ def run_desktop(webview_module) -> None:
 
 
 def startup_error_log() -> Path:
-    """Where a window that failed to start leaves its traceback.
+    """Where a window that failed to start leaves its failure record.
 
     A ``--windowed`` build has no console on any platform, so the app cannot be
     run "in a terminal" to see why it stopped: a failure to open the window looks
@@ -354,10 +358,20 @@ def report_startup_failure(error: BaseException) -> None:
     """Say why the window did not open, where the operator can find it.
 
     Windows has no crash reporter and a windowed build has no console, so a
-    failed start is invisible. The traceback is written next to the app's
-    settings and, on Windows, shown in a message box naming that file.
+    failed start is invisible. The failure is written next to the app's settings
+    and, on Windows, shown in a message box naming that file.
+
+    It records the exception's type and message, not a traceback (CT-06). A
+    traceback embeds the absolute paths of the machine that hit the failure --
+    the frozen bundle's extraction directory, the user's profile -- and this file
+    is exactly the artifact a person is asked to attach to a bug report. The type
+    and message are what the reader needs to act on, and neither can carry wallet
+    material: a start that reaches this function failed before any wallet was
+    opened. The message is bounded because it can quote a platform error.
     """
-    details = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    details = f"{type(error).__name__}: {error}"
+    if len(details) > STARTUP_FAILURE_LIMIT:
+        details = details[:STARTUP_FAILURE_LIMIT].rstrip() + "..."
     destination: Path | None = None
     try:
         destination = startup_error_log()

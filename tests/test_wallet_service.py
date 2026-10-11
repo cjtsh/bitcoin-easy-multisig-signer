@@ -56,6 +56,31 @@ class BroadcastOutcomeTests(unittest.TestCase):
         self.assertNotIsInstance(caught.exception, BroadcastOutcomeUnknown)
         self.assertIn("refused", str(caught.exception))
 
+    def test_a_malformed_body_is_unknown_not_a_transaction_id(self):
+        """A 200 whose body is not a 64-character hex txid is not a result.
+
+        The GUI has its own backstop: `gui.py` compares the returned id with the
+        reviewed one and reports outcome-unknown on a mismatch. That is a second
+        line of defence, not a reason for this one to go untested -- without
+        this branch the engine hands whatever the server sent straight back.
+        Cycle 4 found every neighbouring branch pinned and this one unpinned
+        (CT-01), so the empty, short, long and non-hex shapes are walked here.
+        """
+        for body in (b"", b"not-a-transaction-id", b"a" * 63, b"a" * 66, b"z" * 64):
+            with self.subTest(body=body):
+                with patch("wallet_service.urlopen", return_value=io.BytesIO(body)):
+                    with self.assertRaisesRegex(BroadcastOutcomeUnknown, "Do not send"):
+                        broadcast_transaction("00" * 50)
+
+    def test_an_upper_case_txid_is_accepted_and_lower_cased(self):
+        """The positive half: a well-formed id from any case is still a success.
+
+        Without this the malformed-body pin above could be satisfied by refusing
+        every response at all.
+        """
+        with patch("wallet_service.urlopen", return_value=io.BytesIO(b"A" * 64)):
+            self.assertEqual(broadcast_transaction("00" * 50), "a" * 64)
+
     def test_mainnet_broadcast_requires_explicit_opt_in_at_engine_boundary(self):
         with patch("wallet_service.urlopen") as send:
             with self.assertRaisesRegex(WalletError, "Explicit mainnet"):

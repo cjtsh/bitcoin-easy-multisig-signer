@@ -161,7 +161,7 @@ def accept_signature_update(before, after) -> PSBT:
     import only partial signatures, then verify them against its original
     transaction, prevouts and witness scripts. This also handles map reordering.
     """
-    if len(before.inputs) != len(after.inputs) or len(before.outputs) != len(after.outputs):
+    if len(before.inputs) != len(after.inputs) or len(before.outputs) != len(after.outputs):  # CONTROL: CM-04
         raise SigningError("The device changed the transaction's input or output count.")
     if before.tx.serialize() != after.tx.serialize():
         raise SigningError("The device returned a different transaction.")

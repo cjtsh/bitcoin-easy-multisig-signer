@@ -57,7 +57,7 @@ jobs:
       - name: Refuse an unsigned public release
         if: ${{ inputs.publish && !inputs.notarize }}
         run: |
-          echo 'Publishing requires a signed and notarized build.' >&2
+          echo 'Publishing requires a signed and notarized build.' >&2  # CONTROL: CM-14
           exit 1
       - name: Require the default branch for publication
         if: ${{ inputs.publish }}
@@ -781,6 +781,40 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Refuse while a retired publisher is runnable
+        # CT-11: build-linux.yml and build-windows.yml were deleted from every
+        # branch, and the platform still holds their registrations, disabled.
+        # They cannot be removed while the files survive in the immutable tag
+        # trees, so this path refuses to build or publish with one re-enabled
+        # rather than trusting that nobody turns it back on. A read that fails
+        # refuses too: the check must never pass by not looking.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! workflows="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100")"; then
+            echo "Refusing: the platform's workflow registrations could not be read." >&2
+            exit 1
+          fi
+          python3 - "$workflows" <<'PY'
+          import json
+          import sys
+
+          RETIRED = ("build-linux.yml", "build-windows.yml")
+          live = sorted(
+              entry["path"]
+              for entry in json.loads(sys.argv[1])["workflows"]
+              if entry["path"].rsplit("/", 1)[-1] in RETIRED
+              and entry["state"] != "disabled_manually"
+          )
+          if live:
+              raise SystemExit(
+                  "refusing: a retired per-platform publisher is not disabled: "
+                  + ", ".join(live)
+              )
+          print("ok: both retired per-platform publishers are still disabled_manually")
+          PY
       - name: Download and verify the tested candidate artifacts
         if: ${{ inputs.publish }}
         env:
@@ -1002,7 +1036,7 @@ jobs:
           test -f SHA256SUMS.asc || { echo "SHA256SUMS.asc is missing." >&2; exit 1; }
           test -f ../signing-key.asc || { echo "signing-key.asc is not committed." >&2; exit 1; }
           gpg --batch --import ../signing-key.asc
-          gpg --verify SHA256SUMS.asc SHA256SUMS
+          gpg --verify SHA256SUMS.asc SHA256SUMS  # CONTROL: CM-12
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1100,7 +1134,7 @@ jobs:
           fi
           if [[ "$NOTARIZE" != "true" ]]; then
             echo "Refusing to publish an unsigned or unnotarized build." >&2
-            exit 1
+            exit 1  # CONTROL: CM-15
           fi
           # A published version is never rebuilt. Overwriting one silently changes the
           # artifacts behind a tag someone has already downloaded and verified, which
@@ -1111,7 +1145,7 @@ jobs:
           if [[ "$tag_status" == 0 ]]; then
             echo "==> The tag $tag already exists." >&2
             echo "    Bump version.py rather than republishing a released version." >&2
-            exit 1
+            exit 1  # CONTROL: CM-13
           fi
           if [[ "$tag_status" != 2 ]]; then
             echo "Could not verify remote tag state; refusing publication." >&2

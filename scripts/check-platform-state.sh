@@ -194,6 +194,22 @@ def registrations():
     }
 
 
+def release_immutability():
+    """The platform's own immutable-release setting (CT-10).
+
+    Overwrite protection used to rest on the workflow's existing-tag guard, the
+    tag ruleset and account hygiene alone -- none of which is the platform's own
+    immutability setting. It is recorded here for the same reason as everything
+    else in this file: a posture that lives only in a browser cannot be reviewed
+    and cannot be diffed.
+    """
+    state = api("immutable-releases")
+    return {
+        "enabled": bool(state["enabled"]),
+        "enforced_by_owner": bool(state["enforced_by_owner"]),
+    }
+
+
 def secret_scanning():
     """The repository's own secret scanning, asserted rather than assumed.
 
@@ -226,6 +242,7 @@ def observe():
             "copied so this record can be published and reviewed."
         ),
         "environments": environments(),
+        "release_immutability": release_immutability(),
         "secret_scanning": secret_scanning(),
         "repository_secrets": sorted(
             secret["name"] for secret in api("actions/secrets")["secrets"]

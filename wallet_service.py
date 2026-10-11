@@ -59,7 +59,7 @@ class BroadcastOutcomeUnknown(WalletError):
 
 def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
     """Hard stop on extreme fees; return an extra-review warning for unusual ones."""
-    if fee > MAX_ESTIMATED_FEE_SATS:
+    if fee > MAX_ESTIMATED_FEE_SATS:  # CONTROL: CM-25
         raise WalletError(
             f"Estimated fee of {fee:,} sats exceeds the 10,000-sat safety ceiling. "
             "Use fewer inputs or a lower sat/vB rate."
@@ -315,7 +315,7 @@ def wallet_layout(record: WalletRecord) -> Layout:
                 # there anchors the reference at xpub/0/0, where this branch —
                 # and so the gate — is unreachable.
                 receive, receive_text = desc, text
-                bare_receive_only = True
+                bare_receive_only = True  # CONTROL: CM-06
         else:
             raise WalletError("Unsupported address branches; no balance will be guessed.")
         # Nunchuk's BSMS writer emits a bare /* and "No path restrictions" for

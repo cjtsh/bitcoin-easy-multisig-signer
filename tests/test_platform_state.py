@@ -44,7 +44,7 @@ if not WORKFLOW.is_file():
     # A source archive is a source tree: build-source.sh ships the recipes under
     # ci/ rather than .github/workflows/, and the archive runs this suite.
     WORKFLOW = ROOT / "ci" / "build-candidate.yml"
-PLAN = ROOT / "releases" / "PLAN-0.6.8.md"
+PLAN = ROOT / "releases" / "PLAN-0.6.9.md"
 RELEASE_PROCESS = ROOT / "RELEASE-PROCESS.md"
 WORKFLOW_DIR = WORKFLOW.parent
 
@@ -184,6 +184,8 @@ elif path == "actions/variables":
         "total_count": len(state["repository_variables"]),
         "variables": [{"name": name} for name in state["repository_variables"]],
     }
+elif path == "immutable-releases":
+    answer = state["release_immutability"]
 elif path == "rulesets":
     answer = [
         {"id": index + 1, "name": ruleset["name"]}
@@ -337,6 +339,24 @@ class PlatformRecordTests(unittest.TestCase):
         self.assertEqual(self.record["recorded_from"],
                          "cjtsh/bitcoin-easy-multisig-signer")
         self.assertIn("recorded_at", self.record)
+
+    def test_the_platform_makes_published_releases_immutable(self):
+        """CT-10: overwrite protection is not only the workflow's own guard.
+
+        The release job refuses an existing tag and the tags ruleset blocks a
+        force-move, but neither is the platform's immutability setting. That
+        setting used to live only in a browser; it is read by
+        `scripts/check-platform-state.sh`, recorded here, and diffed on every run
+        of the differ. This test is where the recorded value is read.
+        """
+        posture = self.record["release_immutability"]
+        self.assertTrue(
+            posture["enabled"],
+            "immutable releases were turned off: the existing-tag guard and the "
+            "tag ruleset are then the only protection against republishing over "
+            "released bytes",
+        )
+        self.assertIn("enforced_by_owner", posture)
 
 
 class WorkflowWiringTests(unittest.TestCase):

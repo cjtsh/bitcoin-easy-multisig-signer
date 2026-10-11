@@ -47,9 +47,10 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.6.6.md`](PATCH-0.6.6.md) · [`RELEASE-NOTES-0.6.6.md`](RELEASE-NOTES-0.6.6.md) | 0.6.6 | Color Team cycle-2 remediation: BIP-143 vectors, money-path and HWI-identity pins, BIP-62 low-S, release-channel hygiene |
 | [`PATCH-0.6.7.md`](PATCH-0.6.7.md) · [`RELEASE-NOTES-0.6.7.md`](RELEASE-NOTES-0.6.7.md) | 0.6.7 | Color Team cycle-3 build-process remediation, answering a grade set by process and not by the app |
 | [`PATCH-0.6.8.md`](PATCH-0.6.8.md) · [`PLAN-0.6.8.md`](PLAN-0.6.8.md) · [`RELEASE-NOTES-0.6.8.md`](RELEASE-NOTES-0.6.8.md) | 0.6.8 | Color Team cycle-4 remediation: one ledger row per scheduled finding with a closing test the build loads, and a parsed `CONTROLS.md` inventory |
+| [`PATCH-0.6.9.md`](PATCH-0.6.9.md) · [`PLAN-0.6.9.md`](PLAN-0.6.9.md) · [`RELEASE-NOTES-0.6.9.md`](RELEASE-NOTES-0.6.9.md) | 0.6.9 | Color Team cycle-5 remediation: `CONTROLS.md` citations bound to their own markers, every Low finding pinned by a test that can fail, and the recorded housekeeping closed |
 | [`OWNER-ACCEPTANCE-2026-10-07.md`](OWNER-ACCEPTANCE-2026-10-07.md) | 0.6.6–0.6.7 | The owner's dated hardware-acceptance note for the promoted candidate |
 | [`LINUX-0.6.4-ACCEPTANCE.md`](LINUX-0.6.4-ACCEPTANCE.md) | 0.6.4 | Owner-reported Linux AppImage walkthrough |
-| [`platform-state.json`](platform-state.json) | — | Dated snapshot (2026-10-10T18:20:10Z) of the repository's GitHub platform settings |
+| [`platform-state.json`](platform-state.json) | — | Dated snapshot (2026-10-11T13:55:41Z) of the repository's GitHub platform settings |
 
 ## These are historical records
 

@@ -630,13 +630,15 @@ class LocalGuiTests(unittest.TestCase):
             "chain": "main", "action": "read",
         })["explorer_url"], "https://mempool.space/api")
 
-    def test_mainnet_fee_reference_is_public_and_cached(self):
+    def test_mainnet_fee_reference_is_token_gated_and_cached(self):
         quote = {"network": "main", "fastest": 4, "standard": 3, "hour": 2,
                  "economy": 1, "minimum": 1, "checked_at": "2026-09-28T00:00:00+00:00",
                  "source": "mempool.space mainnet"}
         with patch("gui.fetch_fee_rates", return_value=quote) as fetch:
             for _ in range(2):
-                with urlopen(self.base + "/api/fees", timeout=3) as response:
+                request = Request(self.base + "/api/fees",
+                                  headers={"X-Local-Token": self.app.token})
+                with urlopen(request, timeout=3) as response:
                     self.assertEqual(json.load(response), quote)
         fetch.assert_called_once_with()
         with patch("gui.urlopen", return_value=io.BytesIO(json.dumps({
@@ -778,25 +780,48 @@ class LocalGuiTests(unittest.TestCase):
         self.assertIsNone(builder.call_args.args[3])
         self.assertTrue(builder.call_args.kwargs["send_all"])
 
-    def test_public_price_endpoint_is_cached_and_independent_of_wallet(self):
+    def test_price_endpoint_is_token_gated_and_cached(self):
         quote = {"usd_per_btc": 84362, "as_of": "2026-09-28T00:00:00+00:00",
                  "source": "mempool.space BTC/USD spot"}
         with patch("gui.fetch_btc_usd", return_value=quote) as fetch:
-            with urlopen(self.base + "/api/price", timeout=3) as response:
-                self.assertEqual(json.load(response), quote)
-            with urlopen(self.base + "/api/price", timeout=3) as response:
-                self.assertEqual(json.load(response), quote)
+            for _ in range(2):
+                request = Request(self.base + "/api/price",
+                                  headers={"X-Local-Token": self.app.token})
+                with urlopen(request, timeout=3) as response:
+                    self.assertEqual(json.load(response), quote)
         fetch.assert_called_once_with()
         self.assertIsNone(self.app.record)
-        request = Request(self.base + "/api/price", headers={"Host": "not-local.example"})
+        request = Request(self.base + "/api/price",
+                          headers={"X-Local-Token": self.app.token,
+                                   "Host": "not-local.example"})
         with self.assertRaises(HTTPError) as err:
             urlopen(request, timeout=3)
         self.assertEqual(err.exception.code, 403)
 
+    def test_the_market_reads_refuse_without_the_local_token(self):
+        """CT-08: a market read is still this session's read.
+
+        Both routes return public data, and both were reachable from any page
+        that could reach the loopback port simply because they were GETs. They
+        are refused by name now, before any upstream lookup is made.
+        """
+        for route in ("/api/price", "/api/fees"):
+            with self.subTest(route=route):
+                with patch("gui.fetch_btc_usd") as price, \
+                        patch("gui.fetch_fee_rates") as fees:
+                    with self.assertRaises(HTTPError) as err:
+                        urlopen(self.base + route, timeout=3)
+                    self.assertEqual(err.exception.code, 403)
+                    err.exception.close()
+                    price.assert_not_called()
+                    fees.assert_not_called()
+
     def test_bad_price_does_not_claim_a_zero_wallet_balance(self):
         with patch("gui.fetch_btc_usd", side_effect=WalletError("Rate unavailable")):
+            request = Request(self.base + "/api/price",
+                              headers={"X-Local-Token": self.app.token})
             with self.assertRaises(HTTPError) as err:
-                urlopen(self.base + "/api/price", timeout=3)
+                urlopen(request, timeout=3)
         self.assertEqual(err.exception.code, 503)
         self.assertIsNone(self.app.scan)
 
