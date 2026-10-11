@@ -31,6 +31,7 @@ because a document nothing reads rots the moment it is written.
 | CM-18 | Diagnostics carry fixed codes, the selected network and a validated device class, never free text or wallet material. | `gui.py:498-530` | `tests/test_diagnostics.py::DiagnosticTests::test_device_fields_accept_only_a_known_device_class` |
 | CM-19 | The source archive ships the release public key its own instructions tell a downloader to import. | `scripts/build-source.sh:37-45` | `tests/test_build_source.py::ArchiveCompletenessTests::test_the_release_public_key_reaches_the_archive` |
 | CM-20 | A non-main ref that carries a publish-capable workflow is refused, on every remote head and tag. | `scripts/check-publish-paths.sh:87` | `tests/test_workflow_config.py::PublishPathSweepTests::test_the_sweep_refuses_a_remote_branch_carrying_a_release_job` |
+| CM-21 | The release-key setup steps can only name an address the shipped `signing-key.asc` carries, so the documented way to reproduce the release key cannot drift from the key in the tree. | `tests/test_signing_docs.py:109-135` | `tests/test_signing_docs.py::SigningDocumentAddressTests::test_the_export_commands_name_the_shipped_key` |
 
 ## Recorded, no control claimed
 
