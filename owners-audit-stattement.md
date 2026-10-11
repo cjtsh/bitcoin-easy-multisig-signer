@@ -159,6 +159,52 @@ reviewers; and the release job holds `contents: write` on every dispatch. These 
 residual risk and release-readiness gates, and the panel must state what it verified itself
 versus what it took on the document's word.
 
+## 7. Known defects I am disclosing before the review begins (owner, 2026-10-11)
+
+I am told that an audited party stating its known defects up front — one list, dated, with what was
+wrong, what it could have affected, what fixed it, and what keeps it fixed — is what standard
+practice asks for. It is the same idea as a management representation: the panel should be grading
+a known state instead of spending its time uncovering a paper trail. I accept that a project built
+this way makes mistakes and misses steps. So this is the list, written to be complete rather than
+flattering.
+
+**This is not a request for a lighter grade.** Every item below is open to the panel, and the panel
+may still call any of them a finding. It is also not a claim of absolute completeness: it is
+complete as to what I know as at 2026-10-11.
+
+### 7.1 The record of what was wrong
+
+| Ref | What was wrong | What it could have affected | Where it stood | Corrected by | Closing control |
+|---|---|---|---|---|---|
+| D-1 | `SIGNING.md`'s one-time key setup told a maintainer to export `release@bitseeker.com`. The shipped `signing-key.asc` is `Bitseeker LLC <release@bitseeker.llc>`. | The documented way to reproduce the release key could not work; a maintainer following it would export nothing, or build a second identity and sign with the wrong key. No published artifact is affected — the shipped key is correct and `SHA256SUMS.asc` verifies against it. | `SIGNING.md:70,75` in the `v0.6.8` tree | `336ea6c` | `tests/test_signing_docs.py` (`6d17a80`) fails if any address named in `SIGNING.md` is not an address the shipped key carries; recorded as control `CM-21` (`4fbe6ef`) |
+| D-2 | Eight living documents had drifted from the software. `DISCLAIMER.md` still opened "Version 0.6.2 is a maintenance release". `USER-MANUAL.md` said version 0.6.3 in three places while the published manual page said 0.6.8. `PHASE-HANDOFF.md` treated the cycle-3 plan as the input any later audit would start from, and placed the cycle-3 artifacts in the repository root. `CURRENT-STATUS.md` repeated that root claim. `LINUX-PORT.md` described the retired `linux-port` branch as the path a Linux release answers to. `AGENTS.md` presented the earlier AI reports as live context. `CHANGE-ADDRESS-REVIEW.md` cited a note supplied privately without saying so. `releases/README.md` indexed records only up to 0.6.1. | A reader — including an auditor following the repository's own read order — would be sent to a plan that is not this cycle's, told an obsolete revision was current, or told a removed branch was a release path. Documentation only: none of it changes what the code does. | the `v0.6.8` tree | `913ce30` | the same drift is recorded in the audit plan's section 6, so the panel meets it as a known list rather than a discovery |
+| D-3 | The previous audit cycle was defective. The framework revision then in force treated "what if the owner, or GitHub, is compromised" as an audit question. That cycle ran roughly a hundred executions without producing a reproducible finding, and the project was changed to answer issues that were not real. It made the code worse, not better. | A project loop — churn without a finding. The line was abandoned: the codebase was returned to `v0.6.7`, the framework was corrected to `v1.5.1`, and `v0.6.8` was built as the remediation of that base. The risk is of the same loop recurring if the panel is not told. | the abandoned 2026-10-08/09 line, and the artifacts it left in the tag trees | framework `v1.5.1`; the fresh baseline the owner directed on 2026-10-11 | the plan's out-of-scope list: external compromise of the owner's account, machines, credentials or agentic tools is a declared external assumption and is not a source of findings |
+| D-4 | `main` carries changes that are not in the released tag and have no ledger row: removal of the legacy audit artifacts (`a786981`), the `SIGNING.md` correction (`336ea6c`), its guard test (`6d17a80`), the `CONTROLS.md` row for that guard (`4fbe6ef`), this cycle's plan (`2f55748`, `1282c13`, `e6e717e`), and the living-document corrections (`913ce30`). | A reader comparing the tag with `main` sees differences nothing accounts for. The `releases/` records are deliberately never rewritten, so nothing there explains them. | `main`, after the 2026-10-10 release | disclosed here rather than left to be found | the audit plan's section 6 records the tag-to-`main` delta |
+| D-5 | The earlier cycles' artifacts — plans, locks, reports and a public security statement — are still inside every published tag tree from `v0.6.4` onward, including a superseded draft carrying the same filename as this cycle's plan. | An auditor who checks out the tag and looks for "the plan" finds the wrong file. | 16 audit files at the root of the `v0.6.8` tree, plus `releases/AUDIT-*.md` and `docs/audits/*.pdf` in the older trees | the material was removed from `main` on 2026-10-11 for this cycle | the audit plan's section 6 names all 16 and rules them not inputs; a tag cannot be edited without destroying the release it names |
+| D-6 | History cannot be purged while the releases stand. A tag is a pointer to a commit, and all 69 tags point into that history, so the abandoned line stays reachable. | The repository is larger and more confusing than a clean cut-off would leave it. | the tag set | not fixed, and not fixable without voiding the audit target and every published download's provenance | declared here as an accepted constraint, so it is not read as an oversight |
+
+### 7.2 What did not go wrong, asserted
+
+1. The published `v0.6.8` assets are the ones the pipeline produced from `0d4e01f`: the ten assets
+   match `SHA256SUMS`, `SHA256SUMS.asc` verifies against the committed `signing-key.asc`
+   (Bitseeker LLC, `release@bitseeker.llc`), and one Sigstore attestation binds all ten digests to
+   that commit. The surveyor checked this read-only; the panel re-establishes its own evidence.
+2. No released tag has been moved or deleted, and no release asset has been overwritten. One
+   out-of-gate release, `v0.6.5-windows-x64`, **was deleted** in cycle 3 because it had been
+   published outside the pipeline; `RELEASE-HISTORY.md` records that.
+3. The app holds no wallet key, never receives a PIN, and never asks for a seed phrase. No seed,
+   PIN, private key or credential value is stored in this repository.
+4. Every change listed above was made on `main` **after** the release. The released bytes did not
+   change: the tag `v0.6.8` and its ten published assets are exactly as they were published on
+   2026-10-10T21:31:47Z.
+
+### 7.3 Why the record was not rewritten to match the present
+
+`releases/README.md` says the records are deliberately never rewritten, because a record edited to
+match the present is no longer evidence. That rule applies to this disclosure too: where an earlier
+record describes a state that has since changed, the record stands and this section carries the
+correction. A historical record should be read as what was true when it was written.
+
 ---
 
 *Carried in the audit plan, not as owner conditions:* the framework `v1.5` obligations (the
