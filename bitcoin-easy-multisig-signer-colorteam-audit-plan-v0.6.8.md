@@ -368,5 +368,5 @@ plan; the signature below ratifies them for this cycle).*
 tag's commit hash into the section 0 target-revision line in place of
 `REPLACE-AFTER-PUBLISH`, then sign the two lines below.*
 
-- **Signed:**
-- **Date:**
+- **Signed:** Bitseeker LLC
+- **Date:** 2026-10-10
