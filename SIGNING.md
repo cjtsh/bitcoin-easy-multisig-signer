@@ -67,12 +67,12 @@ without this key.
    ```
 2. Commit the **public** key to the repository root so downloaders can import it:
    ```bash
-   gpg --armor --export release@bitseeker.com > signing-key.asc
+   gpg --armor --export release@bitseeker.llc > signing-key.asc
    git add signing-key.asc && git commit -m "Add the release signing public key"
    ```
 3. Add two repository secrets (Settings → Secrets and variables → Actions):
    - `GPG_PRIVATE_KEY` — the armored **private** key
-     (`gpg --armor --export-secret-keys release@bitseeker.com`)
+     (`gpg --armor --export-secret-keys release@bitseeker.llc`)
    - `GPG_PASSPHRASE` — the key's passphrase (empty secret if none)
 
 Guard the private key like the Apple credentials: it is publisher identity.

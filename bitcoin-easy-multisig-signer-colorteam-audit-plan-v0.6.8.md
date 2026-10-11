@@ -120,7 +120,7 @@ with a recorded outcome of HOLDS, BROKEN, or UNPROVEN:
   external assumptions by the owner; recorded once, never graded.
 - The owner's tools going rogue, and standing automation outside this repository — declared
   external assumptions; testable only against a scheduled-task inventory the surveyor does not
-  have (see §8, Q5).
+  have (see §8, Q4).
 - Forks and third-party builds — a fork cannot publish under this identity and is not this
   audit's subject.
 - The correctness of the Bitcoin protocol, of Esplora software, of hardware-wallet firmware, of
@@ -142,7 +142,7 @@ with a recorded outcome of HOLDS, BROKEN, or UNPROVEN:
 - The **live GitHub platform posture** — `git` cannot show it and `releases/platform-state.json` is
   a dated record (`2026-10-10T18:20:10Z`); the panel must re-read it under T-20.
 - The **owner's machine and account state, and any scheduled tasks** — no artefact exists to
-  examine before §8 Q5 is answered.
+  examine before §8 Q4 is answered.
 - **Hardware-wallet firmware and adversarial device behaviour** — outside the app's own verification
   code (T-12); physical device testing is the owner's, not the panel's.
 - **Practice-network second-source cross-checking** — it does not exist by design
@@ -165,8 +165,11 @@ in response.
    this plan (§0, §1, §2, §3, §6). The panel must not cite them as though they were in the audited
    tree.
 2. The published `v0.6.8` artifacts were published after the tag and are not in the tree. Their
-   verification requires fetching them and the GitHub attestation API — network access, which
-   §8 Q3 confirms.
+   verification requires fetching them and the GitHub attestation API — read-only access the owner
+   authorises. The surveyor exercised that route on 2026-10-11: the ten assets match `SHA256SUMS`,
+   `SHA256SUMS.asc` verifies against `signing-key.asc`, and one Sigstore attestation binds all ten
+   digests to `0d4e01f`. That confirms the route works; T-23 and T-27 remain the panel's own
+   evidence to produce.
 3. `releases/platform-state.json` was recorded `2026-10-10T18:20:10Z`, before the release at
    `21:31:47Z`. It is a point-in-time record, not live state; the panel must re-read the platform
    (see T-20).
@@ -805,7 +808,7 @@ failure blocks. The panel may add evidence routes but may not drop a row.
 2. **The owner's agent going rogue, and standing automation outside this repository.** Declared
    external assumptions. The inside-repository half is testable and is in scope (T-15); the
    outside half is testable only against a scheduled-task inventory the surveyor does not have
-   (see §8 Q5), and no finding may be graded on it without that artefact.
+   (see §8 Q4), and no finding may be graded on it without that artefact.
 3. **Forks and third-party builds.** A fork cannot publish under this identity and is not this
    audit's subject.
 4. **The correctness of Bitcoin, Esplora software, hardware-wallet firmware, `pywebview`/WebKit/Edge,
@@ -946,7 +949,7 @@ pinned version and only where the owner has named the audit that covers it.
    `releases/platform-state.json` is a dated record (`2026-10-10T18:20:10Z`). The panel must re-read
    it (T-20).
 3. **The owner's machine and account state, and any scheduled tasks** were not examined — no
-   artefact exists to examine (§8 Q5).
+   artefact exists to examine (§8 Q4).
 4. **Hardware-wallet firmware and device behavior under an adversarial device** were not examined
    beyond the app's own verification code (T-12); physical device testing is the owner's, not the
    panel's.
@@ -971,17 +974,15 @@ what evidence the panel can gather.
   `2ee7747`, `0156db3`) and is **not** in the `v0.6.8` tree. Confirm the statements reproduced
   verbatim throughout this plan (§0, §1, §2, §3, §6) are exactly as you gave them, and that the
   audited tree is the tag, not `main`.
-- **Q3 — artifact access.** Verifying T-23/T-27 needs the ten released assets and the GitHub
-  attestation API. Confirm the panel may fetch them (read-only) during the audit.
-- **Q4 — practice-network second source.** `network_config.py:57-58` leaves `SECONDARY_EXPLORERS`
+- **Q3 — practice-network second source.** `network_config.py:57-58` leaves `SECONDARY_EXPLORERS`
   `None` for Testnet4 and Mutinynet. Do you accept the single-source practice-network outpoint check
   for this cycle as a recorded residual (practice networks carry no money), or do you want it held
   as an open finding?
-- **Q5 — the outside-repository declaration.** Your statement says no scheduled or standing
+- **Q4 — the outside-repository declaration.** Your statement says no scheduled or standing
   automation exists outside this repository. That half cannot be tested from the tree. Will you
   supply the scheduled-task inventory of the machines and accounts that hold the credentials, or
   should the panel record the declaration as untested?
-- **Q6 — re-check at lock time.** Confirm the panel re-confirms that `v0.6.8` still resolves to
+- **Q5 — re-check at lock time.** Confirm the panel re-confirms that `v0.6.8` still resolves to
   `0d4e01f` and that `main` has not moved under the audit before it begins, per the rubric's
   scope/lock-mismatch clause.
 
@@ -996,7 +997,7 @@ body is correct as written, write `None`.
 
 -
 
-**Answers to the questions in section 8.** Answer each of Q1–Q6 above. An unanswered question is
+**Answers to the questions in section 8.** Answer each of Q1–Q5 above. An unanswered question is
 recorded for the panel as unanswered, not as a default answer.
 
 1.
@@ -1004,7 +1005,6 @@ recorded for the panel as unanswered, not as a default answer.
 3.
 4.
 5.
-6.
 
 **Sign-off.** *The audit does not begin until the two lines below are filled in by the owner and
 the audit team has locked this plan.*
