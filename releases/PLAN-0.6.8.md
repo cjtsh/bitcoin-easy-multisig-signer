@@ -4,12 +4,12 @@
 (tag `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b`, artifacts published
 2026-10-07T17:10:37Z), graded **⛔ BLOCKED** — gate PUBLISH:
 
-- [`bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.7.md`](../bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.7.md)
-  — the public report, grade and ledger CT-72…CT-95;
-- [`…-colorteam-security-statement-v0.6.7.md`](../bitcoin-easy-multisig-signer-colorteam-security-statement-v0.6.7.md)
-  — the public statement;
-- [`…-colorteam-audit-lock-v0.6.7.md`](../bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.7.md)
-  — the scope lock (plan SHA-256 `ab5c7dbb…` at start and end);
+- `bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.7.md`
+  — the public report, grade and ledger CT-72…CT-95 (in the `v0.6.7` tag tree);
+- `bitcoin-easy-multisig-signer-colorteam-security-statement-v0.6.7.md`
+  — the public statement (in the `v0.6.7` tag tree);
+- `bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.7.md`
+  — the scope lock (plan SHA-256 `ab5c7dbb…` at start and end; in the `v0.6.7` tag tree);
 - the auditor's private coaching document, evidence index and six lane
   reports (held outside the repository, by design).
 
@@ -288,7 +288,7 @@ Carried from the ledger and the auditor's coaching document, with triggers:
 ## 10. Decisions the owner is asked to make
 
 1. **Release number.** This plan assumes a patch bump to **0.6.8** — corrections
-   only, no new capability, per `AGENTS.md:36` and the `PLAN-0.4.4.md`
+   only, no new capability, per `AGENTS.md:36` and the the earlier 0.4.4 plan record
    precedent. Say so if you want a minor bump instead.
 2. **Floating apt packages (W14).** Pinning every OS package is a real rabbit
    hole on a rolling runner image. The plan pins what is stable, records what

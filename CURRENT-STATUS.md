@@ -84,10 +84,8 @@ string, the interpreter pinned to a full patch, the lock-writer
 hash-locked, the source tarball able to rebuild a signed Mac app, and the
 broadcaster verified at use on every network. No wallet, signing or
 broadcast policy changed. Owner practice-network hardware walkthrough
-passed on candidate 37644267740 before promotion. The dated
-AI-generated [Z.ai v0.6.4 report](releases/AUDIT-ZAI-0.6.4.md) assigns
-Green under its rubric after verifying the automated publication path.
-This is evidence about that revision and stated coverage, not a
+passed on candidate 37644267740 before promotion. This is evidence
+about that revision and its stated coverage, not a
 certification or guarantee; no independent human end-to-end review is
 recorded.
 
@@ -125,4 +123,4 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-**Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), the 0.2.0 and 0.4.3 audits, old patch records, [`releases/PLAN-0.3.0.md`](releases/PLAN-0.3.0.md), and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.
+**Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.

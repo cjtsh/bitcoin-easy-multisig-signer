@@ -36,7 +36,7 @@ re-check of prior findings do not apply to this cycle:
 |---|---|
 | Original signed plan carried forward | **none** — this is the first plan in this lineage |
 | Prior finding IDs to re-check | **none** — no prior ledger is an input |
-| Immediately prior report | **none is an input.** The repository's earlier AI audit reports (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) and its earlier Color Team reports are history and are excluded as evidence per the owner's independence condition. The one bounded exception is recorded under "Exclusions" below |
+| Immediately prior report | **none is an input.** The repository's earlier AI audit reports and its earlier Color Team reports are history and are excluded as evidence per the owner's independence condition. They were removed from `main` for this cycle and survive only in the tagged trees; they are named, path by path, under "The legacy audit artifacts inside the audited tree" in §6. The one bounded exception is recorded under "Exclusions" below |
 | Cycle name | `v0.6.8` |
 | New finding IDs | A new ledger begins at **CT-01** for this cycle. The panel must not reuse an ID from any earlier cycle, because those ledgers are not inputs and an accidental collision would read as a carried finding |
 
@@ -126,8 +126,9 @@ with a recorded outcome of HOLDS, BROKEN, or UNPROVEN:
 - The correctness of the Bitcoin protocol, of Esplora software, of hardware-wallet firmware, of
   `pywebview`/WebKit/Edge, of Python and the OS, and of the pinned third-party libraries at their
   pinned versions — trusted or assumed, with the trust boundary named per threat in §5.
-- The prior AI audit reports (`releases/AUDIT-*.md`, `docs/audits/*.pdf`) and the earlier Color
-  Team reports — history, excluded as evidence. Bounded exception: the immediately preceding
+- The prior AI audit reports, the prior-review PDFs that were served from `docs/audits/`, and the
+  earlier Color Team reports — history, excluded as evidence; all were removed from `main` for
+  this cycle and are named path by path in the subsection below. Bounded exception: the immediately preceding
   Color Team report and the repository's own remediation ledger (`releases/PATCH-0.6.8.md`,
   `releases/OWNER-ACCEPTANCE-2026-10-07.md`) are available to the **White referee** only; the
   specialist lanes run without them.
@@ -812,9 +813,9 @@ failure blocks. The panel may add evidence routes but may not drop a row.
    trust boundary in §5, not a thing the panel re-derives. The pinned versions in
    `requirements*.txt`, the `*.lock` files, and `vendor/` **are** the audited versions; per the
    owner's policy, moving a pin invalidates inherited evidence for that component.
-5. **Prior audit reports and prior Color Team cycles as evidence.** `releases/AUDIT-*.md`,
-   `docs/audits/*.pdf`, and the earlier Color Team plans/reports/locks/grades are history. No prior
-   conclusion, grade, or finding may be cited. Bounded exception: the immediately preceding Color
+5. **Prior audit reports and prior Color Team cycles as evidence.** The earlier Color Team plans,
+   reports, locks and grades, and the prior AI audit reports, are history, and were removed from
+   `main` for this cycle. No prior conclusion, grade, or finding may be cited. Bounded exception: the immediately preceding Color
    Team report and the repository's own remediation ledger (`releases/PATCH-0.6.8.md`,
    `releases/OWNER-ACCEPTANCE-2026-10-07.md`) go to the **White referee** only; the specialist
    lanes run without them.
@@ -823,6 +824,42 @@ failure blocks. The panel may add evidence routes but may not drop a row.
 7. **The visual design, copy, and marketing of the app and site, and the exact wording of release
    notes** — except where a claim in them is a security claim, which is then in scope as a claim to
    verify (for example, any sentence asserting what a build or artifact guarantees).
+
+### The legacy audit artifacts inside the audited tree
+
+The audited revision is the tag, and a tag cannot be edited without destroying the release it
+names. The `v0.6.8` tree therefore still carries the audit artifacts of the earlier cycles, and
+they will still be there when the panel checks out `0d4e01f`. They were removed from `main`
+after the release. They are named here so the panel meets them as a known inventory that has
+already been ruled on, not as a discovery:
+
+| # | Path inside the `v0.6.8` tree | What it is |
+|---|---|---|
+| 1 | `bitcoin-easy-multisig-signer-colorteam-audit-index.md` | the earlier cycles' index |
+| 2 | `bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.4.md` | cycle scope lock |
+| 3 | `bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.5.md` | cycle scope lock |
+| 4 | `bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.6.md` | cycle scope lock |
+| 5 | `bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.6.7.md` | cycle scope lock |
+| 6 | `bitcoin-easy-multisig-signer-colorteam-audit-plan-d525f31.md` | plan of the abandoned line |
+| 7 | `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.4.md` | cycle plan |
+| 8 | `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.5.md` | cycle plan |
+| 9 | `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.6.md` | cycle plan |
+| 10 | `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md` | cycle plan |
+| 11 | `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` | the superseded unsigned draft this plan replaces |
+| 12 | `bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.4.md` | cycle report |
+| 13 | `bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.5.md` | cycle report |
+| 14 | `bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.6.md` | cycle report |
+| 15 | `bitcoin-easy-multisig-signer-colorteam-audit-report-v0.6.7.md` | cycle report |
+| 16 | `bitcoin-easy-multisig-signer-colorteam-security-statement-v0.6.7.md` | cycle public statement |
+| 17 | `CONTROLS.md` | the parsed control inventory the release ships — **in scope**, see the rule |
+
+**Rule.** Items 1–16 are not inputs, evidence, findings or grades for this cycle. The panel may
+read one only to establish that it is not an input, and may not cite it in the report. Item 17 is
+the exception and stays in scope: it is a shipped artifact the release itself claims, so §5 holds
+it to that claim. A file that refers to a document that no longer exists is recorded as it stands
+in the report's environment section — it is not a finding, and it is not resolved by reaching
+backwards. The prior AI audit reports (`releases/AUDIT-*.md`) and the four `docs/audits/*.pdf`
+files were removed from `main` for this cycle and remain only in the tagged trees.
 
 ### The owner's policies these exclusions rest on
 

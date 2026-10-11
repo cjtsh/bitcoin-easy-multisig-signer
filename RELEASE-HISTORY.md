@@ -39,19 +39,19 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 
 | Version | One-line summary | Evidence |
 | --- | --- | --- |
-| 0.1.x | Phases 1–4: balance view, send eligibility, unsigned PSBT, testnet signing/broadcast | [`releases/AUDIT-BASELINE-0.1.27.md`](releases/AUDIT-BASELINE-0.1.27.md), [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) |
+| 0.1.x | Phases 1–4: balance view, send eligibility, unsigned PSBT, testnet signing/broadcast | [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md) |
 | 0.2.0 | Hot-item security fixes; **hardware signing broken — do not use** | [`releases/SECURITY-REVIEW-0.2.0.md`](releases/SECURITY-REVIEW-0.2.0.md) |
 | 0.2.1 | HWI field-order repair; confirmed Testnet4 payment | [`releases/PATCH-0.2.1.md`](releases/PATCH-0.2.1.md) |
 | 0.2.2 | One-payment-at-a-time confirmation wait | [`releases/PATCH-0.2.2.md`](releases/PATCH-0.2.2.md) |
-| 0.3.0 | Warm safety work, Mutinynet, stale-screen fix | [`releases/PATCH-0.3.0.md`](releases/PATCH-0.3.0.md), [`releases/PLAN-0.3.0.md`](releases/PLAN-0.3.0.md), [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) |
+| 0.3.0 | Warm safety work, Mutinynet, stale-screen fix | [`releases/PATCH-0.3.0.md`](releases/PATCH-0.3.0.md), [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) |
 | 0.3.1 | Send All never preselected; Mutinynet default network | [`releases/PATCH-0.3.1.md`](releases/PATCH-0.3.1.md) |
 | 0.3.2 | One-file BIP48 custom sends from a Nunchuk BSMS | [`releases/PATCH-0.3.2.md`](releases/PATCH-0.3.2.md) |
 | 0.4.0 | Visual refresh; session-only payment receipt | [`releases/PATCH-0.4.0.md`](releases/PATCH-0.4.0.md) |
 | 0.4.1 | Signature-only signer-response import; longer signing window | [`releases/PATCH-0.4.1.md`](releases/PATCH-0.4.1.md) |
 | 0.4.2 | Three-minute device discovery/authorization waits (Jade) | [`releases/PATCH-0.4.2.md`](releases/PATCH-0.4.2.md) |
 | 0.4.3 | Fail-closed bare-`/*` change inference; same-wallet export proof | [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md) |
-| 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | [`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md), [`releases/AUDIT-DEEPSEEK-0.4.3.md`](releases/AUDIT-DEEPSEEK-0.4.3.md), [`releases/AUDIT-ZAI-0.4.3.md`](releases/AUDIT-ZAI-0.4.3.md) |
-| 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | [`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md) |
+| 0.4.4 | Audit remediation: tests for the guards that had none, three fail-closed gaps, MIT licence and third-party notices | — |
+| 0.4.5 | CSP nonce (no `'unsafe-inline'`), Send-All acknowledgement naming the 20-address gap, and a control to clear signed bytes | — |
 | 0.4.6 | One signing box per cosigner, so the missing signer is visible at a glance | — |
 | 0.4.7 | Correction: the final signature fills its own box, and completing does not scroll the boxes off screen | — |
 | 0.4.8 | Attributable diagnostics, and visible progress that never advertises a wait | — |
@@ -64,10 +64,10 @@ capabilities live in [`README.md`](README.md).** Two facts govern this record:
 | **0.4.15 candidate** | Fix signed HWI/libusb loading; owner reports OneKey Classic 1S support and a cleared, unbroadcast mainnet dry run | [`releases/PATCH-0.4.15.md`](releases/PATCH-0.4.15.md) |
 | **0.5.0 candidate — LIVE BTC transactions** | Mainnet transactions with explicit final-screen and backend opt-ins; preserve fee caps and unknown-outcome lockout. Committed as `51ea400`, tagged `v0.5.0-rc1` locally, never pushed or published. **This is the build that made the project's first live mainnet payment** | [`releases/PATCH-0.5.0.md`](releases/PATCH-0.5.0.md) |
 | **0.5.1** | First published mainnet-broadcast release: publishes the 0.5.0 engine unchanged, corrects the change-address guidance the live run showed to be wrong, and restates the risk language | [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md) |
-| **0.6.1** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only, since live Bitcoin is the network the gate returns to rather than a card in it. The transaction and signing engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.1` from commit `2977930` (run 36957927251). A first candidate carried the same idea at 0.6.0 from `f147141` in run 36954844052 and is superseded before publication, so no 0.6.0 tag or release exists | [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md), [`releases/SCOPE-0.6.1.md`](releases/SCOPE-0.6.1.md) |
+| **0.6.1** | Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only, since live Bitcoin is the network the gate returns to rather than a card in it. The transaction and signing engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.1` from commit `2977930` (run 36957927251). A first candidate carried the same idea at 0.6.0 from `f147141` in run 36954844052 and is superseded before publication, so no 0.6.0 tag or release exists | [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md) |
 | **0.6.2** | Internal state fix: retiring a review also retires the network it was bound to, so the mainnet opt-in posted with a broadcast can never be inherited from an earlier payment. No user-visible change; the engine is unchanged from 0.5.1. Published 2026-10-02 as tag `v0.6.2` from commit `7b4db85` (run 36959242210) | [`releases/PATCH-0.6.2.md`](releases/PATCH-0.6.2.md) |
 | **0.6.3** | Audit remediation in signing checks, embit, libusb, build inventory, and release controls. Owner-tested Mutinynet payment. Published 2026-10-02 as tag `v0.6.3` from tested app commit `f19bc46` (nonpublishing build run 36969063265); public DMG verified byte-identical to the tested file | [`releases/PATCH-0.6.3.md`](releases/PATCH-0.6.3.md) |
-| **0.6.4** | No transaction or signing behavior change. Adds API regression coverage, embit wheel hash to the SBOM, and workflow-only publication of the exact verified candidate bytes. Published 2026-10-02 as tag `v0.6.4` at commit `35cdedb` by candidate run 37008418851 and publishing run 37009396873. The AI-generated Z.ai follow-up report assigns Green under its rubric; no independent human end-to-end review is recorded | [`releases/PATCH-0.6.4.md`](releases/PATCH-0.6.4.md) · [`releases/AUDIT-ZAI-0.6.4.md`](releases/AUDIT-ZAI-0.6.4.md) |
+| **0.6.4** | No transaction or signing behavior change. Adds API regression coverage, embit wheel hash to the SBOM, and workflow-only publication of the exact verified candidate bytes. Published 2026-10-02 as tag `v0.6.4` at commit `35cdedb` by candidate run 37008418851 and publishing run 37009396873. The AI-generated Z.ai follow-up report assigns Green under its rubric; no independent human end-to-end review is recorded | [`releases/PATCH-0.6.4.md`](releases/PATCH-0.6.4.md) |
 | **0.6.6** | Color Team cycle-2 remediation. BIP-143 published vectors; money-path and HWI-identity pins; BIP-62 low-S; key-proof before any PSBT is sent; large-amount prompt a lying price cannot suppress; broadcast pre-checks outside the session lock; pinned runners and lock tooling; release-channel hygiene. Owner hardware walkthrough required before publication | [`releases/PATCH-0.6.6.md`](releases/PATCH-0.6.6.md) · [`releases/RELEASE-NOTES-0.6.6.md`](releases/RELEASE-NOTES-0.6.6.md) · [`releases/OWNER-ACCEPTANCE-2026-10-07.md`](releases/OWNER-ACCEPTANCE-2026-10-07.md) |
 | **0.6.7** | Color Team cycle-3 build-process remediation, answering a ⛔ BLOCKED grade that was set by process and not by the app. One publish path with the retired per-platform workflows deleted from every branch; HWI helper identified by bytes rather than by its own version string; interpreter pinned to a full patch; the lock-writer hash-locked; the source tarball able to rebuild a signed Mac app; broadcaster verified at use on every network. No wallet, signing or broadcast policy changed. Published 2026-10-07 as tag `v0.6.7` at commit `81f58ec0dd8c8afa8dcc2c1f69c10057e62dfe7b` by candidate run 37644267740 and promote run 37655666900, after owner hardware acceptance of that candidate's DMG | [`releases/PATCH-0.6.7.md`](releases/PATCH-0.6.7.md) · [`releases/RELEASE-NOTES-0.6.7.md`](releases/RELEASE-NOTES-0.6.7.md) · [`releases/OWNER-ACCEPTANCE-2026-10-07.md`](releases/OWNER-ACCEPTANCE-2026-10-07.md) |
 | **0.6.8** | Color Team cycle-4 remediation, answering the audit of the `v0.6.7` tree. Every finding the cycle's plan schedules now has exactly one row in the audit ledger with a severity and a closing test the build loads, so nothing is closed by silence; `CONTROLS.md` is a parsed inventory of the security controls the code claims; the archive ships that inventory and the interpreter is pinned by a lock the launcher verifies. No wallet, signing or broadcast policy changed. Published 2026-10-10 as tag `v0.6.8` at commit `0d4e01f60c7695d720099f9d8e9e23b38da63102` by candidate run 38086778883 and promote run 38087360421; `SHA256SUMS.asc` verified as a good signature from the committed release key, and the downloaded source archive matched `SHA256SUMS` | [`releases/PATCH-0.6.8.md`](releases/PATCH-0.6.8.md) · [`releases/PLAN-0.6.8.md`](releases/PLAN-0.6.8.md) · [`releases/RELEASE-NOTES-0.6.8.md`](releases/RELEASE-NOTES-0.6.8.md) |
@@ -81,8 +81,7 @@ eligibility (Phase 2), independently verified unsigned PSBT preparation
 all three supported devices — Jade, Trezor Safe 3, and Ledger Nano S Plus. The
 independent audit of that era, including its hot findings (inferred change
 ownership, incomplete final review, unverified finalization signatures,
-signer-response binding), is preserved in
-[`releases/AUDIT-BASELINE-0.1.27.md`](releases/AUDIT-BASELINE-0.1.27.md); the build and live-use
+signer-response binding); the build and live-use
 history is in [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md). Every one of those
 hot findings was subsequently fixed and regression-tested — see 0.2.0 through
 0.4.1 below.
@@ -176,7 +175,6 @@ independently operated Esplora on mainnet), unknown broadcast outcomes marked
 outcome-unknown with the payment cleared rather than retried, the Mutinynet
 practice network added with a block-1 checkpoint pin, and the stale
 signing/final panel reset when a new payment is prepared. Design and limits:
-[`releases/PLAN-0.3.0.md`](releases/PLAN-0.3.0.md) and
 [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md); release record:
 [`releases/PATCH-0.3.0.md`](releases/PATCH-0.3.0.md).
 
@@ -250,7 +248,7 @@ disabled.**
 ## 0.4.4 — audit remediation and hardening
 
 Two independent audits of `main` at `7d622ef` — one by DeepSeek, one by Z.ai —
-were reconciled into [`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md). This release carries the
+were reconciled for this release. This release carries the
 Tier 1 items only: fixes and hardening that need no fee-policy decision, no
 hardware and no Apple account. **Mainnet broadcast remains refused in code and
 nothing here weakens it.** No mainnet transaction has ever been prepared,
@@ -301,7 +299,7 @@ broadcast is possible.
 
 ## 0.4.5 — the three deferred interface items
 
-[`releases/PLAN-0.4.4.md`](releases/PLAN-0.4.4.md) held back three Tier 1 items because they change
+The 0.4.4 plan held back three Tier 1 items because they change
 what the page renders, and 0.4.4 shipped without a browser walkthrough. They land
 here, unchanged in intent.
 
@@ -917,8 +915,8 @@ test bench while stating that practice networks are not the app's purpose.
 The full record, including what was verified, what the owner decided, and the
 items deliberately left out of scope, is in
 [`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md). The scope the owner signed
-off, with the reasoning and the out-of-scope list, is
-[`releases/SCOPE-0.6.1.md`](releases/SCOPE-0.6.1.md).
+off, with the reasoning and the out-of-scope list, is recorded in
+[`releases/PATCH-0.6.1.md`](releases/PATCH-0.6.1.md).
 
 ## 0.5.0 candidate — live mainnet broadcast
 

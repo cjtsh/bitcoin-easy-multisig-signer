@@ -254,10 +254,9 @@ artifacts stay on the workflow run. No `v0.6.0` tag exists and
   (m01190, "Live Bitcoin does not belong in the developer mode, remove it Only
   the test nets. make 1.6.1"). The panel, the refusal in `setChain`, the step-1
   note and both UI test files were changed for it; the transaction path was not.
-- The full agreed scope, including the out-of-scope list, is
-  [`releases/SCOPE-0.6.1.md`](SCOPE-0.6.1.md). It moved out of the repository root
-  with the other per-version records so that `scripts/build-source.sh` ships it in
-  the source archive, which it does for everything under `releases/`.
+- The full agreed scope, including the out-of-scope list, is recorded above and
+  in this file, which `scripts/build-source.sh` ships in the source archive, as it
+  does for everything under `releases/`.
 
 ## Deliberately out of scope
 

@@ -1,6 +1,6 @@
 # 0.2.0 hot-item implementation and verification record
 
-This document maps the independent audit's hot findings to source, tests and remaining evidence. It is intended for a third-party reviewer. No real wallet material is included. The original audit is included as `AUDIT-BASELINE-0.1.27.md`; this file describes the changes made in response. Historical phase notes are in `PROJECT-HISTORY.md`.
+This document maps the independent audit's hot findings to source, tests and remaining evidence. It is intended for a third-party reviewer. No real wallet material is included. This file describes the changes made in response to that audit. Historical phase notes are in `PROJECT-HISTORY.md`.
 
 ## Finding-to-fix map
 
