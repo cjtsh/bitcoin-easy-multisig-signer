@@ -7,12 +7,16 @@
 > The *Releasing* section below is a record of the old branch process, not a
 > recipe to run again.
 
-> **Do not merge this branch into `main`, ever.** The v0.6.4 audit judges *how*
-> the app is built -- the script, the gate order, the kept file set -- not only
-> the source it builds. Merging a second platform's build into `main` would ship
-> construction the audit never saw, and would delete `scripts/build-macos.sh`,
-> which the macOS release still depends on. Linux artifacts come from this
-> branch and are attached to the version's release page.
+> **Historical: this file describes the `linux-port` branch, which no longer
+> builds a release.** The v0.6.4 audit judged *how* the app is built -- the
+> script, the gate order, the kept file set -- not only the source it builds, so
+> merging a second platform's build into `main` then would have shipped
+> construction the audit never saw. That branch-era constraint was satisfied a
+> different way: since 0.6.5 the Linux build runs as a job of the single
+> `build-candidate.yml` pipeline, dispatched from `main`, and Linux artifacts are
+> attached to the version's own release page by that pipeline. The text below is
+> the branch-era record, kept for the v0.6.4 evidence trail. **Do not run the
+> branch commands in it.**
 
 ## What this branch is
 
@@ -104,6 +108,7 @@ v0.6.4 before the one-page policy.
 
 ## Audit coverage
 
-A Linux release answers to this branch, not to `main`. The audited v0.6.4
+The v0.6.4 Linux release answered to this branch, not to `main`; a Linux release
+since 0.6.5 is built from `main` by `build-candidate.yml`. The audited v0.6.4
 artifacts, its tag and its commit are untouched by anything here, and no file
 under `docs/` is modified by the port.

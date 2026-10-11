@@ -11,7 +11,8 @@ unified pipeline as tag
 The wallet, transaction, signing and broadcast engine is
 unchanged from 0.6.7, which was the cycle-3 build-process remediation:
 the cycle-3 five-lane Color Team audit of the `v0.6.6`
-tree (report, plan, lock and index in this repository's root) graded
+tree — its report, plan, lock and index are no longer in `main` and remain in
+the `v0.6.6` tag tree — graded
 **⛔ BLOCKED** — not on the app. Red found no breach, Orange recorded its
 first LOGIC PROVEN (21/21 invariants), Amber verified the supply chain
 end to end. The grade was set by one High finding on the build process,
@@ -122,5 +123,7 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 ## Document map
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
+
+**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md) is the Color Team plan for the published `v0.6.8` revision. It is unsigned and awaits the owner's sign-off in its section 9. The audit plans, locks, reports and security statements of the earlier cycles are not in this branch; they remain in the tag tree of the revision each describes.
 
 **Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.

@@ -1,6 +1,7 @@
 # Change-address safety review
 
-This review responds to the owner's `multisig_change_address_notes.md`. The note was treated as an input to verify, not as an implementation authority. No owner's wallet file, addresses, xpubs, transaction or diagnostic report is stored here.
+This review responds to the owner's `multisig_change_address_notes.md`, which
+was supplied privately and is deliberately not committed to this repository. The note was treated as an input to verify, not as an implementation authority. No owner's wallet file, addresses, xpubs, transaction or diagnostic report is stored here.
 
 ## What the standards actually establish
 

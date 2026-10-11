@@ -28,19 +28,24 @@ first LOGIC PROVEN (21/21); Amber verified the supply chain end to end.
 The grade was set by **CT-48 (High)** on the build process: the retired
 per-platform publish workflows were still live on `windows-port` and
 `linux-port` and one had published an unsigned manifest, while
-`build-candidate.yml`'s header claimed no second path existed. Report,
-plan, lock and index are in this repository's root.
+`build-candidate.yml`'s header claimed no second path existed. The report,
+plan, lock and index for that cycle are no longer in `main`; they remain in the
+`v0.6.6` tag tree.
 
 **0.6.7 is done and published.** The cycle-3 findings are answered in
 code and in the dated acceptance note (`releases/PATCH-0.6.7.md` is the
 evidence record). The owner installed the candidate DMG and accepted a
 practice-network payment on hardware; `publish=true` then promoted the
-same candidate bytes from the same commit. The cycle-3 audit plan, carried
+same candidate bytes from the same commit. The cycle-3 audit plan was carried
 forward against tag `v0.6.7` and signed Bitseeker LLC on 2026-10-07
-(`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md`), is the
-input any later audit would start from. No later audit is recorded, so
-treat that plan and the reports it cites as input and history, never as a
-current clearance.
+(`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md`, now in the
+`v0.6.7` tag tree only). It is **not** an input to the current audit. The owner
+directed a fresh, unbiased baseline on 2026-10-11, and the repository root now
+carries `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md` for the
+published `v0.6.8` revision. No prior plan, lock, report, grade or finding row
+may be cited by the panel. Treat the older plans and the reports they cite as
+history, never as a current clearance — see that plan's §6, *The legacy audit
+artifacts inside the audited tree*.
 
 The owner supplied two BSMS exports of the **same practice wallet**, one from Sparrow and one from Nunchuk. A read-only comparison found identical cosigner keys/origins, first receive address, and receive/change scripts at indices 0–19. Sparrow declares both paths; Nunchuk leaves them unstated and the app uses a strictly gated BIP48 standard inference. `CHANGE-ADDRESS-REVIEW.md` records the limits. These test-wallet exports do not establish the policy of a different live mainnet wallet. No wallet identifiers or files were committed.
 
@@ -61,9 +66,11 @@ build is X" here**, because that sentence is exactly what CT-71 filed and
 it goes stale the moment `version.py` moves again. As of 2026-10-10 the
 newest published tag is `v0.6.8`, promoted through the automated workflow
 from the exact successful signed candidate. The AI-generated Z.ai v0.6.4
-report assigns Green under its published rubric; the historical v0.6.3
-Yellow grade is documented in its own report. Neither report is a
-certification, and no independent human end-to-end review is recorded.
+report assigned Green under its published rubric, and the v0.6.3 report carried
+Yellow. Both are history about those revisions and are **not** inputs to the
+current audit (the owner's independence condition, reproduced in the `v0.6.8`
+plan §6), and neither was a certification. No independent human end-to-end
+review is recorded.
 Version 0.6.7 is build-process remediation and adds no payment
 capability. Version 0.5.0 was the unpublished mainnet-broadcast candidate
 whose engine 0.5.1 published. The app supports multisig quorums with at

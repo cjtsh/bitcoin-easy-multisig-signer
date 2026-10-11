@@ -18,9 +18,10 @@ your wallet, devices, backups, network, destination address, amount, fee, and
 change before signing or broadcasting. Bitcoin transactions can be irreversible,
 and a mistake can result in permanent loss of funds.
 
-Version 0.6.2 is a maintenance release that retires the network of a finished
-review together with the review; its transaction and signing engine is unchanged
-from 0.5.1, the first published build with Bitcoin mainnet broadcast capability.
+Version 0.6.8 is the current source revision, and like 0.6.7 before it, it is a
+build-process remediation: it changes how a release is built and verified, not how
+a payment is made. The wallet, signing and broadcast engine is unchanged from
+0.5.1, the first published build with Bitcoin mainnet broadcast capability.
 The app runs one engine across Testnet4, Mutinynet, and mainnet, and asks hardware
 devices to sign through Bitcoin Core HWI (HWI). Mainnet submission requires an
 explicit confirmation on the final review screen and a backend opt-in; nothing

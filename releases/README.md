@@ -1,9 +1,9 @@
 # Release records
 
 This folder holds the long-form evidence record for each version: the patch
-records, the plans a release was built against, the independent audits, and the
-security review. They live here rather than in the repository root so the root
-holds only the living documents.
+records, the release notes, the plans a release was built against, owner
+acceptance notes, and the security review. They live here rather than in the
+repository root so the root holds only the living documents.
 
 [`../RELEASE-HISTORY.md`](../RELEASE-HISTORY.md) is the index. Its version table
 links each version to the record below, and its prose sections quote them.
@@ -13,9 +13,13 @@ links each version to the record below, and its prose sections quote them.
 | Prefix | What it is |
 | --- | --- |
 | `PATCH-<version>.md` | The evidence record for one release: what changed, what was proven, what was corrected afterwards |
+| `RELEASE-NOTES-<version>.md` | The release announcement text for one version |
 | `PLAN-<version>.md` | The plan a release was built against |
+| `OWNER-ACCEPTANCE-<date>.md` | The owner's dated hardware-acceptance note for a candidate |
+| `<PLATFORM>-<version>-ACCEPTANCE.md` | A platform walkthrough record, e.g. `LINUX-0.6.4-ACCEPTANCE.md` |
 | `SECURITY-REVIEW-<version>.md` | A security review and its remediation |
 | `MUTINYNET-<version>.md` | A signet-network walkthrough record |
+| `platform-state.json` | A dated snapshot of the repository's GitHub platform settings |
 
 ## What is in here
 
@@ -37,6 +41,15 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.5.1.md`](PATCH-0.5.1.md) | 0.5.1 | First published mainnet-broadcast release; publishes the 0.5.0 engine unchanged and corrects the change-address guidance |
 | [`PATCH-0.6.2.md`](PATCH-0.6.2.md) | 0.6.2 | **Published 2026-10-02 as `v0.6.2`.** Internal state fix: retiring a review also retires the network it was bound to, so a later payment cannot inherit the mainnet opt-in from an earlier one. No user-visible behaviour change and the engine is unchanged from 0.5.1 |
 | [`PATCH-0.6.1.md`](PATCH-0.6.1.md) | 0.6.1 | **Published 2026-10-02 as `v0.6.1`.** Interface only: the app opens on mainnet and the practice networks move behind an "Enter Developer Mode" gate that offers Mutinynet and Testnet4 only; the engine is unchanged from 0.5.1. The 0.6.0 candidate that first carried the gate is superseded, so no 0.6.0 tag or release exists |
+| [`PATCH-0.6.3.md`](PATCH-0.6.3.md) | 0.6.3 | Audit remediation in signing checks, embit, libusb, build inventory and release controls; owner-tested Mutinynet payment |
+| [`PATCH-0.6.4.md`](PATCH-0.6.4.md) · [`RELEASE-NOTES-0.6.4.md`](RELEASE-NOTES-0.6.4.md) | 0.6.4 | API regression coverage and workflow-only publication of the verified candidate bytes |
+| [`PATCH-0.6.5.md`](PATCH-0.6.5.md) · [`RELEASE-NOTES-0.6.5.md`](RELEASE-NOTES-0.6.5.md) | 0.6.5 | The unified pipeline: Windows and Linux built from one dispatch. The out-of-gate `v0.6.5-windows-x64` release was later deleted (CT-27) |
+| [`PATCH-0.6.6.md`](PATCH-0.6.6.md) · [`RELEASE-NOTES-0.6.6.md`](RELEASE-NOTES-0.6.6.md) | 0.6.6 | Color Team cycle-2 remediation: BIP-143 vectors, money-path and HWI-identity pins, BIP-62 low-S, release-channel hygiene |
+| [`PATCH-0.6.7.md`](PATCH-0.6.7.md) · [`RELEASE-NOTES-0.6.7.md`](RELEASE-NOTES-0.6.7.md) | 0.6.7 | Color Team cycle-3 build-process remediation, answering a grade set by process and not by the app |
+| [`PATCH-0.6.8.md`](PATCH-0.6.8.md) · [`PLAN-0.6.8.md`](PLAN-0.6.8.md) · [`RELEASE-NOTES-0.6.8.md`](RELEASE-NOTES-0.6.8.md) | 0.6.8 | Color Team cycle-4 remediation: one ledger row per scheduled finding with a closing test the build loads, and a parsed `CONTROLS.md` inventory |
+| [`OWNER-ACCEPTANCE-2026-10-07.md`](OWNER-ACCEPTANCE-2026-10-07.md) | 0.6.6–0.6.7 | The owner's dated hardware-acceptance note for the promoted candidate |
+| [`LINUX-0.6.4-ACCEPTANCE.md`](LINUX-0.6.4-ACCEPTANCE.md) | 0.6.4 | Owner-reported Linux AppImage walkthrough |
+| [`platform-state.json`](platform-state.json) | — | Dated snapshot (2026-10-10T18:20:10Z) of the repository's GitHub platform settings |
 
 ## These are historical records
 
@@ -47,6 +60,14 @@ changes — a record that gets edited to match the present is no longer evidence
 So a file here may say something that is no longer true. In particular, records
 written before 0.5.0 say that mainnet broadcast is refused in code, which was
 correct when they were written and is not correct now.
+
+**A path a record names may no longer be in the repository.** The Color Team
+audit plans, locks, reports and security statements that older records cite lived
+in the repository root. They were removed from `main` on 2026-10-11 and remain in
+the tag tree of the version each record describes: `bitcoin-easy-multisig-signer-
+colorteam-audit-report-v0.6.6.md`, for example, is in the `v0.6.6` tree. A
+citation in a record is therefore a name to look up in that tag, not a path to
+expect in `main`.
 
 For what the app does today, read the code and the tests. For current status,
 read [`../CURRENT-STATUS.md`](../CURRENT-STATUS.md) and
