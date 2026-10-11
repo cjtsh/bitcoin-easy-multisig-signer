@@ -235,7 +235,6 @@ and a claim here that turns out wrong is a defect in this survey to record, not 
   the imports fail first — `ModuleNotFoundError: No module named 'embit'` is an environment state,
   not a defect, and it stops `tests/test_controls_inventory.py` from running at all. A panelist who
   meets it records the interpreter and the pin instead of filing the import error.
-
 - **Stop condition.** Coverage stops when every in-scope threat row in §5 has a recorded outcome
   of HOLDS, BROKEN, or UNPROVEN with its evidence attached. A row with no evidence is recorded
   **UNPROVEN** and blocks CLEARED. Scope is not expanded mid-cycle: a new candidate threat is
