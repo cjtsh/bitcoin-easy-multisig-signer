@@ -11,6 +11,14 @@ that sends a visitor to the wrong bytes.
 The test reads text, so it cannot see whether a link resolves -- only that the
 page names the version the tree is about to publish, that every platform still
 appears, and that the finding record it points at is this cycle's.
+
+`scripts/build-source.sh` leaves `docs/` out of the source archive on purpose:
+the website is a published artifact, not a build input. The archive runs this
+same module, so the guard has an archive half -- the page is either wholly
+present or wholly absent, never half-shipped -- and the binding assertions run
+wherever there is a page to bind. The guard cannot pass by accident in the tree
+that publishes: `docs/index.html` is committed, so a tree without it is the
+archive and is asserted to have no `docs/` at all.
 """
 
 import json
@@ -20,7 +28,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PAGE = ROOT / "docs" / "index.html"
+SITE = ROOT / "docs"
+PAGE = SITE / "index.html"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -44,7 +53,21 @@ PLATFORM_ASSETS = ("macOS.dmg", "windows-x64.zip", "linux-x86_64.AppImage")
 class DocsVersionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = PAGE.read_text(encoding="utf-8")
+        cls.page = PAGE.read_text(encoding="utf-8") if PAGE.is_file() else None
+
+    def setUp(self):
+        if self.page is None:
+            # The source archive: `scripts/build-source.sh` ships the build
+            # recipes under `ci/` and deliberately leaves the website out, so
+            # there is no page to bind here. Requiring `ci/` and no `docs/` is
+            # what keeps the escape hatch honest: a checkout that lost its
+            # download page is not an archive, and this fails there.
+            self.assertTrue(
+                (ROOT / "ci").is_dir() and not SITE.exists(),
+                "docs/index.html is missing from a tree that is not a source "
+                "archive (an archive carries ci/ and no docs/), so the download "
+                "page this guard binds was deleted or moved",
+            )
 
     def _mismatches(self, pattern, where):
         found = pattern.findall(self.page)
@@ -57,15 +80,23 @@ class DocsVersionTests(unittest.TestCase):
         )
 
     def test_every_download_url_names_the_current_version(self):
+        if self.page is None:
+            return
         self._mismatches(DOWNLOAD, "docs/index.html download URLs")
 
     def test_every_visible_version_label_names_the_current_version(self):
+        if self.page is None:
+            return
         self._mismatches(VERSION_LABEL, "docs/index.html version labels")
 
     def test_the_finding_record_link_names_the_current_cycle(self):
+        if self.page is None:
+            return
         self._mismatches(PATCH_LINK, "docs/index.html patch-record links")
 
     def test_the_json_ld_names_the_current_version(self):
+        if self.page is None:
+            return
         documents = [json.loads(block) for block in JSON_LD.findall(self.page)]
         applications = [
             document
@@ -88,6 +119,8 @@ class DocsVersionTests(unittest.TestCase):
         )
 
     def test_every_platform_still_has_a_download_link(self):
+        if self.page is None:
+            return
         offered = {asset for version, asset in ASSET.findall(self.page)}
         missing = sorted(set(PLATFORM_ASSETS) - offered)
         self.assertEqual(
