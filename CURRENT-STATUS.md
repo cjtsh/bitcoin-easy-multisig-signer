@@ -8,11 +8,11 @@ silence; every `CONTROLS.md` citation is a content binding to a
 `CONTROL: CM-##` marker inside the range it cites, so a citation that
 moves off its subject fails the build; and the download page's version
 comes from `version.py` under a guard that refuses a link naming another
-release. The release is built and published from `main` through the
-unified pipeline; until its promote run lands, the newest published tag
-remains
-[`v0.6.8`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8),
-whose cycle-4 remediation introduced the checked audit ledger and the
+release. The release was built and published from `main` through the
+unified pipeline, and
+[`v0.6.9`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9)
+is the newest published tag; the revision it replaces, `v0.6.8`, was the
+cycle-4 remediation that introduced the checked audit ledger and the
 parsed `CONTROLS.md` inventory.
 The wallet, transaction, signing and broadcast engine is
 unchanged from 0.6.8, which was the cycle-4 build-process remediation of
@@ -82,14 +82,14 @@ See [`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
 **Do not restate a "latest published version is X" here** — that is the
 CT-46/CT-71 defect class and it goes stale the moment `version.py` moves.
 The published set is whatever that page and [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)
-carry. As of 2026-10-10 that is
-[v0.6.8](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.8),
-published 2026-10-10 as tag `v0.6.8` on commit
-`0d4e01f60c7695d720099f9d8e9e23b38da63102` by successful candidate run
-[38086778883](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38086778883)
+carry. As of 2026-10-11 that is
+[v0.6.9](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9),
+published 2026-10-11 as tag `v0.6.9` on commit
+`e90e5b93ece284f990ca2b75be1e798baa3efc9c` by successful candidate run
+[38150291296](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38150291296)
 and promote run
-[38087360421](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38087360421)
-(`publish=true`, `candidate_run_id=38086778883`). The release page
+[38151061666](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38151061666)
+(`publish=true`, `candidate_run_id=38150291296`). The release page
 carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
 `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
 Version 0.6.7 is the Color Team cycle-3 build-process remediation: one
@@ -138,6 +138,6 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.8.md) is the Color Team plan for the published `v0.6.8` revision. It is unsigned and awaits the owner's sign-off in its section 9. The audit plans, locks, reports and security statements of the earlier cycles are not in this branch; they remain in the tag tree of the revision each describes.
+**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.9.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.9.md) is the Color Team plan for the published `v0.6.9` revision, a follow-up cycle in the `v0.6.8` lineage. Its section 9 awaits the owner's sign-off. The plan, lock, report and public security statement of the `v0.6.8` cycle are in this branch as prior-cycle records; the artifacts of the earlier cycles remain in the tag tree of the revision each describes.
 
 **Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.
