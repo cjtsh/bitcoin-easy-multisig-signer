@@ -118,9 +118,9 @@ with a recorded outcome of HOLDS, BROKEN, or UNPROVEN:
 
 - GitHub account security, GitHub platform compromise, and stolen owner credentials — declared
   external assumptions by the owner; recorded once, never graded.
-- The owner's tools going rogue, and standing automation outside this repository — declared
-  external assumptions; testable only against a scheduled-task inventory the surveyor does not
-  have (see §8, Q4).
+- The owner's tools going rogue, and standing automation anywhere outside this repository —
+  declared external assumptions; recorded once, never graded, and no inventory is sought
+  (see §6, *Authorised agentic operation, and no automation*).
 - Forks and third-party builds — a fork cannot publish under this identity and is not this
   audit's subject.
 - The correctness of the Bitcoin protocol, of Esplora software, of hardware-wallet firmware, of
@@ -141,8 +141,8 @@ with a recorded outcome of HOLDS, BROKEN, or UNPROVEN:
   them is the panel's work under T-23 and T-27.
 - The **live GitHub platform posture** — `git` cannot show it and `releases/platform-state.json` is
   a dated record (`2026-10-10T18:20:10Z`); the panel must re-read it under T-20.
-- The **owner's machine and account state, and any scheduled tasks** — no artefact exists to
-  examine before §8 Q4 is answered.
+- The **owner's machine and account state, and any scheduled tasks** — declared external
+  assumptions, recorded as *untested — owner-declared*; no artefact is required.
 - **Hardware-wallet firmware and adversarial device behaviour** — outside the app's own verification
   code (T-12); physical device testing is the owner's, not the panel's.
 - **Practice-network second-source cross-checking** — it does not exist by design
@@ -175,6 +175,39 @@ in response.
    (see T-20).
 4. The tree the surveyor read is a local clone at the tag. A re-check at lock time must confirm
    the tag still resolves to `0d4e01f` and that `main` has not moved under the audit.
+
+**What the surveyor verified before signature (starting state, not panel evidence).**
+
+Checked read-only on 2026-10-11. Each line says what was done and what was found, so the panel starts
+from a known position. None of it discharges a threat row: the panel re-establishes its own evidence,
+and a claim here that turns out wrong is a defect in this survey to record, not a finding to inherit.
+
+- **The ten published `v0.6.8` assets.** Downloaded from the release. `shasum -a 256 -c SHA256SUMS`
+  returns OK for every file the manifest lists (eight; the manifest does not list itself or its
+  signature). `gpg --verify SHA256SUMS.asc SHA256SUMS` returns GOODSIG from
+  `Bitseeker LLC <release@bitseeker.llc>`, RSA `ACCC2F1CD4369128D549CC58E97285D2DD0BD6D7`, made
+  2026-10-10.
+- **Attestation.** One Sigstore attestation covers all ten subjects, and every subject digest matches
+  the published bytes. It records `predicateType https://slsa.dev/provenance/v1`, workflow
+  `.github/workflows/build-candidate.yml`, ref `refs/heads/main`, event `workflow_dispatch`, and
+  `resolvedDependencies[0].digest.gitCommit = 0d4e01f60c7695d720099f9d8e9e23b38da63102`.
+- **The producing run.** Run `38087360421`, `workflow_dispatch` on `main`, `head_sha 0d4e01f…`,
+  conclusion `success`, 2026-10-10T21:22:18Z → 21:31:51Z — bracketing the release published
+  2026-10-10T21:31:47Z.
+- **SBOMs.** All three are CycloneDX 1.6, name `bitcoin-easy-multisig-signer`, version `0.6.8`
+  (33, 29 and 31 components), listing embit `0.8.2+besa.1`, hwi `3.2.0`, pywebview `6.2.1` and
+  libusb `1.0.30`.
+- **The source archive.** 186 entries. Its root carries about twenty project documents and **no**
+  Color Team artifact of any kind, because `scripts/build-source.sh` ships an explicit allowlist. It
+  carries `signing-key.asc` byte-identical to the repository's (sha256
+  `812f790d37c6a5b97e0e27e536b1371657ac6d8052e33899f331ca9b03ddc54b`) and `version.py` with
+  `APP_VERSION = "0.6.8"`.
+- **Live repository and platform state.** The `v0.6.8` release exists with ten assets;
+  `refs/tags/v0.6.8` resolves to `0d4e01f`; one branch, no forks; the recorded platform state is
+  dated 2026-10-10T18:20:10Z and is a point-in-time record the panel must re-read (T-20).
+- **No standing automation in the tree.** No `schedule:` and no `cron:` anywhere; the release
+  workflow's only trigger is `workflow_dispatch`; the two retired input workflows are push-triggered
+  on their own branches, regenerate hash locks, and publish nothing.
 
 **Agent provenance.**
 
@@ -472,7 +505,7 @@ failure blocks. The panel may add evidence routes but may not drop a row.
    spent."
 5. Exclusions/assumption (owner-recorded residual): practice networks have **one** source
    (`network_config.py:57-58`), so a dishonest practice-network explorer is not cross-checked.
-   Practice networks carry no money; the panel records the residual rather than grading it.
+   Practice networks carry no money; the panel records the residual rather than grading it. Owner ruling, 2026-10-11: this is the operator's own practice-network test setting, not a route to real Bitcoin; settled as a recorded residual and not pursued as a finding.
 6. Failure blocks: CLEARED on mainnet; a practice-network-only weakness is at most CONDITIONAL.
 
 **T-08 — Fee manipulation.**
@@ -742,7 +775,11 @@ failure blocks. The panel may add evidence routes but may not drop a row.
    grepped), `tests/test_build_sbom.py`, and an independent end-to-end verification of the ten
    published assets.
 5. Exclusions: the Sigstore service is trusted to attest faithfully; the panel checks the binding,
-   not the service.
+   not the service. One wording defect in the same file is already closed and is recorded here so it
+   is not re-opened as a new finding: the one-time key setup told the reader to export
+   `release@bitseeker.com`, while the shipped key is `Bitseeker LLC <release@bitseeker.llc>`. It is
+   corrected on `main` (`336ea6c`), and `tests/test_signing_docs.py` now fails if the two disagree;
+   the tagged tree still carries the original wording.
 6. Failure blocks: CLEARED.
 
 ### Asset 5 — wallet privacy
@@ -806,9 +843,11 @@ failure blocks. The panel may add evidence routes but may not drop a row.
    strongest *in-scope* attacker capability, which is why the workflow guards are graded as
    protection against accidents and workflow-level abuse.
 2. **The owner's agent going rogue, and standing automation outside this repository.** Declared
-   external assumptions. The inside-repository half is testable and is in scope (T-15); the
-   outside half is testable only against a scheduled-task inventory the surveyor does not have
-   (see §8 Q4), and no finding may be graded on it without that artefact.
+   external assumptions, settled by the owner on 2026-10-11. The inside-repository half is testable
+   and is in scope (T-15); the outside half is not testable from the tree, is recorded as *untested
+   — owner-declared*, and is never graded. External compromise of the owner's account, machines,
+   credentials or tools is not a source of findings (see §6, *Authorised agentic operation, and no
+   automation*).
 3. **Forks and third-party builds.** A fork cannot publish under this identity and is not this
    audit's subject.
 4. **The correctness of Bitcoin, Esplora software, hardware-wallet firmware, `pywebview`/WebKit/Edge,
@@ -916,9 +955,19 @@ Two separate statements sit behind that, and they must not be conflated:
   change, an outside pull request or a merge into a release or a pin move. Automated build and
   release scripts do exist, but nothing invokes them except the owner at the terminal — if the
   owner is not there as the commander, no work happens. This half is a declaration about systems
-  outside this repository and cannot be tested from the tree. A panel that wishes to test it must
-  obtain from the owner the scheduled-task inventory of the machines and accounts that hold the
-  credentials; absent such an artefact, no finding may be graded on it.
+  outside this repository and cannot be tested from the tree.
+
+  **Owner ruling, 2026-10-11.** Settled; no inventory is required for this cycle and none will be
+  supplied. The panel records this half as *untested — owner-declared*. The owner's reasoning,
+  recorded because it is the point: an audit cannot account for what happens if the owner's account,
+  machines, credentials or agentic tools are compromised, and those possibilities cannot be
+  enumerated. Pursuing them is what made the previous cycle spiral through roughly a hundred loops
+  without producing a reproducible finding. External compromise on that ground is therefore a
+  declared external assumption: the panel may not open a finding, grade a lane, or request further
+  evidence about it, and may not carry it as an open question. What *is* testable stays in scope —
+  the repository half above, and the workflow guards that bound what a dispatch can do on its own.
+  The owner builds every revision by hand through agentic tools, and no outside code is accepted
+  into the release line (see *Distribution and contribution policy*).
 
 #### Distribution and contribution policy (owner, 2026-10-10)
 
@@ -948,43 +997,37 @@ pinned version and only where the owner has named the audit that covers it.
 2. **The live GitHub platform posture** was not examined. `git` cannot show it and
    `releases/platform-state.json` is a dated record (`2026-10-10T18:20:10Z`). The panel must re-read
    it (T-20).
-3. **The owner's machine and account state, and any scheduled tasks** were not examined — no
-   artefact exists to examine (§8 Q4).
+3. **The owner's machine and account state, and any scheduled tasks** were not examined and are
+   not testable from the tree — declared external assumptions, recorded as *untested —
+   owner-declared*.
 4. **Hardware-wallet firmware and device behavior under an adversarial device** were not examined
    beyond the app's own verification code (T-12); physical device testing is the owner's, not the
    panel's.
 5. **Practice-network second-source cross-checking** does not exist by design
    (`network_config.py:57-58`); the panel records it as an owner-accepted residual under T-07
-   rather than searching for a control that is not there.
+   rather than searching for a control that is not there. Owner ruling, 2026-10-11: this is the operator's own practice-network test setting, not a route to real Bitcoin; settled as a recorded residual and not pursued as a finding.
 6. **The contents of the two retired input workflows** (`linux-inputs.yml`, `windows-inputs.yml`)
    were read only far enough to establish that they publish nothing; they are otherwise out of
    scope, because their only office is to regenerate hash locks.
 
-## 8. Questions for the owner
+## 8. Questions for the owner — none outstanding
 
-The surveyor needs these answered before or at sign-off. None changes the scope above; they change
-what evidence the panel can gather.
+Every question this survey raised was put to the owner and settled before signature, so nothing here
+is waiting on the owner. The record is kept so a later reader can see what was decided, rather than
+re-litigate it:
 
-- **Q1 — the overwritten draft.** The repository already carried `…-colorteam-audit-plan-v0.6.8.md`,
-  an unsigned carry-forward draft of the earlier v0.6.7 scope with a `REPLACE-AFTER-PUBLISH`
-  target-revision placeholder. At your direction it has been **overwritten** by this fresh plan.
-  Confirm the audit team should treat *this* file as the single v0.6.8 plan, and that the earlier
-  draft carries no standing.
-- **Q2 — the owner's statement's location.** `owners-audit-stattement.md` is on `main` (commits
-  `2ee7747`, `0156db3`) and is **not** in the `v0.6.8` tree. Confirm the statements reproduced
-  verbatim throughout this plan (§0, §1, §2, §3, §6) are exactly as you gave them, and that the
-  audited tree is the tag, not `main`.
-- **Q3 — practice-network second source.** `network_config.py:57-58` leaves `SECONDARY_EXPLORERS`
-  `None` for Testnet4 and Mutinynet. Do you accept the single-source practice-network outpoint check
-  for this cycle as a recorded residual (practice networks carry no money), or do you want it held
-  as an open finding?
-- **Q4 — the outside-repository declaration.** Your statement says no scheduled or standing
-  automation exists outside this repository. That half cannot be tested from the tree. Will you
-  supply the scheduled-task inventory of the machines and accounts that hold the credentials, or
-  should the panel record the declaration as untested?
-- **Q5 — re-check at lock time.** Confirm the panel re-confirms that `v0.6.8` still resolves to
-  `0d4e01f` and that `main` has not moved under the audit before it begins, per the rubric's
-  scope/lock-mismatch clause.
+| Question | Settled |
+|---|---|
+| Was the earlier `…-colorteam-audit-plan-v0.6.8.md` draft to be overwritten? | **Yes.** This file is the single v0.6.8 plan; the earlier draft carries no standing (owner, 2026-10-11). |
+| Are the statements in §0, §1, §2, §3 and §6 the owner's own words, and is the tag the audited tree? | **Yes to both.** `owners-audit-stattement.md` lives on `main` and is not in the tag tree (owner, 2026-10-11). |
+| May the panel fetch the ten published assets and query the attestation API? | **Yes**, read-only. The surveyor exercised the route on 2026-10-11 (§0, *What the surveyor verified*). |
+| Is the single explorer for Testnet4 and Mutinynet a finding? | **No.** The operator's own practice-network setting, not a route to real Bitcoin; recorded as a residual under T-07 (owner, 2026-10-11). |
+| Is a scheduled-task inventory needed for the outside-repository declaration? | **No.** Recorded *untested — owner-declared* and never graded (§6, *Authorised agentic operation, and no automation*). |
+| Was the release-key address in `SIGNING.md` a defect? | **Yes.** The setup steps named `release@bitseeker.com`; the shipped key is `release@bitseeker.llc`. Corrected, with a guard test (T-27). |
+
+**One gate, not a question.** At lock time the panel re-confirms that `v0.6.8` still resolves to
+`0d4e01f` and that `main` has not moved under the audit, per the rubric's scope/lock-mismatch clause.
+That is a step in the lock procedure, not something the owner answers.
 
 ## 9. Owner review and sign-off — step two, no AI
 
@@ -996,15 +1039,6 @@ the owner has signed at the end of this section.*
 body is correct as written, write `None`.
 
 -
-
-**Answers to the questions in section 8.** Answer each of Q1–Q5 above. An unanswered question is
-recorded for the panel as unanswered, not as a default answer.
-
-1.
-2.
-3.
-4.
-5.
 
 **Sign-off.** *The audit does not begin until the two lines below are filled in by the owner and
 the audit team has locked this plan.*
