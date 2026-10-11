@@ -46,8 +46,8 @@ closed is recorded row by row, with its closing test, in
   setting is a visible diff rather than a browser fact.
 - A re-enabled retired publisher now refuses the run on both the candidate and
   the publish path, and a registration read that did not happen also refuses.
-- `vendor/libusb-1.0.dll` was re-matched against the pin it ships under by
-  re-running the producing workflow.
+- `vendor/libusb-1.0.dll` was re-matched against the pin it ships under, from
+  the artifact the producing workflow itself had uploaded.
 
 ## Downloads
 
