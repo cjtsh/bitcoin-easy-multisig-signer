@@ -1156,9 +1156,10 @@ the owner has signed at the end of this section.*
 **Corrections and notes.** Write one bullet per correction, naming the section it touches. If the
 body is correct as written, write `None`.
 
--
+- None
+
+**Sign-off.** *The audit does not begin until the two lines below are filled in by the owner and
+the audit team has locked this plan.*
+
 - **Signed:** Signed by maintainer, Bitseeker LLC
 - **Date:** 2026-10-11
-
-- **Signed:** ______________________________________________
-- **Date:** ______________________________________________
