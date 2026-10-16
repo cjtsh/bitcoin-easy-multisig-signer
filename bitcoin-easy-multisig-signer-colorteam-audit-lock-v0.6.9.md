@@ -15,7 +15,7 @@ plan's section 0).
 | **Same session for both?** | `no` — different harnesses (DeepSeek DSH vs Kimi Code) and different session identifiers (`session-64472385…` vs `1d323ae6…`). Different runs are established by the identifiers; different models rest on the two harnesses' declarations, not on independent verification. |
 | **Locked at** | `2026-10-11T16:05:00Z` |
 | **Published before the panel ran** | this lock file, committed to public `main` immediately after writing (commit hash recorded in the cycle's report and index row) |
-| **Plan SHA-256 at the end of the audit** | `(filled by the White referee at re-check)` |
+| **Plan SHA-256 at the end of the audit** | `133ce23afe0bca80d884bcff7b9cfa428d2f8bbb965a7d2ff84182aa0be8a8c3` — re-hashed by the White referee at re-check, 2026-10-15; **equal to the start hash: the scope never moved** |
 
 The plan's rubric (section 0, "The rubric as adapted to this target (the owner's
 statements, §3)") is the locked rubric for this cycle — carried forward unchanged from
