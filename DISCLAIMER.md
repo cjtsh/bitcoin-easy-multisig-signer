@@ -18,7 +18,7 @@ your wallet, devices, backups, network, destination address, amount, fee, and
 change before signing or broadcasting. Bitcoin transactions can be irreversible,
 and a mistake can result in permanent loss of funds.
 
-Version 0.6.9 is the current source revision, and like 0.6.8 before it, it is a
+Version 0.7.0 is the current source revision, and like 0.6.9 before it, it is a
 build-process remediation: it changes how a release is built and verified, not how
 a payment is made. The wallet, signing and broadcast engine is unchanged from
 0.5.1, the first published build with Bitcoin mainnet broadcast capability.

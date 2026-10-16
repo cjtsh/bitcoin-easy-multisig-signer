@@ -1,30 +1,35 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Source revision 0.6.9 is the Color Team cycle-5 build-process
-remediation of the `v0.6.8` tree.** Every finding the cycle's plan
-schedules has exactly one row in `releases/PATCH-0.6.9.md` with a
-severity and a closing test the build loads; every `CONTROLS.md` citation
-is a content binding to a `CONTROL: CM-##` marker inside the range it
-cites, so a citation that moves off its subject fails the build; and the
-download page's version comes from `version.py` under a guard that
-refuses a link naming another release. The release was built and published
-from `main` through the unified pipeline, and
-[`v0.6.9`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9)
-is the newest published tag.
-The engine is unchanged from 0.6.8,
-which was the cycle-4 build-process remediation of the `v0.6.7` tree. The out-of-gate `v0.6.5-windows-x64` release was deleted
+**Source revision 0.7.0 is the Color Team cycle-6 build-process
+remediation of the `v0.6.9` tree.** Every finding the cycle's plan
+schedules has exactly one row in `releases/PATCH-0.7.0.md` with a
+severity and a closing test the build loads; the value and script limbs of
+the build-time prevout match are pinned by tests that fail when their own
+limb is removed; the loopback server retires its oldest idle connection
+instead of refusing the operator's window when the connection ceiling is
+full; `CONTROLS.md` gains rows `CM-27`…`CM-32` for the protections the
+previous release added untracked, and its claim-phrase net is widened; the
+retired-publisher guard refuses when the platform reports more
+registrations than the one page it reads; and the download page's version
+comes from `version.py` under a guard that refuses a link naming another
+release. The release is built and published from `main` through the
+unified pipeline; until its promote run lands, the newest published tag
+remains
+[`v0.6.9`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9).
+The engine is unchanged from 0.6.9,
+which was the cycle-5 build-process remediation of the `v0.6.8` tree. The out-of-gate `v0.6.5-windows-x64` release was deleted
 (CT-27), and cycle 3 then found the root cause of it: the per-platform
 publish workflows were never deleted (CT-48). They are now gone from
 every branch. Owner-reported acceptance of the Windows console fix and
 of the Linux AppImage remains in this file's history and in `releases/`;
 those port builds are superseded by the unified pipeline.
 
-## Current stop point — source revision 0.6.9 is published; v0.6.9 is the newest published tag
+## Current stop point — source revision 0.7.0 is being published; v0.6.9 remains the newest published tag until its promote run lands
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
 and `RELEASE-HISTORY.md` carry; read one of those rather than trusting a
-hardcoded number here. As of 2026-10-11 that is [v0.6.9](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9), published 2026-10-11 as tag `v0.6.9` on commit `e90e5b93ece284f990ca2b75be1e798baa3efc9c` by successful candidate run [38150291296](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38150291296) and promote run [38151061666](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38151061666). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.6.9, the current source revision, is the Color Team cycle-5 build-process remediation of that tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads, every `CONTROLS.md` citation is content-bound to a marker inside the range it cites, and the launcher installs the device library from a checked lock. Version 0.6.8 was the cycle-4 build-process remediation of the `v0.6.7` tree, which introduced the checked audit ledger and the parsed `CONTROLS.md` inventory. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. No independent human end-to-end security review is recorded; nothing here is a certification or a guarantee. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+hardcoded number here. As of 2026-10-11 that is [v0.6.9](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9), published 2026-10-11 as tag `v0.6.9` on commit `e90e5b93ece284f990ca2b75be1e798baa3efc9c` by successful candidate run [38150291296](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38150291296) and promote run [38151061666](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38151061666). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.7.0, the current source revision, is the Color Team cycle-6 build-process remediation of the `v0.6.9` tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads; the value and script limbs of the build-time prevout match are pinned by tests that fail when their own limb is removed; the loopback server retires its oldest idle connection rather than refusing the operator's window at the connection ceiling; `CONTROLS.md` gains rows `CM-27`…`CM-32` and a widened claim-phrase net; the retired-publisher guard refuses when the platform reports more registrations than the one page it reads; and the Windows startup dialog shows the same bounded record as the log. Version 0.6.9 was the cycle-5 build-process remediation of the `v0.6.8` tree: every finding that cycle's plan scheduled had one ledger row with a closing test the build loads, every `CONTROLS.md` citation is content-bound to a marker inside the range it cites, and the launcher installs the device library from a checked lock. Version 0.6.8 was the cycle-4 build-process remediation of the `v0.6.7` tree, which introduced the checked audit ledger and the parsed `CONTROLS.md` inventory. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. No independent human end-to-end security review is recorded; nothing here is a certification or a guarantee. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
 
 **The cycle-3 panel rerun already ran and graded ⛔ BLOCKED** on the
 `v0.6.6` tree — not on the app. Red found no breach; Orange recorded its
@@ -45,9 +50,9 @@ forward against tag `v0.6.7` and signed Bitseeker LLC on 2026-10-07
 (`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md`, now in the
 `v0.6.7` tag tree only). It is **not** an input to the current audit. The owner
 directed a fresh, unbiased baseline on 2026-10-11, and the repository root now
-carries `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.9.md` for the
-published `v0.6.9` revision. That cycle is a follow-up in the `v0.6.8` lineage:
-the `v0.6.8` plan, lock, report and public security statement are its inputs,
+carries `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.0.md` for the
+published `v0.7.0` revision. That cycle is a follow-up in the `v0.6.8` lineage:
+the `v0.6.9` plan, lock, report and public security statement are its inputs,
 and the scope of the `v0.6.8` baseline is carried forward unchanged. Plans,
 locks, reports and grades of the earlier cycles may not be cited by the panel.
 Treat the older plans and the reports they cite as history, never as a current
@@ -75,7 +80,7 @@ newest published tag is `v0.6.9`, promoted through the automated workflow
 from the exact successful signed candidate. The AI-generated Z.ai v0.6.4
 report assigned Green under its published rubric, and the v0.6.3 report carried
 Yellow. Both are history about those revisions and are **not** inputs to the
-current audit (the owner's independence condition, reproduced in the `v0.6.9`
+current audit (the owner's independence condition, reproduced in the `v0.7.0`
 plan §6), and neither was a certification. No independent human end-to-end
 review is recorded.
 Version 0.6.7 is build-process remediation and adds no payment

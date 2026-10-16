@@ -413,6 +413,26 @@ class StartupFailureTests(unittest.TestCase):
         self.assertLessEqual(len(text), desktop.STARTUP_FAILURE_LIMIT + 3)
         self.assertTrue(text.endswith("..."))
 
+    def test_the_windows_dialog_shows_the_bounded_record_too(self):
+        """CT-17: a message box cannot be scrolled, so it gets the bounded text.
+
+        The dialog interpolated the raw exception while the log held the bounded
+        type-and-message record, so a very long platform error became a message
+        box that ran off the screen — and, unlike the log, was never bounded.
+        The dialog now shows the same record the log holds.
+        """
+        with patch.object(desktop, "windows_error_dialog") as dialog, patch.object(
+            desktop.sys, "platform", "win32"
+        ):
+            report_startup_failure(ValueError("x" * 10_000))
+        _title, text = dialog.call_args.args[:2]
+        self.assertLessEqual(
+            len(text), desktop.STARTUP_FAILURE_LIMIT + 200,
+            "the dialog must carry the bounded record, not the raw exception",
+        )
+        self.assertNotIn("x" * (desktop.STARTUP_FAILURE_LIMIT + 1), text)
+        self.assertIn("...", text)
+
     def test_windows_also_shows_a_dialog_naming_the_report(self):
         with patch.object(desktop, "windows_error_dialog") as dialog, patch.object(
             desktop.sys, "platform", "win32"

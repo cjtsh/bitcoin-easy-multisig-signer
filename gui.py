@@ -16,6 +16,7 @@ import math
 import os
 import re
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -58,6 +59,7 @@ PUBLIC_DATA_TIMEOUT_SECONDS = 7.0
 # a client that opens a request and stops talking -- or promises a body and never
 # sends it -- cannot hold its thread open. A timed-out inbound read closes the
 # connection with no response: the client that stalled is not waiting for one.
+# CONTROL: CM-32
 CONNECTION_TIMEOUT_SECONDS = 15.0
 # Mainnet payments at or above this size always need the high-value confirmation,
 # independent of any remote BTC/USD quote. 0.1 BTC is 10,000,000 satoshis.
@@ -97,43 +99,117 @@ DIAGNOSTIC_OUTCOMES = frozenset({
 # CT-09: the per-connection timeout bounds how long one thread lingers, not how
 # many can exist. A local process can still open sockets faster than fifteen
 # seconds expire them, so the server admits a fixed number of live connections
-# and hangs up on the rest rather than growing a thread per accepted socket.
+# rather than growing a thread per accepted socket. CONTROL: CM-27
 MAX_CONNECTIONS = 32
 
 
 class BoundedThreadingHTTPServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer with a ceiling on concurrent connection threads.
+    """ThreadingHTTPServer with a ceiling and a fair-admission rule.
 
     The count is bounded per server instance, not process-wide, so several state
-    servers can exist at once without competing for one another's slots. A socket
-    that arrives with no slot free is closed instead of queued behind a thread
-    that does not exist. Thirty-two is far more than one window's load and far
-    less than an unbounded allocator.
+    servers can exist at once without competing for one another's slots. Thirty-
+    two is far more than one window's load and far less than an unbounded
+    allocator.
+
+    CT-13: a ceiling that simply refused the thirty-third socket let any local
+    process freeze the operator's own window by holding the slots open — a
+    silent socket for the connection timeout, a slow drip for as long as it
+    cared to keep dripping. A newcomer is therefore not refused while an *idle*
+    connection holds a slot: the oldest connection that is not in the middle of
+    a request is retired, and the newcomer takes its place. A connection is idle
+    from the moment it is accepted until a complete request head has arrived,
+    and idle again between keep-alive requests, so silence and a slow drip are
+    both idle. Only a connection actually being served is protected, and
+    reaching that state requires a complete request — which, for every route
+    that does anything, requires the token the page carries. A newcomer is
+    refused only when every admitted connection is busy; the ceiling is still a
+    ceiling.
     """
 
     daemon_threads = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._connection_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        self._lock = threading.Lock()
+        # socket -> the time it was admitted; insertion order is age order.
+        self._admitted: dict[socket.socket, float] = {}
+        self._busy: set[socket.socket] = set()
+        # Sockets retired to make room for a newcomer. Their handlers may still
+        # be mid-read; they must answer nothing rather than write to a socket
+        # that has been shut down (a broken pipe in the operator's console).
+        self._retired: set[socket.socket] = set()
+
+    def is_retired(self, connection) -> bool:
+        with self._lock:
+            return connection in self._retired
+
+    def mark_busy(self, connection) -> bool:
+        """Claim this connection for the request it just finished reading.
+
+        False means it was retired while its request head was being read: the
+        handler must drop it instead of answering on a closed socket.
+        """
+        with self._lock:
+            if connection not in self._admitted:
+                return False
+            self._busy.add(connection)
+            return True
+
+    def mark_idle(self, connection):
+        """The response is out; this connection may be retired for a newcomer."""
+        with self._lock:
+            self._busy.discard(connection)
+
+    def _admit(self, request) -> bool:
+        with self._lock:
+            if len(self._admitted) >= MAX_CONNECTIONS:
+                victim = next(
+                    (held for held in self._admitted if held not in self._busy),
+                    None,
+                )
+                if victim is None:
+                    return False
+                del self._admitted[victim]
+                self._retired.add(victim)
+                _shutdown_quietly(victim)
+            self._admitted[request] = time.monotonic()
+            return True
+
+    def _retire(self, request) -> None:
+        with self._lock:
+            self._admitted.pop(request, None)
+            self._retired.discard(request)
 
     def process_request(self, request, client_address):
-        if not self._connection_slots.acquire(blocking=False):
-            # Refuse without spawning a thread: a request beyond the ceiling gets
-            # a closed connection, not a place in an unbounded queue.
+        if not self._admit(request):
+            # Every admitted connection is mid-request: refuse without spawning
+            # a thread, so a request beyond the ceiling gets a closed socket
+            # rather than a place in an unbounded queue.
             self.shutdown_request(request)
             return
         try:
             super().process_request(request, client_address)
         except BaseException:
-            self._connection_slots.release()
+            self._retire(request)
             raise
 
     def process_request_thread(self, request, client_address):
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self._connection_slots.release()
+            self._retire(request)
+
+
+def _shutdown_quietly(connection) -> None:
+    """Wake a connection blocked on a read so its thread can retire.
+
+    A socket its peer already closed, or its own handler already finished with,
+    raises here — which is the outcome this wants anyway.
+    """
+    try:
+        connection.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
 
 
 def launch_url(port: int, token: str) -> str:
@@ -578,6 +654,41 @@ class LocalApp:
                 # Do not log wallet identifiers, browser requests or PSBTs.
                 pass
 
+            def _ask_server(self, name, default):
+                """Ask the server (CT-13) about this connection.
+
+                A complete request head makes the connection busy, so fair
+                admission retires an idle socket instead of this one; the
+                response ending makes it idle again. The same handler runs on a
+                plain ThreadingHTTPServer in tests, which keeps no such
+                bookkeeping, so a server without the marker returns `default`.
+                """
+                ask = getattr(self.server, name, None)
+                return default if ask is None else ask(self.connection)
+
+            def parse_request(self):
+                if self._ask_server("is_retired", False):
+                    # Retired while waiting: close without answering, so the
+                    # operator's console sees no broken-pipe traceback.
+                    self.close_connection = True
+                    return False
+                parsed = super().parse_request()
+                if parsed and not self._ask_server("mark_busy", True):
+                    self.close_connection = True
+                    return False
+                return parsed
+
+            def handle_one_request(self):
+                try:
+                    super().handle_one_request()
+                except (BrokenPipeError, ConnectionResetError):
+                    # The local page left before its answer arrived. Nothing is
+                    # owed to a client that is gone, and a departed page must
+                    # not print a traceback into the operator's own console.
+                    self.close_connection = True
+                finally:
+                    self._ask_server("mark_idle", None)
+
             def _headers(self, status, content_type, size, script_nonce=None):
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
@@ -658,7 +769,7 @@ class LocalApp:
                     expected = state.token.encode("utf-8")
                 except (AttributeError, UnicodeError):
                     return False
-                return hmac.compare_digest(candidate, expected)
+                return hmac.compare_digest(candidate, expected)  # CONTROL: CM-28
 
             def do_GET(self):
                 if not self._trusted_host():
@@ -685,6 +796,7 @@ class LocalApp:
                     # write, so the port is not an open oracle for the app's
                     # outbound requests. The one unauthenticated document is the
                     # page itself, above, which carries no wallet data.
+                    # CONTROL: CM-29
                     self._send(403, {"error": "Local access only."})
                 elif self.path == "/api/price":
                     with state.lock:

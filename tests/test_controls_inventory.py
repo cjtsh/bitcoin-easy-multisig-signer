@@ -40,6 +40,15 @@ SHIPPED = (
 
 # A sentence that claims a protection. A comment block that claims one of these
 # has to say which control it is, or say that no control is claimed.
+#
+# CT-15 widened the list by four: the v0.6.9 delta added five protections whose
+# comments claimed them in ordinary words ("is bounded by the time budget",
+# "admits a fixed number", "not an open oracle") and the net saw none of them,
+# so the inventory missed all five until a referee read the diff. The additions
+# are the claim shapes those comments used; each was checked against every
+# shipped comment block, so widening the net cannot fail the build on wording
+# alone. The net is still wording, and the durable answer is the one CT-15
+# records: when a delta adds a protection, its row is added in the same commit.
 PHRASES = (
     "fail closed",
     "fails closed",
@@ -50,6 +59,10 @@ PHRASES = (
     "a claim rather than a control",
     "never believed",
     "claims to",
+    "is bounded",
+    "bounded by",
+    "admits a fixed number",
+    "not an open oracle",
 )
 
 ROW = re.compile(r"^\|\s*(CM-\d+)\s*\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$", re.M)

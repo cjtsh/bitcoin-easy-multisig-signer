@@ -792,6 +792,7 @@
     // session token recoverable from history for as long as the tab lived. It is
     // held in per-tab sessionStorage instead -- which dies with the tab and lets
     // a reload keep working -- so no history entry ever names it.
+    // CONTROL: CM-30
     const token = (() => {
       // The hash may be "#token=..." or "#&token=...", so both separators must
       // match. Dropping the "#" here silently breaks every launch.

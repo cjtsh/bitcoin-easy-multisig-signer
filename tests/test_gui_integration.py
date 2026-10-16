@@ -374,6 +374,92 @@ class ConnectionCeilingTests(ApiTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["chain"], self.state.chain)
 
+    def _hold_dripping(self, count):
+        """Open `count` connections that each begin a request and then stop.
+
+        A partial request head never reaches `parse_request`, so the connection
+        is idle and evictable. This is the "slow drip" shape the v0.6.9 audit
+        recorded as holding a slot indefinitely.
+        """
+        held = []
+        for _ in range(count):
+            sock = socket.create_connection(("127.0.0.1", self.capped_port),
+                                            timeout=5)
+            sock.sendall(b"GET /api/status HTTP/1.1\r\nHost: 127.0.0.1")
+            held.append(sock)
+        return held
+
+    def _wait_until_admitted(self, count):
+        deadline = time.monotonic() + 5
+        while len(self.capped._admitted) < count:
+            self.assertLess(time.monotonic(), deadline,
+                            "the server did not admit the held sockets")
+            time.sleep(0.02)
+
+    def test_the_window_is_admitted_while_idle_sockets_hold_the_ceiling(self):
+        """CT-13: a full ceiling of idle sockets must not lock the window out.
+
+        CT-09's ceiling closed the thirty-third socket, so a local process that
+        opened `MAX_CONNECTIONS` sockets and said nothing froze the operator's
+        own window until it stopped. Fair admission retires the oldest idle
+        connection instead, so the operator's request is served while every slot
+        was held by silence.
+        """
+        held = self._hold(self.CEILING)
+        try:
+            self._wait_until_admitted(self.CEILING)
+            status, body = self._post_to_capped("/api/status", {})
+            self.assertEqual(status, 200)
+            self.assertEqual(body["chain"], self.state.chain)
+            # A silent socket was retired to make room, not the newcomer.
+            deadline = time.monotonic() + 5
+            while not any(self._is_closed(sock) for sock in held):
+                self.assertLess(time.monotonic(), deadline,
+                                "no idle socket was retired for the newcomer")
+                time.sleep(0.05)
+        finally:
+            for sock in held:
+                sock.close()
+
+    def test_a_slow_drip_does_not_hold_the_window_out_either(self):
+        """CT-13: a half-sent request head is idle, not busy.
+
+        The v0.6.9 audit recorded the slow drip as the shape that held a slot
+        forever. A partial head has not been parsed, so fair admission treats it
+        exactly like silence and retires it for the operator's request.
+        """
+        held = self._hold_dripping(self.CEILING)
+        try:
+            self._wait_until_admitted(self.CEILING)
+            status, body = self._post_to_capped("/api/status", {})
+            self.assertEqual(status, 200)
+            self.assertEqual(body["chain"], self.state.chain)
+        finally:
+            for sock in held:
+                sock.close()
+
+    def test_the_ceiling_still_refuses_when_every_slot_is_busy(self):
+        """CT-13's other half: eviction is for idle sockets, not for the ceiling.
+
+        The protection the ceiling provides is unchanged where it matters: a
+        connection being served is never retired out from under its response,
+        and when every admitted connection is busy the surplus is still closed
+        without a thread being spawned for it.
+        """
+        held = self._hold(self.CEILING)
+        try:
+            self._wait_until_admitted(self.CEILING)
+            serving = list(self.capped._admitted)
+            for connection in serving:
+                self.capped.mark_busy(connection)
+            self.assertFalse(self.capped._admit(object()),
+                             "a fully busy ceiling must still refuse a newcomer")
+        finally:
+            for connection in list(self.capped._admitted):
+                self.capped.mark_idle(connection)
+            for sock in held:
+                sock.close()
+
     def test_the_shipped_server_is_the_bounded_class(self):
         """The ceiling only holds if the app's own server is the bounded one."""
         created = []

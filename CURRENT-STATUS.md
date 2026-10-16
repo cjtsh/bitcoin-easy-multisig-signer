@@ -1,28 +1,42 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.6.9 is the Color Team cycle-5 build-process
-remediation of the `v0.6.8` tree.** Every finding the cycle's plan
-schedules has exactly one row in `releases/PATCH-0.6.9.md` with a
+**Source revision 0.7.0 is the Color Team cycle-6 build-process
+remediation of the `v0.6.9` tree.** Every finding the cycle's plan
+schedules has exactly one row in `releases/PATCH-0.7.0.md` with a
 severity and a closing test the build loads, so nothing is closed by
-silence; every `CONTROLS.md` citation is a content binding to a
-`CONTROL: CM-##` marker inside the range it cites, so a citation that
-moves off its subject fails the build; and the download page's version
-comes from `version.py` under a guard that refuses a link naming another
-release. The release was built and published from `main` through the
-unified pipeline, and
-[`v0.6.9`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9)
-is the newest published tag; the revision it replaces, `v0.6.8`, was the
-cycle-4 remediation that introduced the checked audit ledger and the
-parsed `CONTROLS.md` inventory.
+silence; the value and script limbs of the build-time prevout match are
+pinned by tests that fail when their own limb is removed; the loopback
+server retires its oldest idle connection instead of refusing the
+operator's window when the connection ceiling is full, so no local
+process can freeze the app by holding the slots; `CONTROLS.md` gains rows
+`CM-27`…`CM-32` for the protections the previous release added untracked,
+and its claim-phrase net is widened; the retired-publisher guard refuses
+when the platform reports more registrations than the one page it reads;
+and the Windows startup dialog shows the same bounded record as the log.
+The release is built and published from `main` through the unified
+pipeline; until its promote run lands, the newest published tag remains
+[`v0.6.9`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9),
+the cycle-5 remediation whose `CONTROLS.md` citations are content-bound to
+their own markers, whose first-line money-path guards are pinned by their
+own named tests, and whose download page derives its version from
+`version.py`.
 The wallet, transaction, signing and broadcast engine is
-unchanged from 0.6.8, which was the cycle-4 build-process remediation of
-the `v0.6.7` tree, where the five-lane panel graded
+unchanged from 0.6.9. Cycle 5 was the conversion re-check of the
+`v0.6.8` grade: the panel verified all twelve prior findings fixed **by
+execution** — the referee re-broke each fix and watched its new test go
+red — and held the grade at **⚠️ CONDITIONAL** on two new Lows, `CT-14`
+(two tests named for prevout limbs that actually exercised the txid limb)
+and `CT-13` (the new connection ceiling's deliberate availability trade),
+with four housekeeping notes; its report, plan, lock and public security
+statement are prior-cycle records in this branch. Version 0.6.9 was the
+cycle-5 build-process remediation of the `v0.6.8` tree, where the
+five-lane panel graded
 **⚠️ CONDITIONAL**: it held the money path, the devices, the pipeline and
 the published bytes, and named four Low findings — the control inventory
 could not detect a citation that moved, three first-line guards were
 tested only through the deeper guard behind them, one broadcast branch
 had no test that could fail, and the download page was corrected after
-the tag instead of before it. `releases/PATCH-0.6.8.md` is that cycle's
+the tag instead of before it. `releases/PATCH-0.6.9.md` is that cycle's
 evidence record. Version 0.6.7 was the cycle-3 build-process remediation:
 the cycle-3 five-lane Color Team audit of the `v0.6.6`
 tree — its report, plan, lock and index are no longer in `main` and remain in
@@ -138,6 +152,6 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.9.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.9.md) is the Color Team plan for the published `v0.6.9` revision, a follow-up cycle in the `v0.6.8` lineage. Its section 9 awaits the owner's sign-off. The plan, lock, report and public security statement of the `v0.6.8` cycle are in this branch as prior-cycle records; the artifacts of the earlier cycles remain in the tag tree of the revision each describes.
+**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.0.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.0.md) is the Color Team plan for the published `v0.7.0` revision, a follow-up cycle in the `v0.6.8` lineage. Its section 9 awaits the owner's sign-off. The plan, lock, report and public security statement of the `v0.6.9` cycle are in this branch as prior-cycle records; the artifacts of the earlier cycles remain in the tag tree of the revision each describes.
 
 **Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.

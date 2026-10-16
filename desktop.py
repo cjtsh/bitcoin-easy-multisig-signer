@@ -371,7 +371,7 @@ def report_startup_failure(error: BaseException) -> None:
     """
     details = f"{type(error).__name__}: {error}"
     if len(details) > STARTUP_FAILURE_LIMIT:
-        details = details[:STARTUP_FAILURE_LIMIT].rstrip() + "..."
+        details = details[:STARTUP_FAILURE_LIMIT].rstrip() + "..."  # CONTROL: CM-31
     destination: Path | None = None
     try:
         destination = startup_error_log()
@@ -387,7 +387,13 @@ def report_startup_failure(error: BaseException) -> None:
         )
         windows_error_dialog(
             "Bitcoin Easy Signer",
-            f"Bitcoin Easy Signer could not open its window.\n\n{error}\n\n{where}",
+            # CT-17: the dialog shows the same bounded record the log holds, not
+            # the raw exception. A message box cannot be scrolled or truncated
+            # by the person reading it, so an enormous platform error used to
+            # become a dialog that ran off the screen -- and, unlike the log,
+            # was never bounded. The type-and-message record is what the reader
+            # needs; the full text is in the file the dialog names.
+            f"Bitcoin Easy Signer could not open its window.\n\n{details}\n\n{where}",
         )
     else:
         print(details)

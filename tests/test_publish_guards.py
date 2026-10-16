@@ -526,6 +526,43 @@ class RetiredPublisherGuardTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("could not be read", result.stderr)
 
+    def test_more_registrations_than_the_page_holds_refuses(self):
+        """CT-16: the read is one page, so more than one page must refuse.
+
+        The step asks for `per_page=100` and reads what comes back. If the
+        platform reports more registrations than that one page carries, a
+        re-enabled publisher could sit on a page nobody looked at, and the
+        check would pass by not looking — the exact failure CT-11 was about.
+        Pagination is deliberately not used: the count is what fails closed,
+        so the guard does not depend on a runner's `gh` version.
+        """
+        payload = json.dumps({"total_count": 101, "workflows": [
+            {"id": 373388817, "path": ".github/workflows/build-linux.yml",
+             "state": "disabled_manually"},
+        ]})
+        result = self._run(stdout=payload)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("do not fit in the one page", result.stderr)
+        self.assertIn("101", result.stderr)
+
+    def test_a_page_shorter_than_the_reported_count_refuses(self):
+        """CT-16: a short page is a partial view, and a partial view refuses.
+
+        `total_count` and the returned list must agree. A platform that reports
+        five registrations while the page carries two has not shown the reader
+        every registration, whatever the reason, so the run stops rather than
+        concluding that nothing retired is live.
+        """
+        payload = json.dumps({"total_count": 5, "workflows": [
+            {"id": 368710221, "path": ".github/workflows/build-candidate.yml",
+             "state": "active"},
+            {"id": 373388817, "path": ".github/workflows/build-linux.yml",
+             "state": "disabled_manually"},
+        ]})
+        result = self._run(stdout=payload)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("is not the whole list", result.stderr)
+
     def test_the_guard_runs_on_a_candidate_and_on_a_publish(self):
         step = find_step(self.workflow, CHECKSUMS_JOB, RETIRED_GUARD)
         for publish in (True, False):

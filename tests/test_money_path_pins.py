@@ -293,36 +293,117 @@ class BuildTimePrevoutPins(unittest.TestCase):
             build_unsigned_psbt(self.record, self.scan, self.recipient,
                                 10_000, 5, lying)
 
-    def test_a_previous_transaction_paying_a_different_script_is_refused(self):
-        """The explorer cannot redirect the spend to a script we do not own."""
-        def lying(path, *, text=False):
-            if path.endswith("/hex"):
-                raw = self.explorer(path, text=True)
-                tx = transaction.Transaction.parse(bytes.fromhex(raw))
-                # Pay some other scriptPubKey at the claimed vout.
-                tx.vout[0] = transaction.TransactionOutput(
-                    tx.vout[0].value, Script(b"\x00\x14" + bytes(20)))
-                return tx.serialize().hex()
-            return self.explorer(path, text=text)
+    def test_a_rewritten_previous_transaction_is_refused_by_its_txid(self):
+        """CT-14: what the two rewritten-bytes cases actually pin.
 
+        Both of these mutate the serialized previous transaction -- one replaces
+        the output's script, one its value -- and either mutation changes the
+        transaction's txid. Each case is therefore caught by the txid limb, not
+        by the limb its name used to claim; that is stated here instead of being
+        implied. The value and script limbs have their own discriminating cases
+        below, where the served transaction is left byte-for-byte intact.
+        """
+        def rewritten(mutate):
+            def lying(path, *, text=False):
+                if path.endswith("/hex"):
+                    raw = self.explorer(path, text=True)
+                    tx = transaction.Transaction.parse(bytes.fromhex(raw))
+                    tx.vout[0] = mutate(tx.vout[0])
+                    return tx.serialize().hex()
+                return self.explorer(path, text=text)
+            return lying
+
+        rewrites = {
+            "different script": lambda out: transaction.TransactionOutput(
+                out.value, Script(b"\x00\x14" + bytes(20))),
+            "different value": lambda out: transaction.TransactionOutput(
+                out.value + 1, out.script_pubkey),
+        }
+        for name, mutate in rewrites.items():
+            with self.subTest(rewrite=name), self.assertRaisesRegex(
+                    WalletError, "Previous output does not match this wallet"):
+                build_unsigned_psbt(self.record, self.scan, self.recipient,
+                                    10_000, 5, rewritten(mutate))
+
+    def test_a_lying_utxo_list_value_is_refused_by_the_value_limb(self):
+        """CT-14: the value limb, reached on its own.
+
+        The scan's UTXO list claims one satoshi more per output than the honest
+        explorer's own address totals, while the previous transaction served for
+        each claimed txid is the unmodified original -- it still hashes to the
+        claimed txid and still pays the wallet's derived script, so the txid and
+        script limbs both pass. Only the value limb can refuse this. The lie is
+        internally consistent (the address totals carry the same extra satoshi),
+        so the consistency gate is not what catches it either.
+        """
+        honest = self.explorer
+
+        def lying(path, *, text=False):
+            if path.endswith("/utxo"):
+                return [{**entry, "value": entry["value"] + 1}
+                        for entry in honest(path, text=text)]
+            if path.startswith("/address/"):
+                stats = dict(honest(path, text=text))
+                extra = len(honest(path + "/utxo"))
+                stats["chain_stats"] = dict(
+                    stats["chain_stats"],
+                    funded_txo_sum=stats["chain_stats"]["funded_txo_sum"] + extra,
+                )
+                return stats
+            return honest(path, text=text)
+
+        scan = scan_wallet(self.record, lying)
+        self.assertTrue(scan["utxo_consistent"],
+                        "the lying list must survive the consistency gate, or "
+                        "this case would not reach the value limb")
         with self.assertRaisesRegex(
                 WalletError, "Previous output does not match this wallet"):
-            build_unsigned_psbt(self.record, self.scan, self.recipient,
-                                10_000, 5, lying)
+            build_unsigned_psbt(self.record, scan, self.recipient,
+                                10_000, 5, honest)
 
-    def test_a_previous_transaction_paying_a_different_value_is_refused(self):
+    def test_a_lying_utxo_list_script_is_refused_by_the_script_limb(self):
+        """CT-14: the script limb, reached on its own.
+
+        The explorer lists an outpoint under one of the wallet's own receive
+        addresses while the transaction it honestly serves for that txid pays a
+        script the wallet does not own. The txid is that transaction's real txid
+        and the listed value is its real value, so the txid and value limbs both
+        pass; only the script limb can refuse this. This is the shape of the
+        attack the limb exists for: an explorer that redirects the spend to
+        itself while keeping the transaction it serves internally consistent.
+        """
+        honest = self.explorer
+        victim = self.layout.receive.derive(0).address(NETWORKS["test"])
+        foreign_value = 200_000
+        foreign = transaction.Transaction(
+            vin=[transaction.TransactionInput(bytes.fromhex("22" * 32), 0)],
+            vout=[transaction.TransactionOutput(
+                foreign_value, Script(b"\x00\x14" + bytes(20)))],
+        )
+        foreign_txid = foreign.txid().hex()
+        foreign_entry = {"txid": foreign_txid, "vout": 0, "value": foreign_value,
+                         "status": {"confirmed": True}}
+
         def lying(path, *, text=False):
-            if path.endswith("/hex"):
-                raw = self.explorer(path, text=True)
-                tx = transaction.Transaction.parse(bytes.fromhex(raw))
-                tx.vout[0] = transaction.TransactionOutput(
-                    tx.vout[0].value + 1, tx.vout[0].script_pubkey)
-                return tx.serialize().hex()
-            return self.explorer(path, text=text)
+            if path == f"/address/{victim}/utxo":
+                return [foreign_entry]
+            if path == f"/address/{victim}":
+                stats = dict(honest(path, text=text))
+                stats["chain_stats"] = dict(
+                    stats["chain_stats"], funded_txo_sum=foreign_value, tx_count=1)
+                return stats
+            if path == f"/tx/{foreign_txid}/hex":
+                return foreign.serialize().hex()
+            return honest(path, text=text)
 
+        scan = scan_wallet(self.record, lying)
+        self.assertTrue(scan["utxo_consistent"])
+        self.assertIn(foreign_txid,
+                      [entry["txid"] for entry in scan["utxos"]],
+                      "the lying outpoint must reach the builder's candidate list")
         with self.assertRaisesRegex(
                 WalletError, "Previous output does not match this wallet"):
-            build_unsigned_psbt(self.record, self.scan, self.recipient,
+            build_unsigned_psbt(self.record, scan, self.recipient,
                                 10_000, 5, lying)
 
     def test_the_honest_explorer_still_builds(self):

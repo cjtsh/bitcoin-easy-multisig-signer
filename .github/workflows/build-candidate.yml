@@ -788,6 +788,14 @@ jobs:
         # trees, so this path refuses to build or publish with one re-enabled
         # rather than trusting that nobody turns it back on. A read that fails
         # refuses too: the check must never pass by not looking.
+        #
+        # CT-16: that read is one page. If the platform reports more
+        # registrations than one page can hold, the re-enabled publisher could
+        # be on a page nobody read and the check would pass by not looking at
+        # it, so more registrations than the page holds is a refusal. The read
+        # stays a plain single page rather than `--paginate`, so the guard does
+        # not depend on a runner's `gh` version supporting pagination flags:
+        # the count, not the flag, is what makes this fail closed.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -801,10 +809,27 @@ jobs:
           import json
           import sys
 
+          PAGE_LIMIT = 100
           RETIRED = ("build-linux.yml", "build-windows.yml")
+          payload = json.loads(sys.argv[1])
+          total = payload.get("total_count")
+          entries = payload["workflows"]
+          if type(total) is not int or total > PAGE_LIMIT:
+              raise SystemExit(
+                  "refusing: the workflow registrations do not fit in the one "
+                  "page this check reads (total_count=%r, page limit=%d); a "
+                  "re-enabled publisher could be on a page nobody looked at"
+                  % (total, PAGE_LIMIT)
+              )
+          if len(entries) != total:
+              raise SystemExit(
+                  "refusing: the platform reported %d workflow registrations "
+                  "but returned %d, so the list read here is not the whole list"
+                  % (total, len(entries))
+              )
           live = sorted(
               entry["path"]
-              for entry in json.loads(sys.argv[1])["workflows"]
+              for entry in entries
               if entry["path"].rsplit("/", 1)[-1] in RETIRED
               and entry["state"] != "disabled_manually"
           )
