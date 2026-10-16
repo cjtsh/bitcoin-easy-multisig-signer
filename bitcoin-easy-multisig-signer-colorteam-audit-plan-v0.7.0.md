@@ -1258,5 +1258,5 @@ body is correct as written, write `None`.
 **Sign-off.** *The audit does not begin until the two lines below are filled in by the owner and
 the audit team has locked this plan.*
 
-- **Signed:**
-- **Date:**
+- **Signed: Bitseeker LLC**
+- **Date: 16 Oct 2026**
