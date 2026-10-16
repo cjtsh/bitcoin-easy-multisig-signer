@@ -13,13 +13,13 @@ process can freeze the app by holding the slots; `CONTROLS.md` gains rows
 and its claim-phrase net is widened; the retired-publisher guard refuses
 when the platform reports more registrations than the one page it reads;
 and the Windows startup dialog shows the same bounded record as the log.
-The release is built and published from `main` through the unified
-pipeline; until its promote run lands, the newest published tag remains
-[`v0.6.9`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9),
-the cycle-5 remediation whose `CONTROLS.md` citations are content-bound to
-their own markers, whose first-line money-path guards are pinned by their
-own named tests, and whose download page derives its version from
-`version.py`.
+The release was built and published from `main` through the unified
+pipeline, and
+[`v0.7.0`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.0)
+is the newest published tag; the revision it replaces, `v0.6.9`, was the
+cycle-5 remediation whose `CONTROLS.md` citations are content-bound to their
+own markers, whose first-line money-path guards are pinned by their own
+named tests, and whose download page derives its version from `version.py`.
 The wallet, transaction, signing and broadcast engine is
 unchanged from 0.6.9. Cycle 5 was the conversion re-check of the
 `v0.6.8` grade: the panel verified all twelve prior findings fixed **by
@@ -96,14 +96,14 @@ See [`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
 **Do not restate a "latest published version is X" here** — that is the
 CT-46/CT-71 defect class and it goes stale the moment `version.py` moves.
 The published set is whatever that page and [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)
-carry. As of 2026-10-11 that is
-[v0.6.9](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.6.9),
-published 2026-10-11 as tag `v0.6.9` on commit
-`e90e5b93ece284f990ca2b75be1e798baa3efc9c` by successful candidate run
-[38150291296](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38150291296)
+carry. As of 2026-10-16 that is
+[v0.7.0](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.0),
+published 2026-10-16T06:15:36Z as tag `v0.7.0` on commit
+`4fe8f2955e29cae6838e2ba0b8029c9abae9fdeb` by successful candidate run
+[38854414566](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38854414566)
 and promote run
-[38151061666](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38151061666)
-(`publish=true`, `candidate_run_id=38150291296`). The release page
+[38857329074](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38857329074)
+(`publish=true`, `candidate_run_id=38854414566`). The release page
 carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
 `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
 Version 0.6.7 is the Color Team cycle-3 build-process remediation: one

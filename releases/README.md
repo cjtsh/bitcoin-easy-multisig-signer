@@ -51,7 +51,7 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.7.0.md`](PATCH-0.7.0.md) · [`PLAN-0.7.0.md`](PLAN-0.7.0.md) · [`RELEASE-NOTES-0.7.0.md`](RELEASE-NOTES-0.7.0.md) | 0.7.0 | Color Team cycle-6 remediation: the prevout value and script limbs pinned by discriminating tests, a connection ceiling that retires an idle socket instead of refusing the window, the protections of the previous release tracked in `CONTROLS.md` as `CM-27`…`CM-32`, a fail-closed page limit on the retired-publisher guard, a bounded Windows startup dialog, and a precise `libusb` provenance sentence |
 | [`OWNER-ACCEPTANCE-2026-10-07.md`](OWNER-ACCEPTANCE-2026-10-07.md) | 0.6.6–0.6.7 | The owner's dated hardware-acceptance note for the promoted candidate |
 | [`LINUX-0.6.4-ACCEPTANCE.md`](LINUX-0.6.4-ACCEPTANCE.md) | 0.6.4 | Owner-reported Linux AppImage walkthrough |
-| [`platform-state.json`](platform-state.json) | — | Dated snapshot (2026-10-11T13:55:41Z) of the repository's GitHub platform settings |
+| [`platform-state.json`](platform-state.json) | — | Dated snapshot (2026-10-16T06:19:08Z) of the repository's GitHub platform settings |
 
 ## These are historical records
 
