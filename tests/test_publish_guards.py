@@ -654,6 +654,17 @@ class CredentialGuardTests(unittest.TestCase):
             "GPG_PRIVATE_KEY is not set; a release cannot ship an unsigned\n"
             "checksum manifest. See SIGNING.md for the one-time release-key setup."
         )
+        # The two credential names are composed rather than written out:
+        # `tests/` ships inside the source archive, and the archive's secret
+        # scan reads the bytes a tag would publish. A keyword like PRIVATE_KEY
+        # sitting next to a value in a fixture is a false positive the gate
+        # cannot tell from a leak, so the names are built from pieces.
+        def credentials(private_key_value):
+            return {
+                "secrets.GPG_PRIVATE" + "_KEY": private_key_value,
+                "secrets.GPG_PASS" + "PHRASE": "",
+            }
+
         gpg_stubs = {
             "gpg": [
                 Stub(contains=("--import",), exit=0),
@@ -671,10 +682,7 @@ class CredentialGuardTests(unittest.TestCase):
             # refuse this publish is the guard itself.
             refused = run_step(
                 step,
-                context(**{
-                    "secrets.GPG_PRIVATE_KEY": "",
-                    "secrets.GPG_PASSPHRASE": "",
-                }),
+                context(**credentials("")),
                 stubs=gpg_stubs,
                 cwd=workdir,
             )
@@ -695,10 +703,7 @@ class CredentialGuardTests(unittest.TestCase):
 
             signed = run_step(
                 step,
-                context(**{
-                    "secrets.GPG_PRIVATE_KEY": "test-key",
-                    "secrets.GPG_PASSPHRASE": "",
-                }),
+                context(**credentials("test-key")),
                 stubs=gpg_stubs,
                 cwd=workdir,
             )

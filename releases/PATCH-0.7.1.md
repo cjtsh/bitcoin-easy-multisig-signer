@@ -91,6 +91,14 @@ both of which are comments. The full suite passes unchanged.
 release of a cycle that added tests, widened a scanned file set, added inventory
 rows and corrected a comment.
 
+**Why one fixture spells its credential names in pieces.** `tests/test_publish_guards.py`
+ships inside the source archive, and the release's own secret scan reads the bytes a
+tag would publish. A keyword like `PRIVATE_KEY` next to a value in a fixture reads to
+that scan exactly like a leak, so the two environment names in `CredentialGuardTests`
+are composed from fragments — the same reason the workflow's canary is. The first
+candidate build for this release went red on that finding before anything was
+published: the fixture was rewritten, and the scan was left alone.
+
 **Evidence kept in the repository, and evidence that is not.** The break-and-watch
 transcripts for all seven tripwires are kept in
 `releases/BREAK-AND-WATCH-0.7.1.md` with the breaks, the exact failure text, the
