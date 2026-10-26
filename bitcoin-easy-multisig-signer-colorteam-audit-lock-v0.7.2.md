@@ -10,7 +10,7 @@
 | **Auditor** | declared by the operator at dispatch time; the previous cycle's panel ran on ZCode 3.16.3 · model `GLM-5.3-Flash (declared by the harness; self-description, not an independent verification)`. If the operator dispatches a different auditor or model, that declaration supersedes this row and is recorded in the panel's report. |
 | **Same session for both?** | no — the surveyor's session identifier is present and names a DeepSeek Harness session; the auditor runs outside this repository's tooling and its session identifier, if any, is not available to the surveyor. The identifiers cannot be identical: different runs. This establishes different runs, not different models — independence rests on the operator's declaration that the surveyor seat ran on the DeepSeek Harness. |
 | **Locked at** | `2026-10-26T21:55:00Z` |
-| **Published before the panel ran** | commit `%%LOCKCOMMIT%%` on `main` (this file, published before the first specialist was dispatched) |
+| **Published before the panel ran** | commit `3331c93` on `main` (this file, published before the first specialist was dispatched) |
 | **Plan SHA-256 at the end of the audit** | left for the referee: re-hash the plan file after the last finding is written and compare. Equal means the scope never moved. |
 
 Cycle: `v0.7.2` — a follow-up (conversion re-check) in the `v0.6.8` lineage. Scope
