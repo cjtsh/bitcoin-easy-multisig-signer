@@ -60,6 +60,11 @@ CANDIDATE_STEP = "Write the candidate manifest"
 # CT-11: a retired per-platform publisher that is not disabled refuses the run.
 CHECKSUMS_JOB = "checksums"
 RETIRED_GUARD = "Refuse while a retired publisher is runnable"
+# CM-34: a notarized run must not produce a DMG without the notary credential.
+MACOS_JOB = "macos"
+NOTARY_GUARD = "A requested notarized build must fail closed without credentials"
+# CM-35: a publish must not ship an unsigned checksum manifest.
+SIGNING_STEP = "Sign the checksum manifest with the release key"
 
 
 def context(**overrides) -> dict:
@@ -571,6 +576,144 @@ class RetiredPublisherGuardTests(unittest.TestCase):
                 "the check belongs on both paths: a candidate a promotion later "
                 "trusts must already have refused a re-enabled publisher",
             )
+
+
+@unittest.skipUnless(yaml_available(), "PyYAML is required to read the workflow")
+class CredentialGuardTests(unittest.TestCase):
+    """CT-20/CT-21 follow-up: the two credential guards, exercised (CM-34, CM-35).
+
+    Both guards make the same claim in different words: a release path that
+    needs a secret refuses to continue without it, and says why. The workflow
+    comments that make that claim are now tracked rows in `CONTROLS.md`, so the
+    claim needs a test that can go red when the guard stops refusing — the
+    pin-accuracy defect CT-21 records, in the release pipeline rather than in
+    the loopback server.
+
+    Each test runs the workflow's own body with the tool it calls replaced by a
+    stub, and asserts both halves. The negative half is the control: a build
+    that *succeeded* without its credentials, and a publish with no release key,
+    must both be refused by name. The positive half keeps the guard honest — a
+    build that refused for its own stated reason, and a publish that has the
+    key, must still get through. A guard that refuses everything would satisfy
+    the negative half alone; a guard that refuses nothing would fail it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = load_workflow()
+
+    def test_the_notarisation_guard_refuses_a_build_that_succeeded_and_accepts_one_that_refused(self):
+        step = find_step(self.workflow, MACOS_JOB, NOTARY_GUARD)
+        refusal = (
+            "RELEASE=1 built without a notarisation credential; that must not happen."
+        )
+
+        # The build "succeeded": a DMG came out with no notarisation credential
+        # behind it. The marker is the build's own output, and the refusal path
+        # must exit before the step prints it.
+        succeeded = run_step(
+            step,
+            context(),
+            stubs={"bash": [Stub(exit=0,
+                                 stdout="NOTARY-BUILD-OUTPUT: a DMG with no notarisation")]},
+        )
+        self.assertNotEqual(
+            succeeded.returncode,
+            0,
+            "a notarized build that produced a DMG without a notarisation "
+            "credential must fail the step",
+        )
+        self.assertEqual(
+            succeeded.stderr.strip(),
+            refusal,
+            "the step must refuse by name, with the message the gate produces",
+        )
+        self.assertNotIn(
+            "NOTARY-BUILD-OUTPUT",
+            succeeded.stdout,
+            "the refusal must come from the guard's own exit, not from a later "
+            "stage of the step failing while the build's output is dumped",
+        )
+
+        refused = run_step(
+            step,
+            context(),
+            stubs={"bash": [Stub(exit=1, stdout="Notarisation credentials are set incompletely; refusing to guess.")]},
+        )
+        self.assertEqual(
+            refused.returncode,
+            0,
+            "the guard must let a build that refused for its own stated reason "
+            f"through, so the step proves the refusal rather than the absence "
+            f"of a DMG: {refused.stderr}",
+        )
+
+    def test_the_release_key_guard_refuses_a_publish_without_a_key_and_signs_with_one(self):
+        step = find_step(self.workflow, CHECKSUMS_JOB, SIGNING_STEP)
+        refusal = (
+            "GPG_PRIVATE_KEY is not set; a release cannot ship an unsigned\n"
+            "checksum manifest. See SIGNING.md for the one-time release-key setup."
+        )
+        gpg_stubs = {
+            "gpg": [
+                Stub(contains=("--import",), exit=0),
+                Stub(contains=("--detach-sign",), exit=0,
+                     create=("dist/SHA256SUMS.asc",)),
+                Stub(contains=("--verify",), exit=0),
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as workspace:
+            workdir = Path(workspace)
+            write_dist(workdir)
+
+            # A working gpg and a manifest to sign: the only thing that can
+            # refuse this publish is the guard itself.
+            refused = run_step(
+                step,
+                context(**{
+                    "secrets.GPG_PRIVATE_KEY": "",
+                    "secrets.GPG_PASSPHRASE": "",
+                }),
+                stubs=gpg_stubs,
+                cwd=workdir,
+            )
+            self.assertNotEqual(
+                refused.returncode,
+                0,
+                "a publish with no release key must not continue",
+            )
+            self.assertEqual(
+                refused.stderr.strip(),
+                refusal,
+                "the step must refuse by name, with the message the gate produces",
+            )
+            self.assertFalse(
+                refused.called("gpg", "--detach-sign"),
+                "the guard must refuse before the manifest is signed",
+            )
+
+            signed = run_step(
+                step,
+                context(**{
+                    "secrets.GPG_PRIVATE_KEY": "test-key",
+                    "secrets.GPG_PASSPHRASE": "",
+                }),
+                stubs=gpg_stubs,
+                cwd=workdir,
+            )
+            self.assertEqual(signed.returncode, 0, signed.stderr)
+            self.assertTrue(signed.called("gpg", "--import"),
+                            "the key must be imported before it can sign")
+            self.assertTrue(
+                signed.called("gpg", "--detach-sign", "dist/SHA256SUMS.asc"),
+                "the manifest must be signed, not merely keyed",
+            )
+            self.assertTrue(
+                signed.called("gpg", "--verify"),
+                "the signature must be verified against the manifest",
+            )
+            self.assertTrue((workdir / "dist" / "SHA256SUMS.asc").is_file())
 
 
 if __name__ == "__main__":

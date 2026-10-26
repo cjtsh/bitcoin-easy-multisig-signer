@@ -16,6 +16,7 @@ links each version to the record below, and its prose sections quote them.
 | `RELEASE-NOTES-<version>.md` | The release announcement text for one version |
 | `PLAN-<version>.md` | The plan a release was built against |
 | `OWNER-ACCEPTANCE-<date>.md` | The owner's dated hardware-acceptance note for a candidate |
+| `BREAK-AND-WATCH-<version>.md` | The tripwire transcripts for one release's audit-technicality fixes: each control broken on a disposable copy, its named test watched to go red, the restore, and the same test watched to go green |
 | `<PLATFORM>-<version>-ACCEPTANCE.md` | A platform walkthrough record, e.g. `LINUX-0.6.4-ACCEPTANCE.md` |
 | `SECURITY-REVIEW-<version>.md` | A security review and its remediation |
 | `MUTINYNET-<version>.md` | A signet-network walkthrough record |
@@ -49,6 +50,7 @@ links each version to the record below, and its prose sections quote them.
 | [`PATCH-0.6.8.md`](PATCH-0.6.8.md) · [`PLAN-0.6.8.md`](PLAN-0.6.8.md) · [`RELEASE-NOTES-0.6.8.md`](RELEASE-NOTES-0.6.8.md) | 0.6.8 | Color Team cycle-4 remediation: one ledger row per scheduled finding with a closing test the build loads, and a parsed `CONTROLS.md` inventory |
 | [`PATCH-0.6.9.md`](PATCH-0.6.9.md) · [`PLAN-0.6.9.md`](PLAN-0.6.9.md) · [`RELEASE-NOTES-0.6.9.md`](RELEASE-NOTES-0.6.9.md) | 0.6.9 | Color Team cycle-5 remediation: `CONTROLS.md` citations bound to their own markers, every Low finding pinned by a test that can fail, and the recorded housekeeping closed |
 | [`PATCH-0.7.0.md`](PATCH-0.7.0.md) · [`PLAN-0.7.0.md`](PLAN-0.7.0.md) · [`RELEASE-NOTES-0.7.0.md`](RELEASE-NOTES-0.7.0.md) | 0.7.0 | Color Team cycle-6 remediation: the prevout value and script limbs pinned by discriminating tests, a connection ceiling that retires an idle socket instead of refusing the window, the protections of the previous release tracked in `CONTROLS.md` as `CM-27`…`CM-32`, a fail-closed page limit on the retired-publisher guard, a bounded Windows startup dialog, and a precise `libusb` provenance sentence |
+| [`PATCH-0.7.1.md`](PATCH-0.7.1.md) · [`PLAN-0.7.1.md`](PLAN-0.7.1.md) · [`RELEASE-NOTES-0.7.1.md`](RELEASE-NOTES-0.7.1.md) · [`BREAK-AND-WATCH-0.7.1.md`](BREAK-AND-WATCH-0.7.1.md) | 0.7.1 | Color Team cycle-7 remediation: the retired-connection guard pinned by a test that can fail, the control inventory widened to the GitHub workflow files (`CM-33`…`CM-36`) with executable pins for the notarisation and checksum-signing credential guards, the busy-slot docstring corrected, and terms of use that incorporate the Bitseeker LLC standard legal framework |
 | [`OWNER-ACCEPTANCE-2026-10-07.md`](OWNER-ACCEPTANCE-2026-10-07.md) | 0.6.6–0.6.7 | The owner's dated hardware-acceptance note for the promoted candidate |
 | [`LINUX-0.6.4-ACCEPTANCE.md`](LINUX-0.6.4-ACCEPTANCE.md) | 0.6.4 | Owner-reported Linux AppImage walkthrough |
 | [`platform-state.json`](platform-state.json) | — | Dated snapshot (2026-10-16T06:19:08Z) of the repository's GitHub platform settings |

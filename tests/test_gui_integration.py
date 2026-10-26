@@ -952,5 +952,161 @@ class LargeAmountGateTests(ApiTestCase):
         self.assertEqual(status, 200, body)
 
 
+class SlotClaimSemanticsTests(unittest.TestCase):
+    """CT-19: the slot is claimed by a complete request head, not the token.
+
+    `BoundedThreadingHTTPServer`'s docstring says a connection is protected
+    from fair-admission eviction only while it is being served, that reaching
+    that state needs a complete request head and nothing more, and that the
+    token the page carries is required by the routes that do something rather
+    than by the slot. The v0.7.0 audit found the docstring narrower than the
+    code (CT-19). Both halves are pinned here so the sentence and the
+    behaviour cannot part company again: a complete head with no token at all
+    still claims the slot, and a half-sent head claims nothing.
+    """
+
+    def setUp(self):
+        self.state = gui.LocalApp()
+        self.server = gui.BoundedThreadingHTTPServer(
+            ("127.0.0.1", 0), self.state.handler())
+        self.addCleanup(self.server.server_close)
+
+    def _head(self):
+        """A complete request head for a route that needs the token, minus it."""
+        port = self.server.server_address[1]
+        return (b"GET /api/status HTTP/1.0\r\n"
+                b"Host: 127.0.0.1:" + str(port).encode() + b"\r\n"
+                b"\r\n")
+
+    def test_a_complete_request_head_claims_the_slot_without_the_token(self):
+        claimed = []
+        base = self.state.handler()
+
+        class RecordingHandler(base):
+            def do_GET(self):
+                claimed.append(self.connection in self.server._busy)
+                super().do_GET()
+
+        client_side, server_side = socket.socketpair()
+        self.addCleanup(client_side.close)
+        self.assertTrue(self.server._admit(server_side))
+        client_side.sendall(self._head())
+        try:
+            RecordingHandler(server_side, ("127.0.0.1", 0), self.server)
+        finally:
+            server_side.close()
+        client_side.settimeout(5)
+        answer = client_side.recv(4096)
+        self.assertEqual(
+            claimed, [True],
+            "a complete request head must claim the slot before any route "
+            "looks at the token")
+        self.assertIn(
+            b"403", answer.split(b"\r\n", 1)[0],
+            "the route must still refuse a request that carries no token")
+
+    def test_a_half_sent_request_head_claims_no_slot(self):
+        reached = []
+        base = self.state.handler()
+
+        class PatientHandler(base):
+            timeout = 0.5
+
+            def do_GET(self):
+                reached.append(self.path)
+
+        client_side, server_side = socket.socketpair()
+        self.addCleanup(client_side.close)
+        self.addCleanup(server_side.close)
+        self.assertTrue(self.server._admit(server_side))
+        client_side.sendall(self._head().split(b"\r\n\r\n")[0])
+        worker = threading.Thread(
+            target=PatientHandler,
+            args=(server_side, ("127.0.0.1", 0), self.server),
+            daemon=True)
+        worker.start()
+        try:
+            time.sleep(0.2)
+            self.assertTrue(worker.is_alive(),
+                            "the handler must still be reading the incomplete head")
+            self.assertNotIn(
+                server_side, self.server._busy,
+                "a half-sent head must not claim a busy slot")
+            self.assertEqual(reached, [], "a half-sent head must not reach a route")
+        finally:
+            client_side.close()
+            worker.join(5)
+
+
+class RetiredConnectionGuardTests(unittest.TestCase):
+    """CT-21: a retired connection is closed without an answer (CM-36).
+
+    Fair admission retires the oldest idle connection when the ceiling is
+    full. The retired connection must be closed before its request is
+    parsed, so the peer gets no bytes at all and no route is dispatched on
+    it. The positive half is a live connection: a malformed request still
+    gets the usual 400, because the guard refuses retired connections, not
+    malformed requests.
+    """
+
+    MALFORMED = b"not-an-http-request\r\n\r\n"
+
+    def setUp(self):
+        self.state = gui.LocalApp()
+        self.server = gui.BoundedThreadingHTTPServer(("127.0.0.1", 0), self.state.handler())
+        self.addCleanup(self.server.server_close)
+        self.dispatched = []
+
+    def _recording_handler(self):
+        base = self.state.handler()
+        dispatched = self.dispatched
+
+        class RecordingHandler(base):
+            def do_GET(self):
+                dispatched.append(self.path)
+
+        return RecordingHandler
+
+    def _exchange(self, client_side, server_side):
+        """Send the malformed request; return the bytes the peer received."""
+        client_side.sendall(self.MALFORMED)
+        try:
+            self._recording_handler()(server_side, ("127.0.0.1", 0), self.server)
+        finally:
+            server_side.close()
+        client_side.settimeout(5)
+        return client_side.recv(4096)
+
+    def test_a_retired_connection_is_closed_without_an_answer(self):
+        client_side, server_side = socket.socketpair()
+        self.addCleanup(client_side.close)
+        with patch.object(gui, "MAX_CONNECTIONS", 1), patch.object(gui, "_shutdown_quietly"):
+            # The connection under test is admitted first, so it is the oldest
+            # one; admitting the newcomer at the ceiling retires it. The
+            # shutdown is stubbed so the socket stays open for the request.
+            self.assertTrue(self.server._admit(server_side))
+            newcomer, _peer = socket.socketpair()
+            _peer.close()
+            self.addCleanup(newcomer.close)
+            self.assertTrue(self.server._admit(newcomer))
+        self.assertIn(server_side, self.server._retired)
+
+        data = self._exchange(client_side, server_side)
+        self.assertEqual(data, b"", "a retired connection must not answer")
+        self.assertEqual(self.dispatched, [], "a retired connection must not dispatch a route")
+
+    def test_a_live_connection_still_answers_a_malformed_request(self):
+        client_side, server_side = socket.socketpair()
+        self.addCleanup(client_side.close)
+        with patch.object(gui, "MAX_CONNECTIONS", 1):
+            self.assertTrue(self.server._admit(server_side))
+        self.assertNotIn(server_side, self.server._retired)
+
+        data = self._exchange(client_side, server_side)
+        self.assertTrue(data, "a live connection must answer a malformed request")
+        self.assertIn(b"400", data.split(b"\r\n", 1)[0])
+        self.assertEqual(self.dispatched, [], "a malformed request must not dispatch a route")
+
+
 if __name__ == "__main__":
     unittest.main()

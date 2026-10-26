@@ -36,6 +36,7 @@ SHIPPED = (
     "scripts/*.py",
     "scripts/*.sh",
     "scripts/*.ps1",
+    ".github/workflows/*.yml",
 )
 
 # A sentence that claims a protection. A comment block that claims one of these
@@ -108,6 +109,23 @@ def cited_file(relative, root=ROOT):
     return None
 
 
+def logical_relative(path, root=ROOT):
+    """The name a row cites, for a file a source archive relocates.
+
+    A checkout keeps the release recipes under `.github/workflows/`;
+    `scripts/build-source.sh` ships the same recipes as `ci/<name>.yml`, because
+    a source tarball is a source tree and has no GitHub workflow directory. The
+    rows cite the canonical checkout path, so a block read from `ci/` is mapped
+    back to it before it is compared. This is `cited_file`'s defect class in the
+    other direction: the 0.7.1 archive job found this module reading only
+    `.github/workflows/` and therefore reading nothing at all in the tarball.
+    """
+    parts = path.relative_to(root).parts
+    if len(parts) == 2 and parts[0] == "ci" and parts[1].endswith(".yml"):
+        return f".github/workflows/{parts[1]}"
+    return path.relative_to(root).as_posix()
+
+
 def comment_blocks(path):
     """Yield (first_line, last_line, text) for each comment block in `path`.
 
@@ -162,6 +180,15 @@ class ControlInventoryTests(unittest.TestCase):
             for path in sorted(ROOT.glob(pattern)):
                 for first, last, text in comment_blocks(path):
                     cls.blocks.append((path, first, last, text))
+        # A source archive has no `.github/` directory: `build-source.sh` ships
+        # the same recipes as `ci/<name>.yml`. Fall back only when the checkout's
+        # own copies are absent, so a checkout never scans one recipe twice.
+        if not any(
+                logical_relative(path).startswith(".github/workflows/")
+                for path, _first, _last, _text in cls.blocks):
+            for path in sorted((ROOT / "ci").glob("*.yml")):
+                for first, last, text in comment_blocks(path):
+                    cls.blocks.append((path, first, last, text))
 
     def _cited(self, relative, first, last):
         """True when a row of either table cites a line inside this block."""
@@ -214,13 +241,43 @@ class ControlInventoryTests(unittest.TestCase):
     def test_every_marker_has_a_row_in_the_same_file(self):
         for path, first, last, text in self.blocks:
             for control in MARKER.findall(text):
-                relative = path.relative_to(ROOT).as_posix()
+                relative = logical_relative(path)
                 with self.subTest(marker=f"{relative}:{first} {control}"):
                     self.assertTrue(
                         any(row["id"] == control
                             and (site(row["where"]) or ("", 0, 0))[0] == relative
                             for row in self.rows),
                         f"{relative}:{first} marks {control}, which has no row citing {relative}")
+
+    def test_the_release_workflow_files_are_scanned(self):
+        """CT-20: a claim in the release workflow is tracked, not invisible.
+
+        The v0.7.0 audit found the claim-phrase net blind to
+        `.github/workflows/*.yml`: the CT-16 guard's claim comment arrived in a
+        file class the scan never read, so a claim that named no control could
+        not fail the build. The class is in the scanned set now (CM-33…CM-35
+        are its tracked controls); this test is what fails if it leaves the
+        set, and what fails if the scan stops reaching the markers inside it.
+
+        The 0.7.1 archive job caught this test itself reading only
+        `.github/workflows/`: the tarball ships the recipes as `ci/<name>.yml`,
+        so the scan read no workflow there and the archive's own suite went red.
+        `logical_relative` maps the archive's copy back to the canonical name,
+        which is the same resolver-over-hardcoded-path rule the rows already keep.
+        """
+        self.assertIn(
+            ".github/workflows/*.yml", SHIPPED,
+            "the release workflow file class must stay in the scanned set")
+        workflow = [
+            text for path, _first, _last, text in self.blocks
+            if logical_relative(path).startswith(".github/workflows/")
+        ]
+        self.assertTrue(workflow, "the scan read no release workflow file")
+        markers = {control for text in workflow for control in MARKER.findall(text)}
+        for control in ("CM-33", "CM-34", "CM-35"):
+            self.assertIn(
+                control, markers,
+                f"the scan does not reach {control} in the release workflow")
 
     def test_every_row_cites_its_own_marker(self):
         """A citation is a content binding, not just a line that exists.
@@ -261,7 +318,7 @@ class ControlInventoryTests(unittest.TestCase):
         for path, first, last, text in self.blocks:
             if "CONTROLS.md" not in text:
                 continue
-            relative = path.relative_to(ROOT).as_posix()
+            relative = logical_relative(path)
             with self.subTest(comment=f"{relative}:{first}"):
                 self.assertTrue(
                     self._cited(relative, first, last),

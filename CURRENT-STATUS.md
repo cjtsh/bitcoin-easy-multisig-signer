@@ -1,22 +1,35 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.7.0 is the Color Team cycle-6 build-process
-remediation of the `v0.6.9` tree.** Every finding the cycle's plan
-schedules has exactly one row in `releases/PATCH-0.7.0.md` with a
+**Source revision 0.7.1 is the Color Team cycle-7 build-process
+remediation of the `v0.7.0` tree.** Every finding the cycle's plan
+schedules has exactly one row in `releases/PATCH-0.7.1.md` with a
 severity and a closing test the build loads, so nothing is closed by
-silence; the value and script limbs of the build-time prevout match are
-pinned by tests that fail when their own limb is removed; the loopback
-server retires its oldest idle connection instead of refusing the
-operator's window when the connection ceiling is full, so no local
-process can freeze the app by holding the slots; `CONTROLS.md` gains rows
-`CM-27`…`CM-32` for the protections the previous release added untracked,
-and its claim-phrase net is widened; the retired-publisher guard refuses
-when the platform reports more registrations than the one page it reads;
-and the Windows startup dialog shows the same bounded record as the log.
-The release was built and published from `main` through the unified
-pipeline, and
-[`v0.7.0`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.0)
-is the newest published tag; the revision it replaces, `v0.6.9`, was the
+silence; the loopback server's retired-connection guard is pinned by a
+test that goes red when the guard is removed; the control inventory now
+parses the GitHub workflow files, so the retired-publisher pagination
+guard and the notarisation and checksum-signing credential guards are
+tracked rows with executable pins; the busy-slot docstring says what the
+slot actually requires; and the terms of use in `DISCLAIMER.md`
+incorporate the Bitseeker LLC standard legal framework published at
+[cjtsh/software-disclaimer](https://github.com/cjtsh/software-disclaimer).
+No wallet, transaction, signing or broadcast behaviour changed.
+Version 0.7.0 was the Color Team cycle-6 build-process remediation of the
+`v0.6.9` tree: every finding the cycle's plan scheduled had exactly one
+row in `releases/PATCH-0.7.0.md` with a severity and a closing test the
+build loads; the value and script limbs of the build-time prevout match
+were pinned by tests that fail when their own limb is removed; the loopback
+server retired its oldest idle connection instead of refusing the
+operator's window when the connection ceiling was full, so no local
+process could freeze the app by holding the slots; `CONTROLS.md` gained
+rows `CM-27`…`CM-32` for the protections the previous release added
+untracked, and its claim-phrase net was widened; the retired-publisher
+guard refused when the platform reported more registrations than the one
+page it reads; and the Windows startup dialog showed the same bounded
+record as the log.
+The release is built and published from `main` through the unified
+pipeline; until its promote run lands, the newest published tag remains
+[`v0.7.0`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.0);
+the revision it replaces, `v0.6.9`, was the
 cycle-5 remediation whose `CONTROLS.md` citations are content-bound to their
 own markers, whose first-line money-path guards are pinned by their own
 named tests, and whose download page derives its version from `version.py`.
@@ -124,7 +137,7 @@ recorded.
 
 Bitcoin Easy Signer helps a nontechnical person make a payment from an existing native-SegWit multisig wallet with two or three keys. It follows the BSMS threshold for any valid quorum, checks public wallet and hardware identities, scans through a selected Esplora server, builds a PSBT, requests signatures through Bitcoin Core HWI, verifies the signatures and final transaction, and broadcasts on the selected network after explicit review. One transaction engine serves Testnet4, Mutinynet, and mainnet. From 0.6.1 the app opens on mainnet, and the two practice networks are reached only through an explicit developer-mode gate whose panel offers those two networks alone; the selected network is held in memory for the session and a practice network cannot outlive a restart.
 
-Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast requires a per-transaction confirmation that explicitly names real Bitcoin, plus a backend opt-in that fails closed. One mainnet transaction has been prepared, signed on two hardware devices, broadcast and confirmed; it is recorded in [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md). One confirmed transaction does not establish that a later one is safe. Bitcoin Easy Signer is free, open-source software maintained by Bitseeker LLC and provided without warranty or guarantee; see [`DISCLAIMER.md`](DISCLAIMER.md). No independent end-to-end security review of the current release is recorded.
+Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast requires a per-transaction confirmation that explicitly names real Bitcoin, plus a backend opt-in that fails closed. One mainnet transaction has been prepared, signed on two hardware devices, broadcast and confirmed; it is recorded in [`releases/PATCH-0.5.1.md`](releases/PATCH-0.5.1.md). One confirmed transaction does not establish that a later one is safe. Bitcoin Easy Signer is free, open-source software maintained by Bitseeker LLC and provided without warranty or guarantee; its terms of use, warranty disclaimer, and limitation of liability are in [`DISCLAIMER.md`](DISCLAIMER.md), which incorporates the Bitseeker LLC standard legal framework published at [cjtsh/software-disclaimer](https://github.com/cjtsh/software-disclaimer). No independent end-to-end security review of the current release is recorded.
 
 ## Evidence
 

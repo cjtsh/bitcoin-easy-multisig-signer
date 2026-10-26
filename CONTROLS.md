@@ -9,6 +9,15 @@ is not inside the line range that row cites — so a citation that moves onto
 unrelated lines fails, not just one whose file or line number disappeared.
 A document nothing reads rots the moment it is written.
 
+The scanned set is the shipped Python, the release scripts, and — since CT-20 —
+the release workflow files: a comment in any of them that claims a protection
+has to name the control that makes it, or the inventory misses it. CT-20's
+widening was scoped to the workflow files, because that is where the untracked
+claim comment was. `ui.html` stays outside that set on purpose: the page's own
+control claim is already tracked by row CM-30 and pinned by
+`tests/test_ui_scripts.py`, so widening the set again would add a scanned file
+without adding a control.
+
 ## Controls
 
 | ID | Control claim | Where it is made | Test that proves it |
@@ -28,7 +37,7 @@ A document nothing reads rots the moment it is written.
 | CM-13 | An existing release tag is never overwritten, and an unverifiable tag state refuses publication. | `.github/workflows/build-candidate.yml:1163-1173` | `tests/test_publish_guards.py::ReleaseGuardBehaviourTests::test_an_existing_tag_is_never_overwritten` |
 | CM-14 | An unsigned public release is refused before any build starts. | `.github/workflows/build-candidate.yml:57-61` | `tests/test_publish_guards.py::ReleaseGuardBehaviourTests::test_the_unsigned_release_guard_refuses_and_names_the_reason` |
 | CM-15 | An unnotarized publish is refused and never reaches the release command. | `.github/workflows/build-candidate.yml:1159-1162` | `tests/test_publish_guards.py::ReleaseGuardBehaviourTests::test_an_unnotarized_publish_is_refused` |
-| CM-16 | No `run:` body interpolates a GitHub expression; values reach the shell through `env:`. | `tests/test_publish_guards.py:395-412` | `tests/test_publish_guards.py::InterpolationLintTests::test_no_run_body_interpolates_a_github_expression` |
+| CM-16 | No `run:` body interpolates a GitHub expression; values reach the shell through `env:`. | `tests/test_publish_guards.py:400-417` | `tests/test_publish_guards.py::InterpolationLintTests::test_no_run_body_interpolates_a_github_expression` |
 | CM-17 | The source-mode install pins the device library with hashes and the launcher guards both libraries before skipping it. | `Start Easy Multisig.command:25-28` | `tests/test_launcher.py::SourceLockTests::test_the_device_library_is_pinned_with_hashes` |
 | CM-18 | Diagnostics carry fixed codes, the selected network and a validated device class, never free text or wallet material. | `gui.py:626-631` | `tests/test_diagnostics.py::DiagnosticTests::test_device_fields_accept_only_a_known_device_class` |
 | CM-19 | The source archive ships the release public key its own instructions tell a downloader to import. | `scripts/build-source.sh:37-45` | `tests/test_build_source.py::ArchiveCompletenessTests::test_the_release_public_key_reaches_the_archive` |
@@ -42,9 +51,14 @@ A document nothing reads rots the moment it is written.
 | CM-27 | The loopback server admits at most `MAX_CONNECTIONS` at once, and never refuses the operator's window while an idle — silent or half-sent — connection holds a slot: the oldest idle connection is retired for the newcomer, and only a fully busy ceiling refuses. | `gui.py:98-102` | `tests/test_gui_integration.py::ConnectionCeilingTests::test_the_window_is_admitted_while_idle_sockets_hold_the_ceiling` |
 | CM-28 | The local token is compared whole and in constant time, over encoded bytes, so a non-ASCII or malformed header is an ordinary mismatch rather than a traceback. | `gui.py:755-772` | `tests/test_gui_integration.py::LocalTokenComparisonTests::test_the_comparison_is_whole_value_and_constant_time` |
 | CM-29 | The two market-data reads require the same local token as every other route, so the port is not an unauthenticated oracle for the app's outbound requests. | `gui.py:792-799` | `tests/test_gui.py::LocalGuiTests::test_the_market_reads_refuse_without_the_local_token` |
-| CM-30 | The launch token leaves the address bar as soon as the page has read it and lives only in per-tab storage, so no browser history entry names the session. | `ui.html:788-795` | `tests/test_ui_scripts.py::UiScriptTests::test_ui_token_history` |
+| CM-30 | The launch token leaves the address bar as soon as the page has read it and lives only in per-tab storage, so no browser history entry names the session. | `ui.html:793-800` | `tests/test_ui_scripts.py::UiScriptTests::test_ui_token_history` |
 | CM-31 | The startup-failure record carries the exception's type and message only, bounded, never a traceback with the operator's own paths. | `desktop.py:371-374` | `tests/test_desktop.py::StartupFailureTests::test_a_long_failure_message_is_bounded` |
 | CM-32 | Every socket operation on an accepted connection is bounded by a single time budget, so a client that stops talking — or promises a body and never sends it — cannot hold its thread open. | `gui.py:56-62` | `tests/test_gui_integration.py::StalledConnectionTests::test_stalled_bodies_are_cut_off_and_the_server_keeps_serving` |
+| CM-33 | The release path refuses to continue when the platform reports more workflow registrations than the one page it reads can hold, so a retired publisher that was re-enabled cannot slip through on a page nobody read. | `.github/workflows/build-candidate.yml:785-798` | `tests/test_publish_guards.py::RetiredPublisherGuardTests::test_more_registrations_than_the_page_holds_refuses` |
+| CM-34 | A notarized release cannot quietly ship an ad-hoc-signed artifact: the dispatch path refuses a build that produced one without the notarisation credential, and accepts a build that refused for its own stated reason. | `.github/workflows/build-candidate.yml:344-346` | `tests/test_publish_guards.py::CredentialGuardTests::test_the_notarisation_guard_refuses_a_build_that_succeeded_and_accepts_one_that_refused` |
+| CM-35 | A publish signs the checksum manifest with the release key and refuses to ship an unsigned manifest when that key is absent. | `.github/workflows/build-candidate.yml:934-937` | `tests/test_publish_guards.py::CredentialGuardTests::test_the_release_key_guard_refuses_a_publish_without_a_key_and_signs_with_one` |
+| CM-36 | A connection the server has retired is closed without an answer, so a slot that was taken back never parses a request and never reaches the operator's console. | `gui.py:669-679` | `tests/test_gui_integration.py::RetiredConnectionGuardTests::test_a_retired_connection_is_closed_without_an_answer` |
+| CM-37 | A connection claims a busy slot only once a complete request head has arrived, and the page's token plays no part in that claim: the token gates the routes that act, not the slot that waits. | `gui.py:146-156` | `tests/test_gui_integration.py::SlotClaimSemanticsTests::test_a_complete_request_head_claims_the_slot_without_the_token` |
 
 ## Recorded, no control claimed
 

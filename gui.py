@@ -120,10 +120,10 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
     from the moment it is accepted until a complete request head has arrived,
     and idle again between keep-alive requests, so silence and a slow drip are
     both idle. Only a connection actually being served is protected, and
-    reaching that state requires a complete request — which, for every route
-    that does anything, requires the token the page carries. A newcomer is
-    refused only when every admitted connection is busy; the ceiling is still a
-    ceiling.
+    reaching that state requires a complete request head — nothing more. The
+    token the page carries is required only by the routes that do something,
+    not by the slot itself. A newcomer is refused only when every admitted
+    connection is busy; the ceiling is still a ceiling.
     """
 
     daemon_threads = True
@@ -152,7 +152,7 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
         with self._lock:
             if connection not in self._admitted:
                 return False
-            self._busy.add(connection)
+            self._busy.add(connection)  # CONTROL: CM-37
             return True
 
     def mark_idle(self, connection):
@@ -669,7 +669,7 @@ class LocalApp:
             def parse_request(self):
                 if self._ask_server("is_retired", False):
                     # Retired while waiting: close without answering, so the
-                    # operator's console sees no broken-pipe traceback.
+                    # operator's console sees no broken-pipe traceback. CONTROL: CM-36
                     self.close_connection = True
                     return False
                 parsed = super().parse_request()

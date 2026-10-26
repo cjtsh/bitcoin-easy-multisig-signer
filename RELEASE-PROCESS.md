@@ -155,7 +155,7 @@ independent reviewer records it.
 
 Cycles 1 and 2 spent more effort re-proving the software than building it.
 These rules exist so cycle N does not repeat that. They apply to every future
-revision, including 0.7.0.
+revision, including 0.7.1.
 
 **A test that cannot fail does not count as a fix.** Every load-bearing
 money-path or release-path control needs a tripwire demonstrated able to fail:
@@ -251,7 +251,7 @@ color-team report as the fix list. Close each finding with a test demonstrated
 able to fail, or with a written owner acceptance — never by silence.
 `tests/test_ledger_completeness.py` holds that to the plan: every finding the
 cycle's work orders schedule must have exactly one row in
-`releases/PATCH-0.7.0.md`, every row must state a severity and cite a closing
+`releases/PATCH-0.7.1.md`, every row must state a severity and cite a closing
 test that loads, and a row may cite no test only if it is a deferral the plan
 itself makes.
 

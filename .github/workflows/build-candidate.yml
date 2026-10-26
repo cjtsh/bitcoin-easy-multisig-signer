@@ -343,7 +343,7 @@ jobs:
           LIBUSB_SHA256: ${{ vars.LIBUSB_SHA256 }}
           # RELEASE=1 is the notarized path. It is opt-in per dispatch and fails
           # closed when the credentials are absent, so a dispatched release can
-          # never quietly ship an ad-hoc-signed artifact.
+          # never quietly ship an ad-hoc-signed artifact. CONTROL: CM-34
           RELEASE: ${{ inputs.notarize && '1' || '0' }}
           BUILD_DEPS_PREPARED: '1'
           MAC_SIGN_IDENTITY: ${{ inputs.notarize && vars.MAC_SIGN_IDENTITY || '' }}
@@ -795,7 +795,7 @@ jobs:
         # it, so more registrations than the page holds is a refusal. The read
         # stays a plain single page rather than `--paginate`, so the guard does
         # not depend on a runner's `gh` version supporting pagination flags:
-        # the count, not the flag, is what makes this fail closed.
+        # the count, not the flag, is what makes this fail closed. CONTROL: CM-33
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -934,7 +934,7 @@ jobs:
         # Only the publish path signs. A candidate must be promotable byte-for-byte,
         # so nothing about its files changes here; the signature is added over the
         # verified candidate sums. Publishing without the key fails closed with the
-        # one-time setup in SIGNING.md.
+        # one-time setup in SIGNING.md. CONTROL: CM-35
         if: ${{ inputs.publish }}
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
