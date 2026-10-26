@@ -27,8 +27,8 @@ guard refused when the platform reported more registrations than the one
 page it reads; and the Windows startup dialog showed the same bounded
 record as the log.
 The release is built and published from `main` through the unified
-pipeline; until its promote run lands, the newest published tag remains
-[`v0.7.0`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.0);
+pipeline, and the newest published tag is
+[`v0.7.1`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.1);
 the revision it replaces, `v0.6.9`, was the
 cycle-5 remediation whose `CONTROLS.md` citations are content-bound to their
 own markers, whose first-line money-path guards are pinned by their own
@@ -109,14 +109,14 @@ See [`releases/LINUX-0.6.4-ACCEPTANCE.md`](releases/LINUX-0.6.4-ACCEPTANCE.md).
 **Do not restate a "latest published version is X" here** — that is the
 CT-46/CT-71 defect class and it goes stale the moment `version.py` moves.
 The published set is whatever that page and [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md)
-carry. As of 2026-10-16 that is
-[v0.7.0](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.0),
-published 2026-10-16T06:15:36Z as tag `v0.7.0` on commit
-`4fe8f2955e29cae6838e2ba0b8029c9abae9fdeb` by successful candidate run
-[38854414566](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38854414566)
+carry. As of 2026-10-26 that is
+[v0.7.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.1),
+published 2026-10-26T18:13:21Z as tag `v0.7.1` on commit
+`8923ca0273380a9cb1ea7e7e964c6332dda5a777` by successful candidate run
+[40370767634](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40370767634)
 and promote run
-[38857329074](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/38857329074)
-(`publish=true`, `candidate_run_id=38854414566`). The release page
+[40372606443](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40372606443)
+(`publish=true`, `candidate_run_id=40370767634`). The release page
 carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with
 `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Not a draft, not a prerelease.
 Version 0.6.7 is the Color Team cycle-3 build-process remediation: one
@@ -165,6 +165,6 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.0.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.0.md) is the Color Team plan for the published `v0.7.0` revision, a follow-up cycle in the `v0.6.8` lineage. Its section 9 awaits the owner's sign-off. The plan, lock, report and public security statement of the `v0.6.9` cycle are in this branch as prior-cycle records; the artifacts of the earlier cycles remain in the tag tree of the revision each describes.
+**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.1.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.1.md) is the Color Team plan for the published `v0.7.1` revision, a follow-up cycle in the `v0.6.8` lineage; it is signed Bitseeker LLC, 26 Oct 2026. The plan, lock, report and public security statement of the `v0.7.0` and earlier cycles are prior-cycle records under [`audit-history/`](audit-history/); the artifacts inside the tag trees remain untouched.
 
 **Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.

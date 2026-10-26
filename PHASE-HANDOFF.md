@@ -50,10 +50,12 @@ forward against tag `v0.6.7` and signed Bitseeker LLC on 2026-10-07
 (`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.6.7.md`, now in the
 `v0.6.7` tag tree only). It is **not** an input to the current audit. The owner
 directed a fresh, unbiased baseline on 2026-10-11, and the repository root now
-carries `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.0.md` for the
-published `v0.7.0` revision. That cycle is a follow-up in the `v0.6.8` lineage:
-the `v0.6.9` plan, lock, report and public security statement are its inputs,
-and the scope of the `v0.6.8` baseline is carried forward unchanged. Plans,
+carries `bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.1.md` for the
+published `v0.7.1` revision, signed Bitseeker LLC on 26 Oct 2026. That cycle is a
+follow-up in the `v0.6.8` lineage: the `v0.7.0` plan, lock, report and public
+security statement are its inputs — moved unedited into `audit-history/` with
+the `v0.6.8` and `v0.6.9` records — and the scope of the `v0.6.8` baseline is
+carried forward unchanged. Plans,
 locks, reports and grades of the earlier cycles may not be cited by the panel.
 Treat the older plans and the reports they cite as history, never as a current
 clearance — see the `v0.6.8` plan's §6, *The legacy audit artifacts inside the
