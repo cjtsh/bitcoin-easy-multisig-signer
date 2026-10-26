@@ -1216,6 +1216,18 @@ class LocalApp:
                     raise WalletError(
                         "The confirmed transaction is not the one prepared. Nothing was sent."
                     )
+                # CT-22: the pending-payment pause is asserted here, at the submit
+                # that moves the money, not only at prepare. The pause used to arm
+                # after a broadcast and gate only _prepare, so a second reviewed
+                # payment could go out while the first was still unconfirmed
+                # whenever the explorer stayed silent about the first spend.
+                # CONTROL: CM-38
+                with state.lock:
+                    pending_txid = state.pending_broadcast_txid
+                if pending_txid:
+                    raise WalletError(
+                        "A payment from this wallet is waiting for one confirmation. "
+                        "Check that it went through before sending another.")
                 # CT-13: the explorer pre-checks run before the session lock. They
                 # do not mutate prepared state, and holding the lock across a
                 # slow explorer would stall every other operation. The broadcaster
@@ -1251,6 +1263,13 @@ class LocalApp:
                 # wallet that submitted it even if another wallet replaced it
                 # while the request was in flight.
                 with state.lock:
+                    # CT-22: re-asserted under the pre-submit lock, so two
+                    # requests that both passed the check above cannot both
+                    # submit. CONTROL: CM-38
+                    if state.pending_broadcast_txid:
+                        raise WalletError(
+                            "A payment from this wallet is waiting for one confirmation. "
+                            "Check that it went through before sending another.")
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The payment changed before broadcast.")
                     submitting_wallet = wallet_identity(state.record, chain)

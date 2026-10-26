@@ -658,5 +658,50 @@ class OutboundDeadlineTests(unittest.TestCase):
         self.assertLess(elapsed, 4.0, "the broadcast call outlived its deadline")
 
 
+class _NonHttpHandler(http.server.BaseHTTPRequestHandler):
+    """Answers every request with bytes that are not HTTP at all."""
+
+    def log_message(self, *_args):
+        pass
+
+    def _garbage(self):
+        try:
+            self.wfile.write(b"\x00\x01 not-http\r\n\r\n")
+            self.wfile.flush()
+        except OSError:
+            return
+
+    do_GET = _garbage
+    do_POST = _garbage
+
+
+class BrokenReplyTests(unittest.TestCase):
+    """CT-25: a peer that is not speaking HTTP is a transport failure, by name.
+
+    A real socket is required: ``BadStatusLine`` is raised by ``http.client``
+    while parsing the reply, so a patched ``urlopen`` cannot produce it. Both
+    callers below matter differently — a broken explorer read must say the
+    explorer could not be reached, and a broken broadcaster reply must be an
+    unknown outcome, because the node may already have relayed the transaction.
+    """
+
+    def setUp(self):
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), _NonHttpHandler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}/api"
+
+    def test_an_explorer_that_does_not_speak_http_is_a_named_outage(self):
+        with patch("wallet_service.time"):
+            with self.assertRaisesRegex(WalletError, "Could not connect"):
+                explorer_get("/tx/" + "00" * 32 + "/status", chain="testnet4",
+                             base_url=self.base)
+
+    def test_a_broadcaster_that_does_not_speak_http_is_an_unknown_outcome(self):
+        with self.assertRaises(BroadcastOutcomeUnknown):
+            broadcast_transaction("00" * 50, "testnet4", self.base)
+
+
 if __name__ == "__main__":
     unittest.main()

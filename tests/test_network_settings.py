@@ -2,7 +2,9 @@
 
 import io
 import json
+import socket
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -162,6 +164,47 @@ class PublishedChainConstantsTests(unittest.TestCase):
                    return_value=Response(signet_genesis.encode())):
             with self.assertRaisesRegex(SettingsError, "wrong Bitcoin network"):
                 verify_esplora("main", "https://ordinary-signet.example/api")
+
+
+class BrokenReplyTests(unittest.TestCase):
+    """CT-25: a reply that is not HTTP, or that stops early, is unavailability.
+
+    These tests use a real socket on purpose. The shapes at issue —
+    ``BadStatusLine``, ``RemoteDisconnected``, ``IncompleteRead`` — are raised by
+    ``http.client`` while it parses a reply, so a patched ``urlopen`` cannot
+    produce them; that is exactly why every earlier test in this file stayed
+    green while the v0.7.1 audit watched the documented refusal get replaced by a
+    generic 500.
+    """
+
+    def _serve(self, reply):
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        self.addCleanup(listener.close)
+        port = listener.getsockname()[1]
+
+        def answer():
+            try:
+                connection, _peer = listener.accept()
+            except OSError:
+                return
+            with connection:
+                connection.recv(65536)
+                connection.sendall(reply)
+
+        threading.Thread(target=answer, daemon=True).start()
+        return f"http://127.0.0.1:{port}/api"
+
+    def test_a_reply_that_is_not_http_is_reported_as_unavailable(self):
+        base = self._serve(b"\x00\x01 not-http\r\n\r\n")
+        with self.assertRaisesRegex(SettingsError, "Check its /api URL and availability"):
+            verify_esplora("main", base)
+
+    def test_a_reply_that_stops_before_the_hash_is_refused_by_name(self):
+        base = self._serve(b"HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\n")
+        with self.assertRaisesRegex(SettingsError, "did not return an Esplora block hash"):
+            verify_esplora("main", base)
 
 
 if __name__ == "__main__":

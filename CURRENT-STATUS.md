@@ -1,18 +1,25 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.7.1 is the Color Team cycle-7 build-process
-remediation of the `v0.7.0` tree.** Every finding the cycle's plan
-schedules has exactly one row in `releases/PATCH-0.7.1.md` with a
-severity and a closing test the build loads, so nothing is closed by
-silence; the loopback server's retired-connection guard is pinned by a
-test that goes red when the guard is removed; the control inventory now
-parses the GitHub workflow files, so the retired-publisher pagination
-guard and the notarisation and checksum-signing credential guards are
-tracked rows with executable pins; the busy-slot docstring says what the
-slot actually requires; and the terms of use in `DISCLAIMER.md`
-incorporate the Bitseeker LLC standard legal framework published at
-[cjtsh/software-disclaimer](https://github.com/cjtsh/software-disclaimer).
-No wallet, transaction, signing or broadcast behaviour changed.
+**Source revision 0.7.2 answers the ⚠️ CONDITIONAL Color Team audit of the
+`v0.7.1` tree.** The finding that held the grade was CT-22: a wallet's
+unconfirmed-payment pause gated preparation but not the broadcast, so a
+second, fully reviewed payment could be submitted while the first was
+still unconfirmed whenever the explorer said nothing about the first
+spend. `_broadcast` now refuses at the submit and re-asserts the same
+refusal under the lock the submit takes, so two requests that both pass
+the early check cannot both go out. CT-24 refuses a transaction that
+names the same Bitcoin output twice before any explorer is asked, and
+CT-25 adds `http.client.HTTPException` to the transport tuples, so a peer
+that is not speaking HTTP is the documented refusal on the settings,
+explorer and broadcast paths instead of a fixed 500 — and on the
+broadcast path it still pauses the wallet as an unknown outcome. Rows
+`CM-38`…`CM-42` in `CONTROLS.md` pin all of it, each break-and-watched on
+a disposable copy, and `releases/PATCH-0.7.2.md` carries one closing row
+per finding. Unlike 0.7.1, this revision is not engine-unchanged: three
+app files change — `gui.py` (the broadcast gate), `wallet_service.py` (the
+duplicated-input refusal and one catch tuple) and `network_settings.py`
+(one catch tuple) — and no transaction construction, signing, fee or
+network rule changes with them.
 Version 0.7.0 was the Color Team cycle-6 build-process remediation of the
 `v0.6.9` tree: every finding the cycle's plan scheduled had exactly one
 row in `releases/PATCH-0.7.0.md` with a severity and a closing test the
@@ -27,14 +34,15 @@ guard refused when the platform reported more registrations than the one
 page it reads; and the Windows startup dialog showed the same bounded
 record as the log.
 The release is built and published from `main` through the unified
-pipeline, and the newest published tag is
-[`v0.7.1`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.1);
-the revision it replaces, `v0.6.9`, was the
-cycle-5 remediation whose `CONTROLS.md` citations are content-bound to their
-own markers, whose first-line money-path guards are pinned by their own
-named tests, and whose download page derives its version from `version.py`.
-The wallet, transaction, signing and broadcast engine is
-unchanged from 0.6.9. Cycle 5 was the conversion re-check of the
+pipeline; until this tree's promote run lands, the newest published tag is
+[`v0.7.1`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.1),
+published 2026-10-26T18:13:21Z as tag `v0.7.1` on commit
+`8923ca0273380a9cb1ea7e7e964c6332dda5a777` by successful candidate run
+[40370767634](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40370767634)
+and promote run
+[40372606443](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40372606443).
+The revision it replaces, `v0.7.0`, was the cycle-6 remediation described
+above. Cycle 5 was the conversion re-check of the
 `v0.6.8` grade: the panel verified all twelve prior findings fixed **by
 execution** — the referee re-broke each fix and watched its new test go
 red — and held the grade at **⚠️ CONDITIONAL** on two new Lows, `CT-14`

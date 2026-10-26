@@ -700,6 +700,76 @@ class SendFlowTests(unittest.TestCase):
         self.assertEqual(self.app.pending_broadcast_txid, txid)
         self.assertTrue(self.app.pending_broadcast_unknown)
 
+    def test_broadcast_refuses_while_a_payment_waits_for_confirmation(self):
+        """CT-22: the pause is asserted at the submit, not only at prepare.
+
+        The v0.7.1 audit demonstrated a second, fully reviewed and separately
+        consented payment going out while the first was still unconfirmed: the
+        pause armed after a broadcast but gated only _prepare, and a silent
+        explorer reports no pending output, so the scan allowed the second
+        payment. The refusal has to live here, at the request that moves the
+        money. The first payment below was submitted (so the pause is armed) and
+        the explorer has said nothing about it (so the scan is clean).
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        self.app.pending_broadcast_txid = "ab" * 32
+        self.app.pending_broadcast_unknown = False
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.verify_esplora"), patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            send.assert_not_called()
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("waiting for one confirmation",
+                          json.load(err.exception)["error"])
+            # The refusal comes before any explorer is asked about the wallet's
+            # outputs: a paused wallet must not leak its addresses to a third
+            # party while being told to wait.
+            self.outpoint_check.assert_not_called()
+        self.assertEqual(self.app.pending_broadcast_txid, "ab" * 32)
+
+    def test_a_broadcast_racing_a_pending_payment_is_refused_under_the_lock(self):
+        """CT-22: the check is re-asserted under the lock the submit takes.
+
+        The plain case above passes even if only one of the two checks exists.
+        This test removes that ambiguity: the pause is armed *during* the
+        request, after the early check has already passed, so only the check
+        inside the pre-submit lock can refuse it. That is the window the audit
+        named — two requests that both pass the early check must not both submit.
+        """
+        import gui as gui_module
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        real_finalize = gui_module.finalize_multisig
+
+        def finalize_while_another_payment_lands(packet, expected):
+            self.app.pending_broadcast_txid = "cd" * 32
+            return real_finalize(packet, expected)
+
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.verify_esplora"), patch("gui.broadcast_transaction") as send, \
+                patch("gui.finalize_multisig",
+                      side_effect=finalize_while_another_payment_lands):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            send.assert_not_called()
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("waiting for one confirmation",
+                          json.load(err.exception)["error"])
+
     def test_mismatched_broadcast_txid_is_unknown_and_blocks_retry(self):
         result, keys = self.prepare_a_reviewed_transaction()
         expected_txid = result["txid"]

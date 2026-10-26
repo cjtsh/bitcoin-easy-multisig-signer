@@ -22,6 +22,15 @@ def packet_with_one_input():
     return psbt.PSBT(tx)
 
 
+def packet_with_a_repeated_input():
+    tx = transaction.Transaction(
+        vin=[transaction.TransactionInput(bytes(range(32)), 1),
+             transaction.TransactionInput(bytes(range(32)), 1)],
+        vout=[transaction.TransactionOutput(1000, Script(b"\x6a"))],
+    )
+    return psbt.PSBT(tx)
+
+
 class OutpointCheckTests(unittest.TestCase):
     def test_mainnet_uses_a_distinct_operator_even_if_primary_is_blockstream(self):
         self.assertEqual(independent_explorer("main", PRIMARY), SECONDARY)
@@ -78,6 +87,27 @@ class OutpointCheckTests(unittest.TestCase):
                 packet_with_one_input(), "main", PRIMARY, SECONDARY,
                 lambda _path, **_kwargs: {"confirmed": False},
             )
+
+    def test_a_duplicated_input_is_refused_before_any_explorer_is_asked(self):
+        """CT-24: one outpoint cannot fund two inputs, and the refusal is free.
+
+        Proven unreachable in the product (the scan deduplicates, the builder and
+        the transaction-identity gate each refuse it, and consensus would refuse
+        it last), so this is hardening rather than a live path. It is pinned
+        because the check is what makes the claim true, and because it must come
+        before any explorer is asked about an outpoint the transaction names more
+        than once.
+        """
+        asked = []
+
+        def get(path, **_kwargs):
+            asked.append(path)
+            return {"confirmed": True} if path.endswith("/status") else {"spent": False}
+
+        with self.assertRaisesRegex(WalletError, "spends the same Bitcoin output twice"):
+            check_selected_outpoints(packet_with_a_repeated_input(), "main",
+                                     PRIMARY, SECONDARY, get)
+        self.assertEqual(asked, [])
 
     def test_outage_and_same_source_fail_closed(self):
         with self.assertRaisesRegex(WalletError, "separate valid source"):

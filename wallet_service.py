@@ -10,6 +10,7 @@ import json
 import re
 import ssl
 import time
+from http.client import HTTPException
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -122,7 +123,12 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
             "The network refused this transaction"
             + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
         ) from exc
-    except (URLError, TimeoutError, OSError) as exc:
+    # CT-25: a response that is not HTTP at all, or a connection dropped
+    # mid-response, raises http.client.HTTPException shapes. A submit whose reply
+    # was lost is an unknown outcome, not a refusal: the node may have accepted
+    # the transaction, so the pause has to arm instead of the money staying
+    # retryable. CONTROL: CM-41
+    except (URLError, HTTPException, TimeoutError, OSError) as exc:
         raise BroadcastOutcomeUnknown(
             "The broadcast result is unknown. Do not send this payment again. "
             "Check the transaction on an explorer or ask for help before proceeding."
@@ -166,7 +172,10 @@ def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
             else:
                 detail = f"returned HTTP {exc.code}. Check the explorer in Advanced network settings."
             raise WalletError(f"{chain} explorer {detail} No zero balance is claimed.") from exc
-        except (URLError, TimeoutError, OSError) as exc:
+        # CT-25: the same non-HTTP and dropped-connection shapes reach this
+        # contract; without them here an explorer mid-outage surfaced as a
+        # fixed 500 instead of the named refusal. CONTROL: CM-42
+        except (URLError, HTTPException, TimeoutError, OSError) as exc:
             reason = exc.reason if isinstance(exc, URLError) else exc
             if isinstance(reason, ssl.SSLError):
                 raise WalletError(
@@ -201,6 +210,19 @@ def check_selected_outpoints(packet: psbt.PSBT, chain: str, primary_base: str,
         raise WalletError("Independent output check has no separate valid source.")
     if not packet.tx.vin:
         raise WalletError("The transaction has no inputs to verify.")
+    seen_inputs = set()
+    for vin in packet.tx.vin:
+        # CT-24: the same outpoint cannot fund two inputs. Consensus refuses a
+        # transaction that spends one output twice, so this is defence in depth
+        # rather than a live path: the refusal happens here, before an explorer
+        # is asked about an outpoint the transaction names more than once.
+        outpoint = (bytes(vin.txid).hex(), vin.vout)
+        if outpoint in seen_inputs:  # CONTROL: CM-39
+            raise WalletError(
+                "The transaction spends the same Bitcoin output twice. Refresh the "
+                "balance and prepare it again; nothing was sent."
+            )
+        seen_inputs.add(outpoint)
     checked_funding = set()
     for vin in packet.tx.vin:
         txid, vout = vin.txid.hex(), vin.vout

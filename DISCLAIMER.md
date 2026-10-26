@@ -17,10 +17,13 @@ inspect, test, audit, and validate. Public source availability is not a claim
 that a particular release has received a professional or independent security
 audit.
 
-Version 0.7.1 is the current source revision, and like 0.7.0 before it, it is a
-build-process remediation: it changes how a release is built and verified, not how
-a payment is made. The wallet, signing and broadcast engine is unchanged from
-0.5.1, the first published build with Bitcoin mainnet broadcast capability.
+Version 0.7.2 is the current source revision. Unlike 0.7.1 and 0.7.0 before it,
+it changes how the app itself behaves, in two narrow places: a second payment from
+a wallet whose earlier payment is still waiting for one confirmation is refused on
+the final screen, and a transaction that names the same Bitcoin output twice is
+refused. Both refusals replace a reliance on the explorer noticing the problem.
+Nothing changes in how an honest payment is prepared, signed, checked or
+broadcast, in which networks are offered, or in the fee ceilings.
 The app runs one engine across Testnet4, Mutinynet, and mainnet, and asks hardware
 devices to sign through Bitcoin Core HWI (HWI). Mainnet submission requires an
 explicit confirmation on the final review screen and a separate backend opt-in

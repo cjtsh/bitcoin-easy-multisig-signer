@@ -85,7 +85,7 @@ The app will not broadcast on its own. If you are uncertain, do not check the bo
 
 ## Step 7 — Wait for confirmation
 
-After a broadcast is accepted, the app reports that the payment is waiting for one confirmation. This can take time. The pending notice is the source of truth; a missing status or a link opening in a browser does not mean the payment is confirmed. Use **Check again** later. Do not make another payment from that wallet until the app reports one confirmation.
+After a broadcast is accepted, the app reports that the payment is waiting for one confirmation. This can take time. The pending notice is the source of truth; a missing status or a link opening in a browser does not mean the payment is confirmed. Use **Check again** later. Do not make another payment from that wallet until the app reports one confirmation; from 0.7.2 the app refuses that second payment on the final screen rather than relying on the explorer to notice the first spend.
 
 ![Illustration of the pending-payment notice. It makes clear that a missing status is not confirmation.](assets/manual/manual-08-pending-confirmation.svg)
 
@@ -135,4 +135,4 @@ Bitcoin Easy Signer is free, open-source community software maintained by Bitsee
 
 ---
 
-*This manual is for Bitcoin Easy Signer version 0.7.1. Read the [project website](https://cjtsh.github.io/bitcoin-easy-multisig-signer/) and the [current safety notice and terms of use](DISCLAIMER.md) before use.*
+*This manual is for Bitcoin Easy Signer version 0.7.2. Read the [project website](https://cjtsh.github.io/bitcoin-easy-multisig-signer/) and the [current safety notice and terms of use](DISCLAIMER.md) before use.*
