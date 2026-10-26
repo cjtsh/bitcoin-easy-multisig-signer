@@ -10,7 +10,7 @@
 | **Auditor** | ZCode 3.16.3 · session `not exposed by the harness` · model `GLM-5.3-Flash (declared by the harness; self-description, not an independent verification)` |
 | **Same session for both?** | no — the surveyor's session identifier is present and names a DeepSeek Harness session; the auditor runs in ZCode, which exposes no session identifier. The identifiers cannot be identical: different runs. This establishes different runs, not different models — independence rests on the operator's declaration that the surveyor seat ran on the DeepSeek Harness. |
 | **Locked at** | `2026-10-26T18:43:52Z` |
-| **Published before the panel ran** | this file, committed to `main` before the first specialist was dispatched |
+| **Published before the panel ran** | commit `cbd3609` on `main` (this file, published before the first specialist was dispatched) |
 | **Plan SHA-256 at the end of the audit** | _(to be filled by the referee)_ |
 
 Cycle: `v0.7.1` — a follow-up (conversion re-check) in the `v0.6.8` lineage. Scope
