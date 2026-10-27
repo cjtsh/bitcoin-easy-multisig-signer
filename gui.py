@@ -44,7 +44,8 @@ from probe import (MAX_BSMS_BYTES, ProbeError, device_advice, devices_need_atten
                    probe_devices_detailed, sign_psbt_with_device, verify_signer_device)
 from signing import (SigningError, accept_signature_update, finalize_multisig,
                      is_complete, signatures_collected, signed_by_signers)
-from wallet_service import (BroadcastOutcomeUnknown, WalletError, broadcast_transaction,
+from wallet_service import (BroadcastNotSent, BroadcastOutcomeUnknown, WalletError,
+                            broadcast_transaction,
                             build_unsigned_psbt, check_selected_outpoints,
                             estimate_fee_preview, explorer_get, scan_wallet, wallet_summary)
 
@@ -1153,6 +1154,7 @@ class LocalApp:
                 if (payment.wallet is not record or payment.chain != chain
                     or payment.scan_generation != generation):
                     raise WalletError("The wallet or balance changed. Review the payment again.")
+                # CONTROL: CM-48
                 if data.get("preparation_id") != payment.review_id:
                     raise WalletError(f"Review the current transaction before {action}.")
                 payment.checked_psbt()
@@ -1250,6 +1252,7 @@ class LocalApp:
                 """Compare every final output and fee with the accepted review."""
                 outputs = packet.tx.vout
                 network = NETWORKS[record.network]
+                # CONTROL: CM-47
                 if (not review or len(outputs) != (1 if review["send_all"] else 2)
                     or final["txid"] != review["txid"]
                     or final["fee_sats"] != review["fee_sats"]
@@ -1360,27 +1363,40 @@ class LocalApp:
                             "The server reported a different transaction ID. The result "
                             "is unknown. Do not send again; check an explorer first."
                         )
-                except BroadcastOutcomeUnknown as exc:
-                    # The network request may have succeeded before its response
-                    # was lost. Retrying the reviewed payment is unsafe until a
-                    # person independently checks the expected txid.
+                except BroadcastNotSent:
+                    # The only refusal the app can prove: it was raised before a
+                    # byte of the transaction was written. Nothing stays in
+                    # flight and nothing is recorded, so the reviewed payment is
+                    # still there to retry.
+                    with state.lock:
+                        state.broadcast_in_flight.pop(wallet, None)
+                    raise
+                except BaseException as exc:
+                    # CT-36/CT-37: once the submit call has been made, anything
+                    # that is not a provable not-sent refusal is an unknown
+                    # outcome. A server that receives the complete signed bytes
+                    # and then answers 400 has still received them; a raw
+                    # exception escaping the submit code is evidence of nothing.
+                    # Either way the payment is paused and recorded, never left
+                    # retryable on the strength of a status code.
+                    # CONTROL: CM-46
+                    raised = exc
+                    if not isinstance(exc, BroadcastOutcomeUnknown):
+                        raised = BroadcastOutcomeUnknown(
+                            "The broadcast result is unknown: the app could not "
+                            "tell whether this payment was sent. Do not send it "
+                            "again; check an explorer first."
+                        )
                     with state.lock:
                         state.broadcast_in_flight.pop(wallet, None)
                         if state.prepared is payment:
                             state.prepared = None
                             state.scan = None
                         state.record_pending(wallet, txid, True)
-                    exc.explorer = (
+                    raised.explorer = (
                         CHAIN_CONFIGS[chain].web_url + "/tx/" + txid
                         if chain in CHAIN_CONFIGS else None)
-                    raise
-                except BaseException:
-                    # A definite refusal sent nothing, so nothing stays in
-                    # flight and nothing is recorded: the reviewed payment is
-                    # still there to retry.
-                    with state.lock:
-                        state.broadcast_in_flight.pop(wallet, None)
-                    raise
+                    raise raised from (None if raised is exc else exc)
                 with state.lock:
                     # The funds are spent now, so anything cached is stale -- but
                     # only clear state that still describes this payment.

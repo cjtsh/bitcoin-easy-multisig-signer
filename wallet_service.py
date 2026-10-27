@@ -30,7 +30,7 @@ from embit.descriptor.miniscript import Multi, Sortedmulti
 from embit.networks import NETWORKS
 
 from network_config import NETWORKS as CHAIN_CONFIGS, for_record_network
-from network_settings import validate_esplora_url
+from network_settings import SettingsError, validate_esplora_url
 from version import APP_VERSION
 from probe import ProbeError, WalletRecord
 
@@ -58,6 +58,17 @@ class BroadcastOutcomeUnknown(WalletError):
     """The submit request left this app, but acceptance was not established."""
 
 
+class BroadcastNotSent(WalletError):
+    """A refusal this app can prove happened before any byte was written.
+
+    Only the checks made before the POST is sent qualify: an unsupported
+    network, a missing mainnet opt-in, an unusable or non-hex transaction, or a
+    configured endpoint the settings rules reject. Everything that happens once
+    the complete signed transaction is on the wire is the server's claim, not
+    evidence that nothing was sent, so it is reported as
+    `BroadcastOutcomeUnknown` instead (CT-36)."""
+
+
 def check_fee_safety(fee: int, amount: int, fee_rate: int) -> str:
     """Hard stop on extreme fees; return an extra-review warning for unusual ones."""
     if fee > MAX_ESTIMATED_FEE_SATS:  # CONTROL: CM-25
@@ -80,20 +91,29 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
 
     Redirects are refused and TLS is verified, exactly as for every other outbound
     request. The endpoint's own rejection reason is surfaced, because "bad-txns-..."
-    from the node is far more useful than a generic failure.
+    from the node is far more useful than a generic failure -- but it is surfaced
+    as part of an *unknown* outcome, never as a promise that nothing was sent.
+
+    Only the checks below, which run before the POST is written, raise
+    `BroadcastNotSent`. Everything after that point raises
+    `BroadcastOutcomeUnknown`, because a status code is the server's claim about
+    a request it has already received (CT-36).
     """
     if chain not in EXPLORERS:
-        raise WalletError("Unsupported broadcast network.")
+        raise BroadcastNotSent("Unsupported broadcast network.")  # CONTROL: CM-50
     if chain == "main" and mainnet_opt_in is not True:
-        raise WalletError("Explicit mainnet broadcast confirmation is required.")
+        raise BroadcastNotSent("Explicit mainnet broadcast confirmation is required.")
     raw = (raw_transaction_hex or "").strip().lower()
     if len(raw) < 100 or len(raw) > 2_000_000 or len(raw) % 2:
-        raise WalletError("The finalised transaction is not a usable size.")
+        raise BroadcastNotSent("The finalised transaction is not a usable size.")
     try:
         bytes.fromhex(raw)
     except ValueError as exc:
-        raise WalletError("The finalised transaction is not valid hex.") from exc
-    base = validate_esplora_url(base_url) if base_url is not None else EXPLORERS[chain]
+        raise BroadcastNotSent("The finalised transaction is not valid hex.") from exc
+    try:
+        base = validate_esplora_url(base_url) if base_url is not None else EXPLORERS[chain]
+    except SettingsError as exc:
+        raise BroadcastNotSent(str(exc)) from exc
     request = Request(base + "/tx", data=raw.encode("ascii"), method="POST", headers={
         "User-Agent": f"EasyMultisig/{APP_VERSION}",
         "Content-Type": "text/plain",
@@ -104,24 +124,25 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
                      deadline=deadline) as response:
             body = read_bounded(response, 4096, deadline).decode("ascii", "replace").strip()
     except HTTPError as exc:
+        # CT-36: a refusal is only a refusal if it arrives before the request is
+        # written, and that is decided above, not here. A 4xx is the server
+        # answering after it received the complete signed transaction -- exactly
+        # the same position as a 5xx, and the case a real Esplora answers with
+        # "already in mempool" when it already has the payment. Reporting a
+        # definite refusal would pop the in-flight marker, record nothing and
+        # leave a different payment of the same wallet free to broadcast with no
+        # pause armed. The server's own words are still surfaced, as evidence
+        # for whoever checks the explorer, not as a promise.
         try:
             detail = exc.read(2048).decode("utf-8", "replace").strip()
         except Exception:
             detail = ""
-        if exc.code >= 500:
-            # A server-side failure can arrive after the node has already
-            # accepted and relayed the transaction. Reporting a refusal would
-            # state something we cannot know, and would leave the payment
-            # retryable without the pending-payment pause being armed.
-            raise BroadcastOutcomeUnknown(
-                "The broadcast result is unknown: the server failed while "
-                f"submitting this payment (HTTP {exc.code}), and it may already "
-                "have been accepted. Do not send this payment again. Check the "
-                "transaction on an explorer or ask for help before proceeding."
-            ) from exc
-        raise WalletError(
-            "The network refused this transaction"
-            + (f": {detail[:300]}" if detail else f" (HTTP {exc.code}).")
+        raise BroadcastOutcomeUnknown(  # CONTROL: CM-49
+            "The broadcast result is unknown: the server answered "
+            f"HTTP {exc.code} after receiving this payment, so it may already "
+            "have been accepted. Do not send this payment again. Check the "
+            "transaction on an explorer or ask for help before proceeding."
+            + (f" The server said: {detail[:300]}" if detail else "")
         ) from exc
     # CT-25: a response that is not HTTP at all, or a connection dropped
     # mid-response, raises http.client.HTTPException shapes. A submit whose reply

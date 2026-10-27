@@ -20,7 +20,8 @@ from probe import ProbeError, load_bsms, parse_bsms
 from network_config import NETWORKS as CHAIN_CONFIGS
 from test_probe import sparrow_record, test_record
 from wallet_service import (
-    BroadcastOutcomeUnknown, WalletError, broadcast_transaction, build_unsigned_psbt,
+    BroadcastNotSent, BroadcastOutcomeUnknown, WalletError, broadcast_transaction,
+    build_unsigned_psbt,
     check_fee_safety, estimate_fee_preview,
     explorer_get, scan_wallet, wallet_layout,
     wallet_summary,
@@ -46,15 +47,50 @@ class BroadcastOutcomeTests(unittest.TestCase):
             with self.assertRaisesRegex(BroadcastOutcomeUnknown, "result is unknown"):
                 broadcast_transaction("00" * 50)
 
-    def test_a_client_rejection_remains_a_definite_refusal(self):
-        """A 4xx carrying a node rejection keeps its precise refusal message."""
+    def test_a_client_rejection_is_unknown_not_a_definite_refusal(self):
+        """CT-36: a 4xx arrives after the complete signed bytes were written.
+
+        The server already has the payment when it answers 400, so the status is
+        its claim about a request it received -- the same position as a 5xx. An
+        honest Esplora answers this way ("already in mempool") when it already
+        holds the transaction. Calling it a refusal popped the in-flight marker
+        in the GUI and left a second payment of the same wallet free to
+        broadcast with no pause armed; the v0.7.3 audit demonstrated exactly
+        that. The server's own words are still surfaced, as evidence for whoever
+        checks the explorer.
+        """
         error = HTTPError("https://example.invalid/api/tx", 400, "Bad Request",
                           None, None)
         with patch("wallet_service.urlopen", side_effect=error):
-            with self.assertRaises(WalletError) as caught:
+            with self.assertRaises(BroadcastOutcomeUnknown) as caught:
                 broadcast_transaction("00" * 50)
-        self.assertNotIsInstance(caught.exception, BroadcastOutcomeUnknown)
-        self.assertIn("refused", str(caught.exception))
+        message = str(caught.exception)
+        self.assertIn("HTTP 400", message)
+        self.assertIn("unknown", message)
+        self.assertIn("explorer", message)
+        self.assertNotIn("refused", message)
+
+    def test_only_a_preflight_refusal_is_provably_not_sent(self):
+        """CT-36/CT-37: the not-sent answer is reserved for pre-POST checks.
+
+        Everything the app can prove sent nothing happens before the request is
+        written: an unsupported network, a missing mainnet opt-in, an unusable
+        transaction. Those stay `BroadcastNotSent`, so the GUI can offer the
+        reviewed payment for retry. Anything raised once the request exists is
+        `BroadcastOutcomeUnknown` instead; the class boundary is the pin.
+        """
+        for kwargs, text in (
+            ({"chain": "bogus"}, "Unsupported broadcast network"),
+            ({"chain": "main"}, "mainnet broadcast confirmation"),
+            ({"raw_transaction_hex": "00"}, "not a usable size"),
+            ({"raw_transaction_hex": "zz" * 60}, "not valid hex"),
+        ):
+            with self.subTest(**{k: v for k, v in kwargs.items()
+                                 if k != "raw_transaction_hex"}):
+                args = {"raw_transaction_hex": "00" * 50, **kwargs}
+                with self.assertRaises(BroadcastNotSent) as caught:
+                    broadcast_transaction(**args)
+                self.assertIn(text, str(caught.exception))
 
     def test_a_malformed_body_is_unknown_not_a_transaction_id(self):
         """A 200 whose body is not a 64-character hex txid is not a result.

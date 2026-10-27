@@ -1,7 +1,9 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.7.3 answers the ⛔ BLOCKED Color Team audit of the `v0.7.2`
-tree.** The v0.7.1 conversion criterion was met by execution — the referee re-broke
+**Source revision 0.7.4 answers the ⚠️ CONDITIONAL Color Team audit of the `v0.7.3` tree.** The v0.7.2 block was discharged by execution — the referee re-broke CT-27's marker arm and its clear, CT-29's reconcile and CT-33's transport tuple and watched each named pin go red, CT-32, CT-34 and CT-35 closed by written dated owner acceptance, and all twenty-six earlier findings were carried — and the grade held on two new findings. CT-36 (Medium) is grade-binding: `broadcast_transaction` treated an HTTP 4xx as a definite refusal, so the GUI cleared the in-flight marker and recorded nothing, but such an answer arrives only after the server holds the complete signed transaction — an honest Esplora answers exactly that way when it already has the payment — so a second, separately reviewed payment of the same wallet could leave with the pause unarmed, which the panel demonstrated end to end and the referee re-executed. The engine now raises `BroadcastNotSent` only for the checks that run before the request is written and `BroadcastOutcomeUnknown` for every answer afterwards, 4xx included, carrying the server's own words (`CM-49`, `CM-50`); the GUI asks the exception type rather than the status code, converting any other escape into the same unknown outcome, recording the payment and pausing the wallet (`CM-46`). CT-41 (Low) was the missing alarm: deleting the early in-flight half of the gate reddened nothing, because the request fell through to the in-lock half, so a test now arms the marker before the request and asserts that the refusal comes before any explorer is asked (`CM-38`). The previous window's record is corrected (CT-43) and the inventory now cites `CM-43`'s arm and holds `CM-47` and `CM-48` (CT-39, CT-40). `CONTROLS.md` is at 50 rows, every control this cycle touches was broken on a disposable copy and watched red, and `releases/PATCH-0.7.4.md` carries one closing row per finding. This revision changes app behaviour in one direction: a payment whose outcome the app cannot prove is now unknown and pauses the wallet instead of being treated as refused. It does not change how an honest payment is prepared, signed, checked or broadcast, which networks are offered, or the fee ceilings.
+
+Version 0.7.3 was the cycle-9 remediation: it answered the ⛔ BLOCKED Color Team audit of the `v0.7.2`
+tree. The v0.7.1 conversion criterion was met by execution — the referee re-broke
 CT-22, CT-24 and CT-25 and watched each named pin go red, CT-23 and CT-26 closed by
 dated owner acceptance, and all twenty-one earlier findings were carried — but the
 code added for CT-22 placed its pause in the wrong place in time. Both halves of the
@@ -48,10 +50,14 @@ published 2026-10-27T02:47:51Z as tag `v0.7.3` on commit
 `a227da4073f705cbb4ca47f939e80fc0921c77d7` by candidate run
 [40436678735](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40436678735)
 — its first attempt failed inside the macOS DMG job on the Apple
-staple/validate step and published nothing; that job was re-run once, and
-the re-run finished the notarized DMG, the checksums and the manifest — and
-promote run
-[40439588346](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40439588346).
+staple/validate step and its second at `hdiutil`; neither published anything,
+and the third attempt finished the notarized DMG, the checksums and the
+manifest — and promote run
+[40439588346](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40439588346),
+which published on its first attempt. The whole window is in the release
+history: five dispatched runs and nine attempts, nothing published from any
+failure — including a cancelled run and a candidate dispatched without
+notarization, which the promote's manifest check refused.
 The revision it replaces, `v0.7.2`, was the cycle-8 remediation described
 above. Cycle 5 was the conversion re-check of the
 `v0.6.8` grade: the panel verified all twelve prior findings fixed **by

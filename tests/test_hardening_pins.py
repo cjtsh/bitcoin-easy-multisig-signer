@@ -881,5 +881,55 @@ class VersionStringPins(unittest.TestCase):
             'do not restate a "current published release is X" here'))
 
 
+# ---------------------------------------------------------------------------
+# CT-43 — a release window's failures are part of its record
+# ---------------------------------------------------------------------------
+
+
+class ReleaseWindowDisclosureTests(unittest.TestCase):
+    """CT-43: a window that failed five times has to say so.
+
+    The v0.7.3 row recorded two runs and two attempts while five runs and nine
+    attempts existed: a cancelled dispatch, a candidate built without
+    notarization that the promote's manifest check refused, and one candidate
+    whose first two attempts failed inside the macOS job. Nothing was published
+    from any of them, which is exactly why a summary is tempted to drop them --
+    and why the record under-counting is itself the finding (CT-35's shape
+    recurring). The pin is the list of run ids plus the two counts, because that
+    is the part a rewrite loses first.
+    """
+
+    RUNS = (
+        "40432734241",  # cancelled: dispatched before the tag it named existed
+        "40432782352",  # candidate without notarize=true, refused by the promote
+        "40433752825",  # promote that refused it
+        "40436678735",  # candidate whose attempts 1 and 2 failed, 3 green
+        "40439588346",  # promote that published
+    )
+
+    def test_the_0_7_3_row_names_every_run_of_its_window(self):
+        root = Path(__file__).resolve().parents[1]
+        history = (root / "RELEASE-HISTORY.md").read_text(encoding="utf-8")
+        rows = [line for line in history.splitlines()
+                if line.startswith("| **0.7.3** |")]
+        self.assertEqual(len(rows), 1, "RELEASE-HISTORY.md must hold one 0.7.3 row")
+        row = rows[0]
+        for run in self.RUNS:
+            with self.subTest(run=run):
+                self.assertIn(run, row, f"the 0.7.3 row does not name run {run}")
+        self.assertIn("five dispatched runs and nine attempts", row)
+        self.assertIn("nothing was published from any failure", row)
+
+    def test_the_pin_would_fail_on_the_old_two_run_record(self):
+        """The negative half: the counts and the ids are both load-bearing."""
+        old = ("Published 2026-10-27 as tag `v0.7.3` by candidate run 40436678735 "
+               "and promote run 40439588346 (the candidate's first attempt failed "
+               "and its publish jobs never ran, so nothing was published by it); "
+               "every downloaded asset matched `SHA256SUMS`")
+        self.assertNotIn("five dispatched runs and nine attempts", old)
+        missing = [run for run in self.RUNS if run not in old]
+        self.assertEqual(missing, ["40432734241", "40432782352", "40433752825"])
+
+
 if __name__ == "__main__":
     unittest.main()

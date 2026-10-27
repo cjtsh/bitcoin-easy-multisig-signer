@@ -35,8 +35,9 @@ from network_settings import SettingsError  # noqa: E402
 from probe import ProbeError, parse_bsms  # noqa: E402
 from test_probe import test_record  # noqa: E402
 from test_wallet_service import mainnet_record, mainnet_roots  # noqa: E402
-from wallet_service import build_unsigned_psbt, scan_wallet, wallet_layout  # noqa: E402
-from wallet_service import BroadcastOutcomeUnknown, WalletError  # noqa: E402
+from wallet_service import (BroadcastNotSent, BroadcastOutcomeUnknown, WalletError,
+                            build_unsigned_psbt, scan_wallet,
+                            wallet_layout)  # noqa: E402
 
 
 class SendFlowTests(unittest.TestCase):
@@ -908,7 +909,7 @@ class SendFlowTests(unittest.TestCase):
                    "confirmed_txid": txid}
         with patch("gui.verify_esplora"), \
                 patch("gui.broadcast_transaction",
-                      side_effect=WalletError("The network refused this transaction.")):
+                      side_effect=BroadcastNotSent("Unsupported broadcast network.")):
             with self.assertRaises(HTTPError) as err:
                 self.post("/api/broadcast", payload)
             self.assertEqual(err.exception.code, 400)
@@ -920,6 +921,77 @@ class SendFlowTests(unittest.TestCase):
             sent = self.post("/api/broadcast", payload)
         self.assertEqual(sent["txid"], txid)
         send.assert_called_once()
+
+    def test_a_broadcast_racing_an_in_flight_submit_asks_no_explorer(self):
+        """CT-41: the early in-flight refusal is held by a test that can fail.
+
+        The pending half of the early gate was pinned by
+        `test_broadcast_refuses_while_a_payment_waits_for_confirmation`, which
+        asserts the explorer-facing check is never called. Its in-flight twin at
+        `gui.py:1292-1295` had no such alarm: with it deleted every named pin
+        stayed green, because the request then reached the check inside the
+        pre-submit lock and was refused there. The half's unique job is to refuse
+        before any explorer is asked about the wallet's outputs, so the alarm is
+        that call never happening.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        wallet = wallet_identity(self.app.record, self.app.chain)
+        with self.app.lock:
+            self.app.broadcast_in_flight[wallet] = "ab" * 32
+        self.addCleanup(self._clear_in_flight, wallet)
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.verify_esplora"), patch("gui.broadcast_transaction") as send:
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            send.assert_not_called()
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("still being submitted", json.load(err.exception)["error"])
+            self.outpoint_check.assert_not_called()
+
+    def _clear_in_flight(self, wallet):
+        with self.app.lock:
+            self.app.broadcast_in_flight.pop(wallet, None)
+
+    def test_an_unclassified_submit_failure_pauses_the_wallet(self):
+        """CT-36/CT-37: only a provable not-sent refusal leaves the payment retryable.
+
+        `broadcast_transaction` raises `BroadcastNotSent` for the checks that run
+        before the POST is written, and `BroadcastOutcomeUnknown` for everything
+        after it. Anything else escaping the submit call is evidence of nothing:
+        a raw exception is not a promise that the signed bytes never left, and
+        treating it as a refusal would pop the marker and offer a retry that
+        could send the payment twice. The wallet is paused instead.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction",
+                      side_effect=RuntimeError("the submit code broke")):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(err.exception.code, 409)
+            body = json.load(err.exception)
+        self.assertTrue(body["outcome_unknown"])
+        self.assertIn("explorer", body["error"])
+        self.assertEqual(self.app.broadcast_in_flight, {})
+        self.assertEqual(self.app.pending_broadcast_txid, txid)
+        self.assertTrue(self.app.pending_broadcast_unknown)
+        self.assertIsNone(self.app.prepared,
+                          "an unknown outcome must not be offered for retry")
 
     def test_mismatched_broadcast_txid_is_unknown_and_blocks_retry(self):
         result, keys = self.prepare_a_reviewed_transaction()
