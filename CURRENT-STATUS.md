@@ -43,15 +43,16 @@ page it reads; and the Windows startup dialog showed the same bounded
 record as the log.
 The release is built and published from `main` through the unified
 pipeline. The newest published tag is
-[`v0.7.2`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.2),
-published 2026-10-26T21:48:23Z as tag `v0.7.2` on commit
-`1e51dcfa45d6f61c83c14aeb1998725fbd705ba9` by candidate run
-[40397174519](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40397174519)
-— six attempts: the first five failed inside the macOS DMG job (four on the
-Apple staple/validate step, one on `hdiutil`) and published nothing — and
+[`v0.7.3`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.3),
+published 2026-10-27T02:47:51Z as tag `v0.7.3` on commit
+`a227da4073f705cbb4ca47f939e80fc0921c77d7` by candidate run
+[40436678735](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40436678735)
+— its first attempt failed inside the macOS DMG job on the Apple
+staple/validate step and published nothing; that job was re-run once, and
+the re-run finished the notarized DMG, the checksums and the manifest — and
 promote run
-[40405953511](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40405953511).
-The revision it replaces, `v0.7.1`, was the cycle-7 remediation described
+[40439588346](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40439588346).
+The revision it replaces, `v0.7.2`, was the cycle-8 remediation described
 above. Cycle 5 was the conversion re-check of the
 `v0.6.8` grade: the panel verified all twelve prior findings fixed **by
 execution** — the referee re-broke each fix and watched its new test go
@@ -183,6 +184,6 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.2.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.2.md) is the Color Team plan for the published `v0.7.2` revision, a follow-up cycle in the `v0.6.8` lineage; it is signed Bitseeker LLC, 26 Oct 2026, and [`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.2.md`](bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.2.md) records the plan's SHA-256 at the start of the audit. The plan, lock, report and public security statement of the `v0.7.1` and earlier cycles are prior-cycle records under [`audit-history/`](audit-history/); the artifacts inside the tag trees remain untouched.
+**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.3.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.3.md) is the Color Team plan for the published `v0.7.3` revision, a follow-up conversion re-check in the `v0.6.8` lineage; it is signed Bitseeker LLC, 26 Oct 2026, and [`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.3.md`](bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.3.md) records the plan's SHA-256 at the start of the audit. The plan, lock, report and public security statement of the `v0.7.2` and earlier cycles are prior-cycle records under [`audit-history/`](audit-history/); the artifacts inside the tag trees remain untouched.
 
 **Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.
