@@ -162,8 +162,9 @@ Full transcripts are in `releases/BREAK-AND-WATCH-0.7.5.md`.
   all inside the ranges they already cited. The inventory test still reads 50 rows,
   and the two rows now carry five named pins between them.
 - **The v0.7.4 cycle's public artifacts.** The report, security statement and
-  index row the audit published are committed in this cycle, and the four v0.7.4
-  plan artifacts move to `audit-history/` unedited, as every earlier cycle's did.
+  index row the audit published are already on `main` (`2634db4`), and the four
+  v0.7.4 plan artifacts move to `audit-history/` unedited in this cycle's closing
+  commit, as every earlier cycle's did.
 
 ## 6. The record-keeping notes
 
