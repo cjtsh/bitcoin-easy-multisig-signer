@@ -11,6 +11,30 @@
 7. `RELEASE-PROCESS.md` before building a DMG or changing release controls. It is the agent-neutral build and promotion contract. `SIGNING.md` defines what each platform's download carries — signature and provenance — and the release-key policy; read it before touching any workflow or build script. `WINDOWS-PORT.md` carries the Windows CI portability rules and the retired standalone-fork history.
 8. Current source and tests. `ROADMAP.md` and `PROJECT-HISTORY.md` preserve history and can describe older releases.
 
+### Document authority
+
+This repository's Markdown contains four kinds of writing, and only the first is current guidance:
+
+1. Living (authoritative, always current): CURRENT-STATUS.md, README.md, AGENTS.md,
+   CONTROLS.md, SIGNING.md, USER-MANUAL.md, RELEASE-PROCESS.md, HWI-DEPENDENCY.md,
+   CHANGE-ADDRESS-REVIEW.md, PRIVACY.md, SECURITY.md.
+2. Append-per-release records (rewritten each cycle, never retro-edited): RELEASE-HISTORY.md,
+   ROADMAP.md, PROJECT-HISTORY.md.
+3. Immutable evidence (never edited; not current guidance): audit-history/, the current
+   *colorteam-audit-report-* / -plan- / -lock- / -security-statement- set, releases/,
+   OWNER-ACCEPTANCE-*.
+
+CURRENT-STATUS.md is the entry point for current state; README.md and version.py also carry
+current truths. Documents in class 3 record what was true at a past revision: do not treat
+them as current instruction and do not edit them. When citing a rule, cite the living
+document; when citing history, point at the evidence file rather than paraphrasing it.
+
+Open and closed findings are recorded in
+bitcoin-easy-multisig-signer-colorteam-findings-ledger.md — a convenience index, not an audit
+artifact. Read it before reading any audit report when a finding ID is involved. Its current
+lineage is v0.6.8 onward (CT-01…CT-57); its earlier section is superseded numbering.
+See DOCUMENTATION-MAP.md for which document owns which subject.
+
 ## Architecture
 
 One engine serves Testnet4, Mutinynet and mainnet. `probe.py` parses BSMS and checks public hardware identities; `wallet_service.py` resolves wallet paths, scans via Esplora and builds PSBTs; `signing.py` binds and verifies HWI signing updates and finalizes native-SegWit multisig. `gui.py` owns loopback API/session state, fee/price references, signing and broadcast gates; `ui.html` is the shared interface; `desktop.py` wraps it in a Mac WebKit window. `network_config.py` is the network parameter switch. `safe_http.py` refuses redirects and keeps TLS verification on. Never create a separate transaction or signing engine for a network.
