@@ -934,20 +934,20 @@ class ReleaseWindowDisclosureTests(unittest.TestCase):
     # the undercount shape cannot recur silently in the row that a reader is most
     # likely to consult. This constant moves with each cycle.
     LATEST_WINDOW = {
-        "version": "0.7.4",
-        "runs": ("40498861357", "40500477931"),
-        "counts": "two dispatched runs and three attempts",
+        "version": "0.7.5",
+        "runs": ("40538932972", "40539176161", "40542107224"),
+        "counts": "three dispatched runs and four attempts",
     }
 
     def test_the_newest_row_names_every_run_of_its_window(self):
         """CT-51: the newest window's history is pinned, not only 0.7.3's.
 
-        The v0.7.4 row records its window accurately, but the pin above guarded
+        The v0.7.5 row records its window accurately, but the pin above guarded
         only the v0.7.3 row, so the same understatement could have recurred in
         the newest row with the suite still green -- and at the tag the row does
         not exist yet, because the tag predates its own release record. The
-        constant names the run ids and the counts for the newest row; both are
-        load-bearing.
+        constant names the run ids and the counts for the newest row and moves
+        with each cycle; both are load-bearing.
         """
         root = Path(__file__).resolve().parents[1]
         history = (root / "RELEASE-HISTORY.md").read_text(encoding="utf-8")
@@ -967,11 +967,11 @@ class ReleaseWindowDisclosureTests(unittest.TestCase):
 
     def test_the_newest_window_pin_would_fail_without_a_run(self):
         """The negative half: a row naming only the run that published fails."""
-        old = ("Published 2026-10-27 as tag `v0.7.4` by candidate run 40498861357, "
+        old = ("Published 2026-10-27 as tag `v0.7.5` by promote run 40542107224, "
                "which finished on its first attempt; every downloaded asset "
                "matched `SHA256SUMS`")
         missing = [run for run in self.LATEST_WINDOW["runs"] if run not in old]
-        self.assertEqual(missing, ["40500477931"])
+        self.assertEqual(missing, ["40538932972", "40539176161"])
         self.assertNotIn(self.LATEST_WINDOW["counts"], old)
 
 

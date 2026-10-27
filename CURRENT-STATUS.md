@@ -45,22 +45,25 @@ page it reads; and the Windows startup dialog showed the same bounded
 record as the log.
 The release is built and published from `main` through the unified
 pipeline. The newest published tag is
-[`v0.7.4`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.4),
-published 2026-10-27T12:26:15Z as tag `v0.7.4` on commit
-`9d4d7bb471c80512cac7b7dc6c014855393cac4f` by candidate run
-[40498861357](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40498861357),
+[`v0.7.5`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.5),
+published 2026-10-27T16:54:31Z as tag `v0.7.5` on commit
+`b254fe6f6fc724f25e0c40658bd430c4bffaedcb` by candidate run
+[40539176161](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40539176161),
 which finished the notarized DMG, the checksums and the manifest on its first
 attempt, and promote run
-[40500477931](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40500477931)
+[40542107224](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40542107224)
 — its first attempt failed inside the macOS DMG job on the Apple
 staple/validate step (CloudKit returned "the network connection was lost" after
 the notary had accepted the build), the failed job was re-run once and the
-second attempt published; nothing was published from the failure. The published
+second attempt published; nothing was published from the failure. The window was
+three dispatched runs and four attempts: an earlier candidate dispatch,
+`40538932972`, was cancelled before producing an artifact after a wording
+correction to the cycle plan, and nothing was published from it. The published
 bytes were checked after the fact: every downloaded asset matches `SHA256SUMS`,
 `SHA256SUMS.asc` carries a good signature from the release key, the DMG and the
 app inside it both report the stapled ticket, and Sigstore attestations bind the
 eight non-manifest digests to that commit.
-The revision it replaces, `v0.7.2`, was the cycle-8 remediation described
+The revision it replaces, `v0.7.4`, was the cycle-10 remediation described
 above. Cycle 5 was the conversion re-check of the
 `v0.6.8` grade: the panel verified all twelve prior findings fixed **by
 execution** — the referee re-broke each fix and watched its new test go
@@ -192,6 +195,6 @@ Mainnet preparation, signing, finalization, and broadcast are enabled. Broadcast
 
 **Current:** [`CURRENT-STATUS.md`](CURRENT-STATUS.md), [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`RELEASE-PROCESS.md`](RELEASE-PROCESS.md), [`PHASE-HANDOFF.md`](PHASE-HANDOFF.md), [`RELEASE-HISTORY.md`](RELEASE-HISTORY.md), [`CHANGE-ADDRESS-REVIEW.md`](CHANGE-ADDRESS-REVIEW.md), [`DISCLAIMER.md`](DISCLAIMER.md), [`HWI-DEPENDENCY.md`](HWI-DEPENDENCY.md).
 
-**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.4.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.4.md) is the Color Team plan for the published `v0.7.4` revision, a follow-up conversion re-check in the `v0.6.8` lineage; it is signed Bitseeker LLC, 27 Oct 2026, and [`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.4.md`](bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.4.md) records the plan's SHA-256 at the start of the audit. The plan, lock, report and public security statement of the `v0.7.3` and earlier cycles are prior-cycle records under [`audit-history/`](audit-history/); the artifacts inside the tag trees remain untouched.
+**Audit:** [`bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.5.md`](bitcoin-easy-multisig-signer-colorteam-audit-plan-v0.7.5.md) is the Color Team plan for the published `v0.7.5` revision, a follow-up conversion re-check in the `v0.6.8` lineage; it is signed Bitseeker LLC, 27 Oct 2026, and [`bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.5.md`](bitcoin-easy-multisig-signer-colorteam-audit-lock-v0.7.5.md) records the plan's SHA-256 at the start of the audit. The plan, lock, report and public security statement of the `v0.7.4` and earlier cycles are prior-cycle records under [`audit-history/`](audit-history/); the artifacts inside the tag trees remain untouched.
 
 **Mixed or historical:** [`ROADMAP.md`](ROADMAP.md) has a current status block followed by archived phase notes; [`PROJECT-HISTORY.md`](PROJECT-HISTORY.md), old patch records and [`releases/MUTINYNET-0.3.0.md`](releases/MUTINYNET-0.3.0.md) preserve earlier decisions and evidence. Read dated/versioned claims in those files as historical.
