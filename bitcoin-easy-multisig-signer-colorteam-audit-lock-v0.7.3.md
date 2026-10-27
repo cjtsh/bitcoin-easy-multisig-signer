@@ -11,7 +11,7 @@
 | **Same session for both?** | no — the surveyor's session identifier is present and names a DeepSeek Harness session; the auditor runs outside this repository's tooling and its session identifier, if any, is not available to the surveyor. The identifiers cannot be identical: different runs. This establishes different runs, not different models — independence rests on the operator's declaration that the surveyor seat ran on the DeepSeek Harness. |
 | **Locked at** | `2026-10-27T02:50:01Z` |
 | **Published before the panel ran** | yes — this file is committed on `main` before any specialist is dispatched; the operator confirms the push and then dispatches the panel |
-| **Plan SHA-256 at the end of the audit** | `83534f9ee9909fcdbb6f09505d1dc26b883aae2b1dd6a6a76b1b557a84dfa64c` at lock time, before the panel runs; the referee re-hashes the file at the end of the audit and replaces this sentence with the observed value. Unequal to the start hash means the audit is void: **DO NOT PUBLISH** |
+| **Plan SHA-256 at the end of the audit** | `83534f9ee9909fcdbb6f09505d1dc26b883aae2b1dd6a6a76b1b557a84dfa64c` — observed by the referee at the end of the audit (2026-10-27); equal to the start hash: the scope never moved |
 
 Cycle: `v0.7.3` — a follow-up (conversion re-check) in the `v0.6.8` lineage. Scope
 continuity was verified at lock time against the immediately prior signed plan
