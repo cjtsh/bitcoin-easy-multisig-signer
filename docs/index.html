@@ -140,9 +140,9 @@
     .audit-bar { background: var(--green-pale); border-bottom: 1px solid #d7e8dc; }
     .audit-bar-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; padding: 12px 0; }
     .audit-bar p { margin: 0; color: #225843; font-size: 13px; font-weight: 600; }
-    .audit-mark { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #d5e7d9; color: var(--green); font-size: 11px; font-weight: 800; }
     .audit-link { color: var(--green); font-size: 13px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
     .audit-link:hover { color: var(--orange-dark); }
+    .audit-credit { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: #3d6a58; }
     .brand-group { display:flex; align-items:center; gap:18px; }
     .theme-toggle { min-height:38px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--ink); font:600 12px var(--sans); cursor:pointer; }
     .theme-toggle:hover { border-color:var(--orange-dark); }
@@ -157,6 +157,7 @@
     html[data-theme="dark"] .threshold { background:#2a302b; color:#d1d6d0; }
     html[data-theme="dark"] .floating-note, html[data-theme="dark"] .audit-bar { border-color:#355344; background:var(--green-pale); color:#c3ead5; }
     html[data-theme="dark"] .floating-note, html[data-theme="dark"] .audit-bar p { color:#c3ead5; }
+    html[data-theme="dark"] .audit-credit { color:#a7d3bd; }
     html[data-theme="dark"] .notice { border-color:#70542f; background:#302619; }
     html[data-theme="dark"] .notice-mark { background:#60451f; color:#ffe1a8; }
     html[data-theme="dark"] .notice p { color:#dfcfb1; }
@@ -227,8 +228,7 @@
 
   <aside class="audit-bar" aria-label="Security review status">
     <div class="wrap audit-bar-inner">
-      <span class="audit-mark" aria-hidden="true">AI</span>
-      <p><strong>Review status.</strong> Version 0.7.5 answers the ⚠️ CONDITIONAL Color Team audit of v0.7.4 — the grade was held not by a surviving defect but by two missing alarms over the boundary that keeps a reviewed payment retryable: the branch that refuses a settings-rejected explorer URL before anything is written, and the position of every refusal that precedes the network request, each now have a test that fails if the protection is removed; a non-string chain or hex passed to the engine is refused rather than escaping as a raw exception; and a deliberate abort pauses the wallet and is then re-raised unchanged — and the finding-by-finding record is <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/releases/PATCH-0.7.5.md">releases/PATCH-0.7.5.md</a>. <strong>No independent human end-to-end security review of v0.7.5 is recorded.</strong> No review is a guarantee or a certification, and “no finding” means only that none was found within that review&rsquo;s stated coverage. Verify every payment yourself, and never risk more than you can afford to lose.</p>
+      <p><strong>✅ Audit CLEARED.</strong> The v0.7.5 Color Team audit — conducted on <strong>Z.AI GLM 5.3</strong>, considered by many the most advanced AI model available for security work — found no path to a prohibited outcome: every defense present, effective, and fail-closed, each held by an alarm that was watched ringing. <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/bitcoin-easy-multisig-signer-colorteam-audit-report-v0.7.5.md">Read the audit report ↗</a> · <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/releases/PATCH-0.7.5.md">finding-by-finding record ↗</a><span class="audit-credit">No independent human end-to-end review is recorded, and no review is a guarantee.</span></p>
     </div>
   </aside>
 
@@ -264,7 +264,7 @@
     <aside class="notice" aria-label="Important safety notice">
       <div class="wrap notice-inner">
         <span class="notice-mark" aria-hidden="true">!</span>
-        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is free, open-source software maintained and distributed by Bitseeker LLC. Anyone may inspect, test, audit, and validate the public source. <strong>No independent human end-to-end security review of v0.7.5 is recorded.</strong> The Z.ai Color Team reports for v0.6.4, v0.6.3 and v0.6.2 are AI-generated, dated evidence about those earlier revisions, not about v0.7.5, and are neither a certification nor a guarantee of safety, nor a substitute for review by a qualified human security firm. “No finding” means none found within a report&rsquo;s stated coverage; it does not mean none exist. The software is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. It can broadcast real Bitcoin, and a mistaken payment may be permanent. Check every payment yourself and read the <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">safety notice and terms of use</a> before use.</p>
+        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is free, open-source software maintained and distributed by Bitseeker LLC. Anyone may inspect, test, audit, and validate the public source. <strong>No independent human end-to-end security review of v0.7.5 is recorded.</strong> The Z.ai Color Team report for v0.7.5, grade ✅ CLEARED, is AI-generated, dated evidence about this revision and is <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/bitcoin-easy-multisig-signer-colorteam-audit-report-v0.7.5.md">published in the repository</a>; the reports for v0.6.4, v0.6.3 and v0.6.2 describe those earlier revisions. None is a certification or a guarantee of safety, nor a substitute for review by a qualified human security firm. “No finding” means none found within a report&rsquo;s stated coverage; it does not mean none exist. The software is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. It can broadcast real Bitcoin, and a mistaken payment may be permanent. Check every payment yourself and read the <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">safety notice and terms of use</a> before use.</p>
       </div>
     </aside>
 
