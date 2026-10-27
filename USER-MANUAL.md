@@ -135,4 +135,4 @@ Bitcoin Easy Signer is free, open-source community software maintained by Bitsee
 
 ---
 
-*This manual is for Bitcoin Easy Signer version 0.7.4. Read the [project website](https://cjtsh.github.io/bitcoin-easy-multisig-signer/) and the [current safety notice and terms of use](DISCLAIMER.md) before use.*
+*This manual is for Bitcoin Easy Signer version 0.7.5. Read the [project website](https://cjtsh.github.io/bitcoin-easy-multisig-signer/) and the [current safety notice and terms of use](DISCLAIMER.md) before use.*

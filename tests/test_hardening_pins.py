@@ -930,6 +930,50 @@ class ReleaseWindowDisclosureTests(unittest.TestCase):
         missing = [run for run in self.RUNS if run not in old]
         self.assertEqual(missing, ["40432734241", "40432782352", "40433752825"])
 
+    # CT-51: the rolling half. The newest window is pinned by the same method, so
+    # the undercount shape cannot recur silently in the row that a reader is most
+    # likely to consult. This constant moves with each cycle.
+    LATEST_WINDOW = {
+        "version": "0.7.4",
+        "runs": ("40498861357", "40500477931"),
+        "counts": "two dispatched runs and three attempts",
+    }
+
+    def test_the_newest_row_names_every_run_of_its_window(self):
+        """CT-51: the newest window's history is pinned, not only 0.7.3's.
+
+        The v0.7.4 row records its window accurately, but the pin above guarded
+        only the v0.7.3 row, so the same understatement could have recurred in
+        the newest row with the suite still green -- and at the tag the row does
+        not exist yet, because the tag predates its own release record. The
+        constant names the run ids and the counts for the newest row; both are
+        load-bearing.
+        """
+        root = Path(__file__).resolve().parents[1]
+        history = (root / "RELEASE-HISTORY.md").read_text(encoding="utf-8")
+        version = self.LATEST_WINDOW["version"]
+        rows = [line for line in history.splitlines()
+                if line.startswith(f"| **{version}** |")]
+        self.assertEqual(len(rows), 1,
+                         f"RELEASE-HISTORY.md must hold one {version} row")
+        row = rows[0]
+        for run in self.LATEST_WINDOW["runs"]:
+            with self.subTest(run=run):
+                self.assertIn(
+                    run, row,
+                    f"the {version} row does not name run {run}")
+        self.assertIn(self.LATEST_WINDOW["counts"], row)
+        self.assertIn("nothing was published from", row)
+
+    def test_the_newest_window_pin_would_fail_without_a_run(self):
+        """The negative half: a row naming only the run that published fails."""
+        old = ("Published 2026-10-27 as tag `v0.7.4` by candidate run 40498861357, "
+               "which finished on its first attempt; every downloaded asset "
+               "matched `SHA256SUMS`")
+        missing = [run for run in self.LATEST_WINDOW["runs"] if run not in old]
+        self.assertEqual(missing, ["40500477931"])
+        self.assertNotIn(self.LATEST_WINDOW["counts"], old)
+
 
 if __name__ == "__main__":
     unittest.main()

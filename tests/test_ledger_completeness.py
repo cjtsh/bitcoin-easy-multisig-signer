@@ -1,6 +1,6 @@
 """The ledger is the backlog: every scheduled finding has exactly one closing row.
 
-`releases/PATCH-0.7.4.md` is where a finding stops being open. Nothing read the file
+`releases/PATCH-0.7.5.md` is where a finding stops being open. Nothing read the file
 when this test was written, and the cost was concrete: the 0.6.8 ledger held six rows
 for the twenty-six findings its plan scheduled, so twenty were closed by silence —
 eighteen of them already fixed and committed, two deliberately deferred but
@@ -23,8 +23,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAN = ROOT / "releases" / "PLAN-0.7.4.md"
-LEDGER = ROOT / "releases" / "PATCH-0.7.4.md"
+PLAN = ROOT / "releases" / "PLAN-0.7.5.md"
+LEDGER = ROOT / "releases" / "PATCH-0.7.5.md"
 
 # The plan's work-order rows: `| W1 | CT-72 | High | … |`, and rows that schedule two
 # findings (`| W2 | CT-76, CT-77 | High | … |`).
@@ -44,7 +44,7 @@ SEVERITIES = ("High", "Med", "Low", "Info")
 # Findings the plan schedules but deliberately does not fix in this cycle, with the
 # reason. Adding an id here is the reviewable act that lets a row cite no test.
 #
-# 0.7.4 defers nothing: all six scheduled work orders close with a test, so this
+# 0.7.5 defers nothing: all five scheduled work orders close with a test, so this
 # is empty on purpose. The audit's three housekeeping notes (CT-32, the previous
 # plan's stale line citations; CT-34, `explorer_get`'s truncated-body contract,
 # which the callers already fail closed on; and CT-35, the five failed candidate

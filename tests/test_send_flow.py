@@ -10,6 +10,7 @@ them.
 
 import base64
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -992,6 +993,48 @@ class SendFlowTests(unittest.TestCase):
         self.assertTrue(self.app.pending_broadcast_unknown)
         self.assertIsNone(self.app.prepared,
                           "an unknown outcome must not be offered for retry")
+
+    def test_an_interrupt_during_the_submit_arms_the_pause_and_still_propagates(self):
+        """CT-46: a deliberate abort is not a transport unknown.
+
+        The pause has to be armed either way -- bytes may already be on the
+        wire -- but a `KeyboardInterrupt` or interpreter shutdown is not
+        evidence about the server. Converting it to `BroadcastOutcomeUnknown`
+        hid the abort from an embedding host, which could no longer tell a
+        user's Ctrl-C from a lost reply. The handler runs in this thread here
+        so the re-raised exception is seen directly rather than as a dropped
+        connection.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        body = json.dumps({"preparation_id": "reviewed-1", "confirm": True,
+                           "confirmed_txid": txid}).encode()
+        port = self.server.server_address[1]
+        head = (f"POST /api/broadcast HTTP/1.0\r\n"
+                f"Host: 127.0.0.1:{port}\r\n"
+                f"Origin: http://127.0.0.1:{port}\r\n"
+                f"Content-Type: application/json\r\n"
+                f"X-Local-Token: {self.app.token}\r\n"
+                f"Content-Length: {len(body)}\r\n"
+                f"\r\n").encode()
+        client_side, server_side = socket.socketpair()
+        self.addCleanup(client_side.close)
+        client_side.sendall(head + body)
+        handler = self.app.handler()
+        with patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                handler(server_side, ("127.0.0.1", 0), self.server)
+        server_side.close()
+        self.assertEqual(self.app.broadcast_in_flight, {})
+        self.assertEqual(self.app.pending_broadcast_txid, txid)
+        self.assertTrue(self.app.pending_broadcast_unknown,
+                        "the pause must be armed before the abort is re-raised")
 
     def test_mismatched_broadcast_txid_is_unknown_and_blocks_retry(self):
         result, keys = self.prepare_a_reviewed_transaction()

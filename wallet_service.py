@@ -99,11 +99,17 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
     `BroadcastOutcomeUnknown`, because a status code is the server's claim about
     a request it has already received (CT-36).
     """
-    if chain not in EXPLORERS:
+    # CT-45: the engine is callable directly, so its argument types are part of
+    # its contract too. A non-string chain or hex would otherwise raise a raw
+    # TypeError/AttributeError from below instead of the not-sent refusal that
+    # is true here -- nothing has been written yet.
+    if not isinstance(chain, str) or chain not in EXPLORERS:
         raise BroadcastNotSent("Unsupported broadcast network.")  # CONTROL: CM-50
     if chain == "main" and mainnet_opt_in is not True:
         raise BroadcastNotSent("Explicit mainnet broadcast confirmation is required.")
-    raw = (raw_transaction_hex or "").strip().lower()
+    if not isinstance(raw_transaction_hex, str):
+        raise BroadcastNotSent("The finalised transaction is not valid hex.")
+    raw = raw_transaction_hex.strip().lower()
     if len(raw) < 100 or len(raw) > 2_000_000 or len(raw) % 2:
         raise BroadcastNotSent("The finalised transaction is not a usable size.")
     try:

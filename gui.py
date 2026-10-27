@@ -1393,6 +1393,12 @@ class LocalApp:
                             state.prepared = None
                             state.scan = None
                         state.record_pending(wallet, txid, True)
+                    # CT-46: a deliberate abort (Ctrl-C, interpreter shutdown) is
+                    # not a transport unknown. The pause is already armed above,
+                    # because bytes may have left, but the host still gets the
+                    # exception it asked for so it can tell the two apart.
+                    if not isinstance(exc, Exception):
+                        raise
                     raised.explorer = (
                         CHAIN_CONFIGS[chain].web_url + "/tx/" + txid
                         if chain in CHAIN_CONFIGS else None)

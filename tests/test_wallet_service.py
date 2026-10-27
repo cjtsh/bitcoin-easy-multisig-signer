@@ -19,6 +19,7 @@ from embit.networks import NETWORKS
 from probe import ProbeError, load_bsms, parse_bsms
 from network_config import NETWORKS as CHAIN_CONFIGS
 from test_probe import sparrow_record, test_record
+import wallet_service
 from wallet_service import (
     BroadcastNotSent, BroadcastOutcomeUnknown, WalletError, broadcast_transaction,
     build_unsigned_psbt,
@@ -91,6 +92,76 @@ class BroadcastOutcomeTests(unittest.TestCase):
                 with self.assertRaises(BroadcastNotSent) as caught:
                     broadcast_transaction(**args)
                 self.assertIn(text, str(caught.exception))
+
+    def test_a_settings_rejected_url_is_provably_not_sent(self):
+        """CT-47: the settings refusal is inside the not-sent boundary.
+
+        `validate_esplora_url` runs in the pre-POST block, so a configured
+        address it refuses becomes `BroadcastNotSent` and the reviewed payment
+        stays retryable. Nothing drove that branch before: deleting the
+        conversion would have left the suite green, and a settings refusal would
+        have surfaced as an unknown outcome with the payment paused.
+        """
+        for base_url, text in (
+            ("http://example.com/api", "HTTP is loopback-only"),
+            ("https://example.com", "ending in /api"),
+            ("https://example.com/api?x=1", "without credentials, query, or fragment"),
+        ):
+            with self.subTest(base_url=base_url), \
+                    patch("wallet_service.urlopen") as send:
+                with self.assertRaises(BroadcastNotSent) as caught:
+                    broadcast_transaction("00" * 50, base_url=base_url)
+                self.assertIn(text, str(caught.exception))
+                send.assert_not_called()
+
+    def test_no_not_sent_answer_is_raised_after_the_request_is_built(self):
+        """CT-49: position, not only class, is what "nothing was sent" means.
+
+        A `BroadcastNotSent` claim is only true before the request object exists:
+        once the `Request` has been built, the signed bytes are about to be
+        written. The pin for the mainnet, size and hex gates counted only
+        `urlopen` calls, which cannot see a raise site that moved below the
+        `Request(...)` line, and the chain and settings gates were not counted
+        at all. Every not-sent shape is walked here with the constructor watched.
+        """
+        shapes = (
+            {"chain": "bogus"},
+            {"chain": "main"},
+            {"raw_transaction_hex": "00"},
+            {"raw_transaction_hex": "zz" * 60},
+            {"base_url": "https://example.com"},
+        )
+        for shape in shapes:
+            with self.subTest(**shape), \
+                    patch.object(wallet_service, "Request",
+                                 wraps=wallet_service.Request) as built, \
+                    patch("wallet_service.urlopen") as send:
+                args = {"raw_transaction_hex": "00" * 50, **shape}
+                with self.assertRaises(BroadcastNotSent):
+                    broadcast_transaction(**args)
+                built.assert_not_called()
+                send.assert_not_called()
+
+    def test_non_contract_argument_types_are_refused_before_anything_is_sent(self):
+        """CT-45: the engine is callable directly, so types are contract too.
+
+        A caller that passes a list for the chain or bytes for the hex is outside
+        the documented contract, and no path from the HTTP surface can do it.
+        Still, a raw `TypeError`/`AttributeError` from the gates is not the
+        honest answer: nothing has been written at that point, so the refusal is
+        `BroadcastNotSent` and the caller learns the same lesson as any other
+        pre-POST refusal.
+        """
+        for kwargs in ({"chain": ["testnet4"]}, {"chain": None},
+                       {"raw_transaction_hex": b"00" * 50},
+                       {"raw_transaction_hex": None},
+                       {"base_url": b"https://example.com/api"}):
+            with self.subTest(**{name: repr(value) for name, value in kwargs.items()}), \
+                    patch("wallet_service.urlopen") as send:
+                args = {"raw_transaction_hex": "00" * 50, **kwargs}
+                with self.assertRaises(BroadcastNotSent):
+                    broadcast_transaction(**args)
+                send.assert_not_called()
 
     def test_a_malformed_body_is_unknown_not_a_transaction_id(self):
         """A 200 whose body is not a 64-character hex txid is not a result.
