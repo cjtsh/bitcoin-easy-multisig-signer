@@ -31,6 +31,7 @@ root_docs=(
   PHASE-HANDOFF.md ROADMAP.md HWI-DEPENDENCY.md RELEASE-HISTORY.md
   PROJECT-HISTORY.md CHANGE-ADDRESS-REVIEW.md WINDOWS-PORT.md LINUX-PORT.md
   SIGNING.md requirements-desktop-linux.txt CONTROLS.md
+  DOCUMENTATION-MAP.md bitcoin-easy-multisig-signer-colorteam-findings-ledger.md
 )
 # requirements-desktop-windows.lock is the only lock that can be installed on
 # Windows. requirements-desktop.lock is macOS-resolved and is deliberately still
