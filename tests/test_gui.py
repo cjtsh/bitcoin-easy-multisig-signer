@@ -19,7 +19,7 @@ from embit import psbt, transaction
 from embit.script import Script
 
 from gui import (LocalApp, PreparedPayment, fetch_btc_usd, fetch_fee_rates,
-                 fetch_mutinynet_fee_rates)
+                 fetch_mutinynet_fee_rates, wallet_identity)
 from version import APP_VERSION
 from wallet_service import WalletError
 from test_probe import test_record
@@ -498,7 +498,8 @@ class LocalGuiTests(unittest.TestCase):
         self.post("/api/import", {"chain": "testnet4", "text": text,
                                   "consent_explorer": True})
         txid = "ab" * 32
-        self.app.pending_broadcast_txid = txid
+        self.app.record_pending(wallet_identity(self.app.record, "testnet4"),
+                                txid, False)
         fake = {
             "network": "testnet4", "utxo_consistent": True,
             "confirmed_sats": 6000, "pending_delta_sats": 0,
@@ -523,6 +524,46 @@ class LocalGuiTests(unittest.TestCase):
         self.assertFalse(ready["pending_outgoing"])
         self.assertIsNone(self.app.pending_broadcast_txid)
         self.assertEqual(status.call_count, 3)
+
+    def test_a_second_payment_cannot_clear_the_first_one_s_pause(self):
+        """CT-29: the pending record is per txid, and a scan reconciles it.
+
+        One record per wallet was last-writer-wins: a second payment that
+        completed first overwrote the earlier txid, and when the second one
+        confirmed the pause lifted while the first payment was still unspent.
+        Here both are recorded, only the newer one confirms, and the wallet has
+        to stay paused -- still naming the payment that confirmed.
+        """
+        text, _ = test_record()
+        self.post("/api/import", {"chain": "testnet4", "text": text,
+                                  "consent_explorer": True})
+        wallet = wallet_identity(self.app.record, "testnet4")
+        older, newer = "aa" * 32, "bb" * 32
+        self.app.record_pending(wallet, older, False)
+        self.app.record_pending(wallet, newer, False)
+        fake = {
+            "network": "testnet4", "utxo_consistent": True,
+            "confirmed_sats": 6000, "pending_delta_sats": 0,
+            "observed_sats": 6000, "pending_outgoing": False,
+            "addresses": [], "utxos": [], "scanned": 40,
+            "coverage_limited": False, "path_warning": "",
+            "scanned_at": "2026-10-29T00:00:00+00:00",
+            "source": "https://mempool.space/testnet4/api",
+        }
+        with patch("gui.scan_wallet", side_effect=lambda *_args, **_kwargs: dict(fake)), \
+                patch("gui.explorer_get",
+                      side_effect=[{"confirmed": False}, {"confirmed": True},
+                                   {"confirmed": True}]) as status:
+            still_waiting = self.post("/api/scan", {"chain": "testnet4"})
+            self.assertTrue(still_waiting["pending_outgoing"],
+                            "confirming the newer payment lifted the pause the "
+                            "older one still needed")
+            self.assertEqual(self.app.pending_broadcast_txid, older)
+            self.assertEqual(status.call_count, 2)
+            ready = self.post("/api/scan", {"chain": "testnet4"})
+        self.assertFalse(ready["pending_outgoing"])
+        self.assertIsNone(self.app.pending_broadcast_txid)
+        self.assertNotIn(wallet, self.app.pending_by_wallet)
 
     def test_refresh_twice_uses_same_in_memory_wallet_definition(self):
         text, _ = test_record()

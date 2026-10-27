@@ -589,9 +589,21 @@ class LocalApp:
         self.scan = None
         # Session-only bridge between broadcast and explorer mempool propagation.
         # Never infer confirmation merely because an address scan misses the tx.
-        self.pending_broadcast_txid = None
-        self.pending_broadcast_unknown = False
-        self.pending_by_wallet: dict[bytes, tuple[str, bool]] = {}
+        #
+        # CT-29: one entry per submitted txid, not one per wallet. A wallet that
+        # ends up with two payments waiting (the gate below is meant to stop that
+        # before it happens, but a record must not depend on the gate holding)
+        # has to keep both: overwriting the earlier txid with the later one would
+        # let the pause lift when only the later payment confirmed, while the
+        # earlier one was still unspent. Insertion order is submission order.
+        self.pending_by_wallet: dict[bytes, dict[str, bool]] = {}
+        # Session-only per-wallet marker for a submission that is on the wire
+        # right now. Armed under the pre-submit lock, before the lock is
+        # released and before the network call, and cleared as soon as the
+        # outcome is known. It exists because a record can only be written
+        # after the broadcaster answers, and the window before that answer is
+        # exactly when a second request could otherwise pass every check.
+        self.broadcast_in_flight: dict[bytes, str] = {}
         self.prepared: PreparedPayment | None = None
         # Session-only binding from a successful device probe to one review.
         self.verified_signers = None
@@ -610,6 +622,48 @@ class LocalApp:
         except SettingsError as exc:
             self.servers = default_servers()
             self.settings_error = str(exc)
+
+    def open_wallet(self) -> bytes | None:
+        """The session key of the wallet on screen, or None when none is open."""
+        if self.record is None or self.chain is None:
+            return None
+        return wallet_identity(self.record, self.chain)
+
+    def pending_for(self, wallet: bytes | None) -> tuple[str | None, bool]:
+        """The oldest payment recorded for a wallet, and whether its outcome is unknown.
+
+        Oldest first: if a wallet ever does accumulate two waiting payments, the
+        one the owner has to check before anything else is the first one sent.
+        """
+        records = self.pending_by_wallet.get(wallet) if wallet is not None else None
+        if not records:
+            return (None, False)
+        txid = next(iter(records))
+        return (txid, records[txid])
+
+    def record_pending(self, wallet: bytes, txid: str, unknown: bool) -> None:
+        """Record a submitted payment without erasing any already recorded (CT-29)."""
+        records = self.pending_by_wallet.setdefault(wallet, {})
+        records[txid] = records.get(txid, False) or bool(unknown)
+
+    def clear_pending(self, wallet: bytes, txid: str) -> None:
+        """Drop one confirmed payment; any other payment for that wallet stays (CT-29)."""
+        records = self.pending_by_wallet.get(wallet)
+        if not records:
+            return
+        records.pop(txid, None)
+        if not records:
+            self.pending_by_wallet.pop(wallet, None)
+
+    @property
+    def pending_broadcast_txid(self) -> str | None:
+        """The oldest unconfirmed payment from the wallet on screen."""
+        return self.pending_for(self.open_wallet())[0]
+
+    @property
+    def pending_broadcast_unknown(self) -> bool:
+        """Whether the oldest unconfirmed payment's outcome is unknown."""
+        return self.pending_for(self.open_wallet())[1]
 
     def note(self, stage: str, outcome: str, device: str = "", found=None) -> None:
         """Fixed vocabulary, bounded memory; no wallet data and no exception text.
@@ -901,13 +955,12 @@ class LocalApp:
                         self._send(404, {"error": "Not found."})
                 except BroadcastOutcomeUnknown as exc:
                     state.note("broadcast", "unknown")
-                    with state.lock:
-                        txid = state.pending_broadcast_txid
-                        chain = state.chain
+                    # The link is set where the txid is known, so a wallet
+                    # swapped while the submit was in flight cannot point the
+                    # answer at the wrong payment.
                     self._send(409, {
                         "error": str(exc), "outcome_unknown": True,
-                        "explorer": (CHAIN_CONFIGS[chain].web_url + "/tx/" + txid
-                                     if txid and chain in CHAIN_CONFIGS else None),
+                        "explorer": getattr(exc, "explorer", None),
                     })
                 except (ProbeError, WalletError, SettingsError) as exc:
                     rejected = DIAGNOSTIC_ROUTE_STAGES.get(self.path.removeprefix("/api/"))
@@ -930,8 +983,6 @@ class LocalApp:
                     state.chain = None
                     state.explorer_consent = False
                     state.scan = None
-                    state.pending_broadcast_txid = None
-                    state.pending_broadcast_unknown = False
                     state.prepared = None
                     state.revision += 1
                     state.scan_generation += 1
@@ -945,9 +996,10 @@ class LocalApp:
                         raise WalletError("Wallet changed; import it again.")
                     state.record = record
                     state.chain = chain
-                    pending = state.pending_by_wallet.get(wallet_identity(record, chain))
-                    if pending:
-                        state.pending_broadcast_txid, state.pending_broadcast_unknown = pending
+                    # The pending record now belongs to the wallet it was made
+                    # for, so reopening the same file in this session restores
+                    # it -- and reopening a different one inherits nothing from
+                    # it -- without a copy step here to forget.
                     state.explorer_consent = True
                     state.note("wallet_import", "passed")
                     state.note("change_path", "standard" if summary["change_assumed"]
@@ -957,8 +1009,8 @@ class LocalApp:
             def _scan(self, data):
                 with state.lock:
                     record, revision, chain = state.record, state.revision, state.chain
-                    pending_txid = state.pending_broadcast_txid
-                    pending_unknown = state.pending_broadcast_unknown
+                    wallet = state.open_wallet()
+                    pending = list((state.pending_by_wallet.get(wallet) or {}).items())
                     if data.get("chain") != chain or chain not in CHAIN_CONFIGS:
                         raise WalletError("Selected network does not match the open wallet.")
                     if not state.explorer_consent:
@@ -979,27 +1031,34 @@ class LocalApp:
                 # Signet genesis block, so verify its fork checkpoint too. CONTROL: CM-01
                 verify_esplora(chain, explorer)
                 result = scan_wallet(record, base_url=explorer, chain=chain)
-                if pending_txid:
+                confirmed = {}
+                for pending_txid, _pending_unknown in pending:
                     # A newly broadcast tx may not yet appear in address statistics.
                     # Fail closed on a missing/invalid status until a block confirms it. CONTROL: CM-02
                     try:
                         status = explorer_get(f"/tx/{pending_txid}/status", chain=chain,
                                               base_url=explorer)
-                        confirmed = (isinstance(status, dict)
-                                     and status.get("confirmed") is True)
+                        confirmed[pending_txid] = (isinstance(status, dict)
+                                                   and status.get("confirmed") is True)
                     except WalletError:
-                        confirmed = False
-                    result["pending_outgoing"] = result.get("pending_outgoing", False) or not confirmed
-                    result["broadcast_outcome_unknown"] = (
-                        pending_unknown and not confirmed)
+                        confirmed[pending_txid] = False
+                if pending:
+                    result["pending_outgoing"] = (
+                        result.get("pending_outgoing", False)
+                        or not all(confirmed.values()))
+                    result["broadcast_outcome_unknown"] = any(
+                        unknown and not confirmed[txid]
+                        for txid, unknown in pending)
                 with state.lock:
                     if revision != state.revision or generation != state.scan_generation:
                         raise WalletError("Wallet or balance changed during scan; refresh again.")
                     state.scan = result
-                    if pending_txid and pending_txid == state.pending_broadcast_txid and confirmed:
-                        state.pending_by_wallet.pop(wallet_identity(record, chain), None)
-                        state.pending_broadcast_txid = None
-                        state.pending_broadcast_unknown = False
+                    # CT-29: reconcile txid by txid. Clearing the wallet's whole
+                    # record on one confirmation is what let a second payment
+                    # erase the pause the first one still needed. CONTROL: CM-44
+                    for pending_txid, is_confirmed in confirmed.items():
+                        if is_confirmed:
+                            state.clear_pending(wallet, pending_txid)
                     state.note("wallet_scan", "consistent" if result["utxo_consistent"] else "inconsistent")
                     state.note("wallet_scan", "incomplete" if result["coverage_limited"] else "complete")
                 self._send(200, public_scan(result))
@@ -1216,18 +1275,24 @@ class LocalApp:
                     raise WalletError(
                         "The confirmed transaction is not the one prepared. Nothing was sent."
                     )
-                # CT-22: the pending-payment pause is asserted here, at the submit
-                # that moves the money, not only at prepare. The pause used to arm
-                # after a broadcast and gate only _prepare, so a second reviewed
-                # payment could go out while the first was still unconfirmed
-                # whenever the explorer stayed silent about the first spend.
-                # CONTROL: CM-38
+                # CT-22/CT-27: the pending-payment pause is asserted here, at the
+                # submit that moves the money, not only at prepare, and it is
+                # asserted against the wallet that is submitting. It is checked
+                # twice on purpose: here, before any explorer is asked about the
+                # wallet's outputs, and again under the lock below, together with
+                # a marker for a submit that is still on the wire. CONTROL: CM-38
                 with state.lock:
-                    pending_txid = state.pending_broadcast_txid
+                    wallet = wallet_identity(_record, chain)
+                    pending_txid = state.pending_for(wallet)[0]
+                    in_flight = state.broadcast_in_flight.get(wallet)
                 if pending_txid:
                     raise WalletError(
                         "A payment from this wallet is waiting for one confirmation. "
                         "Check that it went through before sending another.")
+                if in_flight:
+                    raise WalletError(
+                        "A payment from this wallet is still being submitted. "
+                        "Wait for that result before sending another.")
                 # CT-13: the explorer pre-checks run before the session lock. They
                 # do not mutate prepared state, and holding the lock across a
                 # slow explorer would stall every other operation. The broadcaster
@@ -1263,16 +1328,27 @@ class LocalApp:
                 # wallet that submitted it even if another wallet replaced it
                 # while the request was in flight.
                 with state.lock:
-                    # CT-22: re-asserted under the pre-submit lock, so two
-                    # requests that both passed the check above cannot both
-                    # submit. CONTROL: CM-38
-                    if state.pending_broadcast_txid:
+                    # CT-27/CT-28: the check and the arm are one critical
+                    # section, and no network call is held across it. A request
+                    # that passed the check above cannot submit while another
+                    # one is mid-air, because the first thing that request did
+                    # under this lock was leave its marker; and a *later*
+                    # request cannot submit either, because the same section
+                    # would first find the recorded outcome. The marker is
+                    # cleared the moment the outcome is known, so a refused
+                    # submit does not lock the wallet out of a retry.
+                    # CONTROL: CM-43
+                    if state.pending_for(wallet)[0]:
                         raise WalletError(
                             "A payment from this wallet is waiting for one confirmation. "
                             "Check that it went through before sending another.")
+                    if state.broadcast_in_flight.get(wallet):
+                        raise WalletError(
+                            "A payment from this wallet is still being submitted. "
+                            "Wait for that result before sending another.")
                     if state.prepared is not payment or state.scan_generation != payment.scan_generation:
                         raise WalletError("The payment changed before broadcast.")
-                    submitting_wallet = wallet_identity(state.record, chain)
+                    state.broadcast_in_flight[wallet] = txid
                 try:
                     sent = broadcast_transaction(
                         final["raw_transaction_hex"], chain, broadcaster,
@@ -1284,27 +1360,35 @@ class LocalApp:
                             "The server reported a different transaction ID. The result "
                             "is unknown. Do not send again; check an explorer first."
                         )
-                except BroadcastOutcomeUnknown:
+                except BroadcastOutcomeUnknown as exc:
                     # The network request may have succeeded before its response
                     # was lost. Retrying the reviewed payment is unsafe until a
                     # person independently checks the expected txid.
                     with state.lock:
+                        state.broadcast_in_flight.pop(wallet, None)
                         if state.prepared is payment:
                             state.prepared = None
                             state.scan = None
-                        state.pending_broadcast_txid = txid
-                        state.pending_broadcast_unknown = True
-                        state.pending_by_wallet[submitting_wallet] = (txid, True)
+                        state.record_pending(wallet, txid, True)
+                    exc.explorer = (
+                        CHAIN_CONFIGS[chain].web_url + "/tx/" + txid
+                        if chain in CHAIN_CONFIGS else None)
+                    raise
+                except BaseException:
+                    # A definite refusal sent nothing, so nothing stays in
+                    # flight and nothing is recorded: the reviewed payment is
+                    # still there to retry.
+                    with state.lock:
+                        state.broadcast_in_flight.pop(wallet, None)
                     raise
                 with state.lock:
                     # The funds are spent now, so anything cached is stale -- but
                     # only clear state that still describes this payment.
+                    state.broadcast_in_flight.pop(wallet, None)
                     if state.prepared is payment:
                         state.prepared = None
                         state.scan = None
-                    state.pending_broadcast_txid = sent
-                    state.pending_broadcast_unknown = False
-                    state.pending_by_wallet[submitting_wallet] = (sent, False)
+                    state.record_pending(wallet, sent, False)
                     state.note("broadcast", "accepted")
                 self._send(200, {
                     "txid": sent,

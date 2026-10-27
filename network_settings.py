@@ -146,13 +146,15 @@ def verify_esplora(chain: str, base_url: str) -> None:
                 raise SettingsError("Explorer did not return an Esplora block hash.")
             if found != expected:
                 raise SettingsError("Explorer is on the wrong Bitcoin network; settings were not changed.")
-    # CT-25: a server that closes mid-response, or answers with something that
-    # is not HTTP at all, raises http.client.HTTPException shapes
-    # (RemoteDisconnected, BadStatusLine, IncompleteRead). They are transport
-    # failures like the ones already listed, and without this they escaped the
-    # documented refusal and reached the generic handler. CONTROL: CM-40
-    except (HTTPError, URLError, HTTPException, TimeoutError, UnicodeError,
-            ValueError) as exc:
+    # CT-25/CT-33: a server that closes mid-response, or answers with something
+    # that is not HTTP at all, raises http.client.HTTPException shapes
+    # (RemoteDisconnected, BadStatusLine, IncompleteRead); a peer that resets the
+    # connection open raises a plain OSError shape (ConnectionResetError) that is
+    # in neither tuple. Both are transport failures like the ones already
+    # listed, and without them they escaped the documented refusal and reached
+    # the generic handler. CONTROL: CM-40
+    except (HTTPError, URLError, HTTPException, TimeoutError, OSError,
+            UnicodeError, ValueError) as exc:
         raise SettingsError(
             "Could not verify this Esplora server's network. Check its /api URL and availability."
         ) from exc

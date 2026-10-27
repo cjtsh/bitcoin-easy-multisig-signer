@@ -1,25 +1,33 @@
 # Current status — Bitcoin Easy Signer
 
-**Source revision 0.7.2 answers the ⚠️ CONDITIONAL Color Team audit of the
-`v0.7.1` tree.** The finding that held the grade was CT-22: a wallet's
-unconfirmed-payment pause gated preparation but not the broadcast, so a
-second, fully reviewed payment could be submitted while the first was
-still unconfirmed whenever the explorer said nothing about the first
-spend. `_broadcast` now refuses at the submit and re-asserts the same
-refusal under the lock the submit takes, so two requests that both pass
-the early check cannot both go out. CT-24 refuses a transaction that
-names the same Bitcoin output twice before any explorer is asked, and
-CT-25 adds `http.client.HTTPException` to the transport tuples, so a peer
-that is not speaking HTTP is the documented refusal on the settings,
-explorer and broadcast paths instead of a fixed 500 — and on the
-broadcast path it still pauses the wallet as an unknown outcome. Rows
-`CM-38`…`CM-42` in `CONTROLS.md` pin all of it, each break-and-watched on
-a disposable copy, and `releases/PATCH-0.7.2.md` carries one closing row
-per finding. Unlike 0.7.1, this revision is not engine-unchanged: three
-app files change — `gui.py` (the broadcast gate), `wallet_service.py` (the
-duplicated-input refusal and one catch tuple) and `network_settings.py`
-(one catch tuple) — and no transaction construction, signing, fee or
-network rule changes with them.
+**Source revision 0.7.3 answers the ⛔ BLOCKED Color Team audit of the `v0.7.2`
+tree.** The v0.7.1 conversion criterion was met by execution — the referee re-broke
+CT-22, CT-24 and CT-25 and watched each named pin go red, CT-23 and CT-26 closed by
+dated owner acceptance, and all twenty-one earlier findings were carried — but the
+code added for CT-22 placed its pause in the wrong place in time. Both halves of the
+broadcast pause read a record that was written only after `broadcast_transaction`
+returned, and that call is bounded by `BROADCAST_TIMEOUT_SECONDS = 20.0`, so while the
+first payment was on the wire a second, separately reviewed and consented payment
+passed both halves and was broadcast (CT-27, Medium, grade-binding through threat row
+T-11). `_broadcast` now arms a per-wallet in-flight marker inside the same critical
+section that checks for it and releases the lock before the network call, so no I/O is
+held across it; both halves read the marker, every exit clears it, and a definite
+refusal leaves the reviewed payment retryable. The pending record is kept per
+transaction and reconciles per transaction on refresh (CT-29), `OSError` joins
+`verify_esplora`'s transport tuple so a mid-reply reset is the documented refusal
+rather than a fixed 500 (CT-33), and the two inventory gaps are closed (CT-30,
+CT-31). Rows `CM-38` and `CM-40`…`CM-45` in `CONTROLS.md` pin it, all eight control
+halves break-and-watched on a disposable copy, and `releases/PATCH-0.7.3.md` carries one
+closing row per finding. Unlike 0.7.1, this revision is not engine-unchanged: `gui.py`
+and `network_settings.py` change behaviour, `wallet_service.py` changes only a
+docstring, and no transaction construction, signing, fee or network rule changes with
+them.
+Version 0.7.2 was the Color Team cycle-8 remediation of the `v0.7.1` tree: it
+asserted the unconfirmed-payment pause at the broadcast and again under the pre-submit
+lock (`CM-38`), refused a transaction that names the same Bitcoin output twice before
+any explorer was asked (`CM-39`), and added `http.client.HTTPException` to the settings,
+explorer and broadcast transport tuples (`CM-40`…`CM-42`). It was the first revision
+since 0.5.1 to change app behaviour.
 Version 0.7.0 was the Color Team cycle-6 build-process remediation of the
 `v0.6.9` tree: every finding the cycle's plan scheduled had exactly one
 row in `releases/PATCH-0.7.0.md` with a severity and a closing test the
@@ -37,9 +45,11 @@ The release is built and published from `main` through the unified
 pipeline. The newest published tag is
 [`v0.7.2`](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.2),
 published 2026-10-26T21:48:23Z as tag `v0.7.2` on commit
-`1e51dcfa45d6f61c83c14aeb1998725fbd705ba9` by successful candidate run
+`1e51dcfa45d6f61c83c14aeb1998725fbd705ba9` by candidate run
 [40397174519](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40397174519)
-and promote run
+— six attempts: the first five failed inside the macOS DMG job (four on the
+Apple staple/validate step, one on `hdiutil`) and published nothing — and
+promote run
 [40405953511](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40405953511).
 The revision it replaces, `v0.7.1`, was the cycle-7 remediation described
 above. Cycle 5 was the conversion re-check of the

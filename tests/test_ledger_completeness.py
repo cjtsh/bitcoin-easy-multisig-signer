@@ -1,10 +1,10 @@
 """The ledger is the backlog: every scheduled finding has exactly one closing row.
 
-`releases/PATCH-0.7.2.md` is where a finding stops being open. Nothing read it before
-this test, and the cost was concrete: the file held six rows for the twenty-six
-findings the plan schedules, so twenty were closed by silence — eighteen of them
-already fixed and committed, two deliberately deferred but unrecorded. A fix a
-reader cannot find is a fix that did not happen.
+`releases/PATCH-0.7.3.md` is where a finding stops being open. Nothing read the file
+when this test was written, and the cost was concrete: the 0.6.8 ledger held six rows
+for the twenty-six findings its plan scheduled, so twenty were closed by silence —
+eighteen of them already fixed and committed, two deliberately deferred but
+unrecorded. A fix a reader cannot find is a fix that did not happen.
 
 The plan is the schedule, the ledger is the record, and this test holds the two to each
 other: the same finding ids on both sides, one row each, a severity on every row, and a
@@ -23,8 +23,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAN = ROOT / "releases" / "PLAN-0.7.2.md"
-LEDGER = ROOT / "releases" / "PATCH-0.7.2.md"
+PLAN = ROOT / "releases" / "PLAN-0.7.3.md"
+LEDGER = ROOT / "releases" / "PATCH-0.7.3.md"
 
 # The plan's work-order rows: `| W1 | CT-72 | High | … |`, and rows that schedule two
 # findings (`| W2 | CT-76, CT-77 | High | … |`).
@@ -44,17 +44,19 @@ SEVERITIES = ("High", "Med", "Low", "Info")
 # Findings the plan schedules but deliberately does not fix in this cycle, with the
 # reason. Adding an id here is the reviewable act that lets a row cite no test.
 #
-# 0.7.2 defers nothing: all three work orders close with a test, so this is empty
-# on purpose. The audit's two housekeeping notes (CT-23, the previous plan's stale
-# line citations, and CT-26, the unnamed third failure event in the previous
-# release window) are recorded in the plan's §6 and in the ledger's "Observations
-# recorded" section rather than scheduled: neither changes behaviour, so neither
-# can have a closing test, and scheduling them would have made this set the place
-# where that is hidden instead of the place where it is written down. The 0.6.8 pair it used to hold (CT-90, the second practice-network oracle
-# that needs an owner policy decision; CT-54, the libusb dylib rebuilt at the next
-# dependency bump) were resolved in the 0.6.8 cycle, and the 0.7.0 cycle deferred
-# nothing either. An empty set here is a claim the next cycle has to re-earn, not a
-# default.
+# 0.7.3 defers nothing: all three scheduled work orders close with a test, so this
+# is empty on purpose. The audit's three housekeeping notes (CT-32, the previous
+# plan's stale line citations; CT-34, `explorer_get`'s truncated-body contract,
+# which the callers already fail closed on; and CT-35, the five failed candidate
+# attempts in the previous release window) are recorded in the plan's §6 and in the
+# ledger's "Observations recorded" section rather than scheduled: none changes
+# behaviour, so none can have a closing test, and scheduling them would have made
+# this set the place where that is hidden instead of the place where it is written
+# down. The 0.6.8 pair this set used to hold (CT-90, the second practice-network
+# oracle that needs an owner policy decision; CT-54, the libusb dylib rebuilt at
+# the next dependency bump) were resolved in the 0.6.8 cycle, and the 0.7.0, 0.7.1
+# and 0.7.2 cycles deferred nothing either. An empty set here is a claim the next
+# cycle has to re-earn, not a default.
 NO_TEST = set()
 
 

@@ -1,25 +1,25 @@
 # Current handoff — Bitcoin Easy Signer
 
-**Source revision 0.7.2 answers the ⚠️ CONDITIONAL Color Team audit of the
-`v0.7.1` tree.** The finding that held the grade was CT-22: a wallet's
-unconfirmed-payment pause gated preparation but not the broadcast, so a
-second, fully reviewed payment could be submitted while the first was
-still unconfirmed whenever the explorer said nothing about the first
-spend. `_broadcast` now refuses at the submit and re-asserts the same
-refusal under the lock the submit takes, so two requests that both pass
-the early check cannot both go out. CT-24 refuses a transaction that
-names the same Bitcoin output twice before any explorer is asked, and
-CT-25 adds `http.client.HTTPException` to the transport tuples, so a peer
-that is not speaking HTTP is the documented refusal on the settings,
-explorer and broadcast paths instead of a fixed 500 — and on the
-broadcast path it still pauses the wallet as an unknown outcome. Rows
-`CM-38`…`CM-42` in `CONTROLS.md` pin all of it, each break-and-watched on
-a disposable copy, and `releases/PATCH-0.7.2.md` carries one closing row
-per finding. Unlike 0.7.1, this revision is not engine-unchanged: three
-app files change — `gui.py` (the broadcast gate), `wallet_service.py` (the
-duplicated-input refusal and one catch tuple) and `network_settings.py`
-(one catch tuple) — and no transaction construction, signing, fee or
-network rule changes with them.
+**Source revision 0.7.3 answers the ⛔ BLOCKED Color Team audit of the `v0.7.2`
+tree.** The v0.7.1 conversion criterion was met by execution — the referee re-broke
+CT-22, CT-24 and CT-25 and watched each named pin go red, CT-23 and CT-26 closed by
+dated owner acceptance, and all twenty-one earlier findings were carried — but the
+code added for CT-22 placed its pause in the wrong place in time. Both halves of the
+broadcast pause read a record that was written only after `broadcast_transaction`
+returned, and that call is bounded by `BROADCAST_TIMEOUT_SECONDS = 20.0`, so while the
+first payment was on the wire a second, separately reviewed and consented payment
+passed both halves and was broadcast (CT-27, Medium, grade-binding through threat row
+T-11). `_broadcast` now arms a per-wallet in-flight marker inside the same critical
+section that checks for it and releases the lock before the network call; both halves
+read the marker, every exit clears it, and a definite refusal leaves the reviewed
+payment retryable. The pending record is kept per transaction (CT-29), `OSError` joins
+`verify_esplora`'s transport tuple (CT-33), and the two inventory gaps are closed
+(CT-30, CT-31). Rows `CM-38` and `CM-40`…`CM-45` in `CONTROLS.md` pin it, all eight
+control halves break-and-watched on a disposable copy, and `releases/PATCH-0.7.3.md`
+carries one closing row per finding. Unlike 0.7.1, this revision is not
+engine-unchanged: `gui.py` and `network_settings.py` change behaviour,
+`wallet_service.py` changes only a docstring, and no transaction construction,
+signing, fee or network rule changes with them.
 The release is built and published from `main` through the
 unified pipeline; until this tree's promote run lands, the newest published
 tag is
@@ -35,12 +35,12 @@ every branch. Owner-reported acceptance of the Windows console fix and
 of the Linux AppImage remains in this file's history and in `releases/`;
 those port builds are superseded by the unified pipeline.
 
-## Current stop point — source revision 0.7.2 is the release this tree publishes; v0.7.1 is the newest published tag
+## Current stop point — source revision 0.7.3 is the release this tree publishes; v0.7.2 is the newest published tag
 
 The **published set** is whatever the
 [Releases page](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases)
 and `RELEASE-HISTORY.md` carry; read one of those rather than trusting a
-hardcoded number here. As of 2026-10-26 that is [v0.7.1](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.1), published 2026-10-26T18:13:21Z as tag `v0.7.1` on commit `8923ca0273380a9cb1ea7e7e964c6332dda5a777` by successful candidate run [40370767634](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40370767634) and promote run [40372606443](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40372606443). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.7.2, the source revision this tree publishes, answers the ⚠️ CONDITIONAL cycle-8 audit of the `v0.7.1` tree: the unconfirmed-payment pause is asserted at the broadcast and again under the pre-submit lock (`CM-38`), a transaction that names the same Bitcoin output twice is refused before any explorer is asked (`CM-39`), and `http.client.HTTPException` is in the settings, explorer and broadcast transport tuples (`CM-40`…`CM-42`). Version 0.7.1 was the Color Team cycle-7 build-process remediation of the `v0.7.0` tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads; the retired-connection guard in the loopback server is pinned by a test that goes red when the guard is removed; the control inventory now parses the GitHub workflow files, so the retired-publisher pagination guard and the notarisation and checksum-signing credential guards are tracked rows with executable pins; the busy-slot docstring says what the slot actually requires; and the terms of use incorporate the Bitseeker LLC standard legal framework. Version 0.7.0 was the Color Team cycle-6 build-process remediation of the `v0.6.9` tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads; the value and script limbs of the build-time prevout match are pinned by tests that fail when their own limb is removed; the loopback server retires its oldest idle connection rather than refusing the operator's window at the connection ceiling; `CONTROLS.md` gains rows `CM-27`…`CM-32` and a widened claim-phrase net; the retired-publisher guard refuses when the platform reports more registrations than the one page it reads; and the Windows startup dialog shows the same bounded record as the log. Version 0.6.9 was the cycle-5 build-process remediation of the `v0.6.8` tree: every finding that cycle's plan scheduled had one ledger row with a closing test the build loads, every `CONTROLS.md` citation is content-bound to a marker inside the range it cites, and the launcher installs the device library from a checked lock. Version 0.6.8 was the cycle-4 build-process remediation of the `v0.6.7` tree, which introduced the checked audit ledger and the parsed `CONTROLS.md` inventory. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. No independent human end-to-end security review is recorded; nothing here is a certification or a guarantee. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
+hardcoded number here. As of 2026-10-26 that is [v0.7.2](https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/tag/v0.7.2), published 2026-10-26T21:48:23Z as tag `v0.7.2` on commit `1e51dcfa45d6f61c83c14aeb1998725fbd705ba9` by successful candidate run [40397174519](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40397174519) — six attempts, the first five failing inside the macOS DMG job and publishing nothing — and promote run [40405953511](https://github.com/cjtsh/bitcoin-easy-multisig-signer/actions/runs/40405953511). The release page carries macOS, Windows, Linux, the source archive, one `SHA256SUMS` with `SHA256SUMS.asc`, and `BUILD-SBOM*.json`. Version 0.6.7 is the Color Team cycle-3 build-process remediation: one publish path with the retired per-platform workflows deleted from every branch, the HWI helper identified by bytes rather than by its own version string, the interpreter pinned to a full patch, the lock-writer hash-locked, the source tarball able to rebuild a signed Mac app, and the broadcaster verified at use on every network. Version 0.7.3, the source revision this tree publishes, answers the ⛔ BLOCKED cycle-9 audit of the `v0.7.2` tree: the unconfirmed-payment pause is armed before the broadcast instead of after it, as a per-wallet in-flight marker set under the pre-submit lock (`CM-38`, `CM-43`), the pending record is kept per transaction and reconciled per transaction (`CM-44`), `OSError` is in `verify_esplora`'s transport tuple (`CM-40`), and the source-archive secret scan is tracked (`CM-45`). Version 0.7.2 was the cycle-8 remediation of the `v0.7.1` tree: the pause was asserted at the broadcast and again under the pre-submit lock (`CM-38`), a transaction that names the same Bitcoin output twice was refused before any explorer was asked (`CM-39`), and `http.client.HTTPException` was in the settings, explorer and broadcast transport tuples (`CM-40`…`CM-42`). Version 0.7.1 was the Color Team cycle-7 build-process remediation of the `v0.7.0` tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads; the retired-connection guard in the loopback server is pinned by a test that goes red when the guard is removed; the control inventory now parses the GitHub workflow files, so the retired-publisher pagination guard and the notarisation and checksum-signing credential guards are tracked rows with executable pins; the busy-slot docstring says what the slot actually requires; and the terms of use incorporate the Bitseeker LLC standard legal framework. Version 0.7.0 was the Color Team cycle-6 build-process remediation of the `v0.6.9` tree: every finding the cycle's plan schedules has one ledger row with a closing test the build loads; the value and script limbs of the build-time prevout match are pinned by tests that fail when their own limb is removed; the loopback server retires its oldest idle connection rather than refusing the operator's window at the connection ceiling; `CONTROLS.md` gains rows `CM-27`…`CM-32` and a widened claim-phrase net; the retired-publisher guard refuses when the platform reports more registrations than the one page it reads; and the Windows startup dialog shows the same bounded record as the log. Version 0.6.9 was the cycle-5 build-process remediation of the `v0.6.8` tree: every finding that cycle's plan scheduled had one ledger row with a closing test the build loads, every `CONTROLS.md` citation is content-bound to a marker inside the range it cites, and the launcher installs the device library from a checked lock. Version 0.6.8 was the cycle-4 build-process remediation of the `v0.6.7` tree, which introduced the checked audit ledger and the parsed `CONTROLS.md` inventory. The wallet, transaction, signing and broadcast engine is unchanged. Owner practice-network hardware walkthrough passed on candidate 37644267740 before promotion. No independent human end-to-end security review is recorded; nothing here is a certification or a guarantee. Mainnet still requires the final-screen checkbox and backend opt-in; the 25 sat/vB and 10,000-sat fee ceilings remain.
 
 **The cycle-3 panel rerun already ran and graded ⛔ BLOCKED** on the
 `v0.6.6` tree — not on the app. Red found no breach; Orange recorded its

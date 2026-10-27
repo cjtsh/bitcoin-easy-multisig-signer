@@ -66,6 +66,11 @@ class SendFlowTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=3)
 
+    def prime_pending(self, txid, unknown=False):
+        """Record a submitted payment the way a completed broadcast does."""
+        self.app.record_pending(wallet_identity(self.app.record, self.app.chain),
+                                txid, unknown)
+
     def post(self, route, data, token=None):
         headers = {"Content-Type": "application/json",
                    "X-Local-Token": self.app.token if token is None else token}
@@ -74,7 +79,8 @@ class SendFlowTests(unittest.TestCase):
         with urlopen(request, timeout=5) as response:
             return json.load(response)
 
-    def prepare_a_reviewed_transaction(self, chain="testnet4", mainnet=False):
+    def prepare_a_reviewed_transaction(self, chain="testnet4", mainnet=False,
+                                       amount_sats=100_000):
         """Put the app in the state it is in after a reviewed, saved transaction."""
         if mainnet:
             text, roots = mainnet_record(), mainnet_roots()
@@ -87,7 +93,7 @@ class SendFlowTests(unittest.TestCase):
         explorer = three_output_wallet(layout, network)
         scan = scan_wallet(record, explorer)
         recipient = layout.receive.derive(5).address(network)
-        result = build_unsigned_psbt(record, scan, recipient, 100_000, 5, explorer)
+        result = build_unsigned_psbt(record, scan, recipient, amount_sats, 5, explorer)
         self.post("/api/import", {"chain": chain, "text": text,
                                   "consent_explorer": True})
         self.app.record = record
@@ -718,8 +724,7 @@ class SendFlowTests(unittest.TestCase):
             with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
                 self.post("/api/sign", {"preparation_id": "reviewed-1",
                                         "device_type": kind, "device_path": path})
-        self.app.pending_broadcast_txid = "ab" * 32
-        self.app.pending_broadcast_unknown = False
+        self.prime_pending("ab" * 32)
         payload = {"preparation_id": "reviewed-1", "confirm": True,
                    "confirmed_txid": txid}
         with patch("gui.verify_esplora"), patch("gui.broadcast_transaction") as send:
@@ -755,7 +760,7 @@ class SendFlowTests(unittest.TestCase):
         real_finalize = gui_module.finalize_multisig
 
         def finalize_while_another_payment_lands(packet, expected):
-            self.app.pending_broadcast_txid = "cd" * 32
+            self.prime_pending("cd" * 32)
             return real_finalize(packet, expected)
 
         payload = {"preparation_id": "reviewed-1", "confirm": True,
@@ -769,6 +774,152 @@ class SendFlowTests(unittest.TestCase):
             self.assertEqual(err.exception.code, 400)
             self.assertIn("waiting for one confirmation",
                           json.load(err.exception)["error"])
+
+    def test_a_second_payment_cannot_ride_a_broadcast_in_flight(self):
+        """CT-27: the in-flight marker is armed before the network call.
+
+        The v0.7.2 audit proved the window: `pending_broadcast_txid` was written
+        only after `broadcast_transaction` returned, so while the first payment
+        was still on the wire a second, separately reviewed and separately
+        consented payment passed both halves of the pause and was broadcast too.
+        The first submission is held here at the real call site, and the second
+        must be refused without ever reaching the broadcaster.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        first = {"preparation_id": "reviewed-1", "confirm": True,
+                 "confirmed_txid": txid}
+        entered = threading.Event()
+        release = threading.Event()
+        outcomes = {}
+
+        calls = []
+
+        def held_broadcast(*_args, **_kwargs):
+            calls.append(1)
+            if len(calls) > 1:
+                # The second call is the failure this test exists to catch; it
+                # answers with a different id so the assertion fails on the
+                # refusal, not on a hung socket.
+                return "11" * 32
+            entered.set()
+            if not release.wait(5):
+                raise RuntimeError("the held broadcast was never released")
+            return txid
+
+        def send():
+            try:
+                outcomes["first"] = self.post("/api/broadcast", first)
+            except Exception as exc:  # noqa: BLE001 - recorded for the assertions
+                outcomes["first_error"] = exc
+
+        # A different amount gives the second payment its own txid, so this is
+        # two payments rather than one submitted twice.
+        second, second_keys = None, None
+        with patch("gui.broadcast_transaction", side_effect=held_broadcast) as send_mock, \
+                patch("gui.verify_esplora"):
+            sender = threading.Thread(target=send)
+            sender.start()
+            self.assertTrue(entered.wait(5),
+                            "the first broadcast never reached the wire")
+            # Nothing is recorded yet -- the outcome is not known -- so the
+            # refusal below can only come from the in-flight marker.
+            self.assertIsNone(self.app.pending_broadcast_txid)
+            second, second_keys = self.prepare_a_reviewed_transaction(amount_sats=60_000)
+            self.assertNotEqual(second["txid"], txid,
+                                "the second payment must be a different transaction")
+            for key, (kind, path) in zip(second_keys, (("jade", "/dev/x"),
+                                                       ("trezor", "webusb:1"))):
+                with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                    self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                            "device_type": kind, "device_path": path})
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", {"preparation_id": "reviewed-1",
+                                             "confirm": True,
+                                             "confirmed_txid": second["txid"]})
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("still being submitted", json.load(err.exception)["error"])
+            self.assertEqual(send_mock.call_count, 1,
+                             "the second payment reached the broadcaster")
+            release.set()
+            sender.join(5)
+        self.assertNotIn("first_error", outcomes)
+        self.assertEqual(outcomes["first"]["txid"], txid)
+        self.assertEqual(self.app.pending_broadcast_txid, txid)
+
+    def test_a_broadcast_racing_an_in_flight_submit_is_refused_under_the_lock(self):
+        """CT-27: the marker is read under the same lock that writes it.
+
+        The other racing test arms a *recorded* pause. This one arms the marker
+        for a submit that is still on the wire, which only the read inside the
+        pre-submit lock can see — and that is the window CT-27 named: without it
+        the second request overwrites the marker and both payments submit.
+        """
+        import gui as gui_module
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        real_finalize = gui_module.finalize_multisig
+        wallet = wallet_identity(self.app.record, self.app.chain)
+
+        def finalize_while_another_submit_is_in_flight(packet, expected):
+            with self.app.lock:
+                self.app.broadcast_in_flight[wallet] = "ef" * 32
+            return real_finalize(packet, expected)
+
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.verify_esplora"), patch("gui.broadcast_transaction") as send, \
+                patch("gui.finalize_multisig",
+                      side_effect=finalize_while_another_submit_is_in_flight):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            send.assert_not_called()
+            self.assertEqual(err.exception.code, 400)
+            self.assertIn("still being submitted", json.load(err.exception)["error"])
+        with self.app.lock:
+            self.app.broadcast_in_flight.pop(wallet, None)
+
+    def test_a_definite_refusal_clears_the_in_flight_marker(self):
+        """CT-27: a submit that definitely sent nothing does not lock the wallet.
+
+        The marker is armed before the network call, so it has to come down on
+        every exit, or a refused payment would leave the wallet permanently
+        "being submitted" and the owner unable to retry the payment they were
+        told to retry.
+        """
+        result, keys = self.prepare_a_reviewed_transaction()
+        txid = result["txid"]
+        for key, (kind, path) in zip(keys, (("jade", "/dev/x"),
+                                            ("trezor", "webusb:1"))):
+            with patch("gui.sign_psbt_with_device", side_effect=self.signing_device(key)):
+                self.post("/api/sign", {"preparation_id": "reviewed-1",
+                                        "device_type": kind, "device_path": path})
+        payload = {"preparation_id": "reviewed-1", "confirm": True,
+                   "confirmed_txid": txid}
+        with patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction",
+                      side_effect=WalletError("The network refused this transaction.")):
+            with self.assertRaises(HTTPError) as err:
+                self.post("/api/broadcast", payload)
+            self.assertEqual(err.exception.code, 400)
+        self.assertEqual(self.app.broadcast_in_flight, {})
+        self.assertIsNone(self.app.pending_broadcast_txid)
+        self.assertIsNotNone(self.app.prepared, "the refused payment should be retryable")
+        with patch("gui.verify_esplora"), \
+                patch("gui.broadcast_transaction", return_value=txid) as send:
+            sent = self.post("/api/broadcast", payload)
+        self.assertEqual(sent["txid"], txid)
+        send.assert_called_once()
 
     def test_mismatched_broadcast_txid_is_unknown_and_blocks_retry(self):
         result, keys = self.prepare_a_reviewed_transaction()
@@ -937,11 +1088,12 @@ class SendFlowTests(unittest.TestCase):
         self.assertNotIn("send_error", outcomes)
         self.assertEqual(outcomes["send"]["txid"], result["txid"])
         # The outcome is recorded for the wallet that submitted it, and the
-        # wallet imported while the request was in flight is left alone.
-        self.assertEqual(self.app.pending_broadcast_txid, result["txid"])
-        self.assertFalse(self.app.pending_broadcast_unknown)
+        # wallet imported while the request was in flight inherits no pause:
+        # the record belongs to the wallet it was made for (CT-29).
         self.assertEqual(self.app.pending_by_wallet.get(submitted_wallet),
-                         (result["txid"], False))
+                         {result["txid"]: False})
+        self.assertIsNone(self.app.pending_broadcast_txid)
+        self.assertFalse(self.app.pending_broadcast_unknown)
         self.assertIsNotNone(self.app.record)
         self.assertNotEqual(wallet_identity(self.app.record, "testnet4"),
                             submitted_wallet,

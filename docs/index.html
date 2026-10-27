@@ -28,7 +28,7 @@
   <link rel="image_src" href="https://bitcoineasysigner.com/assets/social-card-v3.png">
   <script>try{const t=localStorage.getItem('besa-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Bitcoin Easy Signer","alternateName":"Bitcoin Easy Signer by Bitseeker LLC","url":"https://bitcoineasysigner.com/","description":"A Mac app that helps a spouse, trustee, or other trusted helper send Bitcoin from an existing multisig wallet using the owner’s wallet file and hardware keys."}</script>
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Bitcoin Easy Signer","applicationCategory":"FinanceApplication","operatingSystem":"macOS (Apple Silicon), Windows x64, Linux x64","softwareVersion":"0.7.2","url":"https://bitcoineasysigner.com/","downloadUrl":"https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.2/Bitcoin-Easy-Signer-v0.7.2-macOS.dmg","description":"A Mac app that helps a trusted person review and send Bitcoin from an existing multisig wallet using one BSMS file and hardware signers.","license":"https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/LICENSE","publisher":{"@type":"Organization","name":"Bitseeker LLC"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Bitcoin Easy Signer","applicationCategory":"FinanceApplication","operatingSystem":"macOS (Apple Silicon), Windows x64, Linux x64","softwareVersion":"0.7.3","url":"https://bitcoineasysigner.com/","downloadUrl":"https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.3/Bitcoin-Easy-Signer-v0.7.3-macOS.dmg","description":"A Mac app that helps a trusted person review and send Bitcoin from an existing multisig wallet using one BSMS file and hardware signers.","license":"https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/LICENSE","publisher":{"@type":"Organization","name":"Bitseeker LLC"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <style>
     :root {
@@ -228,20 +228,20 @@
   <aside class="audit-bar" aria-label="Security review status">
     <div class="wrap audit-bar-inner">
       <span class="audit-mark" aria-hidden="true">AI</span>
-      <p><strong>Review status.</strong> Version 0.7.2 answers the ⚠️ CONDITIONAL Color Team audit of v0.7.1 — the finding that held the grade was that a wallet's unconfirmed-payment pause gated preparation but not the broadcast, which 0.7.2 now refuses at the submit — and the finding-by-finding record is <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/releases/PATCH-0.7.2.md">releases/PATCH-0.7.2.md</a>. <strong>No independent human end-to-end security review of v0.7.2 is recorded.</strong> No review is a guarantee or a certification, and “no finding” means only that none was found within that review&rsquo;s stated coverage. Verify every payment yourself, and never risk more than you can afford to lose.</p>
+      <p><strong>Review status.</strong> Version 0.7.3 answers the ⛔ BLOCKED Color Team audit of v0.7.2 — the finding that held the grade was that both halves of the pause added for the previous finding read a record written only after the broadcaster returned, so a second reviewed payment could leave while the first was on the wire; 0.7.3 arms that record before the money can leave — and the finding-by-finding record is <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/releases/PATCH-0.7.3.md">releases/PATCH-0.7.3.md</a>. <strong>No independent human end-to-end security review of v0.7.3 is recorded.</strong> No review is a guarantee or a certification, and “no finding” means only that none was found within that review&rsquo;s stated coverage. Verify every payment yourself, and never risk more than you can afford to lose.</p>
     </div>
   </aside>
 
   <main id="top">
     <section class="wrap hero" aria-labelledby="hero-title">
       <div>
-        <p class="eyebrow">Free, open-source Bitcoin multisig · Version 0.7.2</p>
+        <p class="eyebrow">Free, open-source Bitcoin multisig · Version 0.7.3</p>
         <h1 id="hero-title">Multisig for the people you trust.</h1>
         <p class="hero-copy">Bitcoin Easy Signer is built for families and the trusted helpers they may rely on: a spouse, trustee, lawyer, or accountant. It aims to make spending from an existing multisig wallet clear enough to follow, even if you didn’t set it up.</p>
         <div class="actions">
-          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.2/Bitcoin-Easy-Signer-v0.7.2-macOS.dmg">Download for Mac ↗</a>
-          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.2/Bitcoin-Easy-Signer-v0.7.2-windows-x64.zip">Download for Windows (unsigned) ↗</a>
-          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.2/Bitcoin-Easy-Signer-v0.7.2-linux-x86_64.AppImage">Download for Linux (x64) ↗</a>
+          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.3/Bitcoin-Easy-Signer-v0.7.3-macOS.dmg">Download for Mac ↗</a>
+          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.3/Bitcoin-Easy-Signer-v0.7.3-windows-x64.zip">Download for Windows (unsigned) ↗</a>
+          <a class="button" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/releases/download/v0.7.3/Bitcoin-Easy-Signer-v0.7.3-linux-x86_64.AppImage">Download for Linux (x64) ↗</a>
           <a class="button secondary" href="user-manual.html">Read the user manual</a>
         </div>
         <p class="microcopy">For Apple Silicon Macs, Windows x64 and Linux x64 · Free to use · Open source</p>
@@ -264,7 +264,7 @@
     <aside class="notice" aria-label="Important safety notice">
       <div class="wrap notice-inner">
         <span class="notice-mark" aria-hidden="true">!</span>
-        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is free, open-source software maintained and distributed by Bitseeker LLC. Anyone may inspect, test, audit, and validate the public source. <strong>No independent human end-to-end security review of v0.7.2 is recorded.</strong> The Z.ai Color Team reports for v0.6.4, v0.6.3 and v0.6.2 are AI-generated, dated evidence about those earlier revisions, not about v0.7.2, and are neither a certification nor a guarantee of safety, nor a substitute for review by a qualified human security firm. “No finding” means none found within a report&rsquo;s stated coverage; it does not mean none exist. The software is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. It can broadcast real Bitcoin, and a mistaken payment may be permanent. Check every payment yourself and read the <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">safety notice and terms of use</a> before use.</p>
+        <p><strong>Use at your own risk.</strong> Bitcoin Easy Signer is free, open-source software maintained and distributed by Bitseeker LLC. Anyone may inspect, test, audit, and validate the public source. <strong>No independent human end-to-end security review of v0.7.3 is recorded.</strong> The Z.ai Color Team reports for v0.6.4, v0.6.3 and v0.6.2 are AI-generated, dated evidence about those earlier revisions, not about v0.7.3, and are neither a certification nor a guarantee of safety, nor a substitute for review by a qualified human security firm. “No finding” means none found within a report&rsquo;s stated coverage; it does not mean none exist. The software is provided “as is,” without warranty or guarantee to the fullest extent allowed by law. It can broadcast real Bitcoin, and a mistaken payment may be permanent. Check every payment yourself and read the <a href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/DISCLAIMER.md">safety notice and terms of use</a> before use.</p>
       </div>
     </aside>
 

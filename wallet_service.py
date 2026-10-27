@@ -143,7 +143,16 @@ def broadcast_transaction(raw_transaction_hex: str, chain: str = "testnet4",
 
 def explorer_get(path: str, *, text: bool = False, chain: str = "testnet4",
                  base_url: str | None = None):
-    """Bounded Esplora GET on an explicit network; never send xpubs."""
+    """Bounded Esplora GET on an explicit network; never send xpubs.
+
+    The bound is a deadline and a byte ceiling, not the reply's own
+    Content-Length, so a reply that promises more than it sends arrives cut
+    short (CT-34). No short body is reported as a success here: a truncated JSON
+    or text reply fails to parse at the bottom of this function and becomes the
+    named "invalid data" refusal, and every caller then applies its own shape
+    check -- a 64-hex transaction ID, a block hash, a boolean status -- to what
+    it receives, so a cut reply is refused at the first place it makes no sense.
+    """
     if chain not in EXPLORERS:
         raise WalletError("Unsupported explorer network.")
     if not path.startswith("/") or ".." in path or "?" in path:

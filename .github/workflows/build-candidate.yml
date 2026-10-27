@@ -153,6 +153,8 @@ jobs:
       # worktree it was built from, and scripts/scan-secrets.py is pinned by
       # version and hash in requirements-ci.lock -- the same --require-hashes
       # set installed above -- rather than by a floating action.
+      # The planted canary is the positive control: a scan that reports nothing
+      # must first have proven it can report something. CONTROL: CM-45
       - name: Scan the source archive for secrets
         env:
           VERSION: ${{ needs.version.outputs.version }}

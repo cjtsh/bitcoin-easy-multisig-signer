@@ -3,6 +3,8 @@
 import io
 import json
 import socket
+import struct
+import time
 import tempfile
 import threading
 import unittest
@@ -177,7 +179,7 @@ class BrokenReplyTests(unittest.TestCase):
     generic 500.
     """
 
-    def _serve(self, reply):
+    def _serve(self, reply, *, reset=False):
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
@@ -192,12 +194,34 @@ class BrokenReplyTests(unittest.TestCase):
             with connection:
                 connection.recv(65536)
                 connection.sendall(reply)
+                if reset:
+                    # A peer that resets instead of closing: the reply head is
+                    # on the wire, the body never comes, and the read raises
+                    # ConnectionResetError -- a plain OSError, not an
+                    # http.client shape. The pause lets the client parse the
+                    # head before the reset lands.
+                    time.sleep(0.2)
+                    connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                          struct.pack("ii", 1, 0))
 
         threading.Thread(target=answer, daemon=True).start()
         return f"http://127.0.0.1:{port}/api"
 
     def test_a_reply_that_is_not_http_is_reported_as_unavailable(self):
         base = self._serve(b"\x00\x01 not-http\r\n\r\n")
+        with self.assertRaisesRegex(SettingsError, "Check its /api URL and availability"):
+            verify_esplora("main", base)
+
+    def test_a_reset_connection_is_reported_as_unavailable(self):
+        """CT-33: a peer that resets mid-reply is unavailability, not a 500.
+
+        The tuple listed http.client's shapes -- a polite close, a garbage status
+        line -- but not the plain ``OSError`` a reset raises, so this case
+        escaped the documented refusal and reached the generic handler. A real
+        socket is required: a patched ``urlopen`` cannot raise
+        ``ConnectionResetError``, which is why no earlier test saw it.
+        """
+        base = self._serve(b"HTTP/1.1 200 OK\r\nContent-Length: 64\r\n\r\n", reset=True)
         with self.assertRaisesRegex(SettingsError, "Check its /api URL and availability"):
             verify_esplora("main", base)
 

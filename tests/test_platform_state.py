@@ -44,7 +44,7 @@ if not WORKFLOW.is_file():
     # A source archive is a source tree: build-source.sh ships the recipes under
     # ci/ rather than .github/workflows/, and the archive runs this suite.
     WORKFLOW = ROOT / "ci" / "build-candidate.yml"
-PLAN = ROOT / "releases" / "PLAN-0.7.2.md"
+PLAN = ROOT / "releases" / "PLAN-0.7.3.md"
 RELEASE_PROCESS = ROOT / "RELEASE-PROCESS.md"
 WORKFLOW_DIR = WORKFLOW.parent
 

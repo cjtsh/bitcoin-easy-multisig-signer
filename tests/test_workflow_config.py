@@ -765,8 +765,8 @@ class ToolchainPinTests(unittest.TestCase):
         if the ledger says so: the sites, the digest, and what is recorded
         instead.
         """
-        ledger = ROOT / "releases" / "PATCH-0.7.2.md"
-        self.assertTrue(ledger.is_file(), "releases/PATCH-0.7.2.md is missing")
+        ledger = ROOT / "releases" / "PATCH-0.7.3.md"
+        self.assertTrue(ledger.is_file(), "releases/PATCH-0.7.3.md is missing")
         text = ledger.read_text(encoding="utf-8")
         self.assertIn("Accepted floating inputs", text)
         self.assertIn(self.CONTAINER_DIGEST, text)
