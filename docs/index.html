@@ -142,7 +142,6 @@
     .audit-bar p { margin: 0; color: #225843; font-size: 13px; font-weight: 600; }
     .audit-link { color: var(--green); font-size: 13px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
     .audit-link:hover { color: var(--orange-dark); }
-    .audit-credit { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; color: #3d6a58; }
     .brand-group { display:flex; align-items:center; gap:18px; }
     .theme-toggle { min-height:38px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--ink); font:600 12px var(--sans); cursor:pointer; }
     .theme-toggle:hover { border-color:var(--orange-dark); }
@@ -157,7 +156,6 @@
     html[data-theme="dark"] .threshold { background:#2a302b; color:#d1d6d0; }
     html[data-theme="dark"] .floating-note, html[data-theme="dark"] .audit-bar { border-color:#355344; background:var(--green-pale); color:#c3ead5; }
     html[data-theme="dark"] .floating-note, html[data-theme="dark"] .audit-bar p { color:#c3ead5; }
-    html[data-theme="dark"] .audit-credit { color:#a7d3bd; }
     html[data-theme="dark"] .notice { border-color:#70542f; background:#302619; }
     html[data-theme="dark"] .notice-mark { background:#60451f; color:#ffe1a8; }
     html[data-theme="dark"] .notice p { color:#dfcfb1; }
@@ -228,7 +226,7 @@
 
   <aside class="audit-bar" aria-label="Security review status">
     <div class="wrap audit-bar-inner">
-      <p><strong>✅ Audit passed.</strong> A team of five AI security specialists — running on <strong>Z.AI GLM 5.3</strong>, considered by many the most advanced AI model for security work — spent a full audit cycle trying to make this app lose Bitcoin, send a payment twice, or steal a key. It found no way to do it. Then each safety check was broken on purpose, to prove its warning really goes off. That matters: a Bitcoin payment cannot be taken back. <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/bitcoin-easy-multisig-signer-colorteam-audit-report-v0.7.5.md">Read the full audit ↗</a> · <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/releases/PATCH-0.7.5.md">See every finding and fix ↗</a><span class="audit-credit">A modern, automated review by AI specialists — not a human security firm. Treat it as strong supporting evidence, not a guarantee.</span></p>
+      <p><strong>✅ Passed Audit — 11 full audit cycles conducted.</strong> Your private keys never touch this app or your computer: they stay on your hardware wallet, where every signature happens. The current version (v0.7.5) passed its final audit: separate AI security examiners — running on the <strong>Z.ai GLM-5.3-Flash</strong> model, as the audit harness declares it, and chosen by the app’s author for this security work — tried to make this app lose Bitcoin, send it where you did not approve, or reveal your private information. They found no way to do it, and every safety warning was deliberately triggered to prove it really works. AI software, not a human security firm: strong evidence, not a guarantee. Verify every payment on your device. <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/bitcoin-easy-multisig-signer-colorteam-audit-report-v0.7.5.md">Read the full audit ↗</a> · <a class="audit-link" href="https://github.com/cjtsh/bitcoin-easy-multisig-signer/blob/main/releases/PATCH-0.7.5.md">See every finding and fix ↗</a></p>
     </div>
   </aside>
 
